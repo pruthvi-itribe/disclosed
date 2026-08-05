@@ -191,11 +191,18 @@ module.exports = {
 ```json
 {
   "extends": "../../tsconfig.json",
-  "compilerOptions": { "outDir": "../../dist/apps/ingest" },
+  "compilerOptions": { "outDir": "../../dist", "rootDir": "../../" },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }
 ```
+
+`rootDir` must be set explicitly. Without it tsc infers the rootDir from the
+compilation's common ancestor, so the emit path silently changes the moment the
+app first imports from a lib — `dist/apps/ingest/main.js` becomes
+`dist/apps/ingest/apps/ingest/src/main.js` and `start:prod` breaks. Pinning both
+`rootDir` and `outDir` makes the emit path `dist/apps/ingest/src/main.js`
+regardless of what is imported.
 
 `libs/filings/tsconfig.lib.json`:
 ```json
@@ -224,7 +231,7 @@ Replace the `"scripts"` block with:
 {
   "build": "nest build ingest",
   "start:dev": "nest start ingest --watch",
-  "start:prod": "node dist/apps/ingest/main",
+  "start:prod": "node dist/apps/ingest/src/main",
   "test": "jest",
   "test:watch": "jest --watch",
   "test:cov": "jest --coverage",
@@ -342,7 +349,7 @@ void bootstrap();
 - [ ] **Step 12: Verify the build compiles**
 
 Run: `npm run build`
-Expected: exits 0, produces `dist/apps/ingest/main.js`
+Expected: exits 0, produces `dist/apps/ingest/src/main.js`
 
 - [ ] **Step 13: Write .gitignore, .env.example and docker-compose.yml**
 
