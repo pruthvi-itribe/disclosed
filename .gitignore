@@ -1,6 +1,7 @@
 node_modules/
 dist/
+coverage/
 .env
 *.log
-coverage/
+data/corpus/
 .superpowers/

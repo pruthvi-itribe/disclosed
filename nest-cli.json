@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "apps/ingest/src",
+  "monorepo": true,
+  "root": "apps/ingest",
+  "compilerOptions": {
+    "webpack": false,
+    "tsConfigPath": "apps/ingest/tsconfig.app.json"
+  },
+  "projects": {
+    "ingest": {
+      "type": "application",
+      "root": "apps/ingest",
+      "entryFile": "main",
+      "sourceRoot": "apps/ingest/src",
+      "compilerOptions": { "tsConfigPath": "apps/ingest/tsconfig.app.json" }
+    },
+    "filings": {
+      "type": "library",
+      "root": "libs/filings",
+      "entryFile": "index",
+      "sourceRoot": "libs/filings/src",
+      "compilerOptions": { "tsConfigPath": "libs/filings/tsconfig.lib.json" }
+    },
+    "notify": {
+      "type": "library",
+      "root": "libs/notify",
+      "entryFile": "index",
+      "sourceRoot": "libs/notify/src",
+      "compilerOptions": { "tsConfigPath": "libs/notify/tsconfig.lib.json" }
+    }
+  }
+}
