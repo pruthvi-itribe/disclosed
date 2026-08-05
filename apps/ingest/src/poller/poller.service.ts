@@ -16,6 +16,7 @@ import {
 } from '@app/notify';
 import type { AlertService } from '../alert/alert.service';
 import type { CircuitBreaker } from './circuit-breaker';
+import { RecentSeqIds } from './recent-seq-ids';
 
 /**
  * The cadence knobs, deliberately the exact shape `nextPollDelayMs` takes minus
@@ -94,13 +95,26 @@ const mergeById = (a: readonly Filing[], b: readonly Filing[]): Filing[] => {
  * reconciled. Everything else here exists to keep that loop honest when a
  * dependency misbehaves:
  *
+ *   - THE DATABASE DECIDES NEWNESS, NOT THE CURSOR. The whole page is offered
+ *     to `insertNew` every poll and the unique index on `seqId` rejects what we
+ *     already hold. The cursor is NOT a newness filter, because seq_id is not
+ *     the total order the design spec claimed: 414 of the 17,442 filings in the
+ *     recorded corpus (2.37%, 12.9/day, on 23 of 32 IST days) are disseminated
+ *     with an id BELOW the stream position — adjacent-id reversals two seconds
+ *     apart, and block excursions of 84,000 ids followed by a descending run.
+ *     Filtering on `id > cursor` discards every one of them, and `holeDetected`
+ *     stays false because the page's oldest id is below the cursor, so nothing
+ *     drains and nothing is logged. The cursor's real and only job is the
+ *     rollover test below.
  *   - ONE POLL AT A TIME. A hard Akamai block takes ~30s to reject (two 15s
  *     timeouts) against a 2s interval, so an unguarded caller stacks ~15 polls
  *     during exactly the outage where NSE is least willing to serve.
  *   - NO SECOND RETRY. `NseAdapter` already spends one retry on a 401/403 after
  *     refreshing the session. A retry here would multiply against that one.
- *   - THE CURSOR ONLY MOVES ON PROOF. Not from an empty page, not past a drain
- *     that failed, and not past a write that threw.
+ *   - THE CURSOR ONLY MOVES FORWARD, AND ONLY ON PROOF. Not from an empty page,
+ *     not past a drain that failed, not past a write that threw — and never
+ *     backwards, or an out-of-order excursion would report a hole on every
+ *     subsequent poll and re-drain the day.
  *   - EVERY SILENCE IS ANNOUNCED. A blind poller, a feed whose every record is
  *     rejected, a day re-pull that leaves a detected hole open, and a database
  *     refusing writes all look identical from outside: no messages. Each gets
@@ -114,8 +128,17 @@ const mergeById = (a: readonly Filing[], b: readonly Filing[]): Filing[] => {
 export class PollerService {
   private readonly logger = new Logger(PollerService.name);
 
-  /** Highest seqId proven stored. `0` is a valid value; `null` means none. */
+  /**
+   * Highest seqId the page has been proven to overlap. `0` is a valid value;
+   * `null` means none. This is a ROLLOVER marker, never a newness filter.
+   */
   private cursor: number | null = null;
+
+  /**
+   * Suppresses re-offering rows the database has already accounted for. A
+   * performance filter only — a miss falls through to `insertNew`.
+   */
+  private readonly recent = new RecentSeqIds();
 
   private running = false;
   private polling = false;
@@ -230,27 +253,30 @@ export class PollerService {
     this.breaker.recordSuccess();
     await this.reportBlindFeed(page);
 
+    // `newSeqIds` is NOT used to decide what to ingest. It survives for one
+    // purpose only — the cadence burst signal — because it is still the right
+    // input there: it measures how fast the page is turning over.
     const { newSeqIds, holeDetected } = detectRollover({
       pageSeqIds: page.filings.map((filing) => filing.seqId),
       cursor: this.cursor,
     });
 
-    const fresh = new Set(newSeqIds);
-    const newOnPage = page.filings.filter((filing) => fresh.has(filing.seqId));
+    // THE WHOLE PAGE, not only the ids above the cursor. See the class doc:
+    // NSE disseminates out of seq_id order, so an id below the cursor can be a
+    // filing we have never held. The database decides newness, not the cursor.
+    let candidates: readonly Filing[] = page.filings;
+    let dayFilings: readonly Filing[] = [];
+    let drainFailed = false;
 
     // The drain is driven by `holeDetected` alone. It is independent of
     // `newSeqIds.length` and is true with an empty list on a cold start, which
     // is the one drain that establishes the baseline.
-    let candidates: readonly Filing[] = newOnPage;
-    let dayFilings: readonly Filing[] = [];
-    let drainFailed = false;
-
     if (holeDetected) {
       this.logger.warn('Rollover detected; draining the IST day');
       try {
         const day = await this.adapter.fetchDay(now);
         dayFilings = day.filings;
-        candidates = mergeById(newOnPage, dayFilings);
+        candidates = mergeById(page.filings, dayFilings);
         this.drainFailing = false;
       } catch (error) {
         // The hole is unresolved. Store what the hot page did give us, but
@@ -261,12 +287,23 @@ export class PollerService {
       }
     }
 
-    let inserted: Filing[];
-    try {
-      inserted = await this.repository.insertNew(candidates);
-      this.writeFailing = false;
-    } catch (error) {
-      return await this.handleWriteFailure(error, now, candidates);
+    const offered = this.recent.unseen(candidates);
+
+    let inserted: Filing[] = [];
+    // Nothing to offer is the ordinary case once the page has settled, and it
+    // is not evidence about the database either way — so the round trip is
+    // skipped AND the write-failure latch is left exactly as it was.
+    if (offered.length > 0) {
+      try {
+        inserted = await this.repository.insertNew(offered);
+        this.writeFailing = false;
+        // Only now: a resolved `insertNew` proves every offered row is in the
+        // collection — the ones it returned because it wrote them, the rest
+        // because the unique index rejected them as already present.
+        this.recent.remember(offered);
+      } catch (error) {
+        return await this.handleWriteFailure(error, now, offered);
+      }
     }
 
     const alerted = await this.alertOn(inserted, now);
@@ -324,10 +361,15 @@ export class PollerService {
   /**
    * Moves the cursor to the highest id this poll can prove is stored.
    *
-   * `observed` is the hot page unioned with a successfully drained day. Both
-   * are proven: ids above the old cursor were just inserted, and ids at or
-   * below it were inserted by an earlier poll — that is the induction the
-   * overlap rule maintains.
+   * `observed` is the hot page unioned with a successfully drained day. Every
+   * id in it has been offered to the database on this poll, so the highest of
+   * them is a position the page demonstrably reached.
+   *
+   * MONOTONIC BY CONSTRUCTION. `Math.max` against the existing cursor is not a
+   * tidiness measure: NSE disseminates out of seq_id order, so a page whose
+   * newest id is 84,000 below the last one is a real observation. Following it
+   * downward would make the next poll's oldest id exceed the cursor, report a
+   * hole that does not exist, and re-drain the day on every poll thereafter.
    *
    * An empty set leaves the cursor untouched. An empty page proves nothing at
    * all, and advancing from one would mean claiming continuity we never saw.

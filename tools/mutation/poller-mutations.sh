@@ -12,9 +12,11 @@
 #      `alertWindowMs: NaN` mutes the bot outright, `failureThreshold: NaN`
 #      makes the breaker report healthy through an unlimited outage, and an
 #      interval of NaN turns `setTimeout` into a busy loop against Akamai.
-#   2. THE CURSOR. It may only move on proof. Not from an empty page, not past a
-#      drain that failed, not past a write that threw, and never backwards. Each
-#      of those advances loses filings permanently and reports success.
+#   2. THE CURSOR. It is a ROLLOVER marker, never a newness filter — the
+#      database decides newness, because NSE disseminates out of seq_id order.
+#      It may only move on proof: not from an empty page, not past a drain that
+#      failed, not past a write that threw, and never backwards. Each of those
+#      advances loses filings permanently and reports success.
 #   3. THE DRAIN DECISION. `holeDetected` is the whole no-loss guarantee, and it
 #      is independent of how many new ids the page carried — a cold start
 #      reports a hole with an empty list. Inferring the drain from the id count
@@ -70,8 +72,8 @@
 #     redaction and its configured/unconfigured verdict ARE mutated, because
 #     both are load-bearing.
 #
-# Tally, so a report can quote it without recounting: 40 mutations against the
-# poller and 12 against the configuration, plus 5 independence checks = 57
+# Tally, so a report can quote it without recounting: 45 mutations against the
+# poller and 12 against the configuration, plus 6 independence checks = 63
 # `check` calls.
 
 set -uo pipefail
@@ -277,8 +279,33 @@ check "drained ids ignored by the cursor (re-drains the day every poll)" "$POLL"
 perl -0pi -e 's/    if \(!drainFailed\) \{\n      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);\n    \}/    this.advanceCursor([...page.filings, ...dayFilings]);/' "$POLL"
 check "advances past a failed drain (steps over the missing records)" "$POLL" poller.service
 
-perl -0pi -e 's/      inserted = await this\.repository\.insertNew\(candidates\);/      inserted = await this.repository.insertNew(candidates).catch(() => []);/' "$POLL"
+perl -0pi -e 's/        inserted = await this\.repository\.insertNew\(offered\);/        inserted = await this.repository.insertNew(offered).catch(() => []);/' "$POLL"
 check "a thrown write read as a retryable no-op (rows stored, never alerted)" "$POLL" poller.service
+
+echo ""
+echo "=== the database decides newness, not the cursor ==="
+echo "NSE disseminates out of seq_id order: 414 of the corpus's 17,442 filings"
+echo "(2.37%, on 23 of 32 IST days) arrive with an id BELOW the stream position."
+echo "Re-introducing the cursor as a newness filter drops every one of them with"
+echo "no log, no counter and no alert, and holeDetected cannot see it either."
+
+perl -0pi -e 's/    let candidates: readonly Filing\[\] = page\.filings;/    const fresh = new Set(newSeqIds);\n    let candidates: readonly Filing[] = page.filings.filter((f) =>\n      fresh.has(f.seqId),\n    );/' "$POLL"
+check "cursor re-instated as a newness filter (2.37% of filings lost silently)" "$POLL" poller.service
+
+perl -0pi -e 's/        candidates = mergeById\(page\.filings, dayFilings\);/        candidates = dayFilings;/' "$POLL"
+check "hot page dropped from the drain merge (loses what only the page carried)" "$POLL" poller.service
+
+echo ""
+echo "=== the recently-seen set is a PRE-FILTER, never the authority ==="
+
+perl -0pi -e 's/    const offered = this\.recent\.unseen\(candidates\);/    const offered: readonly Filing[] = [];\n    void candidates;/' "$POLL"
+check "pre-filter suppresses everything (nothing is ever offered to the database)" "$POLL" poller.service
+
+# Remembering BEFORE the write is the fail-open direction: a batch the database
+# never accepted is marked stored, the retry is suppressed, and the filings are
+# lost with the write-failure alert already fired and nothing left to recover.
+perl -0pi -e 's/        inserted = await this\.repository\.insertNew\(offered\);\n        this\.writeFailing = false;\n(.*?)        this\.recent\.remember\(offered\);/        this.recent.remember(offered);\n        inserted = await this.repository.insertNew(offered);\n        this.writeFailing = false;/s' "$POLL"
+check "batch remembered before the write is proven (a failed write is never retried)" "$POLL" poller.service
 
 echo ""
 echo "=== the drain decision is the no-loss guarantee ==="
@@ -286,7 +313,7 @@ echo "=== the drain decision is the no-loss guarantee ==="
 perl -0pi -e 's/    if \(holeDetected\) \{\n      this\.logger\.warn/    if (holeDetected \&\& newSeqIds.length > 0) {\n      this.logger.warn/' "$POLL"
 check "drain inferred from the new-id count (skips the cold-start baseline)" "$POLL" poller.service
 
-perl -0pi -e 's/        candidates = mergeById\(newOnPage, dayFilings\);/        candidates = newOnPage;/' "$POLL"
+perl -0pi -e 's/        candidates = mergeById\(page\.filings, dayFilings\);/        candidates = page.filings;/' "$POLL"
 check "drained page discarded (the recovered filings are thrown away)" "$POLL" poller.service
 
 perl -0pi -e 's/      drained: holeDetected,/      drained: false,/' "$POLL"
@@ -375,7 +402,7 @@ perl -0pi -e 's/    if \(!this\.writeFailing\) \{\n      this\.writeFailing = tr
 perl -0pi -e 's/      await this\.telegram\.send\(formatWriteFailureAlert\(batch\.length, message\)\);\n    \}/      await this.telegram.send(formatWriteFailureAlert(batch.length, message));/' "$POLL"
 check "alarm not edge-triggered (a database outage floods the channel)" "$POLL" poller.service
 
-perl -0pi -e 's/      inserted = await this\.repository\.insertNew\(candidates\);\n      this\.writeFailing = false;/      inserted = await this.repository.insertNew(candidates);/' "$POLL"
+perl -0pi -e 's/        inserted = await this\.repository\.insertNew\(offered\);\n        this\.writeFailing = false;/        inserted = await this.repository.insertNew(offered);/' "$POLL"
 check "latch never re-armed (a second outage is never reported)" "$POLL" poller.service
 
 echo ""
@@ -440,6 +467,9 @@ check "advances past a failed drain, cursor suite only" "$POLL" poller.service -
 
 perl -0pi -e 's/    if \(this\.breaker\.recordFailure\(\)\) \{/    this.breaker.recordFailure();\n    if (this.breaker.isDegraded()) {/' "$POLL"
 check "branches on isDegraded, breaker suite only" "$POLL" poller.service -t "circuit breaker"
+
+perl -0pi -e 's/    let candidates: readonly Filing\[\] = page\.filings;/    const fresh = new Set(newSeqIds);\n    let candidates: readonly Filing[] = page.filings.filter((f) =>\n      fresh.has(f.seqId),\n    );/' "$POLL"
+check "cursor as newness filter, out-of-order suite only" "$POLL" poller.service -t "out-of-order dissemination"
 
 perl -0pi -e 's/  if \(!Number\.isFinite\(value\)\) \{\n    throw new Error\(\n      `\$\{key\} must be a finite number.*?\n    \);\n  \}\n\n  if \(!Number\.isInteger\(value\)\) \{\n    throw new Error\(`\$\{key\} must be a whole number, but was "\$\{raw\}"\.`\);\n  \}\n\n//s' "$CONF"
 check "bare lower bound, numeric-validation suite only" "$CONF" configuration -t "numeric validation"

@@ -396,20 +396,36 @@ describe('PollerService: cursor discipline', () => {
     expect(adapter.dayCalls).toBe(1);
   });
 
-  it('never lets the cursor go backwards', async () => {
-    const { adapter, service } = build();
+  it('never lets the cursor go backwards, but still ingests what a lower page carries', async () => {
+    // Two separate properties, and conflating them is what lost 2.37% of the
+    // corpus. A page carrying only older ids must not drag the CURSOR back —
+    // the next poll would then find its oldest id above the cursor, report a
+    // hole that does not exist, and re-drain the day forever. But the FILINGS
+    // on that page are still filings we do not hold, and the database is what
+    // decides that, so they are ingested.
+    const { adapter, repo, service } = build();
     adapter.latest = page([makeFiling(30)]);
+    adapter.day = page([makeFiling(30)]);
     await service.tick(IN_WINDOW);
+    adapter.dayCalls = 0;
 
-    // A page that happens to carry only older ids must not drag the cursor
-    // back, or everything between would be offered — and alerted — twice.
     adapter.latest = page([makeFiling(20)]);
-    await service.tick(IN_WINDOW);
+    const lower = await service.tick(IN_WINDOW);
 
-    adapter.latest = page([makeFiling(25), makeFiling(20)]);
+    expect(lower.ingested).toBe(1);
+    expect(repo.stored.has(20)).toBe(true);
+    expect(lower.drained).toBe(false);
+
+    // The oldest id here is 25: still at or below the real cursor of 30, so
+    // the page overlaps and no drain is owed. Had the cursor followed the
+    // lower page down to 20, this would read as a rollover and re-pull the
+    // whole day — on this poll and on every poll after it.
+    adapter.latest = page([makeFiling(40), makeFiling(25)]);
     const result = await service.tick(IN_WINDOW);
 
-    expect(result.ingested).toBe(0);
+    expect(result.drained).toBe(false);
+    expect(adapter.dayCalls).toBe(0);
+    expect(result.ingested).toBe(2);
   });
 
   it('restores the cursor from storage so a restart does not re-alert', async () => {
@@ -1185,5 +1201,196 @@ describe('PollerService: the loop', () => {
     const { service } = build();
 
     expect(() => service.stop()).not.toThrow();
+  });
+});
+
+/**
+ * NSE DISSEMINATES OUT OF seq_id ORDER. The design spec called seq_id
+ * "monotonic, unique, totally ordered", and the recorded corpus refutes it:
+ * 414 of 17,442 filings (2.37%, 12.9/day) across 23 of 32 IST days arrive with
+ * a seq_id BELOW the stream position at the moment they are disseminated, most
+ * of them carrying a real `exchdisstime` rather than the `an_dt` fallback.
+ *
+ * A cursor-as-newness-filter drops every one of them without a log, a counter
+ * or an alert: `detectRollover` keeps only `id > cursor`, and `holeDetected`
+ * stays FALSE because the page's oldest id is below the cursor, so no drain is
+ * triggered either. The database — the unique index on seqId plus `insertNew`'s
+ * return value — is the only correct newness authority, so the whole page is
+ * offered to it every poll and the cursor keeps its real job: deciding whether
+ * the page rolled past us.
+ *
+ * Every id and timestamp below is transcribed from
+ * `data/corpus/05-07-2026_05-08-2026.jsonl`, including the page compositions.
+ */
+describe('PollerService: out-of-order dissemination', () => {
+  /** 15:33 IST on 07-Jul-2026 — inside the filing window. */
+  const JUL_07 = new Date('2026-07-07T10:03:45.000Z');
+  /** 11:07 IST on 06-Jul-2026 — inside the filing window. */
+  const JUL_06 = new Date('2026-07-06T05:37:45.000Z');
+
+  /** The real 20-record page as it stood at 10:03:43Z on 07-Jul-2026. */
+  const PAGE_BEFORE_REVERSAL = [
+    106689007, 106689005, 106689004, 106689003, 106685570, 106685567, 106689002,
+    106689000, 106688999, 106688998, 106688997, 106688996, 106688995, 106688994,
+    106688992, 106688989, 106688988, 106688987, 106688986, 106688985,
+  ];
+
+  /**
+   * The same page two seconds later. `106689006` (APTECHT) has arrived AFTER
+   * `106689007` (RCOM) despite carrying the lower id, and the oldest record has
+   * aged off the bottom.
+   */
+  const PAGE_AFTER_REVERSAL = [
+    106689006, 106689007, 106689005, 106689004, 106689003, 106685570, 106685567,
+    106689002, 106689000, 106688999, 106688998, 106688997, 106688996, 106688995,
+    106688994, 106688992, 106688989, 106688988, 106688987, 106688986,
+  ];
+
+  /** The real page at 05:35:48Z on 06-Jul-2026; the stream sits at 106687146. */
+  const PAGE_BEFORE_BLOCK = [
+    106687146, 106687145, 106687144, 106687143, 106687131, 106687130, 106687129,
+    106687127, 106687104, 106687103, 106687101, 106687100, 106687099, 106687098,
+    106687097, 106687090, 106687083, 106687082, 106687081, 106687079,
+  ];
+
+  /**
+   * 117 seconds later. `106603022` (CONSOFINVT, a SEBI Takeover disclosure)
+   * arrives 84,124 ids BELOW the stream position, and is the head of a
+   * descending run.
+   */
+  const PAGE_AFTER_BLOCK = [106603022, ...PAGE_BEFORE_BLOCK.slice(0, 19)];
+
+  /** The rest of the descending run, in the order NSE disseminated it. */
+  const DESCENDING_RUN = [
+    106603016, 106603008, 106602971, 106602914, 106602900, 106602863, 106602793,
+  ];
+
+  const pageOf = (seqIds: readonly number[]): FetchResult =>
+    page(seqIds.map((id) => makeFiling(id)));
+
+  it('ingests a filing disseminated with an id one below the stream position', async () => {
+    // seq 106689007 at 10:03:43, then seq 106689006 at 10:03:45. Adjacent ids,
+    // two seconds apart, reversed. Filtering on `id > cursor` loses APTECHT's
+    // reply to a financial-results clarification silently and forever.
+    const { adapter, repo, alerts, service } = build();
+    adapter.latest = pageOf(PAGE_BEFORE_REVERSAL);
+    adapter.day = adapter.latest;
+    await service.tick(JUL_07);
+
+    adapter.latest = pageOf(PAGE_AFTER_REVERSAL);
+    const result = await service.tick(JUL_07);
+
+    expect(repo.stored.has(106689006)).toBe(true);
+    expect(result.ingested).toBe(1);
+    expect(alerts.alerted.map((f) => f.seqId)).toContain(106689006);
+  });
+
+  it('ingests a descending run that lands 84,124 ids below the stream', async () => {
+    const { adapter, repo, service } = build();
+    adapter.latest = pageOf(PAGE_BEFORE_BLOCK);
+    adapter.day = adapter.latest;
+    await service.tick(JUL_06);
+
+    // The block jump itself, then the run behind it, one poll per record.
+    adapter.latest = pageOf(PAGE_AFTER_BLOCK);
+    await service.tick(JUL_06);
+
+    let carried = PAGE_AFTER_BLOCK;
+    for (const seqId of DESCENDING_RUN) {
+      carried = [seqId, ...carried.slice(0, 19)];
+      adapter.latest = pageOf(carried);
+      await service.tick(JUL_06);
+    }
+
+    for (const seqId of [106603022, ...DESCENDING_RUN]) {
+      expect(repo.stored.has(seqId)).toBe(true);
+    }
+  });
+
+  it('does not report a hole for an out-of-order filing, and must not need to', async () => {
+    // `detectRollover` is unchanged and correct: the page still overlaps what
+    // we hold, so nothing rolled past us and no drain is owed. Recovery comes
+    // from offering the page to the database, not from re-pulling the day.
+    const { adapter, service } = build();
+    adapter.latest = pageOf(PAGE_BEFORE_REVERSAL);
+    adapter.day = adapter.latest;
+    await service.tick(JUL_07);
+    adapter.dayCalls = 0;
+
+    adapter.latest = pageOf(PAGE_AFTER_REVERSAL);
+    const result = await service.tick(JUL_07);
+
+    expect(result.drained).toBe(false);
+    expect(adapter.dayCalls).toBe(0);
+    expect(result.ingested).toBe(1);
+  });
+
+  it('offers the whole page to the repository, not only the ids above the cursor', async () => {
+    // A restart resuming at 106689007 with nothing else known: every id on the
+    // page must reach `insertNew` and let the unique index decide, including
+    // the nineteen that sit below the cursor.
+    const { adapter, repo, service } = build();
+    repo.stored.set(106689007, makeFiling(106689007));
+    await service.initialise();
+
+    adapter.latest = pageOf(PAGE_AFTER_REVERSAL);
+    await service.tick(JUL_07);
+
+    expect(
+      repo.insertCalls[0].map((f) => f.seqId).sort((a, b) => a - b),
+    ).toEqual([...PAGE_AFTER_REVERSAL].sort((a, b) => a - b));
+  });
+
+  it('does not re-offer rows the database has already accounted for', async () => {
+    // The pre-filter. It is a cost control, never the newness authority: the
+    // whole page is a candidate every poll, and this only removes the rows a
+    // resolved `insertNew` already proved are in the collection.
+    const { adapter, repo, service } = build();
+    repo.stored.set(106689007, makeFiling(106689007));
+    await service.initialise();
+
+    adapter.latest = pageOf(PAGE_AFTER_REVERSAL);
+    await service.tick(JUL_07);
+    const second = await service.tick(JUL_07);
+    const third = await service.tick(JUL_07);
+
+    expect(repo.insertCalls[0]).toHaveLength(20);
+    // Nothing left to offer, so the write is skipped entirely.
+    expect(repo.insertCalls).toHaveLength(1);
+    expect(second.ingested).toBe(0);
+    expect(third.ingested).toBe(0);
+  });
+
+  it('offers a row again when the write that would have proven it stored threw', async () => {
+    const { adapter, repo, service } = build();
+    repo.stored.set(106689007, makeFiling(106689007));
+    await service.initialise();
+    repo.insertError = new Error('mongo down');
+
+    adapter.latest = pageOf(PAGE_AFTER_REVERSAL);
+    await service.tick(JUL_07);
+
+    repo.insertError = null;
+    await service.tick(JUL_07);
+
+    // A throw leaves the batch's fate unknown, so nothing may be remembered.
+    expect(repo.insertCalls[1]).toHaveLength(20);
+    expect(repo.stored.has(106689006)).toBe(true);
+  });
+
+  it('leaves the cursor at the stream high-water mark, never dragging it back', async () => {
+    // Ingesting a low id must not move the cursor down: the cursor's job is the
+    // rollover test, and a cursor that follows an 84,000-id excursion downward
+    // would report a hole on every subsequent poll and re-drain the day.
+    const { adapter, service } = build();
+    adapter.latest = pageOf(PAGE_BEFORE_BLOCK);
+    adapter.day = adapter.latest;
+    await service.tick(JUL_06);
+    adapter.dayCalls = 0;
+
+    adapter.latest = pageOf(PAGE_AFTER_BLOCK);
+    await service.tick(JUL_06);
+
+    expect(adapter.dayCalls).toBe(0);
   });
 });
