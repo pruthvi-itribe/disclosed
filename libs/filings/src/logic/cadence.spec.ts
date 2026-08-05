@@ -163,6 +163,21 @@ describe('nextPollDelayMs: burst threshold edge', () => {
     );
   });
 
+  it('makes every poll a burst when the threshold is zero', () => {
+    // Pins the consequence of a degenerate config rather than endorsing it:
+    // `newCount >= 0` is always true, so a zero threshold returns a zero delay
+    // forever and busy-loops the poller. This function is pure and takes its
+    // config on trust — TASK 12 MUST REJECT burstThreshold < 1 at config load.
+    const degenerate = { ...opts, burstThreshold: 0 };
+
+    expect(
+      nextPollDelayMs({ newCount: 0, now: midMorningIst, ...degenerate }),
+    ).toBe(0);
+    expect(
+      nextPollDelayMs({ newCount: 0, now: deadOfNightIst, ...degenerate }),
+    ).toBe(0);
+  });
+
   it('a burst overrides the closed window in both directions', () => {
     expect(nextPollDelayMs({ newCount: 8, now: deadOfNightIst, ...opts })).toBe(
       0,

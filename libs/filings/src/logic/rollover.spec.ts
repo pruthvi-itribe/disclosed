@@ -157,6 +157,18 @@ describe('detectRollover: overlap edge cases', () => {
     expect(result.holeDetected).toBe(false);
   });
 
+  it('treats a negative cursor as a real cursor below every seq id', () => {
+    // NSE seq_ids are always positive, so a negative cursor means corrupt or
+    // sentinel state (-1 is the classic "unset" marker). It must behave as an
+    // ordinary cursor below everything — never as a cold start, and never as
+    // an excuse to skip records — so the page is fully new and the absence of
+    // overlap is reported honestly.
+    const result = detectRollover({ pageSeqIds: [3, 2, 1], cursor: -1 });
+
+    expect(result.newSeqIds).toEqual([3, 2, 1]);
+    expect(result.holeDetected).toBe(true);
+  });
+
   it('passes duplicate ids through rather than collapsing them', () => {
     // NSE has not been observed repeating a seq_id on one page. If it ever
     // does, de-duplication belongs at the repository's unique index, not here
@@ -224,13 +236,24 @@ describe('detectRollover: immutability', () => {
 });
 
 /**
- * Exhaustive invariant sweep. Deterministic by construction — every subset of a
- * five-element pool, in three orderings, against seven cursors (672 cases). No
- * randomness, so this can never flake.
+ * Invariant sweep over a fixed, exhaustively enumerated case space: every
+ * subset of a five-element pool, in three of its orderings, against eight
+ * cursors (768 cases). Deterministic by construction — no randomness, so this
+ * can never flake.
+ *
+ * It is exhaustive over that space, not over all possible inputs: only 3 of n!
+ * orderings are tried, the pool holds no duplicates, and the cursors are all
+ * non-negative. Those gaps are each covered by a named test above (duplicate
+ * ids, a negative cursor, a zero cursor, unordered input) — this sweep
+ * complements them rather than subsuming them.
  */
-describe('detectRollover: invariants over an exhaustive input space', () => {
+describe('detectRollover: invariants over a fixed, enumerated case space', () => {
   const POOL: readonly number[] = [10, 20, 30, 40, 50];
-  const CURSORS: readonly (number | null)[] = [null, 5, 10, 25, 30, 50, 55];
+  // 9 is deliberate: it is one below the smallest pool value, so a page whose
+  // oldest id is 10 must be flagged as a hole against it. That kills the
+  // "page must resume at exactly cursor + 1" misreading of the overlap rule,
+  // which every other cursor here tolerates.
+  const CURSORS: readonly (number | null)[] = [null, 5, 9, 10, 25, 30, 50, 55];
 
   interface Case {
     readonly page: readonly number[];
@@ -268,7 +291,7 @@ describe('detectRollover: invariants over an exhaustive input space', () => {
 
   it('covers the whole space it claims to', () => {
     expect(CASES).toHaveLength(2 ** POOL.length * 3 * CURSORS.length);
-    expect(CASES).toHaveLength(672);
+    expect(CASES).toHaveLength(768);
   });
 
   it('never returns a seq id at or below the cursor', () => {
