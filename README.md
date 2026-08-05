@@ -91,6 +91,17 @@ every other signal — the fetch succeeded, filings arrived, the breaker is clea
 the cursor moved. The scheduled drain re-offers the whole day indefinitely, so
 fixing the mapper recovers those records without a backfill.
 
+It is also the only one of the five that watches **two** fetch surfaces, so it
+carries two independent latches — one for the live page, one for the drained IST
+day — and each is re-armed only by its own surface coming back clean. A single
+shared latch does not hold: a skip on the drained day is visible on drain polls
+alone, the sweeps are 5 minutes apart, and the ~150 clean hot polls in between
+re-armed it every time. One persistently unmappable record produced 7 alerts
+across 30 simulated minutes that way, or roughly 288 a day at the shipped
+interval — the same flood that mutes the channel every alert above shares. So a
+poll in which BOTH surfaces are dropping records sends two messages, one per
+surface, and a persistent skip on either sends exactly one until it clears.
+
 `INGEST DRAIN FAILED` is the one worth waking up for. The other three are loud
 in their consequences; this one is not. The hot fetch still succeeds so the
 breaker stays healthy, the cursor is held so no filing is skipped, and nothing

@@ -63,6 +63,19 @@ export interface PollResult {
   delayMs: number;
 }
 
+/**
+ * The mapper's accounting for ONE fetch surface: how many records the exchange
+ * sent, and how many of them were refused.
+ *
+ * Held per surface rather than summed, because the hot page and the drain are
+ * observed on entirely different schedules and a sum cannot say which of them
+ * is clean — see `reportSkippedRecords`.
+ */
+interface SkipTally {
+  readonly skipped: number;
+  readonly received: number;
+}
+
 /** Newest-first union of two pages, one entry per seqId. */
 const mergeById = (a: readonly Filing[], b: readonly Filing[]): Filing[] => {
   const merged = new Map<number, Filing>();
@@ -148,8 +161,14 @@ export class PollerService {
 
   /** Set while the feed is answering with records that all fail to map. */
   private feedBlind = false;
-  /** Set while SOME records are being dropped and the rest ingested. */
-  private feedPartial = false;
+  /**
+   * Set while SOME records ON THE HOT PAGE are dropped and the rest ingested.
+   * Separate from the drain latch below on purpose — see
+   * `reportSkippedRecords` for the flood that one shared latch produced.
+   */
+  private hotPartial = false;
+  /** Set while SOME records ON A DRAINED DAY are dropped and the rest ingested. */
+  private drainPartial = false;
   /** Set while the day re-pull is failing, leaving a detected hole open. */
   private drainFailing = false;
   /** Set while writes are failing. */
@@ -287,9 +306,15 @@ export class PollerService {
         });
 
     let drainedDays = 0;
-    // Accounting across everything this tick fetched, hot page and drain alike.
-    let skipped = page.skipped;
-    let received = page.received;
+    // Skip accounting for the two fetch surfaces, kept APART all the way to the
+    // alarm. `drainTally` stays null until a drain has both RUN and SUCCEEDED,
+    // because only an observation may move the drain latch: a poll that never
+    // looked at the day has learned nothing about it.
+    const hotTally: SkipTally = {
+      skipped: page.skipped,
+      received: page.received,
+    };
+    let drainTally: SkipTally | null = null;
 
     if (reason !== null) {
       // Recorded BEFORE the attempt and for every outcome, including a failure.
@@ -305,8 +330,7 @@ export class PollerService {
         const drain = await this.drain(reason, now);
         dayFilings = drain.filings;
         drainedDays = drain.days;
-        skipped += drain.skipped;
-        received += drain.received;
+        drainTally = { skipped: drain.skipped, received: drain.received };
         // The set difference is the database's job, not ours: every row is
         // offered and the unique index rejects the ones already held.
         candidates = mergeById(page.filings, dayFilings);
@@ -344,13 +368,17 @@ export class PollerService {
       }
     }
 
-    await this.reportSkippedRecords(skipped, received);
+    await this.reportSkippedRecords(hotTally, drainTally);
 
     const alerted = await this.alertOn(inserted, now);
 
     if (!holdCursor) {
       this.advanceCursor([...page.filings, ...dayFilings]);
     }
+
+    // Summed only HERE, for the caller's accounting. The alarm above never sees
+    // the sum; it is the sum that hid which surface was actually clean.
+    const skipped = hotTally.skipped + (drainTally?.skipped ?? 0);
 
     return {
       ingested: inserted.length,
@@ -539,29 +567,81 @@ export class PollerService {
    * for as long as it keeps running. Fixing the mapper is therefore sufficient
    * to recover them — which is exactly why somebody has to be told.
    *
-   * Edge-triggered like the others, and re-armed by a clean fetch.
+   * ONE LATCH PER FETCH SURFACE, and this is the load-bearing part.
+   *
+   * Edge-triggering only suppresses a repeat if the latch survives between two
+   * observations of the condition. A single latch fed the SUM of both surfaces
+   * did not: a skip originating on a drained day is visible on drain polls
+   * alone, the scheduled drains are 5 minutes apart, and the ~150 hot polls in
+   * between each reported zero skips and re-armed it. Measured against one
+   * persistently unmappable record over 30 simulated minutes: 7 alerts where 1
+   * was expected — one per drain, or ~288 messages a day at the shipped
+   * interval, from a single bad record. That is precisely the flood that mutes
+   * the channel, and it takes every other alert in this class down with it.
+   *
+   * So the hot page and the drain latch independently, and each is re-armed
+   * ONLY by its own surface coming back clean. A null `drain` is a
+   * NON-OBSERVATION — no drain was due, or the one that ran threw — and must
+   * leave the drain latch exactly as it found it, for the same reason
+   * `reportBlindFeed` refuses to re-arm on an empty page: absence of evidence
+   * is not evidence of recovery.
    */
   private async reportSkippedRecords(
-    skipped: number,
-    received: number,
+    hot: SkipTally,
+    drain: SkipTally | null,
   ): Promise<void> {
-    if (skipped === 0) {
-      this.feedPartial = false;
+    await this.reportHotSkips(hot);
+    if (drain !== null) await this.reportDrainSkips(drain);
+  }
+
+  /** The live page's half, re-armed by a hot page that came back clean. */
+  private async reportHotSkips(hot: SkipTally): Promise<void> {
+    if (hot.skipped === 0) {
+      this.hotPartial = false;
       return;
     }
 
     // Every record rejected is blindness, not a partial skip; it has its own
     // alert with its own remedy.
-    if (skipped === received) return;
+    if (hot.skipped === hot.received) return;
 
     this.logger.error(
-      `Dropped ${skipped} of ${received} record(s) as unmappable; the rest ` +
-        'were ingested, so nothing else reports this',
+      `Dropped ${hot.skipped} of ${hot.received} record(s) from the live page ` +
+        'as unmappable; the rest were ingested, so nothing else reports this',
     );
 
-    if (this.feedPartial) return;
-    this.feedPartial = true;
-    await this.telegram.send(formatSkippedRecordsAlert(skipped, received));
+    if (this.hotPartial) return;
+    this.hotPartial = true;
+    await this.telegram.send(
+      formatSkippedRecordsAlert(hot.skipped, hot.received),
+    );
+  }
+
+  /**
+   * The drained day's half, re-armed ONLY by a drain that came back clean.
+   *
+   * No wholly-rejected suppression here, deliberately. `reportBlindFeed`
+   * inspects the hot page and nothing else — it is the path that runs every 2s
+   * and goes permanently silent — so a day endpoint whose every record is
+   * refused has no other voice at all. Staying quiet about it to mirror the hot
+   * rule would trade one duplicate message for one missing one.
+   */
+  private async reportDrainSkips(drain: SkipTally): Promise<void> {
+    if (drain.skipped === 0) {
+      this.drainPartial = false;
+      return;
+    }
+
+    this.logger.error(
+      `Dropped ${drain.skipped} of ${drain.received} record(s) from the ` +
+        'drained IST day(s) as unmappable; nothing else reports this',
+    );
+
+    if (this.drainPartial) return;
+    this.drainPartial = true;
+    await this.telegram.send(
+      formatSkippedRecordsAlert(drain.skipped, drain.received),
+    );
   }
 
   /**

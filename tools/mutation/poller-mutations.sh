@@ -33,7 +33,15 @@
 #      channel that reports it. Weaken the edge and the operator gets ~1800
 #      messages an hour and mutes the bot; remove it and they get none. The
 #      partial skip is the quietest of the four: the fetch succeeded, filings
-#      arrived, the breaker is clean and the cursor moved.
+#      arrived, the breaker is clean and the cursor moved. It is also the one
+#      that needs TWO latches rather than one, because it watches two surfaces
+#      on two schedules: a drain-originated skip is only ever visible on a drain
+#      poll, and the ~150 clean hot polls between two sweeps re-armed a shared
+#      latch every time — 7 alerts for one persistently unmappable record over
+#      30 simulated minutes, ~288/day at the shipped interval. An edge trigger
+#      only suppresses a repeat if the latch SURVIVES between two observations
+#      of the condition, so what may re-arm a latch is mutated as hard as the
+#      latch itself.
 #
 # All five are the kind a passing suite can imply without proving. So this
 # script breaks the implementation one way at a time, re-runs the suite, and
@@ -77,9 +85,10 @@
 #     redaction and its configured/unconfigured verdict ARE mutated, because
 #     both are load-bearing.
 #
-# Tally, so a report can quote it without recounting: 61 mutations against the
-# poller and 12 against the configuration, plus 7 independence checks = 80
-# `check` calls.
+# Tally, so a report can quote it without recounting: 64 mutations against the
+# poller and 12 against the configuration, plus 8 independence checks = 84
+# `check` calls. (Counted with `grep -c '^check '`; the previous header claimed
+# 80 against an actual 78.)
 
 set -uo pipefail
 
@@ -449,23 +458,54 @@ check "blind feed never announced (an id-format change silences the feed)" "$POL
 echo ""
 echo "=== the partial-skip alarm: nineteen of twenty looks entirely healthy ==="
 
-perl -0pi -e 's/    await this\.reportSkippedRecords\(skipped, received\);\n\n//' "$POLL"
+perl -0pi -e 's/    await this\.reportSkippedRecords\(hotTally, drainTally\);\n\n//' "$POLL"
 check "dropped records never announced (a mapper drift is invisible)" "$POLL" poller.service
 
-perl -0pi -e 's/    if \(this\.feedPartial\) return;\n    this\.feedPartial = true;\n//' "$POLL"
-check "alarm not edge-triggered (a drifted mapper floods the channel)" "$POLL" poller.service
+perl -0pi -e 's/    if \(this\.hotPartial\) return;\n    this\.hotPartial = true;\n//' "$POLL"
+check "hot alarm not edge-triggered (a drifted mapper floods the channel)" "$POLL" poller.service
 
-perl -0pi -e 's/    if \(skipped === 0\) \{\n      this\.feedPartial = false;\n      return;\n    \}/    if (skipped === 0) return;/' "$POLL"
-check "latch never re-armed (a second drift episode is never reported)" "$POLL" poller.service
+perl -0pi -e 's/    if \(hot\.skipped === 0\) \{\n      this\.hotPartial = false;\n      return;\n    \}/    if (hot.skipped === 0) return;/' "$POLL"
+check "hot latch never re-armed (a second drift episode is never reported)" "$POLL" poller.service
 
-perl -0pi -e 's/    if \(skipped === received\) return;\n\n//' "$POLL"
+perl -0pi -e 's/    if \(hot\.skipped === hot\.received\) return;\n\n//' "$POLL"
 check "a wholly rejected page double-reported (two alerts, two remedies)" "$POLL" poller.service
 
-perl -0pi -e 's/        skipped \+= drain\.skipped;\n//' "$POLL"
-check "drain skips not counted (a day-wide mapper drift reads as one bad record)" "$POLL" poller.service
+perl -0pi -e 's/        drainTally = \{ skipped: drain\.skipped, received: drain\.received \};\n//' "$POLL"
+check "drain skips not counted (a day-wide mapper drift is never reported)" "$POLL" poller.service
 
 perl -0pi -e 's/      skipped,\n      deferred: false,/      skipped: 0,\n      deferred: false,/' "$POLL"
 check "skip count never reported (the caller cannot alarm on it either)" "$POLL" poller.service
+
+echo ""
+echo "=== the partial-skip alarm latches PER SURFACE, or it re-alerts forever ==="
+echo "A drain-originated skip is observable on drain polls alone, and the 5-minute"
+echo "sweeps are ~150 clean hot polls apart. One shared latch fed the SUM of both"
+echo "surfaces is therefore re-armed ~150 times between consecutive sightings of"
+echo "the condition it suppresses: measured at 7 alerts for one persistently"
+echo "unmappable record over 30 simulated minutes, ~288/day at the shipped"
+echo "interval — the flood that mutes the channel every other alert shares."
+
+# The shipped defect, restored exactly: one latch for both surfaces, so a clean
+# hot poll re-arms a drain-originated alert and every sweep re-alerts.
+perl -0pi -e 's/this\.drainPartial/this.hotPartial/g' "$POLL"
+check "one latch for both surfaces (every scheduled drain re-alerts)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(this\.drainPartial\) return;\n    this\.drainPartial = true;\n//' "$POLL"
+check "drain alarm not edge-triggered (a bad day endpoint floods the channel)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(drain\.skipped === 0\) \{\n      this\.drainPartial = false;\n      return;\n    \}/    if (drain.skipped === 0) return;/' "$POLL"
+check "drain latch never re-armed (a second day-wide drift is never reported)" "$POLL" poller.service
+
+# A non-observation read as a clean drain. `null` means no drain was due or the
+# one that ran threw; treating either as evidence of recovery re-arms the latch
+# on polls that never looked at the day, which is the shipped defect again.
+perl -0pi -e 's/    let drainTally: SkipTally \| null = null;/    let drainTally: SkipTally | null = { skipped: 0, received: 0 };/' "$POLL"
+check "a poll that never drained re-arms the drain latch (re-alerts every sweep)" "$POLL" poller.service
+
+# A wholly rejected DRAINED DAY has no other voice: reportBlindFeed inspects the
+# hot page alone, so mirroring the hot suppression here loses the alert entirely.
+perl -0pi -e 's/    if \(drain\.skipped === 0\) \{/    if (drain.skipped === drain.received) return;\n    if (drain.skipped === 0) \{/' "$POLL"
+check "a wholly rejected drained day silenced (blind-feed never sees the drain)" "$POLL" poller.service
 
 echo ""
 echo "=== the drain-failure alarm: the hole stays open and nothing else notices ==="
@@ -563,6 +603,9 @@ check "branches on isDegraded, breaker suite only" "$POLL" poller.service -t "ci
 
 perl -0pi -e 's/    let candidates: readonly Filing\[\] = page\.filings;/    const fresh = new Set(newSeqIds);\n    let candidates: readonly Filing[] = page.filings.filter((f) =>\n      fresh.has(f.seqId),\n    );/' "$POLL"
 check "cursor as newness filter, out-of-order suite only" "$POLL" poller.service -t "out-of-order dissemination"
+
+perl -0pi -e 's/this\.drainPartial/this.hotPartial/g' "$POLL"
+check "one latch for both surfaces, per-surface suite only" "$POLL" poller.service -t "latched per fetch surface"
 
 perl -0pi -e 's/  if \(!Number\.isFinite\(value\)\) \{\n    throw new Error\(\n      `\$\{key\} must be a finite number.*?\n    \);\n  \}\n\n  if \(!Number\.isInteger\(value\)\) \{\n    throw new Error\(`\$\{key\} must be a whole number, but was "\$\{raw\}"\.`\);\n  \}\n\n//s' "$CONF"
 check "bare lower bound, numeric-validation suite only" "$CONF" configuration -t "numeric validation"

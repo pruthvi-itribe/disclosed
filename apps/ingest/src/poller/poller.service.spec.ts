@@ -1864,3 +1864,118 @@ describe('PollerService: records the mapper dropped', () => {
     ).toHaveLength(0);
   });
 });
+
+/**
+ * The two fetch surfaces are latched SEPARATELY, and this suite is why.
+ *
+ * A skip that originates on a DRAINED DAY can only ever be observed on a drain
+ * poll, and the drains are 5 minutes apart with ~150 hot polls between them. A
+ * single shared latch re-armed by any poll reporting zero skips is therefore
+ * re-armed ~150 times between consecutive observations of the very condition it
+ * exists to suppress, so every scheduled drain re-alerts: one persistently
+ * unmappable record on a drained day produced 7 alerts across 30 simulated
+ * minutes, and ~288 a day at the shipped interval. The channel that carries
+ * every other operator alert gets muted, and the pipeline goes dark exactly
+ * where the rest of this class works hardest to keep it audible.
+ *
+ * The property pinned here: ONE persistently unmappable record produces ONE
+ * alert, however many hot polls and scheduled drains elapse — while a genuine
+ * recovery followed by a fresh episode still speaks.
+ */
+describe('PollerService: skips are latched per fetch surface', () => {
+  const skipAlerts = (telegram: StubTelegram): string[] =>
+    telegram.sent.filter((m) => m.includes('INGEST RECORDS SKIPPED'));
+
+  const at = (ms: number): Date => new Date(IN_WINDOW.getTime() + ms);
+
+  /** Every hot tick across `minutes`, at the shipped 2s cadence. */
+  const runFor = async (service: PollerService, minutes: number) => {
+    for (let ms = 0; ms <= minutes * 60_000; ms += HOT) {
+      await service.tick(at(ms));
+    }
+  };
+
+  it('alerts once for a record only the drain can see, across many drains', async () => {
+    const { adapter, telegram, service } = build();
+    // The live page is spotless on every one of the ~900 polls below.
+    adapter.latest = page([makeFiling(30)]);
+    // The drained day carries one record the mapper refuses, every time.
+    adapter.day = page([makeFiling(30)], 2);
+
+    // 30 simulated minutes: the cold-start drain plus six scheduled sweeps.
+    await runFor(service, 30);
+
+    expect(skipAlerts(telegram)).toHaveLength(1);
+    expect(skipAlerts(telegram)[0]).toContain('1 of 2');
+  });
+
+  it('alerts once for a record only the hot page can see, across many drains', async () => {
+    // The mirror image: a clean drain must not re-arm a hot-page alert either.
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)], 2);
+    adapter.day = page([makeFiling(30)]);
+
+    await runFor(service, 30);
+
+    expect(skipAlerts(telegram)).toHaveLength(1);
+  });
+
+  it('re-alerts when a clean drain is followed by a fresh drain episode', async () => {
+    // The latch must not simply be stuck on: a genuine recovery re-arms it.
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)]);
+    adapter.day = page([makeFiling(30)], 2);
+
+    await service.tick(at(0));
+    adapter.day = page([makeFiling(30)]);
+    await service.tick(at(DRAIN));
+    adapter.day = page([makeFiling(30)], 4);
+    await service.tick(at(2 * DRAIN));
+
+    expect(skipAlerts(telegram)).toHaveLength(2);
+    expect(skipAlerts(telegram)[1]).toContain('3 of 4');
+  });
+
+  it('does not let a drain that failed re-arm the drain latch', async () => {
+    // A drain that threw observed nothing. Treating "no observation" as "came
+    // back clean" is the same defect wearing a different hat.
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)]);
+    adapter.day = page([makeFiling(30)], 2);
+
+    await service.tick(at(0));
+    adapter.failDay = new Error('drain 503');
+    await service.tick(at(DRAIN));
+    await service.tick(at(2 * DRAIN));
+    adapter.failDay = null;
+    await service.tick(at(3 * DRAIN));
+
+    expect(skipAlerts(telegram)).toHaveLength(1);
+  });
+
+  it('reports the two surfaces separately when both are dropping records', async () => {
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)], 2);
+    adapter.day = page([makeFiling(30), makeFiling(20)], 5);
+
+    const result = await service.tick(IN_WINDOW);
+
+    expect(result.skipped).toBe(4);
+    expect(skipAlerts(telegram)).toHaveLength(2);
+    expect(skipAlerts(telegram)[0]).toContain('1 of 2');
+    expect(skipAlerts(telegram)[1]).toContain('3 of 5');
+  });
+
+  it('announces a drained day the mapper rejected outright', async () => {
+    // The blind-feed alert watches the HOT page only, so a day endpoint whose
+    // every record is refused has no other voice.
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)]);
+    adapter.day = page([], 6);
+
+    await service.tick(IN_WINDOW);
+
+    expect(skipAlerts(telegram)).toHaveLength(1);
+    expect(skipAlerts(telegram)[0]).toContain('6 of 6');
+  });
+});
