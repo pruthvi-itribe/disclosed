@@ -17,6 +17,7 @@ const OUT_OF_WINDOW = new Date('2026-08-05T20:00:00.000Z');
 
 const HOT = 2000;
 const IDLE = 30000;
+const DRAIN = 300000;
 const BURST = 8;
 const FAILURES = 3;
 
@@ -197,6 +198,7 @@ const build = (
     {
       hotIntervalMs: HOT,
       idleIntervalMs: IDLE,
+      drainIntervalMs: DRAIN,
       burstThreshold: BURST,
       ...options,
     },
@@ -259,7 +261,9 @@ describe('PollerService: ingest and drain', () => {
   it('drains on a hole even when the page carries no new ids', async () => {
     // `holeDetected` is independent of `newSeqIds.length`: a cold start reports
     // a hole with an empty list. Inferring the drain from the id count instead
-    // would skip the one drain that establishes the baseline.
+    // would skip the one drain that establishes the baseline — and since the
+    // scheduled sweep would re-pull the day anyway, the REASON is what makes
+    // that regression visible.
     const { adapter, service } = build();
     adapter.latest = page([]);
     adapter.day = page([makeFiling(11), makeFiling(12)]);
@@ -267,6 +271,7 @@ describe('PollerService: ingest and drain', () => {
     const result = await service.tick(IN_WINDOW);
 
     expect(result.drained).toBe(true);
+    expect(result.drainReason).toBe('rollover');
     expect(adapter.dayCalls).toBe(1);
     expect(result.ingested).toBe(2);
   });
@@ -296,17 +301,24 @@ describe('PollerService: ingest and drain', () => {
 
 describe('PollerService: cursor discipline', () => {
   it('treats a stored cursor of 0 as a real cursor, not as a cold start', async () => {
-    // A truthiness check on the cursor reads 0 as "no cursor" and re-drains the
-    // whole day on every poll, forever.
+    // A truthiness check on the cursor reads 0 as "no cursor" and reports a
+    // rollover on every poll, forever. The first tick after a restart DOES
+    // drain — every restart reconciles, because that is when the gap is widest
+    // — so the distinguishing fact is the REASON, not whether a drain ran.
     const { adapter, repo, service } = build();
     repo.stored.set(0, makeFiling(0));
     await service.initialise();
     adapter.latest = page([makeFiling(0)]);
 
-    const result = await service.tick(IN_WINDOW);
+    const first = await service.tick(IN_WINDOW);
+    expect(first.drainReason).toBe('periodic');
 
-    expect(result.drained).toBe(false);
-    expect(adapter.dayCalls).toBe(0);
+    // A cold start would report a rollover on this poll too, and every poll
+    // after it. A real cursor of 0 overlaps the page and reports none.
+    const second = await service.tick(IN_WINDOW);
+
+    expect(second.drainReason).toBeNull();
+    expect(adapter.dayCalls).toBe(1);
   });
 
   it('never advances the cursor from an empty page', async () => {
@@ -1391,6 +1403,209 @@ describe('PollerService: out-of-order dissemination', () => {
     adapter.latest = pageOf(PAGE_AFTER_BLOCK);
     await service.tick(JUL_06);
 
+    expect(adapter.dayCalls).toBe(0);
+  });
+});
+
+/**
+ * THE SCHEDULED DRAINS. The design spec asked for two — "Scheduled drain every
+ * 5 minutes regardless. Final drain at 23:30 closes the day" — and both were
+ * dropped when the plan was written.
+ *
+ * Nothing noticed, because the rollover drain looks like it covers the same
+ * ground. Measured over the recorded corpus it does not: no 2-second window
+ * holds more than 6 filings and no 30-second window more than 9, against a
+ * 20-record page, so ZERO windows can roll the page at the poll cadence.
+ * Replaying all 32 days through this service fires `holeDetected` four times —
+ * cold start and nothing else. The reconciliation the no-loss guarantee rests
+ * on was running roughly once per process lifetime.
+ */
+describe('PollerService: scheduled drains', () => {
+  const DRAIN_MS = 300_000;
+  const later = (from: Date, ms: number): Date => new Date(from.getTime() + ms);
+  /** 23:30 IST on 2026-08-05 === 18:00:00Z. */
+  const CLOSING = new Date('2026-08-05T18:00:00.000Z');
+
+  /** A harness already past its cold-start drain, with the day endpoint clean. */
+  const settled = async (): Promise<Harness> => {
+    const harness = build({ drainIntervalMs: DRAIN_MS });
+    harness.adapter.latest = page([makeFiling(30)]);
+    harness.adapter.day = page([makeFiling(30)]);
+    await harness.service.tick(IN_WINDOW);
+    harness.adapter.dayCalls = 0;
+    return harness;
+  };
+
+  it('re-pulls the day once the drain interval has elapsed, with no rollover', async () => {
+    const { adapter, service } = await settled();
+
+    const before = await service.tick(later(IN_WINDOW, DRAIN_MS - 1));
+    expect(before.drainReason).toBeNull();
+    expect(adapter.dayCalls).toBe(0);
+
+    const due = await service.tick(later(IN_WINDOW, DRAIN_MS));
+
+    expect(due.drainReason).toBe('periodic');
+    expect(due.drained).toBe(true);
+    expect(adapter.dayCalls).toBe(1);
+  });
+
+  it('recovers filings the hot page never carried', async () => {
+    const { adapter, repo, service } = await settled();
+    // 41 and 42 exist on the exchange but never appeared on the 20-record page.
+    adapter.latest = page([makeFiling(43), makeFiling(30)]);
+    adapter.day = page([
+      makeFiling(43),
+      makeFiling(42),
+      makeFiling(41),
+      makeFiling(30),
+    ]);
+
+    const result = await service.tick(later(IN_WINDOW, DRAIN_MS));
+
+    expect(result.drainReason).toBe('periodic');
+    expect(repo.stored.has(41)).toBe(true);
+    expect(repo.stored.has(42)).toBe(true);
+  });
+
+  it('routes recovered filings through the same alert gate, never around it', async () => {
+    // The cold-start window is what stops a reconciliation drain flooding the
+    // chat. A scheduled drain that alerted directly would bypass it.
+    const { adapter, alerts, service } = await settled();
+    adapter.day = page([makeFiling(41), makeFiling(30)]);
+    alerts.batches.length = 0;
+
+    await service.tick(later(IN_WINDOW, DRAIN_MS));
+
+    expect(alerts.batches).toHaveLength(1);
+    expect(alerts.batches[0].map((f) => f.seqId)).toEqual([41]);
+  });
+
+  it('restarts the interval from the drain, so it does not fire every tick', async () => {
+    const { adapter, service } = await settled();
+
+    await service.tick(later(IN_WINDOW, DRAIN_MS));
+    const soonAfter = await service.tick(later(IN_WINDOW, DRAIN_MS + 1000));
+
+    expect(soonAfter.drainReason).toBeNull();
+    expect(adapter.dayCalls).toBe(1);
+  });
+
+  it('reconciles the day at 23:30 IST', async () => {
+    const { adapter, service } = await settled();
+
+    const result = await service.tick(CLOSING);
+
+    expect(result.drainReason).toBe('closing');
+    expect(adapter.dayCalls).toBe(1);
+    expect(adapter.lastDayArg).toBe(CLOSING);
+  });
+
+  it('closes each IST day exactly once', async () => {
+    const { adapter, service } = await settled();
+
+    await service.tick(CLOSING);
+    // Every subsequent tick of the same IST day, right through to 23:59.
+    for (let i = 1; i <= 5; i += 1) {
+      await service.tick(later(CLOSING, i * 60_000));
+    }
+
+    const closings = adapter.dayCalls;
+    // The next IST day gets its own closing drain.
+    const nextDay = await service.tick(later(CLOSING, 24 * 60 * 60 * 1000));
+
+    expect(nextDay.drainReason).toBe('closing');
+    expect(closings).toBeLessThanOrEqual(2);
+  });
+
+  it('lets a detected rollover outrank a scheduled drain, and drains once', async () => {
+    const { adapter, service } = await settled();
+    adapter.latest = page([makeFiling(90)]);
+    adapter.day = page([makeFiling(90), makeFiling(50)]);
+
+    const result = await service.tick(later(IN_WINDOW, DRAIN_MS));
+
+    expect(result.drainReason).toBe('rollover');
+    expect(adapter.dayCalls).toBe(1);
+  });
+
+  it('uses the existing drain-failure alert and its latch, not a second path', async () => {
+    const { adapter, telegram, service } = await settled();
+    adapter.failDay = new Error('drain 503 Service Unavailable');
+
+    await service.tick(later(IN_WINDOW, DRAIN_MS));
+    await service.tick(later(IN_WINDOW, 2 * DRAIN_MS));
+    await service.tick(later(IN_WINDOW, 3 * DRAIN_MS));
+
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0]).toContain('INGEST DRAIN FAILED');
+    expect(telegram.sent[0]).toContain('503 Service Unavailable');
+  });
+
+  it('retries a failed scheduled drain on the interval, not on every poll', async () => {
+    // Retrying every 2s against a day endpoint that is already refusing is a
+    // request storm arriving through the no-loss path.
+    const { adapter, service } = await settled();
+    adapter.failDay = new Error('drain 503');
+
+    await service.tick(later(IN_WINDOW, DRAIN_MS));
+    await service.tick(later(IN_WINDOW, DRAIN_MS + 2000));
+    await service.tick(later(IN_WINDOW, DRAIN_MS + 4000));
+
+    expect(adapter.dayCalls).toBe(1);
+  });
+
+  it('does not hold the cursor when a scheduled drain fails', async () => {
+    // The hot page proved continuity on its own, so there is no hole to hold
+    // the cursor for. Holding it would manufacture a rollover on the next poll
+    // and turn one failing endpoint into a permanent drain loop.
+    const { adapter, service } = await settled();
+    adapter.failDay = new Error('drain 503');
+    adapter.latest = page([makeFiling(31), makeFiling(30)]);
+
+    await service.tick(later(IN_WINDOW, DRAIN_MS));
+
+    adapter.failDay = null;
+    adapter.latest = page([makeFiling(32), makeFiling(31)]);
+    const next = await service.tick(later(IN_WINDOW, DRAIN_MS + 2000));
+
+    expect(next.drainReason).toBeNull();
+    expect(next.drained).toBe(false);
+  });
+
+  it('never runs while a poll is still in flight', async () => {
+    const { adapter, service } = await settled();
+    const gate = new Gate();
+    adapter.gate = gate;
+
+    const first = service.tick(later(IN_WINDOW, DRAIN_MS));
+    await flush();
+    const second = await service.tick(later(IN_WINDOW, DRAIN_MS));
+
+    expect(second.deferred).toBe(true);
+    expect(second.drainReason).toBeNull();
+    expect(adapter.dayCalls).toBe(0);
+
+    gate.open();
+    await first;
+  });
+
+  it('reports no drain reason on a poll that did not drain', async () => {
+    const { service } = await settled();
+
+    const result = await service.tick(IN_WINDOW);
+
+    expect(result.drained).toBe(false);
+    expect(result.drainReason).toBeNull();
+  });
+
+  it('reports no drain reason when the fetch itself failed', async () => {
+    const { adapter, service } = await settled();
+    adapter.failLatest = new Error('network down');
+
+    const result = await service.tick(later(IN_WINDOW, DRAIN_MS));
+
+    expect(result.drainReason).toBeNull();
     expect(adapter.dayCalls).toBe(0);
   });
 });

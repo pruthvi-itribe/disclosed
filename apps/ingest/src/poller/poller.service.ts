@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   detectRollover,
+  istDayKey,
   nextPollDelayMs,
+  scheduledDrainReason,
+  type DrainReason,
   type FetchResult,
   type Filing,
   type FilingRepository,
@@ -27,6 +30,11 @@ export interface PollerOptions {
   hotIntervalMs: number;
   idleIntervalMs: number;
   burstThreshold: number;
+  /**
+   * How long between scheduled reconciliation drains. The rollover drain alone
+   * is not enough — see `reconcile` below for the measurement.
+   */
+  drainIntervalMs: number;
 }
 
 export interface PollResult {
@@ -34,8 +42,10 @@ export interface PollResult {
   ingested: number;
   /** Filings the alert service ATTEMPTED to send. Not proof of delivery. */
   alerted: number;
-  /** True when the page could not prove continuity and the day was re-pulled. */
+  /** True when the IST day was re-pulled, for any of the three reasons. */
   drained: boolean;
+  /** Which reason drove the re-pull, or null when there was none. */
+  drainReason: DrainReason | null;
   /**
    * True when this tick did no work because another poll still held the lock.
    * Distinguished from a quiet poll on purpose: "nothing arrived" and "we never
@@ -106,9 +116,20 @@ const mergeById = (a: readonly Filing[], b: readonly Filing[]): Filing[] => {
  *     stays false because the page's oldest id is below the cursor, so nothing
  *     drains and nothing is logged. The cursor's real and only job is the
  *     rollover test below.
- *   - ONE POLL AT A TIME. A hard Akamai block takes ~30s to reject (two 15s
- *     timeouts) against a 2s interval, so an unguarded caller stacks ~15 polls
- *     during exactly the outage where NSE is least willing to serve.
+ *   - THE DAY IS RECONCILED ON A SCHEDULE, NOT ONLY ON ROLLOVER. A rollover is
+ *     rarer than the design assumed: measured over the recorded corpus, no
+ *     2-second window holds more than 6 filings and no 30-second window more
+ *     than 9, against a 20-record page, so the page CANNOT roll at the poll
+ *     cadence. Replaying all 32 days fires `holeDetected` four times — cold
+ *     start and nothing else. Left to the rollover alone the reconciliation
+ *     ran once per process lifetime, so the spec's periodic drain (every 5
+ *     minutes) and closing drain (23:30 IST) are both here, sharing this one
+ *     code path, this one in-flight guard and this one failure alert.
+ *   - ONE POLL AT A TIME, AND ONE DRAIN AT A TIME. A hard Akamai block takes
+ *     ~30s to reject (two 15s timeouts) against a 2s interval, so an unguarded
+ *     caller stacks ~15 polls during exactly the outage where NSE is least
+ *     willing to serve. Every drain runs inside that same guard, so a scheduled
+ *     drain can never overlap a hot poll or another drain.
  *   - NO SECOND RETRY. `NseAdapter` already spends one retry on a 401/403 after
  *     refreshing the session. A retry here would multiply against that one.
  *   - THE CURSOR ONLY MOVES FORWARD, AND ONLY ON PROOF. Not from an empty page,
@@ -139,6 +160,12 @@ export class PollerService {
    * performance filter only — a miss falls through to `insertNew`.
    */
   private readonly recent = new RecentSeqIds();
+
+  /** Epoch ms of the last drain of any kind. `null` means none has run yet. */
+  private lastDrainAtMs: number | null = null;
+
+  /** IST day the closing drain last reconciled, so it runs once per day. */
+  private lastClosingDay: string | null = null;
 
   private running = false;
   private polling = false;
@@ -268,24 +295,50 @@ export class PollerService {
     let dayFilings: readonly Filing[] = [];
     let drainFailed = false;
 
-    // The drain is driven by `holeDetected` alone. It is independent of
-    // `newSeqIds.length` and is true with an empty list on a cold start, which
-    // is the one drain that establishes the baseline.
-    if (holeDetected) {
-      this.logger.warn('Rollover detected; draining the IST day');
+    // A rollover outranks a schedule: it is the only reason that means a hole
+    // is already open. `holeDetected` is driven by the overlap rule alone — it
+    // is independent of `newSeqIds.length` and is true with an empty list on a
+    // cold start, which is the one drain that establishes the baseline.
+    const reason: DrainReason | null = holeDetected
+      ? 'rollover'
+      : scheduledDrainReason({
+          now,
+          lastDrainAtMs: this.lastDrainAtMs,
+          lastClosingDay: this.lastClosingDay,
+          drainIntervalMs: this.options.drainIntervalMs,
+        });
+
+    if (reason !== null) {
+      this.logger.log(`Draining the IST day (${reason})`);
+      // Recorded BEFORE the attempt and for every outcome, including a failure.
+      // A day endpoint that is refusing must be retried on the interval, not on
+      // every 2s poll: the latter is a request storm arriving through the
+      // no-loss path against an endpoint that is already unhappy. A rollover
+      // keeps its own retry regardless — `holeDetected` stays true until the
+      // hole closes — so this only ever throttles the scheduled sweeps.
+      this.lastDrainAtMs = now.getTime();
+      if (reason === 'closing') this.lastClosingDay = istDayKey(now);
+
       try {
         const day = await this.adapter.fetchDay(now);
         dayFilings = day.filings;
+        // The set difference is the database's job, not ours: every row is
+        // offered and the unique index rejects the ones already held.
         candidates = mergeById(page.filings, dayFilings);
         this.drainFailing = false;
       } catch (error) {
-        // The hole is unresolved. Store what the hot page did give us, but
-        // leave the cursor where it is so the next poll detects the same hole
-        // and retries rather than stepping over the missing records.
         drainFailed = true;
         await this.reportDrainFailure(error);
       }
     }
+
+    // A hole that is still open must hold the cursor: the next poll has to
+    // detect the same hole and retry rather than stepping over the missing
+    // records. A failed SCHEDULED drain must not, because the hot page proved
+    // continuity on its own — holding the cursor there would manufacture a
+    // rollover on the next poll and turn one failing endpoint into a permanent
+    // drain loop.
+    const holdCursor = drainFailed && reason === 'rollover';
 
     const offered = this.recent.unseen(candidates);
 
@@ -308,14 +361,15 @@ export class PollerService {
 
     const alerted = await this.alertOn(inserted, now);
 
-    if (!drainFailed) {
+    if (!holdCursor) {
       this.advanceCursor([...page.filings, ...dayFilings]);
     }
 
     return {
       ingested: inserted.length,
       alerted,
-      drained: holeDetected,
+      drained: reason !== null,
+      drainReason: reason,
       deferred: false,
       // A FAILED drain must not feed the burst rule. `newSeqIds` is derived
       // from the cursor, and a failed drain HOLDS the cursor — so the same ids
@@ -511,6 +565,7 @@ export class PollerService {
       ingested: 0,
       alerted: 0,
       drained: false,
+      drainReason: null,
       deferred,
       delayMs: this.delayFor(0, now),
     };

@@ -97,6 +97,7 @@ export const FILING_MODEL = 'Filing';
         new PollerService(adapter, repository, alerts, telegram, breaker, {
           hotIntervalMs: config.getOrThrow<number>('hotIntervalMs'),
           idleIntervalMs: config.getOrThrow<number>('idleIntervalMs'),
+          drainIntervalMs: config.getOrThrow<number>('drainIntervalMs'),
           burstThreshold: config.getOrThrow<number>('burstThreshold'),
         }),
     },

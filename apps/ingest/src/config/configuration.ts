@@ -13,6 +13,7 @@ export interface IngestConfig {
   readonly telegramChatId: string;
   readonly hotIntervalMs: number;
   readonly idleIntervalMs: number;
+  readonly drainIntervalMs: number;
   readonly alertWindowMs: number;
   readonly burstThreshold: number;
   readonly failureThreshold: number;
@@ -23,6 +24,7 @@ export interface IngestConfig {
 export const NUMERIC_KEYS = [
   'NSE_HOT_INTERVAL_MS',
   'NSE_IDLE_INTERVAL_MS',
+  'NSE_DRAIN_INTERVAL_MS',
   'ALERT_WINDOW_MS',
   'BURST_THRESHOLD',
   'FAILURE_THRESHOLD',
@@ -38,6 +40,12 @@ export const CONFIG_DEFAULTS = {
   MONGO_URI: 'mongodb://localhost:27017/redbox',
   NSE_HOT_INTERVAL_MS: 2_000,
   NSE_IDLE_INTERVAL_MS: 30_000,
+  // Five minutes, from the design spec. The corpus supports it: no window
+  // shorter than a minute can roll the 20-record page, but a five-minute one
+  // peaks at 26 filings — so this is the shortest span where reconciliation
+  // has anything to find, and re-pulling the day more often than that buys
+  // nothing but load.
+  NSE_DRAIN_INTERVAL_MS: 300_000,
   ALERT_WINDOW_MS: 600_000,
   BURST_THRESHOLD: 8,
   FAILURE_THRESHOLD: 3,
@@ -143,6 +151,7 @@ export const loadConfig = (
   telegramChatId: readString('TELEGRAM_CHAT_ID', env, ''),
   hotIntervalMs: readNumeric('NSE_HOT_INTERVAL_MS', env),
   idleIntervalMs: readNumeric('NSE_IDLE_INTERVAL_MS', env),
+  drainIntervalMs: readNumeric('NSE_DRAIN_INTERVAL_MS', env),
   alertWindowMs: readNumeric('ALERT_WINDOW_MS', env),
   burstThreshold: readNumeric('BURST_THRESHOLD', env),
   failureThreshold: readNumeric('FAILURE_THRESHOLD', env),
@@ -171,6 +180,7 @@ export const describeConfig = (config: IngestConfig): string =>
     `mongo=${redactCredentials(config.mongoUri)}`,
     `hot=${config.hotIntervalMs}ms`,
     `idle=${config.idleIntervalMs}ms`,
+    `drain=${config.drainIntervalMs}ms`,
     `window=${config.alertWindowMs}ms`,
     `burst=${config.burstThreshold}`,
     `failures=${config.failureThreshold}`,

@@ -24,6 +24,7 @@ describe('loadConfig: defaults', () => {
     ['mongoUri', CONFIG_DEFAULTS.MONGO_URI],
     ['hotIntervalMs', CONFIG_DEFAULTS.NSE_HOT_INTERVAL_MS],
     ['idleIntervalMs', CONFIG_DEFAULTS.NSE_IDLE_INTERVAL_MS],
+    ['drainIntervalMs', CONFIG_DEFAULTS.NSE_DRAIN_INTERVAL_MS],
     ['alertWindowMs', CONFIG_DEFAULTS.ALERT_WINDOW_MS],
     ['burstThreshold', CONFIG_DEFAULTS.BURST_THRESHOLD],
     ['failureThreshold', CONFIG_DEFAULTS.FAILURE_THRESHOLD],
@@ -171,6 +172,7 @@ describe('loadConfig: numeric validation', () => {
       withEnv({
         NSE_HOT_INTERVAL_MS: '11',
         NSE_IDLE_INTERVAL_MS: '22',
+        NSE_DRAIN_INTERVAL_MS: '66',
         ALERT_WINDOW_MS: '33',
         BURST_THRESHOLD: '44',
         FAILURE_THRESHOLD: '55',
@@ -179,6 +181,7 @@ describe('loadConfig: numeric validation', () => {
 
     expect(config.hotIntervalMs).toBe(11);
     expect(config.idleIntervalMs).toBe(22);
+    expect(config.drainIntervalMs).toBe(66);
     expect(config.alertWindowMs).toBe(33);
     expect(config.burstThreshold).toBe(44);
     expect(config.failureThreshold).toBe(55);
@@ -265,6 +268,7 @@ describe('describeConfig', () => {
 
     expect(line).toContain('hot=2000ms');
     expect(line).toContain('idle=30000ms');
+    expect(line).toContain('drain=300000ms');
     expect(line).toContain('window=600000ms');
     expect(line).toContain('burst=8');
     expect(line).toContain('failures=3');

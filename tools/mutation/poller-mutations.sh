@@ -17,10 +17,13 @@
 #      It may only move on proof: not from an empty page, not past a drain that
 #      failed, not past a write that threw, and never backwards. Each of those
 #      advances loses filings permanently and reports success.
-#   3. THE DRAIN DECISION. `holeDetected` is the whole no-loss guarantee, and it
-#      is independent of how many new ids the page carried — a cold start
-#      reports a hole with an empty list. Inferring the drain from the id count
-#      instead skips the one drain that establishes the baseline.
+#   3. THE DRAIN DECISION. Reconciliation is the whole no-loss guarantee, and
+#      `holeDetected` alone does not deliver it: replaying the 32-day corpus
+#      fires a rollover ONCE, so the scheduled sweep (every 5 minutes) and the
+#      closing drain (23:30 IST) carry it. `holeDetected` is still independent
+#      of how many new ids the page carried — a cold start reports a hole with
+#      an empty list — and inferring the drain from the id count skips the one
+#      drain that establishes the baseline.
 #   4. THE IN-FLIGHT GUARD. A hard Akamai block takes ~30s to reject against a
 #      2s interval, so an unguarded poller stacks ~15 requests during exactly
 #      the outage where NSE is least willing to serve.
@@ -72,8 +75,8 @@
 #     redaction and its configured/unconfigured verdict ARE mutated, because
 #     both are load-bearing.
 #
-# Tally, so a report can quote it without recounting: 45 mutations against the
-# poller and 12 against the configuration, plus 6 independence checks = 63
+# Tally, so a report can quote it without recounting: 51 mutations against the
+# poller and 12 against the configuration, plus 7 independence checks = 70
 # `check` calls.
 
 set -uo pipefail
@@ -276,7 +279,7 @@ check "cursor can go backwards (an older page re-offers everything above it)" "$
 perl -0pi -e 's/      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);/      this.advanceCursor(page.filings);/' "$POLL"
 check "drained ids ignored by the cursor (re-drains the day every poll)" "$POLL" poller.service
 
-perl -0pi -e 's/    if \(!drainFailed\) \{\n      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);\n    \}/    this.advanceCursor([...page.filings, ...dayFilings]);/' "$POLL"
+perl -0pi -e 's/    if \(!holdCursor\) \{\n      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);\n    \}/    this.advanceCursor([...page.filings, ...dayFilings]);/' "$POLL"
 check "advances past a failed drain (steps over the missing records)" "$POLL" poller.service
 
 perl -0pi -e 's/        inserted = await this\.repository\.insertNew\(offered\);/        inserted = await this.repository.insertNew(offered).catch(() => []);/' "$POLL"
@@ -310,17 +313,39 @@ check "batch remembered before the write is proven (a failed write is never retr
 echo ""
 echo "=== the drain decision is the no-loss guarantee ==="
 
-perl -0pi -e 's/    if \(holeDetected\) \{\n      this\.logger\.warn/    if (holeDetected \&\& newSeqIds.length > 0) {\n      this.logger.warn/' "$POLL"
+perl -0pi -e "s/    const reason: DrainReason \\| null = holeDetected\n      \\? 'rollover'/    const reason: DrainReason | null = holeDetected \&\& newSeqIds.length > 0\n      ? 'rollover'/" "$POLL"
 check "drain inferred from the new-id count (skips the cold-start baseline)" "$POLL" poller.service
 
 perl -0pi -e 's/        candidates = mergeById\(page\.filings, dayFilings\);/        candidates = page.filings;/' "$POLL"
 check "drained page discarded (the recovered filings are thrown away)" "$POLL" poller.service
 
-perl -0pi -e 's/      drained: holeDetected,/      drained: false,/' "$POLL"
+perl -0pi -e 's/      drained: reason !== null,/      drained: false,/' "$POLL"
 check "drain never reported (the caller cannot see a rollover happened)" "$POLL" poller.service
+
+perl -0pi -e 's/      drainReason: reason,/      drainReason: null,/' "$POLL"
+check "drain reason never reported (rollover and sweep become indistinguishable)" "$POLL" poller.service
 
 perl -0pi -e 's/        const day = await this\.adapter\.fetchDay\(now\);/        const day = await this.adapter.fetchDay(new Date());/' "$POLL"
 check "drains the wall-clock day, not the instant it was handed" "$POLL" poller.service
+
+echo ""
+echo "=== the scheduled drains: the reconciliation ran once per process ==="
+echo "No 2s window in the corpus holds more than 6 filings and no 30s window"
+echo "more than 9, against a 20-record page — so holeDetected fires once per"
+echo "process lifetime. Replaying 32 days: 1 rollover drain, 9,059 periodic,"
+echo "31 closing. Remove the schedule and the safety net is gone."
+
+perl -0pi -e 's/          lastDrainAtMs: this\.lastDrainAtMs,\n          lastClosingDay: this\.lastClosingDay,\n          drainIntervalMs: this\.options\.drainIntervalMs,/          lastDrainAtMs: now.getTime(),\n          lastClosingDay: istDayKey(now),\n          drainIntervalMs: Number.MAX_SAFE_INTEGER,/' "$POLL"
+check "scheduled drains removed (reconciliation runs once per process lifetime)" "$POLL" poller.service
+
+perl -0pi -e 's/      this\.lastDrainAtMs = now\.getTime\(\);\n//' "$POLL"
+check "drain clock never advanced (a re-pull of the whole day on every poll)" "$POLL" poller.service
+
+perl -0pi -e "s/      if \(reason === 'closing'\) this\.lastClosingDay = istDayKey\(now\);\n//" "$POLL"
+check "closing day never recorded (the day is re-closed on every tick after 23:30)" "$POLL" poller.service
+
+perl -0pi -e "s/    const holdCursor = drainFailed \&\& reason === 'rollover';/    const holdCursor = drainFailed;/" "$POLL"
+check "a failed scheduled drain holds the cursor (manufactures a permanent rollover loop)" "$POLL" poller.service
 
 echo ""
 echo "=== the in-flight guard ==="
@@ -459,10 +484,13 @@ echo "coverage that looks covered."
 perl -0pi -e 's/    if \(this\.polling\) \{.*?\n    \}\n\n    this\.polling = true;/    this.polling = true;/s' "$POLL"
 check "guard removed, in-flight suite only" "$POLL" poller.service -t "the in-flight guard"
 
-perl -0pi -e 's/    if \(holeDetected\) \{\n      this\.logger\.warn/    if (holeDetected \&\& newSeqIds.length > 0) {\n      this.logger.warn/' "$POLL"
+perl -0pi -e "s/    const reason: DrainReason \\| null = holeDetected\n      \\? 'rollover'/    const reason: DrainReason | null = holeDetected \&\& newSeqIds.length > 0\n      ? 'rollover'/" "$POLL"
 check "drain inferred from the count, drain suite only" "$POLL" poller.service -t "ingest and drain"
 
-perl -0pi -e 's/    if \(!drainFailed\) \{\n      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);\n    \}/    this.advanceCursor([...page.filings, ...dayFilings]);/' "$POLL"
+perl -0pi -e 's/          lastDrainAtMs: this\.lastDrainAtMs,\n          lastClosingDay: this\.lastClosingDay,\n          drainIntervalMs: this\.options\.drainIntervalMs,/          lastDrainAtMs: now.getTime(),\n          lastClosingDay: istDayKey(now),\n          drainIntervalMs: Number.MAX_SAFE_INTEGER,/' "$POLL"
+check "scheduled drains removed, scheduled-drain suite only" "$POLL" poller.service -t "scheduled drains"
+
+perl -0pi -e 's/    if \(!holdCursor\) \{\n      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);\n    \}/    this.advanceCursor([...page.filings, ...dayFilings]);/' "$POLL"
 check "advances past a failed drain, cursor suite only" "$POLL" poller.service -t "cursor discipline"
 
 perl -0pi -e 's/    if \(this\.breaker\.recordFailure\(\)\) \{/    this.breaker.recordFailure();\n    if (this.breaker.isDegraded()) {/' "$POLL"

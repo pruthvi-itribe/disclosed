@@ -12,6 +12,7 @@ export * from './source-adapter.interface';
 export * from './nse/nse.adapter';
 export * from './logic/rollover';
 export * from './logic/cadence';
+export * from './logic/drain-schedule';
 export * from './persistence/filing.schema';
 export * from './persistence/filing.repository';
 export * from './logic/alert-window';
