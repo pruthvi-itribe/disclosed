@@ -442,6 +442,15 @@ describe('formatFilingAlert: wire structure', () => {
     expect(output).toContain('Line one.\nLine two.');
   });
 
+  /**
+   * RATCHET, not a regression test. The template contains none of these words
+   * today and no mutation of the current code can make it contain them, so this
+   * cannot fail against any implementation that exists — deliberately, like the
+   * "no time-based behaviour" suite in the circuit breaker. Its job is to fail
+   * the day someone adds a sentiment tag, a price, or a "target" line to the
+   * template. In India that framing would make the alert investment advice, so
+   * the guard is worth keeping even though it can only catch future code.
+   */
   it('adds no interpretation, recommendation or advisory framing', () => {
     const output = formatFilingAlert(filing).toLowerCase();
 

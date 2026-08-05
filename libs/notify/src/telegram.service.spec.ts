@@ -118,12 +118,19 @@ describe('TelegramService', () => {
       expect(MockedBot.prototype.sendMessage.mock.calls[0][1]).toBe(escaped);
     });
 
-    it('sends each alert separately, in call order', async () => {
+    /**
+     * One wire message per alert. Nothing here coalesces, batches or joins
+     * texts, which matters because the wire format's value depends on one
+     * filing per message. This says nothing about concurrency — the calls are
+     * awaited sequentially, so their order is not in question.
+     */
+    it('issues one sendMessage per alert, never batching them', async () => {
       const service = build();
 
       await service.send('first');
       await service.send('second');
 
+      expect(MockedBot.prototype.sendMessage).toHaveBeenCalledTimes(2);
       expect(
         MockedBot.prototype.sendMessage.mock.calls.map((c) => c[1]),
       ).toEqual(['first', 'second']);
@@ -285,6 +292,28 @@ describe('TelegramService', () => {
     );
 
     /**
+     * The last throw-inside-the-catch path. A circular object with a null
+     * prototype fails `JSON.stringify` (circular) AND throws from `String()`
+     * ("Cannot convert object to primitive value"), because it has neither
+     * `Symbol.toPrimitive` nor `toString`. Unreachable from
+     * node-telegram-bot-api in practice, but it is the same defect class the
+     * describe-the-error helper exists to close: an exception raised while
+     * formatting the log escapes the catch block that is supposed to contain
+     * the failure, and the poll loop dies on a notification error after all.
+     * Closed completely rather than half-closed, so nobody reads the helper as
+     * fully defensive when it is not.
+     */
+    it('describes a rejection that cannot be stringified at all', async () => {
+      const unprintable: Record<string, unknown> = Object.create(null);
+      unprintable.self = unprintable;
+      failWith(unprintable);
+
+      await expect(build().send(ALERT)).resolves.toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(String(errorSpy.mock.calls[0][0])).toContain('[unprintable]');
+    });
+
+    /**
      * A programming error inside this method — not inside Telegram — must not
      * be quietly absorbed as if it were an outage. It is still caught, because
      * ingestion outranks notification, but it is logged with its stack so the
@@ -303,7 +332,6 @@ describe('TelegramService', () => {
         expect.stringContaining('TypeError'),
         bug.stack,
       );
-      expect(bug.stack).toContain('at ');
     });
 
     it('is not poisoned by a failure and sends the next alert', async () => {
@@ -337,18 +365,6 @@ describe('TelegramService', () => {
         undefined,
       ]);
       expect(errorSpy).toHaveBeenCalledTimes(5);
-    });
-
-    it('never rethrows, so a poll cycle cannot die on a notification failure', async () => {
-      failWith(new Error('ETELEGRAM: 502 Bad Gateway'));
-      const service = build();
-      let reached = false;
-
-      // The shape of the Task 12 poll loop: send, then carry on working.
-      await service.send(ALERT);
-      reached = true;
-
-      expect(reached).toBe(true);
     });
   });
 });

@@ -50,7 +50,15 @@
 # the wire format are pinned by a whole-message equality assertion rather than
 # by behaviour, so mutating them proves only that the assertion exists. The
 # IST_OFFSET_MS duplication with libs/filings is a known, accepted design call
-# (see the constant's comment), not something a mutation can speak to.
+# (see the constant's comment), not something a mutation can speak to. The
+# "adds no interpretation, recommendation or advisory framing" test is a ratchet
+# against a sentiment tag or price being added to the template LATER — there is
+# no such code to mutate today, so it is deliberately outside this harness, in
+# the same way the circuit breaker's no-time-based-behaviour suite is outside
+# its own.
+#
+# Tally, so a report can quote it without recounting: 33 mutations across eight
+# groups, plus 5 independence checks = 38 `check` calls.
 
 set -uo pipefail
 
@@ -266,6 +274,9 @@ check "naive error description (throws on a null rejection, inside the catch)" t
 
 perl -0pi -e 's/        error instanceof Error \? error\.stack : undefined,\n//' "$SVC"
 check "stack dropped (a programming bug reads as a flaky channel)" telegram.service
+
+perl -0pi -e 's/    return JSON\.stringify\(value\) \?\? safeString\(value\);\n  \} catch \{\n[^}]*    return safeString\(value\);/    return JSON.stringify(value) ?? String(value);\n  } catch {\n    return String(value);/' "$SVC"
+check "bare String() fallback (a null-prototype object throws from the catch)" telegram.service
 
 echo ""
 echo "=== send options are a contract with the formatter ==="
