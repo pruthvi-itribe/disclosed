@@ -106,6 +106,28 @@ export class FilingRepository {
   }
 
   /**
+   * The newest dissemination timestamp held, which anchors the drain range.
+   *
+   * Deliberately NOT the timestamp of the record with the highest seqId. NSE
+   * disseminates out of seq_id order, so those are different records — and the
+   * question a drain asks is "how far forward in TIME do we have evidence
+   * for", which only the timestamp answers.
+   *
+   * @returns the maximum stored `disseminatedAt`, or null when the collection
+   * is empty. A null means a cold start: there is no earlier IST day the drain
+   * has any evidence for, so it reconciles today alone.
+   */
+  async getMaxDisseminatedAt(): Promise<Date | null> {
+    const top = await this.model
+      .findOne({}, { disseminatedAt: 1 })
+      .sort({ disseminatedAt: -1 })
+      .lean()
+      .exec();
+
+    return top?.disseminatedAt ?? null;
+  }
+
+  /**
    * Verifies the precondition insertNew rests on: a unique index on `seqId`
    * present in the DATABASE, not merely declared on the schema. Call it once at
    * startup, before polling.

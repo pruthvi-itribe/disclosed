@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   detectRollover,
+  drainRange,
   istDayKey,
   nextPollDelayMs,
   scheduledDrainReason,
@@ -46,6 +47,8 @@ export interface PollResult {
   drained: boolean;
   /** Which reason drove the re-pull, or null when there was none. */
   drainReason: DrainReason | null;
+  /** IST days the drain covered. `0` when no drain ran. */
+  drainedDays: number;
   /**
    * True when this tick did no work because another poll still held the lock.
    * Distinguished from a quiet poll on purpose: "nothing arrived" and "we never
@@ -308,8 +311,9 @@ export class PollerService {
           drainIntervalMs: this.options.drainIntervalMs,
         });
 
+    let drainedDays = 0;
+
     if (reason !== null) {
-      this.logger.log(`Draining the IST day (${reason})`);
       // Recorded BEFORE the attempt and for every outcome, including a failure.
       // A day endpoint that is refusing must be retried on the interval, not on
       // every 2s poll: the latter is a request storm arriving through the
@@ -320,8 +324,9 @@ export class PollerService {
       if (reason === 'closing') this.lastClosingDay = istDayKey(now);
 
       try {
-        const day = await this.adapter.fetchDay(now);
-        dayFilings = day.filings;
+        const drain = await this.drain(reason, now);
+        dayFilings = drain.filings;
+        drainedDays = drain.days;
         // The set difference is the database's job, not ours: every row is
         // offered and the unique index rejects the ones already held.
         candidates = mergeById(page.filings, dayFilings);
@@ -370,6 +375,7 @@ export class PollerService {
       alerted,
       drained: reason !== null,
       drainReason: reason,
+      drainedDays,
       deferred: false,
       // A FAILED drain must not feed the burst rule. `newSeqIds` is derived
       // from the cursor, and a failed drain HOLDS the cursor — so the same ids
@@ -384,6 +390,50 @@ export class PollerService {
       // steadily, not as fast as the socket allows.
       delayMs: this.delayFor(drainFailed ? 0 : newSeqIds.length, now),
     };
+  }
+
+  /**
+   * Re-pulls every IST day the drain must cover, oldest first.
+   *
+   * MULTI-DAY, not `fetchDay(now)`. A restart whose downtime crossed 18:30 UTC
+   * leaves yesterday's filings beyond the newest twenty unfetched forever: the
+   * live page carries only today, and the cursor advances past them. So the
+   * range runs from the IST day of the newest record already stored — the last
+   * day we have any evidence for — through now, bounded by `MAX_DRAIN_DAYS`.
+   * In steady state that is exactly one day and one request.
+   *
+   * Throws on the first day that fails. A partial range is not a reconciled
+   * range, and reporting it as one would clear the drain-failure latch over a
+   * gap that is still open.
+   */
+  private async drain(
+    reason: DrainReason,
+    now: Date,
+  ): Promise<{ filings: readonly Filing[]; days: number }> {
+    const anchor = await this.repository.getMaxDisseminatedAt();
+    const { days, skippedDays } = drainRange(anchor, now);
+
+    this.logger.log(
+      `Draining ${days.length} IST day(s) (${reason}): ` +
+        `${istDayKey(days[0])}..${istDayKey(days[days.length - 1])}`,
+    );
+
+    if (skippedDays > 0) {
+      // Louder than the drain line itself: those days are NOT being fetched
+      // and nothing else will fetch them. A backfill is an operator decision.
+      this.logger.warn(
+        `Drain range bounded to ${days.length} day(s); ${skippedDays} older ` +
+          'IST day(s) were NOT reconciled and need a deliberate backfill',
+      );
+    }
+
+    const filings: Filing[] = [];
+    for (const day of days) {
+      const result = await this.adapter.fetchDay(day);
+      filings.push(...result.filings);
+    }
+
+    return { filings, days: days.length };
   }
 
   /**
@@ -566,6 +616,7 @@ export class PollerService {
       alerted: 0,
       drained: false,
       drainReason: null,
+      drainedDays: 0,
       deferred,
       delayMs: this.delayFor(0, now),
     };

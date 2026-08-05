@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 #
-# Mutation harness for the no-loss guarantee (Task 6).
+# Mutation harness for the no-loss guarantee (Task 6, extended).
 #
-# `detectRollover` is the function that guarantees no filing is silently lost,
-# so its tests are the ones most worth proving. This script breaks the
-# implementation one way at a time, re-runs the suite, and asserts the break is
-# caught — then restores the original.
+# Three pure modules carry that guarantee's timing logic and none of them can
+# fail loudly:
+#
+#   * `detectRollover` decides whether the page rolled past us.
+#   * `nextPollDelayMs` decides how often we look.
+#   * `drain-schedule` decides when the day is reconciled anyway, and how many
+#     IST days that reconciliation has to span. Both were missing entirely
+#     until the whole-branch review: the rollover drain fires ONCE in 32 days
+#     of recorded traffic, and a single-day drain cannot close a hole that
+#     spans IST midnight.
+#
+# This script breaks the implementation one way at a time, re-runs the suite,
+# and asserts the break is caught — then restores the original.
 #
 # Usage:  bash tools/mutation/rollover-cadence-mutations.sh
 # Exit:   0 only if every mutation applied AND was caught.
@@ -30,6 +39,17 @@
 #     deleted only once the restore is confirmed byte-identical; if it is not,
 #     the backup is kept and its path printed.
 #
+# NOT covered by mutation, and why:
+#
+#   - `drainRange`'s `Math.min(istDayStartMs(from), end)` clamp. Dropping it is
+#     an EQUIVALENT mutant, verified rather than assumed: with an anchor stamped
+#     ahead of the clock, `total` goes negative, `kept` follows it, the
+#     `i >= 1` loop guard never runs, and `days.push(through)` still yields
+#     exactly `[through]` — the same output, with `skippedDays` 0 either way.
+#     The clamp is there so `total >= 1` is a stated invariant rather than an
+#     emergent one; a test cannot distinguish it, and manufacturing one would
+#     pin arithmetic nobody observes.
+#
 # Not run against a `git worktree` copy: a worktree has no node_modules, so
 # jest/ts-jest would not resolve without symlinking it in, and the worktree
 # would then need its own interrupt-safe cleanup. The clean-tree precondition
@@ -40,19 +60,20 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 ROLL=$ROOT/libs/filings/src/logic/rollover.ts
 CAD=$ROOT/libs/filings/src/logic/cadence.ts
+DRAIN=$ROOT/libs/filings/src/logic/drain-schedule.ts
 
 # --- precondition: refuse to mutate a dirty tree -----------------------------
-for f in "$ROLL" "$CAD"; do
+for f in "$ROLL" "$CAD" "$DRAIN"; do
   if ! git -C "$ROOT" ls-files --error-unmatch "$f" >/dev/null 2>&1; then
     echo "refusing to run: $f is not tracked by git." >&2
     exit 1
   fi
 done
-if ! git -C "$ROOT" diff --quiet -- "$ROLL" "$CAD" ||
-  ! git -C "$ROOT" diff --cached --quiet -- "$ROLL" "$CAD"; then
+if ! git -C "$ROOT" diff --quiet -- "$ROLL" "$CAD" "$DRAIN" ||
+  ! git -C "$ROOT" diff --cached --quiet -- "$ROLL" "$CAD" "$DRAIN"; then
   echo "refusing to run: uncommitted changes in the files this script mutates." >&2
   echo "  commit or stash them first — this script edits them in place." >&2
-  git -C "$ROOT" status --short -- "$ROLL" "$CAD" >&2
+  git -C "$ROOT" status --short -- "$ROLL" "$CAD" "$DRAIN" >&2
   exit 1
 fi
 
@@ -71,6 +92,11 @@ cp "$CAD" "$BACKUP/cadence.ts" || {
   rm -rf "$BACKUP"
   exit 1
 }
+cp "$DRAIN" "$BACKUP/drain-schedule.ts" || {
+  echo "refusing to run: could not back up drain-schedule.ts." >&2
+  rm -rf "$BACKUP"
+  exit 1
+}
 
 FAILURES=0
 NOOPS=0
@@ -81,8 +107,10 @@ restore_verified() {
   local ok=0
   cp "$BACKUP/rollover.ts" "$ROLL" || ok=1
   cp "$BACKUP/cadence.ts" "$CAD" || ok=1
+  cp "$BACKUP/drain-schedule.ts" "$DRAIN" || ok=1
   cmp -s "$BACKUP/rollover.ts" "$ROLL" || ok=1
   cmp -s "$BACKUP/cadence.ts" "$CAD" || ok=1
+  cmp -s "$BACKUP/drain-schedule.ts" "$DRAIN" || ok=1
   return $ok
 }
 
@@ -94,9 +122,10 @@ on_exit() {
     echo "FATAL: sources could NOT be restored. Backups kept at:" >&2
     echo "  $BACKUP" >&2
     echo "Recover with:" >&2
-    echo "  cp $BACKUP/rollover.ts $ROLL" >&2
-    echo "  cp $BACKUP/cadence.ts  $CAD" >&2
-    echo "or: git -C $ROOT checkout -- $ROLL $CAD" >&2
+    echo "  cp $BACKUP/rollover.ts       $ROLL" >&2
+    echo "  cp $BACKUP/cadence.ts        $CAD" >&2
+    echo "  cp $BACKUP/drain-schedule.ts $DRAIN" >&2
+    echo "or: git -C $ROOT checkout -- $ROLL $CAD $DRAIN" >&2
     exit 1
   fi
 }
@@ -115,6 +144,7 @@ check() {
 
   case "$file" in
   *rollover.ts) backup_for=$BACKUP/rollover.ts ;;
+  *drain-schedule.ts) backup_for=$BACKUP/drain-schedule.ts ;;
   *) backup_for=$BACKUP/cadence.ts ;;
   esac
 
@@ -210,6 +240,51 @@ perl -0pi -e 's/const istHour = new Date\(now\.getTime\(\) \+ IST_OFFSET_MS\)\.g
 check "shift mutates the caller Date" "$CAD" cadence
 
 echo ""
+echo "=== the scheduled drains: reconciliation ran once per process ==="
+
+perl -0pi -e 's/  if \(lastDrainAtMs === null\) return .periodic.;/  if (lastDrainAtMs === null) return null;/' "$DRAIN"
+check "a null last-drain is not due (a restart waits out a full interval)" "$DRAIN" drain-schedule
+
+perl -0pi -e "s/  return now\.getTime\(\) - lastDrainAtMs >= drainIntervalMs \? 'periodic' : null;/  return now.getTime() - lastDrainAtMs > drainIntervalMs ? 'periodic' : null;/" "$DRAIN"
+check "interval >= becomes > (the exact-interval tick is skipped)" "$DRAIN" drain-schedule
+
+perl -0pi -e "s/  if \(isAtOrAfterClosingMinute\(now\) && istDayKey\(now\) !== lastClosingDay\) \{\n    return 'closing';\n  \}\n\n//" "$DRAIN"
+check "closing drain removed (the day is never reconciled at 23:30)" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/  if \(isAtOrAfterClosingMinute\(now\) && istDayKey\(now\) !== lastClosingDay\) \{/  if (isAtOrAfterClosingMinute(now)) {/' "$DRAIN"
+check "closing drain not once per day (re-closes on every tick after 23:30)" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/export const CLOSING_DRAIN_MINUTE_IST = 30;/export const CLOSING_DRAIN_MINUTE_IST = 0;/' "$DRAIN"
+check "closing minute moved to 23:00 (closes while the window is still open)" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/  istMinuteOfDay\(now\) >= CLOSING_DRAIN_MINUTE_OF_DAY;/  istMinuteOfDay(now) === CLOSING_DRAIN_MINUTE_OF_DAY;/' "$DRAIN"
+check "closing test is equality (any tick straddling 23:30 misses it)" "$DRAIN" drain-schedule
+
+echo ""
+echo "=== the drain range: a hole can span IST midnight ==="
+
+perl -0pi -e 's/  const start = from === null \? end : Math\.min\(istDayStartMs\(from\), end\);/  const start = end;/' "$DRAIN"
+check "range collapsed to today (yesterday's tail is never fetched)" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/  const kept = Math\.min\(total, Math\.max\(maxDays, 1\)\);/  const kept = total;/' "$DRAIN"
+check "bound removed (a month of downtime pulls a month in one poll)" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/  const kept = Math\.min\(total, Math\.max\(maxDays, 1\)\);/  const kept = Math.min(total, maxDays);/' "$DRAIN"
+check "bound may reach zero (a drain that fetches nothing reports success)" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/  return \{ days, skippedDays: total - kept \};/  return { days, skippedDays: 0 };/' "$DRAIN"
+check "dropped days never reported (an un-reconciled week looks complete)" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/  days\.push\(through\);/  days.push(new Date(end + MS_PER_DAY \/ 2));/' "$DRAIN"
+check "final day is a stand-in, not the instant supplied" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/    days\.push\(new Date\(end - i \* MS_PER_DAY \+ MS_PER_DAY \/ 2\)\);/    days.push(new Date(end - i * MS_PER_DAY));/' "$DRAIN"
+check "intermediate instants sit on the IST midnight boundary" "$DRAIN" drain-schedule
+
+perl -0pi -e 's/const IST_OFFSET_MS = 5\.5 \* 60 \* 60 \* 1000;/const IST_OFFSET_MS = 5 * 60 * 60 * 1000;/' "$DRAIN"
+check "IST offset rounded to 5h (the day boundary moves by 30 minutes)" "$DRAIN" drain-schedule
+
+echo ""
 echo "=== independence check ==="
 echo "The cursor+1 contiguity form must die to the enumerated sweep ALONE, not"
 echo "only to the hand-written single-page tests."
@@ -224,5 +299,6 @@ else
   echo "RESULT: $FAILURES survived (test gap), $NOOPS no-op (harness stale)."
 fi
 
-cd "$ROOT" && npx jest rollover cadence 2>&1 | grep -E "^(Tests|Test Suites):"
+cd "$ROOT" && npx jest rollover cadence drain-schedule 2>&1 |
+  grep -E "^(Tests|Test Suites):"
 exit $((FAILURES + NOOPS))

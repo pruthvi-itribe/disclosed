@@ -75,8 +75,8 @@
 #     redaction and its configured/unconfigured verdict ARE mutated, because
 #     both are load-bearing.
 #
-# Tally, so a report can quote it without recounting: 51 mutations against the
-# poller and 12 against the configuration, plus 7 independence checks = 70
+# Tally, so a report can quote it without recounting: 55 mutations against the
+# poller and 12 against the configuration, plus 7 independence checks = 74
 # `check` calls.
 
 set -uo pipefail
@@ -325,8 +325,26 @@ check "drain never reported (the caller cannot see a rollover happened)" "$POLL"
 perl -0pi -e 's/      drainReason: reason,/      drainReason: null,/' "$POLL"
 check "drain reason never reported (rollover and sweep become indistinguishable)" "$POLL" poller.service
 
-perl -0pi -e 's/        const day = await this\.adapter\.fetchDay\(now\);/        const day = await this.adapter.fetchDay(new Date());/' "$POLL"
+perl -0pi -e 's/      const result = await this\.adapter\.fetchDay\(day\);/      const result = await this.adapter.fetchDay(new Date());/' "$POLL"
 check "drains the wall-clock day, not the instant it was handed" "$POLL" poller.service
+
+echo ""
+echo "=== the drain range: a hole can span IST midnight ==="
+echo "The IST day rolls at 18:30 UTC, so a restart whose downtime crossed it"
+echo "drains today while yesterday's filings beyond the newest twenty are never"
+echo "fetched — and the cursor steps past them."
+
+perl -0pi -e 's/    const \{ days, skippedDays \} = drainRange\(anchor, now\);/    void anchor;\n    const { days, skippedDays } = { days: [now], skippedDays: 0 };/' "$POLL"
+check "drain collapsed to today (a hole spanning IST midnight stays open)" "$POLL" poller.service
+
+perl -0pi -e 's/    const anchor = await this\.repository\.getMaxDisseminatedAt\(\);/    const anchor: Date | null = null;/' "$POLL"
+check "range anchor never read (every drain is a single day again)" "$POLL" poller.service
+
+perl -0pi -e 's/      const result = await this\.adapter\.fetchDay\(day\);\n      filings\.push\(\.\.\.result\.filings\);/      const result = await this.adapter.fetchDay(day).catch(() => null);\n      if (result) filings.push(...result.filings);/' "$POLL"
+check "a failed day in the range swallowed (a partial range reports as reconciled)" "$POLL" poller.service
+
+perl -0pi -e 's/    return \{ filings, days: days\.length \};/    return { filings, days: 1 };/' "$POLL"
+check "day count hardcoded (a multi-day drain is invisible in the result)" "$POLL" poller.service
 
 echo ""
 echo "=== the scheduled drains: the reconciliation ran once per process ==="

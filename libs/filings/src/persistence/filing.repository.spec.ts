@@ -391,6 +391,55 @@ describe('FilingRepository.getMaxSeqId: the persisted cursor', () => {
 });
 
 /**
+ * The drain range anchor. A drain of `today` alone cannot close a hole that
+ * spans IST midnight: a restart whose downtime crossed 18:30 UTC would never
+ * fetch yesterday's filings beyond the newest twenty.
+ */
+describe('FilingRepository.getMaxDisseminatedAt: the drain range anchor', () => {
+  const at = (seqId: number, iso: string): Filing => ({
+    ...makeFiling(seqId),
+    disseminatedAt: new Date(iso),
+  });
+
+  it('returns null for an empty collection, which means a cold start', async () => {
+    expect(await repo.getMaxDisseminatedAt()).toBeNull();
+  });
+
+  it('returns the newest dissemination timestamp', async () => {
+    await repo.insertNew([
+      at(1, '2026-08-04T12:00:00.000Z'),
+      at(2, '2026-08-05T09:00:00.000Z'),
+      at(3, '2026-08-04T18:00:00.000Z'),
+    ]);
+
+    expect(await repo.getMaxDisseminatedAt()).toEqual(
+      new Date('2026-08-05T09:00:00.000Z'),
+    );
+  });
+
+  it('is driven by the timestamp, not by the highest seqId', async () => {
+    // NSE disseminates out of seq_id order, so the record with the highest id
+    // and the record disseminated most recently are different rows. The drain
+    // asks how far forward in TIME we have evidence for, which only the
+    // timestamp answers.
+    await repo.insertNew([
+      at(106689007, '2026-07-07T10:03:43.000Z'),
+      at(106689006, '2026-07-07T10:03:45.000Z'),
+    ]);
+
+    expect(await repo.getMaxDisseminatedAt()).toEqual(
+      new Date('2026-07-07T10:03:45.000Z'),
+    );
+  });
+
+  it('returns a Date, so the caller can do IST day arithmetic on it', async () => {
+    await repo.insertNew([at(1, '2026-08-04T18:35:00.000Z')]);
+
+    expect(await repo.getMaxDisseminatedAt()).toBeInstanceOf(Date);
+  });
+});
+
+/**
  * The system's promise is that it never silently loses a filing. Anything that
  * is not a clean, fully-accounted duplicate rejection must reach the caller as
  * a thrown error — never as "nothing new", which is indistinguishable from a

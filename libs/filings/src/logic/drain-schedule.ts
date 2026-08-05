@@ -60,6 +60,79 @@ const istMinuteOfDay = (date: Date): number => {
 export const isAtOrAfterClosingMinute = (now: Date): boolean =>
   istMinuteOfDay(now) >= CLOSING_DRAIN_MINUTE_OF_DAY;
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * How many IST days one drain may span.
+ *
+ * The date-range endpoint is uncapped — 31 days returned 17,254 records (12MB)
+ * in 5.7s — so this bound is not about what the exchange will serve. It is
+ * about what an unattended process should decide to pull on its own: seven days
+ * covers a long weekend plus a holiday cluster, which is the realistic downtime
+ * a restart has to reconcile. A gap wider than that is an operational event and
+ * belongs to a deliberate backfill, not to a poll loop, so it is reported
+ * rather than silently attempted.
+ */
+export const MAX_DRAIN_DAYS = 7;
+
+/** The UTC instant at which the IST calendar day containing `date` begins. */
+const istDayStartMs = (date: Date): number =>
+  Math.floor((date.getTime() + IST_OFFSET_MS) / MS_PER_DAY) * MS_PER_DAY -
+  IST_OFFSET_MS;
+
+export interface DrainRange {
+  /**
+   * One instant per IST day to drain, oldest first, each landing inside its own
+   * day. The LAST entry is `through` itself, so a single-day drain is handed
+   * back exactly the instant it was given.
+   */
+  readonly days: readonly Date[];
+  /** IST days that fell outside the bound and were NOT drained. */
+  readonly skippedDays: number;
+}
+
+/**
+ * The IST days a drain must cover to close a hole that spans midnight.
+ *
+ * A drain of `today` alone cannot reconcile a restart whose downtime crossed
+ * 18:30 UTC: yesterday's filings beyond the newest twenty are never fetched,
+ * and the cursor steps past them. So the range starts at the IST day of the
+ * newest record already stored — the last day we have any evidence for — and
+ * runs forward to now.
+ *
+ * When the span exceeds `maxDays` the NEWEST days are kept. Dropping the recent
+ * end instead would leave today unreconciled, which is the day that still has
+ * alerting value; the older end is reported through `skippedDays` so the loss
+ * is visible rather than assumed.
+ *
+ * `from` after `through` (a clock skew, or a stored record stamped in the
+ * future by the `an_dt` fallback) collapses to `through` alone rather than
+ * producing a negative range.
+ */
+export function drainRange(
+  from: Date | null,
+  through: Date,
+  maxDays: number = MAX_DRAIN_DAYS,
+): DrainRange {
+  const end = istDayStartMs(through);
+  // Nothing stored yet: there is no earlier day we have evidence for, and
+  // pulling a week of history on a cold start would be a decision nobody made.
+  const start = from === null ? end : Math.min(istDayStartMs(from), end);
+
+  const total = Math.round((end - start) / MS_PER_DAY) + 1;
+  const kept = Math.min(total, Math.max(maxDays, 1));
+
+  const days: Date[] = [];
+  for (let i = kept - 1; i >= 1; i -= 1) {
+    // Midday IST, so the instant is unambiguously inside its own IST day
+    // whatever rounding a downstream formatter applies.
+    days.push(new Date(end - i * MS_PER_DAY + MS_PER_DAY / 2));
+  }
+  days.push(through);
+
+  return { days, skippedDays: total - kept };
+}
+
 export interface ScheduledDrainInput {
   now: Date;
   /** Epoch ms of the last drain of any kind, or null if none has run. */

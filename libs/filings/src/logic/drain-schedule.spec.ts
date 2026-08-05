@@ -1,8 +1,10 @@
 import {
   CLOSING_DRAIN_HOUR_IST,
   CLOSING_DRAIN_MINUTE_IST,
+  drainRange,
   isAtOrAfterClosingMinute,
   istDayKey,
+  MAX_DRAIN_DAYS,
   scheduledDrainReason,
 } from './drain-schedule';
 
@@ -185,5 +187,156 @@ describe('scheduledDrainReason', () => {
     expect(
       scheduledDrainReason({ ...base, now, lastDrainAtMs: now.getTime() }),
     ).toBeNull();
+  });
+});
+
+/**
+ * `fetchDay(now)` alone cannot close a hole that spans IST midnight. A restart
+ * whose downtime crossed 18:30 UTC drains today while yesterday's filings
+ * beyond the newest twenty are never fetched, and the cursor steps past them.
+ */
+describe('drainRange', () => {
+  const keys = (dates: readonly Date[]): string[] => dates.map(istDayKey);
+
+  it('drains today alone when the newest stored record is from today', () => {
+    const now = ist(2026, 8, 5, 14, 0);
+    const stored = ist(2026, 8, 5, 9, 30);
+
+    const range = drainRange(stored, now);
+
+    expect(keys(range.days)).toEqual(['2026-08-05']);
+    expect(range.skippedDays).toBe(0);
+  });
+
+  it('hands back the exact instant it was given for the final day', () => {
+    // The single-day case must be byte-identical to the old behaviour, so the
+    // drain still targets the instant the poll was made rather than a rounded
+    // stand-in for it.
+    const now = ist(2026, 8, 5, 14, 0);
+
+    expect(drainRange(now, now).days[0]).toBe(now);
+  });
+
+  it('spans IST midnight when the newest stored record is from yesterday', () => {
+    // 10:00 IST today, last stored filing at 21:00 IST yesterday: the restart
+    // slept through the day boundary.
+    const now = ist(2026, 8, 5, 10, 0);
+    const stored = ist(2026, 8, 4, 21, 0);
+
+    const range = drainRange(stored, now);
+
+    expect(keys(range.days)).toEqual(['2026-08-04', '2026-08-05']);
+    expect(range.skippedDays).toBe(0);
+  });
+
+  it('drains only today when nothing at all is stored', () => {
+    // A cold start has no earlier day it has evidence for, and pulling a week
+    // of history is a decision nobody made.
+    const now = ist(2026, 8, 5, 10, 0);
+
+    const range = drainRange(null, now);
+
+    expect(keys(range.days)).toEqual(['2026-08-05']);
+    expect(range.skippedDays).toBe(0);
+  });
+
+  it('covers a long weekend without hitting the bound', () => {
+    const now = ist(2026, 8, 5, 10, 0);
+    const stored = ist(2026, 8, 1, 18, 0);
+
+    expect(keys(drainRange(stored, now).days)).toEqual([
+      '2026-08-01',
+      '2026-08-02',
+      '2026-08-03',
+      '2026-08-04',
+      '2026-08-05',
+    ]);
+  });
+
+  it('keeps the newest days and reports the ones it dropped', () => {
+    // Dropping the recent end instead would leave today unreconciled, and
+    // today is the day that still has alerting value.
+    const now = ist(2026, 8, 20, 10, 0);
+    const stored = ist(2026, 8, 1, 10, 0);
+
+    const range = drainRange(stored, now);
+
+    expect(range.days).toHaveLength(MAX_DRAIN_DAYS);
+    expect(keys(range.days)[0]).toBe('2026-08-14');
+    expect(keys(range.days)[MAX_DRAIN_DAYS - 1]).toBe('2026-08-20');
+    expect(range.skippedDays).toBe(13);
+  });
+
+  it('honours a caller-supplied bound', () => {
+    const now = ist(2026, 8, 5, 10, 0);
+    const stored = ist(2026, 8, 1, 10, 0);
+
+    const range = drainRange(stored, now, 2);
+
+    expect(keys(range.days)).toEqual(['2026-08-04', '2026-08-05']);
+    expect(range.skippedDays).toBe(3);
+  });
+
+  it('never yields an empty range, whatever bound it is handed', () => {
+    // A drain that fetches nothing would report success having reconciled
+    // nothing, which is the one outcome worse than a failure. The dropped-day
+    // count has to stay honest through the degenerate bounds too: a bound that
+    // is allowed to reach zero claims one more skipped day than it skipped.
+    const now = ist(2026, 8, 5, 10, 0);
+    const from = ist(2026, 8, 3, 0, 0);
+
+    for (const bound of [1, 0, -3]) {
+      const range = drainRange(from, now, bound);
+
+      expect(range.days).toHaveLength(1);
+      expect(istDayKey(range.days[0])).toBe('2026-08-05');
+      expect(range.skippedDays).toBe(2);
+    }
+  });
+
+  it('keeps every intermediate instant clear of the IST day boundary', () => {
+    // An instant sitting exactly on IST midnight is one millisecond away from
+    // the previous day, so any off-by-one in a downstream formatter moves the
+    // whole request onto a day nobody meant to fetch.
+    const range = drainRange(ist(2026, 8, 2, 0, 0, 1), ist(2026, 8, 5, 12, 0));
+
+    for (const day of range.days.slice(0, -1)) {
+      expect(istDayKey(new Date(day.getTime() - 1))).toBe(istDayKey(day));
+      expect(istDayKey(new Date(day.getTime() + 1))).toBe(istDayKey(day));
+    }
+  });
+
+  it('collapses a stored record stamped in the future to today alone', () => {
+    // The mapper falls back to an_dt when exchdisstime is absent, so a stored
+    // timestamp ahead of the clock is reachable. A negative range must not be.
+    const now = ist(2026, 8, 5, 10, 0);
+    const stored = ist(2026, 8, 9, 10, 0);
+
+    expect(keys(drainRange(stored, now).days)).toEqual(['2026-08-05']);
+  });
+
+  it('crosses a month boundary', () => {
+    const now = ist(2026, 9, 1, 10, 0);
+    const stored = ist(2026, 8, 30, 22, 0);
+
+    expect(keys(drainRange(stored, now).days)).toEqual([
+      '2026-08-30',
+      '2026-08-31',
+      '2026-09-01',
+    ]);
+  });
+
+  it('puts every intermediate instant inside its own IST day', () => {
+    // The days are fed to `toNseDateParam`, which buckets on the IST calendar
+    // day. An instant near either edge would be formatted onto a neighbour.
+    const now = ist(2026, 8, 5, 23, 59, 59);
+    const range = drainRange(ist(2026, 8, 2, 0, 0, 1), now);
+
+    expect(keys(range.days)).toEqual([
+      '2026-08-02',
+      '2026-08-03',
+      '2026-08-04',
+      '2026-08-05',
+    ]);
   });
 });

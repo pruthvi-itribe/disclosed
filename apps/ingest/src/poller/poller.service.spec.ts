@@ -1,9 +1,11 @@
 import { Logger } from '@nestjs/common';
-import type {
-  FetchResult,
-  Filing,
-  FilingRepository,
-  SourceAdapter,
+import {
+  istDayKey,
+  MAX_DRAIN_DAYS,
+  type FetchResult,
+  type Filing,
+  type FilingRepository,
+  type SourceAdapter,
 } from '@app/filings';
 import type { TelegramService } from '@app/notify';
 import type { AlertService } from '../alert/alert.service';
@@ -85,6 +87,11 @@ class StubAdapter implements SourceAdapter {
   latestCalls = 0;
   dayCalls = 0;
   lastDayArg: Date | null = null;
+  readonly dayArgs: Date[] = [];
+  /** Per-IST-day responses, for a drain that spans more than one day. */
+  dayResults: Record<string, FetchResult> | null = null;
+  /** IST day key the day endpoint refuses, for a partial-range failure. */
+  failDayFor: string | null = null;
   failLatest: Error | null = null;
   failLatestAlways: Error | null = null;
   failDay: Error | null = null;
@@ -110,8 +117,11 @@ class StubAdapter implements SourceAdapter {
   async fetchDay(date: Date): Promise<FetchResult> {
     this.dayCalls += 1;
     this.lastDayArg = date;
+    this.dayArgs.push(date);
     if (this.failDay) throw this.failDay;
-    return this.day;
+    const key = istDayKey(date);
+    if (this.failDayFor === key) throw new Error(`day ${key} unavailable`);
+    return this.dayResults?.[key] ?? this.day;
   }
 }
 
@@ -145,6 +155,18 @@ class StubRepo {
     const ids = [...this.stored.keys()];
     return ids.length ? Math.max(...ids) : null;
   }
+
+  async getMaxDisseminatedAt(): Promise<Date | null> {
+    this.maxDisseminatedCalls += 1;
+    if (this.maxDisseminatedError) throw this.maxDisseminatedError;
+    const times = [...this.stored.values()].map((f) =>
+      f.disseminatedAt.getTime(),
+    );
+    return times.length ? new Date(Math.max(...times)) : null;
+  }
+
+  maxDisseminatedCalls = 0;
+  maxDisseminatedError: Error | null = null;
 }
 
 class StubAlerts {
@@ -1607,5 +1629,133 @@ describe('PollerService: scheduled drains', () => {
 
     expect(result.drainReason).toBeNull();
     expect(adapter.dayCalls).toBe(0);
+  });
+});
+
+/**
+ * A drain of `fetchDay(now)` alone cannot close a hole that spans IST midnight.
+ * The IST day rolls at 18:30 UTC, so a restart whose downtime crossed it drains
+ * today while yesterday's filings beyond the newest twenty are never fetched —
+ * the live page carries only today, and `advanceCursor` steps past them.
+ */
+describe('PollerService: a drain that spans IST midnight', () => {
+  /** 10:00 IST on 05-Aug-2026. */
+  const TODAY_1000_IST = new Date('2026-08-05T04:30:00.000Z');
+
+  const at = (seqId: number, iso: string): Filing => ({
+    ...makeFiling(seqId),
+    disseminatedAt: new Date(iso),
+  });
+
+  const dayKeys = (adapter: StubAdapter): string[] =>
+    adapter.dayArgs.map((d) => istDayKey(d));
+
+  it('drains yesterday and today when the newest stored record is from yesterday', async () => {
+    const { adapter, repo, service } = build();
+    // 21:00 IST on the 4th: the process slept through the 18:30 UTC boundary.
+    repo.stored.set(500, at(500, '2026-08-04T15:30:00.000Z'));
+    await service.initialise();
+    adapter.latest = page([at(600, '2026-08-05T04:29:00.000Z')]);
+
+    const result = await service.tick(TODAY_1000_IST);
+
+    expect(dayKeys(adapter)).toEqual(['2026-08-04', '2026-08-05']);
+    expect(result.drainedDays).toBe(2);
+  });
+
+  it('recovers a filing from the previous IST day the live page never carried', async () => {
+    const { adapter, repo, service } = build();
+    repo.stored.set(500, at(500, '2026-08-04T15:30:00.000Z'));
+    await service.initialise();
+    adapter.latest = page([at(600, '2026-08-05T04:29:00.000Z')]);
+    // Yesterday's tail: disseminated after the process stopped, and long since
+    // aged off the twenty-record page.
+    adapter.dayResults = {
+      '2026-08-04': page([at(501, '2026-08-04T17:00:00.000Z')]),
+      '2026-08-05': page([at(600, '2026-08-05T04:29:00.000Z')]),
+    };
+
+    await service.tick(TODAY_1000_IST);
+
+    expect(repo.stored.has(501)).toBe(true);
+  });
+
+  it('drains today alone once a record from today is stored', async () => {
+    const { adapter, repo, service } = build();
+    repo.stored.set(600, at(600, '2026-08-05T04:00:00.000Z'));
+    await service.initialise();
+    adapter.latest = page([at(600, '2026-08-05T04:00:00.000Z')]);
+
+    const result = await service.tick(TODAY_1000_IST);
+
+    expect(dayKeys(adapter)).toEqual(['2026-08-05']);
+    expect(result.drainedDays).toBe(1);
+    // The single-day case must still target the instant it was handed.
+    expect(adapter.lastDayArg).toBe(TODAY_1000_IST);
+  });
+
+  it('drains today alone on a cold start, rather than a week of history', async () => {
+    const { adapter, service } = build();
+    adapter.latest = page([at(600, '2026-08-05T04:29:00.000Z')]);
+
+    const result = await service.tick(TODAY_1000_IST);
+
+    expect(result.drainedDays).toBe(1);
+    expect(dayKeys(adapter)).toEqual(['2026-08-05']);
+  });
+
+  it('bounds a long outage to the most recent days and keeps today', async () => {
+    const { adapter, repo, service } = build();
+    // Three weeks of downtime.
+    repo.stored.set(1, at(1, '2026-07-15T10:00:00.000Z'));
+    await service.initialise();
+    adapter.latest = page([at(600, '2026-08-05T04:29:00.000Z')]);
+
+    const result = await service.tick(TODAY_1000_IST);
+
+    expect(result.drainedDays).toBe(MAX_DRAIN_DAYS);
+    expect(dayKeys(adapter)[MAX_DRAIN_DAYS - 1]).toBe('2026-08-05');
+  });
+
+  it('treats a failure on any day of the range as a failed drain', async () => {
+    // A partial range is not a reconciled range. Reporting it as one would
+    // clear the drain-failure latch over a gap that is still open.
+    const { adapter, repo, telegram, service } = build();
+    repo.stored.set(500, at(500, '2026-08-04T15:30:00.000Z'));
+    await service.initialise();
+    adapter.latest = page([at(600, '2026-08-05T04:29:00.000Z')]);
+    adapter.failDayFor = '2026-08-04';
+
+    const result = await service.tick(TODAY_1000_IST);
+
+    expect(result.drainedDays).toBe(0);
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0]).toContain('INGEST DRAIN FAILED');
+  });
+
+  it('treats a failure to read the range anchor as a failed drain', async () => {
+    const { adapter, repo, telegram, service } = build();
+    await service.initialise();
+    adapter.latest = page([at(600, '2026-08-05T04:29:00.000Z')]);
+    repo.maxDisseminatedError = new Error('mongo unreachable');
+
+    const result = await service.tick(TODAY_1000_IST);
+
+    expect(adapter.dayCalls).toBe(0);
+    expect(telegram.sent[0]).toContain('INGEST DRAIN FAILED');
+    expect(result.drained).toBe(true);
+    expect(result.drainedDays).toBe(0);
+  });
+
+  it('reports zero drained days on a poll that did not drain', async () => {
+    const { adapter, repo, service } = build();
+    repo.stored.set(600, at(600, '2026-08-05T04:00:00.000Z'));
+    await service.initialise();
+    adapter.latest = page([at(600, '2026-08-05T04:00:00.000Z')]);
+    await service.tick(TODAY_1000_IST);
+
+    const second = await service.tick(TODAY_1000_IST);
+
+    expect(second.drainedDays).toBe(0);
   });
 });
