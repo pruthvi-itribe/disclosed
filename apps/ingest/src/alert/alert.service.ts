@@ -14,6 +14,17 @@ export interface AlertOptions {
 }
 
 /**
+ * What an empty watchlist actually costs, measured rather than guessed.
+ *
+ * From the recorded 32-day corpus: 12,415 of 17,442 filings (71.2%) survive the
+ * routine-category gate, which is the only other content filter in the alert
+ * path. Per IST day that is ~388 messages, and the busiest observed hour held
+ * 106.
+ */
+const FILINGS_PER_DAY_UNFILTERED = 388;
+const PEAK_FILINGS_PER_HOUR = 106;
+
+/**
  * Uppercases and trims, so the two sides of a watchlist comparison are
  * normalised identically. A config value arrives as `WATCHLIST=RELIANCE, TCS`
  * split on commas, which leaves a leading space on every entry but the first.
@@ -52,6 +63,35 @@ export class AlertService {
     private readonly options: AlertOptions,
   ) {
     this.watchlist = normaliseWatchlist(options.watchlist);
+    this.warnIfUnfiltered();
+  }
+
+  /**
+   * Says out loud, once at startup, what the SHIPPED default does.
+   *
+   * An empty watchlist means alert on everything, which is the documented
+   * behaviour and is deliberately left alone — an operator who wants the full
+   * feed should get the full feed. What is not acceptable is that the volume is
+   * invisible until the chat is unusable: at ~388 messages a day the channel
+   * gets muted within a day, and every operator alert this system produces —
+   * INGEST DEGRADED, BLIND, DRAIN FAILED, WRITE FAILED, RECORDS SKIPPED — is
+   * muted with it. The pipeline then goes dark at exactly the moment it most
+   * needs to be heard, and nothing anywhere reports that.
+   *
+   * A warning rather than a refusal: this is a defensible configuration, and
+   * refusing to boot on it would be the library deciding policy for its
+   * operator. But it must be a decision, not an accident.
+   */
+  private warnIfUnfiltered(): void {
+    if (this.watchlist.size > 0) return;
+
+    this.logger.warn(
+      'WATCHLIST is empty, so every non-routine filing is alerted. Measured ' +
+        `over a 32-day corpus that is ~${FILINGS_PER_DAY_UNFILTERED} Telegram ` +
+        `messages a day, peaking at ${PEAK_FILINGS_PER_HOUR} in one hour. A ` +
+        'channel at that volume gets muted, and every operator alert is muted ' +
+        'with it. Set WATCHLIST before pointing this at a chat you rely on.',
+    );
   }
 
   /**

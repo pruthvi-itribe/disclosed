@@ -122,11 +122,27 @@ const readNumeric = (key: NumericKey, env: NodeJS.ProcessEnv): number => {
   return value;
 };
 
+/**
+ * Reads one string setting, treating a blank assignment as unset.
+ *
+ * The SAME rule as `readNumeric`, and that consistency is the point. `.env.example`
+ * and the README both state the rule generally — "a blank assignment (KEY=) is
+ * read as not set and falls back to the default" — and `readString` used to
+ * exempt itself, so `MONGO_URI=` yielded `''` and the process tried to connect
+ * to an empty connection string. One documented rule with a silent exception is
+ * worse than either rule applied consistently.
+ *
+ * The value itself is returned untrimmed: a token is opaque and reshaping it
+ * here would be this function inventing a value the operator did not write.
+ */
 const readString = (
   key: string,
   env: NodeJS.ProcessEnv,
   fallback: string,
-): string => env[key] ?? fallback;
+): string => {
+  const raw = env[key];
+  return raw === undefined || raw.trim() === '' ? fallback : raw;
+};
 
 /**
  * Splits a comma-separated symbol list, dropping blanks.

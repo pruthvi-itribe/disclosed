@@ -1078,3 +1078,76 @@ describe('AlertService: immutability and no-op paths', () => {
     jest.restoreAllMocks();
   });
 });
+
+/**
+ * The shipped default is `WATCHLIST=` — alert on everything. That is the
+ * documented behaviour and is deliberately unchanged, but the volume it implies
+ * is invisible until the chat is unusable: measured over the recorded 32-day
+ * corpus, 12,415 of 17,442 filings (71.2%) clear the routine gate, which is
+ * ~388 Telegram messages a day and a peak of 106 in one hour. An operator who
+ * mutes that channel mutes every INGEST alert with it.
+ */
+describe('AlertService: the empty-watchlist firehose is announced', () => {
+  let warnSpy: jest.SpyInstance;
+
+  const telegramStub = (): TelegramService => makeChannel().telegram;
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  const warnings = (): string =>
+    warnSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+  it('warns at startup when the watchlist is empty', () => {
+    new AlertService(telegramStub(), { alertWindowMs: WINDOW, watchlist: [] });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnings()).toContain('WATCHLIST is empty');
+  });
+
+  it('states the measured volume, not a vague caution', () => {
+    new AlertService(telegramStub(), { alertWindowMs: WINDOW, watchlist: [] });
+
+    expect(warnings()).toContain('388');
+    expect(warnings()).toContain('106');
+  });
+
+  it('says what muting the channel costs', () => {
+    new AlertService(telegramStub(), { alertWindowMs: WINDOW, watchlist: [] });
+
+    expect(warnings()).toContain('every operator alert is muted with it');
+  });
+
+  it('warns for a watchlist of blanks, which means the same thing', () => {
+    // `WATCHLIST=,  ,` normalises to no entries and takes the alert-on-all
+    // branch, so it must warn exactly as an absent one does.
+    new AlertService(telegramStub(), {
+      alertWindowMs: WINDOW,
+      watchlist: ['', '  '],
+    });
+
+    expect(warnings()).toContain('WATCHLIST is empty');
+  });
+
+  it('stays quiet when a watchlist is configured', () => {
+    new AlertService(telegramStub(), {
+      alertWindowMs: WINDOW,
+      watchlist: ['RELIANCE'],
+    });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not refuse to start: an empty watchlist is a valid choice', () => {
+    expect(
+      () =>
+        new AlertService(telegramStub(), {
+          alertWindowMs: WINDOW,
+          watchlist: [],
+        }),
+    ).not.toThrow();
+  });
+});

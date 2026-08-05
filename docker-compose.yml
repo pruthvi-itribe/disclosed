@@ -3,6 +3,8 @@ services:
     image: mongo:7
     ports: ['27017:27017']
     volumes: ['redbox-mongo:/data/db']
+  # For the cold-path queues in phase 4. Nothing in the ingest app reads it
+  # today, which is why no REDIS_* setting appears in .env.example.
   redis:
     image: redis:7-alpine
     ports: ['6379:6379']

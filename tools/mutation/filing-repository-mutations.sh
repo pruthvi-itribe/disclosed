@@ -148,9 +148,18 @@ check "sort direction flipped (cursor parks at the oldest id)"
 echo ""
 echo "=== insertNew: which rows come back ==="
 
-# The brief's original approach. Mongoose drops invalid documents BEFORE the
-# write, so driver write-error indexes count positions in the filtered batch,
-# not in the caller's array — this form can hand back a filing we already had.
+# The brief's original approach, and the rationale for rejecting it is NOT the
+# one the brief gave. Mongoose 8.24.2 DOES remap top-level write-error indexes
+# back to the caller's array (lib/model.js, via validDocIndexToOriginalIndex),
+# so "the indexes are filtered-relative" is false and "this returns a row we
+# already had" is false. What it actually returns is a row that was NEVER
+# WRITTEN: mongoose removes schema-invalid documents before sending the batch
+# and reports no per-row error for them, so they appear in neither writeErrors
+# nor insertedDocs, and the complement of writeErrors includes them. For
+# [invalid(20), duplicate(10), new(30)] this form yields 20 and 30 — and 20 is
+# not in the database at all, so alerting on it announces a filing we do not
+# have. Same conclusion, opposite direction. Corrected in filing.repository.ts
+# and in the plan; this was the third copy.
 perl -0pi -e 's/    return this\.matchInserted\(filings, insertedDocs\);/    const failedIndexes = new Set(\n      writeErrors\n        .map((we) => we.index ?? we.err?.index)\n        .filter((i): i is number => i !== undefined),\n    );\n    return filings.filter((_, index) => !failedIndexes.has(index));/' "$REPO"
 check "match by write-error index instead of by seqId (the brief's form)"
 
