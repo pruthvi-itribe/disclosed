@@ -21,7 +21,14 @@ describe('taxonomy', () => {
     expect(isRoutine('Some Category NSE Invented Yesterday')).toBe(false);
   });
 
-  it('exposes the routine set for corpus analysis', () => {
-    expect(ROUTINE_CATEGORIES.size).toBeGreaterThan(0);
+  it('exposes the routine set keyed by the normalised form a caller looks up with', () => {
+    expect(ROUTINE_CATEGORIES.has('copy of newspaper publication')).toBe(true);
+  });
+
+  it('keeps every member of the exposed set in agreement with isRoutine', () => {
+    const disagreeing = [...ROUTINE_CATEGORIES].filter(
+      (category) => !isRoutine(category),
+    );
+    expect(disagreeing).toEqual([]);
   });
 });
