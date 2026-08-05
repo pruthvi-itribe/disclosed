@@ -16,6 +16,7 @@ import {
   hasAmbiguityKeyword,
   extractRupeeAmounts,
   decodeHtmlEntities,
+  isLegallyBlocked,
   safeEcho,
   type Filing,
 } from '@app/filings';
@@ -33,38 +34,6 @@ type StoredFiling = Omit<
   disseminatedAt: string;
   ingestedAt: string;
 };
-
-/**
- * SEBI in an enforcement context. A bare /sebi/ matched 2,646 of 12,415
- * records — almost all of it the boilerplate every filing carries ("Pursuant
- * to Regulation 30 of the SEBI (LODR) Regulations"), which blocks order wins
- * for citing the rulebook rather than for being enforcement actions.
- */
-const SEBI_ENFORCEMENT =
-  'show[- ]?cause|adjudicat|penalt|penalis|order|notice|investigat|enforcement|debar|impound';
-
-/** Categories that carry defamation or SEBI exposure — never auto-drafted. */
-const LEGAL_BLOCK_PATTERNS: readonly RegExp[] = [
-  /litigation|arbitration|court|tribunal/i,
-  new RegExp(`\\bsebi\\b[\\s\\S]{0,60}(?:${SEBI_ENFORCEMENT})`, 'i'),
-  new RegExp(`(?:${SEBI_ENFORCEMENT})[\\s\\S]{0,60}\\bsebi\\b`, 'i'),
-  /\bshow[- ]?cause\b|\badjudicat|\benforcement\b/i,
-  // Regulatory-action categories whose summaries are content-free ("has
-  // informed the Exchange about Action(s) taken or orders passed"). Narrowing
-  // the SEBI pattern removed the accidental cover these had been getting from
-  // the boilerplate, so they are named explicitly.
-  /action\(s\) (?:taken|initiated) or orders passed/i,
-  /insolvency|ibc\b|nclt|liquidat/i,
-  /auditor.*(resign|qualif)|qualif.*auditor/i,
-  /whistle ?blower|fraud|default|misstatement/i,
-];
-
-const isLegallyBlocked = (
-  filing: Pick<Filing, 'category' | 'summary'>,
-): boolean =>
-  LEGAL_BLOCK_PATTERNS.some(
-    (p) => p.test(filing.category) || p.test(filing.summary),
-  );
 
 /**
  * NSE disseminates on IST (UTC+05:30). Bucketing a filing by its raw UTC
@@ -137,6 +106,15 @@ function main(): void {
   );
   const unambiguous = withAmount.filter((f) => !hasAmbiguityKeyword(f.summary));
 
+  // Stage 1 fails closed as well as open. Filings filed under a routine
+  // category can still carry a material amount, and discarding them on the
+  // category alone is a silent loss that the funnel above cannot show.
+  const lostToRoutine = filings
+    .filter((f) => isRoutine(f.category))
+    .filter((f) => !isLegallyBlocked(f))
+    .filter((f) => extractRupeeAmounts(f.summary).length > 0)
+    .filter((f) => !hasAmbiguityKeyword(f.summary));
+
   const line = (label: string, n: number): void => {
     const pct = ((n / filings.length) * 100).toFixed(1);
     console.log(
@@ -186,6 +164,17 @@ function main(): void {
     '  These survive stage 1 only because the gate fails open, not because\n' +
       '  they were judged interesting.',
   );
+  console.log(
+    `  stage 1 also fails CLOSED   ${lostToRoutine.length} filings carrying an amount are\n` +
+      `  discarded on their category alone. Drop the routine stage and the funnel\n` +
+      `  yields ${unambiguous.length + lostToRoutine.length} candidates ` +
+      `(${((unambiguous.length + lostToRoutine.length) / days).toFixed(2)}/day) instead of ` +
+      `${unambiguous.length} (${(unambiguous.length / days).toFixed(2)}/day), so the\n` +
+      `  headline is conservative in this direction, not optimistic. Examples:`,
+  );
+  lostToRoutine.slice(0, 3).forEach((f) => {
+    console.log(`    ${f.symbol} [${f.category}] ${f.summary.slice(0, 88)}`);
+  });
 
   console.log('\nTop categories among candidates:');
   const byCategory = new Map<string, number>();

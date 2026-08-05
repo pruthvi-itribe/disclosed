@@ -1,6 +1,7 @@
 export * from './filing.types';
 export * from './logic/ambiguity';
 export * from './logic/html-entities';
+export * from './logic/legal-block';
 export * from './logic/safe-echo';
 export * from './logic/taxonomy';
 export * from './nse/nse.types';

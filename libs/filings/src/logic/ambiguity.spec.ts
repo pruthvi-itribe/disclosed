@@ -126,4 +126,54 @@ describe('extractRupeeAmounts', () => {
       extractRupeeAmounts('issued to shareholders 5 crore equity shares'),
     ).toEqual([]);
   });
+
+  // The bare rupee sign is the sole currency marker on roughly a third of the
+  // corpus candidates. Untested, dropping it from the alternation would cut the
+  // gate number by ~30% with every other assertion still green.
+  it('parses the rupee sign with no space before the figure', () => {
+    expect(extractRupeeAmounts('order worth ₹78.24 crore')).toEqual([
+      782_400_000,
+    ]);
+  });
+
+  it('parses the rupee sign with a space before the figure', () => {
+    expect(extractRupeeAmounts('Revenue ₹ 561 cr')).toEqual([5_610_000_000]);
+  });
+
+  it.each([
+    ['Arisinfra Bags ₹79.05 Crore Work Order', 790_500_000],
+    ['consolidated revenue of ₹1,063 crores', 10_630_000_000],
+    ['PAT of ₹76 Mn', 76_000_000],
+  ])('parses rupee-sign amounts across units: %s', (text, expected) => {
+    expect(extractRupeeAmounts(text)).toEqual([expected]);
+  });
+
+  // "2 lakh crore" is 2e12, not 2e5. Reading the leading unit and ignoring the
+  // trailing one under-reports by 10^7 — invisible in a funnel count, but it
+  // would silently fail a materiality threshold in the scorer.
+  it.each([
+    ['Rs. 2 Lakh crore', 2e12],
+    ['Rs 1.5 lakh crores', 1.5e12],
+    ['INR 3 lac crore', 3e12],
+    ['₹2 lakh cr', 2e12],
+  ])('parses compound lakh-crore units: %s', (text, expected) => {
+    expect(extractRupeeAmounts(text)).toEqual([expected]);
+  });
+
+  // Any other doubled unit is nonsense. Refusing to extract is safe; guessing
+  // one of the two units yields a wrong number presented as a right one.
+  it.each([
+    'Rs 10 crore crore',
+    'Rs 10 lakh lakh',
+    'Rs 5 crore million',
+    'Rs 5 crore lakh',
+  ])('refuses to extract a nonsensical compound unit: %s', (text) => {
+    expect(extractRupeeAmounts(text)).toEqual([]);
+  });
+
+  it('still separates two independent amounts after compound support', () => {
+    expect(extractRupeeAmounts('Rs 10 crore and Rs 5 lakh')).toEqual([
+      100_000_000, 500_000,
+    ]);
+  });
 });
