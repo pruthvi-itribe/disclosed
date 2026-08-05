@@ -15,6 +15,7 @@ import {
   ROUTINE_CATEGORIES,
   hasAmbiguityKeyword,
   extractRupeeAmounts,
+  decodeHtmlEntities,
   safeEcho,
   type Filing,
 } from '@app/filings';
@@ -33,10 +34,26 @@ type StoredFiling = Omit<
   ingestedAt: string;
 };
 
+/**
+ * SEBI in an enforcement context. A bare /sebi/ matched 2,646 of 12,415
+ * records — almost all of it the boilerplate every filing carries ("Pursuant
+ * to Regulation 30 of the SEBI (LODR) Regulations"), which blocks order wins
+ * for citing the rulebook rather than for being enforcement actions.
+ */
+const SEBI_ENFORCEMENT =
+  'show[- ]?cause|adjudicat|penalt|penalis|order|notice|investigat|enforcement|debar|impound';
+
 /** Categories that carry defamation or SEBI exposure — never auto-drafted. */
 const LEGAL_BLOCK_PATTERNS: readonly RegExp[] = [
   /litigation|arbitration|court|tribunal/i,
-  /sebi|show[- ]cause|enforcement|adjudicat/i,
+  new RegExp(`\\bsebi\\b[\\s\\S]{0,60}(?:${SEBI_ENFORCEMENT})`, 'i'),
+  new RegExp(`(?:${SEBI_ENFORCEMENT})[\\s\\S]{0,60}\\bsebi\\b`, 'i'),
+  /\bshow[- ]?cause\b|\badjudicat|\benforcement\b/i,
+  // Regulatory-action categories whose summaries are content-free ("has
+  // informed the Exchange about Action(s) taken or orders passed"). Narrowing
+  // the SEBI pattern removed the accidental cover these had been getting from
+  // the boilerplate, so they are named explicitly.
+  /action\(s\) (?:taken|initiated) or orders passed/i,
   /insolvency|ibc\b|nclt|liquidat/i,
   /auditor.*(resign|qualif)|qualif.*auditor/i,
   /whistle ?blower|fraud|default|misstatement/i,
@@ -71,24 +88,11 @@ const istDay = (iso: string): string =>
 const utcDay = (iso: string): string =>
   new Date(parseTimestamp(iso)).toISOString().slice(0, 10);
 
-/**
- * Sensitivity probe only — NOT a funnel stage. `extractRupeeAmounts` is the
- * shipped contract; this permissive variant exists solely to measure how far
- * that contract under-counts on real NSE text, so the Phase 1 decision is taken
- * on a range rather than on one deflated number. It covers three misses
- * observed in this corpus: plural units ("Rs 1,063 crores" — the trailing \b
- * cannot match after "crore"), the un-decoded HTML entity NSE emits for the
- * rupee sign ("&#8377;561 cr"), and mn/bn units used in press-release titles.
- */
-const PERMISSIVE_AMOUNT_PATTERN =
-  /(?:rs\.?|inr|₹|&#8377;)\s*([\d,]+(?:\.\d+)?)\s*(crores|crore|crs|cr|lakhs|lakh|lacs|lac|mn|million|bn|billion)\b/gi;
-
-/** `matchAll` clones the regex, so the shared /g instance stays stateless. */
-const hasPermissiveAmount = (text: string): boolean =>
-  [...text.matchAll(PERMISSIVE_AMOUNT_PATTERN)].length > 0;
-
 /** Any rupee token at all — the ceiling for what summary text could ever yield. */
 const RUPEE_TOKEN = /(?:\brs\.?|\binr\b|₹|&#8377;)/i;
+
+/** Categories that always concern a sum of money, whatever the summary says. */
+const ORDER_WIN_CATEGORY = /bagging|awarding of order/i;
 
 function resolveInputPath(argv: string[]): string {
   const explicit = argv[2];
@@ -110,10 +114,14 @@ const collapseSpaces = (value: string): string =>
 
 function main(): void {
   const path = resolveInputPath(process.argv);
+  // Rows captured before the mapper decoded entities still carry the raw
+  // `&#8377;` form. Decoding on read makes the measurement reflect what the
+  // pipeline stores today rather than what this corpus happens to hold.
   const filings: StoredFiling[] = readFileSync(path, 'utf8')
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as StoredFiling);
+    .map((line) => JSON.parse(line) as StoredFiling)
+    .map((f) => ({ ...f, summary: decodeHtmlEntities(f.summary) }));
 
   const istDays = filings.map((f) => istDay(f.disseminatedAt));
   const days = distinct(istDays);
@@ -189,32 +197,38 @@ function main(): void {
     .slice(0, 15)
     .forEach(([cat, n]) => console.log(`  ${String(n).padStart(5)}  ${cat}`));
 
-  // How much of the funnel's narrowness is the amount pattern rather than the
-  // filings themselves.
-  const permissive = afterLegal
-    .filter((f) => hasPermissiveAmount(f.summary))
-    .filter((f) => !hasAmbiguityKeyword(f.summary));
-  const rupeeTokens = filings.filter((f) => RUPEE_TOKEN.test(f.summary)).length;
-  console.log('\nMeasurement sensitivity (not funnel stages):');
+  // What the funnel cannot see. The amount stage reads the one-line summary,
+  // but the rupee figure usually lives in the attached PDF, so this measures a
+  // property of NSE's summary text rather than the rate of material events.
+  const rupeeTokens = filings.filter((f) => RUPEE_TOKEN.test(f.summary));
+  const residual = rupeeTokens.filter(
+    (f) => extractRupeeAmounts(f.summary).length === 0,
+  ).length;
+  const orderWins = filings.filter((f) => ORDER_WIN_CATEGORY.test(f.category));
+  const orderWinsWithAmount = orderWins.filter(
+    (f) => extractRupeeAmounts(f.summary).length > 0,
+  ).length;
+  console.log('\nWhat this does not measure (not funnel stages):');
   console.log(
-    `  summaries containing any rupee token    ${rupeeTokens} of ${filings.length} ` +
-      `(${((rupeeTokens / filings.length) * 100).toFixed(1)}%)`,
+    `  summaries with any rupee token          ${rupeeTokens.length} of ${filings.length} ` +
+      `(${((rupeeTokens.length / filings.length) * 100).toFixed(1)}%)`,
   );
   console.log(
-    `  candidates, shipped amount pattern      ${unambiguous.length}  ` +
-      `(${(unambiguous.length / days).toFixed(2)}/day)`,
+    `  ...of those, no amount extracted        ${residual}  (residual pattern gap)`,
   );
   console.log(
-    `  candidates, permissive amount pattern   ${permissive.length}  ` +
-      `(${(permissive.length / days).toFixed(2)}/day)`,
+    `  order-win filings                       ${orderWins.length}, of which ` +
+      `${orderWinsWithAmount} state the amount in the summary ` +
+      `(${((orderWinsWithAmount / Math.max(orderWins.length, 1)) * 100).toFixed(1)}%)`,
   );
   console.log(
-    `  distinct symbols among candidates       ${distinct(unambiguous.map((f) => f.symbol))}`,
+    `  distinct symbols among candidates       ${distinct(unambiguous.map((f) => f.symbol))} ` +
+      `(of ${unambiguous.length} candidate rows)`,
   );
   console.log(
-    '  The gap is plural units ("Rs 1,063 crores"), the un-decoded HTML\n' +
-      '  entity &#8377; that NSE emits for the rupee sign, and mn/bn units.\n' +
-      '  Amounts stated only inside the attachment PDF are invisible to both.',
+    '  An order win is about a sum of money by definition, so that rate is a\n' +
+      '  property of the summary line, not of the events. The rest of the lane\n' +
+      '  is reachable only by extracting text from the attachment PDF.',
   );
 
   const perDay = unambiguous.length / days;
@@ -222,11 +236,16 @@ function main(): void {
     `\nVERDICT: ${perDay.toFixed(1)} newsjack candidates/day before the ` +
       `market-cap gate.\nThe market-cap gate will reduce this further. If the ` +
       `post-gate figure lands below ~1/day, the newsjack lane cannot sustain a ` +
-      `cadence and only the teardown lane justifies itself.\n` +
-      `This figure is an UPPER BOUND for the lane: every remaining stage ` +
-      `(market-cap\nmateriality, dedup, watchlist) only removes. It is also ` +
-      `measured on summary text\nalone, so treat ${perDay.toFixed(1)}` +
-      `-${(permissive.length / days).toFixed(1)}/day as the honest pre-gate range.\n`,
+      `cadence and only the teardown lane justifies itself.\n\n` +
+      `Read this number with three caveats:\n` +
+      `  - UPPER BOUND. Every remaining stage (market-cap materiality, dedup,\n` +
+      `    watchlist) only removes. The market-cap gate is not applied here at all.\n` +
+      `  - SUMMARY TEXT ONLY. Amounts stated solely in the attachment PDF are\n` +
+      `    invisible, so the underlying event rate is materially higher.\n` +
+      `  - ONE MONTH, AND AN EARNINGS-HEAVY ONE. This corpus is dominated by Q1\n` +
+      `    FY27 results season, when press releases quoting figures are at their\n` +
+      `    most abundant. Treat it as a seasonal high-water mark until an\n` +
+      `    off-season corpus confirms it.\n`,
   );
 }
 

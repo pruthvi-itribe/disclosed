@@ -1,4 +1,5 @@
 import type { Filing } from '../filing.types';
+import { decodeHtmlEntities } from '../logic/html-entities';
 import { safeEcho } from '../logic/safe-echo';
 import { parseNseDate } from './nse-date';
 import type { NseRawRecord } from './nse.types';
@@ -34,6 +35,16 @@ const SEQ_ID_PATTERN = /^\d+$/;
  */
 const nullIfBlank = (value: unknown): string | null =>
   typeof value === 'string' ? value.trim() || null : null;
+
+/**
+ * Normalises announcement text, decoding HTML entities before the blank check.
+ *
+ * Order matters: NSE escapes its text, so a summary of `&nbsp;` carries no
+ * content but is not blank until decoded. Decoding first makes it normalise to
+ * '' like any other empty summary instead of surviving as literal markup.
+ */
+const decodedOrNull = (value: unknown): string | null =>
+  typeof value === 'string' ? nullIfBlank(decodeHtmlEntities(value)) : null;
 
 /**
  * Identifies the record in an error message: `seq_id=106725630` when usable,
@@ -119,7 +130,7 @@ export function mapNseRecord(
     companyName: raw.sm_name,
     industry: nullIfBlank(raw.smIndustry),
     category: raw.desc,
-    summary: nullIfBlank(raw.attchmntText) ?? '',
+    summary: decodedOrNull(raw.attchmntText) ?? '',
     attachmentUrl: nullIfBlank(raw.attchmntFile),
     announcedAt,
     // NSE occasionally omits exchdisstime; an_dt is the only honest fallback.

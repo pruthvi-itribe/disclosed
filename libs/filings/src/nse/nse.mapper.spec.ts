@@ -179,6 +179,40 @@ describe('mapNseRecord boundary validation', () => {
     );
   });
 
+  // NSE returns announcement text HTML-escaped. Left encoded, the escaping
+  // reaches the alert formatter and a user sees "PAT of &#8377;76 Mn".
+  it('decodes HTML entities in the summary', () => {
+    const filing = mapNseRecord({
+      ...sample,
+      attchmntText: 'MobiKwik delivers PAT of &#8377;76 Mn',
+    });
+    expect(filing.summary).toBe('MobiKwik delivers PAT of ₹76 Mn');
+  });
+
+  it('decodes named entities in the summary', () => {
+    const filing = mapNseRecord({
+      ...sample,
+      attchmntText: 'Larsen &amp; Toubro wins an order',
+    });
+    expect(filing.summary).toBe('Larsen & Toubro wins an order');
+  });
+
+  // Decoding runs before the blank check, so a summary that is only entities
+  // normalises exactly like a whitespace-only one instead of surviving as
+  // meaningless markup.
+  it('treats an entity-only summary as blank', () => {
+    const filing = mapNseRecord({ ...sample, attchmntText: '&nbsp;&nbsp;' });
+    expect(filing.summary).toBe('');
+  });
+
+  it('trims whitespace that only appears after decoding', () => {
+    const filing = mapNseRecord({
+      ...sample,
+      attchmntText: '&nbsp;Order received&nbsp;',
+    });
+    expect(filing.summary).toBe('Order received');
+  });
+
   // Optional fields are genuinely optional, so junk normalises to absent
   // rather than throwing. `value?.trim()` guarded only null and undefined, so
   // a non-string used to escape as a bare TypeError carrying no field name and
