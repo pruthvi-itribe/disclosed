@@ -1,0 +1,427 @@
+#!/usr/bin/env bash
+#
+# Mutation harness for the poll loop and its configuration (Task 12).
+#
+# This is the component that turns every other task's guarantee into behaviour,
+# and almost every way it can break is SILENT — the process stays up, the logs
+# stay calm, and the only symptom is a chat that says less than it should:
+#
+#   1. THE CONFIGURATION. Every numeric setting is validated once, here, because
+#      nothing downstream validates its own inputs. The specific hazard is NaN:
+#      `NaN < 1` is FALSE, so a bare lower-bound check ACCEPTS it, and then
+#      `alertWindowMs: NaN` mutes the bot outright, `failureThreshold: NaN`
+#      makes the breaker report healthy through an unlimited outage, and an
+#      interval of NaN turns `setTimeout` into a busy loop against Akamai.
+#   2. THE CURSOR. It may only move on proof. Not from an empty page, not past a
+#      drain that failed, not past a write that threw, and never backwards. Each
+#      of those advances loses filings permanently and reports success.
+#   3. THE DRAIN DECISION. `holeDetected` is the whole no-loss guarantee, and it
+#      is independent of how many new ids the page carried — a cold start
+#      reports a hole with an empty list. Inferring the drain from the id count
+#      instead skips the one drain that establishes the baseline.
+#   4. THE IN-FLIGHT GUARD. A hard Akamai block takes ~30s to reject against a
+#      2s interval, so an unguarded poller stacks ~15 requests during exactly
+#      the outage where NSE is least willing to serve.
+#   5. THE ALARMS. Three different silences — a blind poller, a feed whose every
+#      record is rejected, a database refusing writes — each edge-triggered so
+#      the outage cannot mute the channel that reports it. Weaken the edge and
+#      the operator gets ~1800 messages an hour and mutes the bot; remove it and
+#      they get none.
+#
+# All five are the kind a passing suite can imply without proving. So this
+# script breaks the implementation one way at a time, re-runs the suite, and
+# asserts the break is caught — then restores.
+#
+# Usage:  bash tools/mutation/poller-mutations.sh
+# Exit:   0 only if every mutation applied AND was caught.
+#
+# Four outcomes per mutation, deliberately distinguished:
+#   CAUGHT   the tests failed — the guarantee is covered.
+#   CRASHED  the mutation killed the test runner before it reported anything, so
+#            there is no `Tests:` line to read. The suite is red, so the
+#            guarantee IS covered, but it is labelled apart from an assertion
+#            failure — "no verdict" must never be silently rounded to either a
+#            kill or a survivor.
+#   SURVIVED the tests passed — a real test gap.
+#   NO-OP    the perl pattern matched nothing, so nothing was mutated. This is
+#            harness staleness after a refactor, NOT a test gap. Conflating the
+#            two would raise a false alarm about the poll loop itself.
+#
+# Safety mirrors tools/mutation/alert-service-mutations.sh — see that file for
+# the full rationale. In short: refuses to run on a dirty tree, INT/TERM exit
+# rather than return so the script cannot resume past cleanup, every restore is
+# verified byte-for-byte, a jest run killed by a signal is reported as ABORTED
+# rather than misread as a surviving mutation, and a mutation that does not
+# type-check is reported as COMPILE rather than misread as SURVIVED.
+#
+# NOT covered by mutation, and why:
+#
+#   - `main.ts` and `ingest.module.ts` are composition, not logic. Mutating a
+#     provider factory produces a container that fails to construct, which no
+#     unit test observes and which the smoke test catches immediately. Pretending
+#     otherwise would manufacture a page of SURVIVEDs about wiring that is
+#     verified by running the process.
+#   - Releasing the in-flight guard OUTSIDE a `finally` rather than inside it is
+#     observationally identical for every failure `poll()` handles internally,
+#     because it does not throw for any of them. The `finally` guards the
+#     contract violation instead, and THAT is mutated below.
+#   - `describeConfig`'s exact word spacing. It is a log line, and pinning its
+#     punctuation would make an ordinary reword read as a test failure. Its
+#     redaction and its configured/unconfigured verdict ARE mutated, because
+#     both are load-bearing.
+#
+# Tally, so a report can quote it without recounting: 34 mutations against the
+# poller and 12 against the configuration, plus 5 independence checks = 51
+# `check` calls.
+
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+POLL=$ROOT/apps/ingest/src/poller/poller.service.ts
+CONF=$ROOT/apps/ingest/src/config/configuration.ts
+
+# --- precondition: refuse to mutate a dirty tree -----------------------------
+for f in "$POLL" "$CONF"; do
+  if ! git -C "$ROOT" ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    echo "refusing to run: $f is not tracked by git." >&2
+    exit 1
+  fi
+done
+if ! git -C "$ROOT" diff --quiet -- "$POLL" "$CONF" ||
+  ! git -C "$ROOT" diff --cached --quiet -- "$POLL" "$CONF"; then
+  echo "refusing to run: uncommitted changes in the files this script mutates." >&2
+  echo "  commit or stash them first — this script edits them in place." >&2
+  git -C "$ROOT" status --short -- "$POLL" "$CONF" >&2
+  exit 1
+fi
+
+# --- backups: an unchecked cp here would mean mutating with no way back ------
+BACKUP=$(mktemp -d) || {
+  echo "refusing to run: could not create a backup directory." >&2
+  exit 1
+}
+cp "$POLL" "$BACKUP/poller.service.ts" || {
+  echo "refusing to run: could not back up poller.service.ts." >&2
+  rm -rf "$BACKUP"
+  exit 1
+}
+cp "$CONF" "$BACKUP/configuration.ts" || {
+  echo "refusing to run: could not back up configuration.ts." >&2
+  rm -rf "$BACKUP"
+  exit 1
+}
+
+FAILURES=0
+NOOPS=0
+CRASHES=0
+
+restore_verified() {
+  local ok=0
+  cp "$BACKUP/poller.service.ts" "$POLL" || ok=1
+  cp "$BACKUP/configuration.ts" "$CONF" || ok=1
+  cmp -s "$BACKUP/poller.service.ts" "$POLL" || ok=1
+  cmp -s "$BACKUP/configuration.ts" "$CONF" || ok=1
+  return $ok
+}
+
+on_exit() {
+  if restore_verified; then
+    rm -rf "$BACKUP"
+  else
+    echo "" >&2
+    echo "FATAL: sources could NOT be restored. Backups kept at:" >&2
+    echo "  $BACKUP" >&2
+    echo "Recover with:" >&2
+    echo "  cp $BACKUP/poller.service.ts $POLL" >&2
+    echo "  cp $BACKUP/configuration.ts  $CONF" >&2
+    echo "or: git -C $ROOT checkout -- $POLL $CONF" >&2
+    exit 1
+  fi
+}
+
+trap on_exit EXIT
+trap 'echo ""; echo "INTERRUPTED — restoring sources."; exit 130' INT TERM
+
+# check <label> <mutated-file> <jest-pattern> [extra jest args...]
+check() {
+  local label="$1" file="$2" pattern="$3"
+  shift 3
+  local backup_for out
+
+  case "$file" in
+  *poller.service.ts) backup_for=$BACKUP/poller.service.ts ;;
+  *) backup_for=$BACKUP/configuration.ts ;;
+  esac
+
+  if cmp -s "$file" "$backup_for"; then
+    echo "NO-OP    | $label"
+    echo "           <-- HARNESS STALE: pattern matched nothing; not a test gap"
+    NOOPS=$((NOOPS + 1))
+    restore_verified || on_exit
+    return
+  fi
+
+  # `--forceExit` is not a convenience. This file schedules timers and runs an
+  # unbounded loop, so a mutation can leave the event loop alive after the last
+  # assertion has already failed — jest then prints its results and hangs
+  # instead of exiting, and the harness stalls on a mutation it has in fact
+  # ALREADY caught. Forcing the exit keeps a caught mutation from reading as a
+  # hung harness. Results are printed before the exit, so no verdict is lost.
+  # The unmutated suite exits on its own; the final summary run below omits it
+  # deliberately, so a genuine leak in the real code still shows up as a hang.
+  out=$(cd "$ROOT" && npx jest "$pattern" --forceExit "$@" 2>&1)
+  local rc=$?
+
+  if [ "$rc" -ge 128 ]; then
+    echo "ABORTED  | $label"
+    echo "           test run killed by signal $((rc - 128)); no verdict."
+    echo ""
+    echo "INTERRUPTED — restoring sources and stopping."
+    exit 130
+  fi
+
+  # A mutation that does not type-check proves nothing: ts-jest fails the suite
+  # before a single test runs. Counted as a failure, because a mutation that
+  # never ran exercised no assertion.
+  if echo "$out" | grep -qE "Test suite failed to run"; then
+    echo "COMPILE  | $label"
+    echo "           <-- mutation did not type-check; no assertion was exercised"
+    FAILURES=$((FAILURES + 1))
+    restore_verified || on_exit
+    return
+  fi
+
+  # An uncaught exception or an unresolved promise can kill the runner before it
+  # reports anything at all. The suite is red, so the mutation IS detected — but
+  # a crashed run is labelled apart from an ordinary assertion failure, because
+  # "no verdict" must never be quietly read as either a clean kill or a survivor.
+  if ! echo "$out" | grep -qE "^Tests:"; then
+    if [ "$rc" -eq 0 ]; then
+      echo "SURVIVED | $label   <-- TEST GAP"
+      FAILURES=$((FAILURES + 1))
+    else
+      echo "CRASHED  | $label"
+      echo "           runner died before reporting (exit $rc); the suite is red"
+      CRASHES=$((CRASHES + 1))
+    fi
+    restore_verified || on_exit
+    return
+  fi
+
+  if echo "$out" | grep -qE "Tests:.*failed"; then
+    echo "CAUGHT   | $label"
+    echo "$out" | grep -E "^\s+●\s" | grep -v Console | sed 's/^/           /' |
+      sort -u | head -3
+  else
+    echo "SURVIVED | $label   <-- TEST GAP"
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  restore_verified || on_exit
+}
+
+echo "=== config validation: NaN is what a bare lower bound lets through ==="
+
+perl -0pi -e 's/  if \(!Number\.isFinite\(value\)\) \{\n    throw new Error\(\n      `\$\{key\} must be a finite number.*?\n    \);\n  \}\n\n  if \(!Number\.isInteger\(value\)\) \{\n    throw new Error\(`\$\{key\} must be a whole number, but was "\$\{raw\}"\.`\);\n  \}\n\n//s' "$CONF"
+check "bare lower bound only (NaN and Infinity both accepted)" "$CONF" configuration
+
+perl -0pi -e 's/  if \(!Number\.isFinite\(value\)\) \{\n    throw new Error\(\n      `\$\{key\} must be a finite number.*?\n    \);\n  \}\n\n//s' "$CONF"
+check "finite check removed (the message no longer names the real fault)" "$CONF" configuration
+
+perl -0pi -e 's/  if \(!Number\.isInteger\(value\)\) \{\n    throw new Error\(`\$\{key\} must be a whole number, but was "\$\{raw\}"\.`\);\n  \}\n\n//s' "$CONF"
+check "integer check removed (a fractional interval is accepted)" "$CONF" configuration
+
+perl -0pi -e 's/  if \(value < MINIMUM_NUMERIC\) \{\n    throw new Error\(\n      `\$\{key\} must be at least \$\{MINIMUM_NUMERIC\}, but was "\$\{raw\}"\.`,\n    \);\n  \}\n\n//s' "$CONF"
+check "minimum check removed (a zero threshold busy-loops the poller)" "$CONF" configuration
+
+perl -0pi -e 's/export const MINIMUM_NUMERIC = 1;/export const MINIMUM_NUMERIC = 0;/' "$CONF"
+check "minimum lowered to zero (burstThreshold 0 makes every poll a burst)" "$CONF" configuration
+
+perl -0pi -e 's/  const value = Number\(raw\);/  const value = parseInt(raw, 10);/' "$CONF"
+check "parseInt instead of Number (\"2000ms\" silently becomes 2000)" "$CONF" configuration
+
+perl -0pi -e 's/  if \(raw === undefined \|\| raw\.trim\(\) === ""\) return CONFIG_DEFAULTS\[key\];/  if (raw === undefined) return CONFIG_DEFAULTS[key];/' "$CONF"
+perl -0pi -e "s/  if \\(raw === undefined \\|\\| raw\\.trim\\(\\) === ''\\) return CONFIG_DEFAULTS\\[key\\];/  if (raw === undefined) return CONFIG_DEFAULTS[key];/" "$CONF"
+check "blank assignment not treated as unset (KEY= becomes 0 and throws)" "$CONF" configuration
+
+perl -0pi -e 's/`\$\{key\} must be a finite number, but was "\$\{raw\}"\. A non-finite value is `/`must be a finite number. `/' "$CONF"
+check "key name dropped from the error (operator cannot tell which one)" "$CONF" configuration
+
+echo ""
+echo "=== config parsing: a blank watchlist entry mutes the bot ==="
+
+perl -0pi -e 's/    \.filter\(\(entry\) => entry\.length > 0\);/    ;/' "$CONF"
+check "blank entries kept (WATCHLIST= parses to [''] and matches nothing)" "$CONF" configuration
+
+perl -0pi -e 's/    \.map\(\(entry\) => entry\.trim\(\)\)\n//' "$CONF"
+check "entries not trimmed (\"A, B\" never matches the symbol B)" "$CONF" configuration
+
+perl -0pi -e 's/\n  uri\.replace\([^\n]*\);/\n  uri;/' "$CONF"
+check "credentials not redacted (the mongo password lands in the log)" "$CONF" configuration
+
+perl -0pi -e 's/config\.telegramBotToken && config\.telegramChatId/config.telegramBotToken || config.telegramChatId/' "$CONF"
+check "half-set credentials reported as configured (nothing is delivered)" "$CONF" configuration
+
+echo ""
+echo "=== the cursor may only move on proof ==="
+
+perl -0pi -e 's/    if \(observed\.length === 0\) return;\n\n//' "$POLL"
+check "advances from an empty observation (claims a baseline it never saw)" "$POLL" poller.service
+
+perl -0pi -e 's/    this\.cursor =\n      this\.cursor === null \? highest : Math\.max\(this\.cursor, highest\);/    this.cursor = highest;/' "$POLL"
+check "cursor can go backwards (an older page re-offers everything above it)" "$POLL" poller.service
+
+perl -0pi -e 's/      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);/      this.advanceCursor(page.filings);/' "$POLL"
+check "drained ids ignored by the cursor (re-drains the day every poll)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(!drainFailed\) \{\n      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);\n    \}/    this.advanceCursor([...page.filings, ...dayFilings]);/' "$POLL"
+check "advances past a failed drain (steps over the missing records)" "$POLL" poller.service
+
+perl -0pi -e 's/      inserted = await this\.repository\.insertNew\(candidates\);/      inserted = await this.repository.insertNew(candidates).catch(() => []);/' "$POLL"
+check "a thrown write read as a retryable no-op (rows stored, never alerted)" "$POLL" poller.service
+
+echo ""
+echo "=== the drain decision is the no-loss guarantee ==="
+
+perl -0pi -e 's/    if \(holeDetected\) \{\n      this\.logger\.warn/    if (holeDetected \&\& newSeqIds.length > 0) {\n      this.logger.warn/' "$POLL"
+check "drain inferred from the new-id count (skips the cold-start baseline)" "$POLL" poller.service
+
+perl -0pi -e 's/        candidates = mergeById\(newOnPage, dayFilings\);/        candidates = newOnPage;/' "$POLL"
+check "drained page discarded (the recovered filings are thrown away)" "$POLL" poller.service
+
+perl -0pi -e 's/      drained: holeDetected,/      drained: false,/' "$POLL"
+check "drain never reported (the caller cannot see a rollover happened)" "$POLL" poller.service
+
+perl -0pi -e 's/        const day = await this\.adapter\.fetchDay\(now\);/        const day = await this.adapter.fetchDay(new Date());/' "$POLL"
+check "drains the wall-clock day, not the instant it was handed" "$POLL" poller.service
+
+echo ""
+echo "=== the in-flight guard ==="
+
+perl -0pi -e 's/    if \(this\.polling\) \{.*?\n    \}\n\n    this\.polling = true;/    this.polling = true;/s' "$POLL"
+check "guard removed (polls stack ~15 deep during a 30s Akamai block)" "$POLL" poller.service
+
+# Released on the success path only, rather than in a `finally`. Written as a
+# straight-line sequence rather than by deleting the `finally`, because a `try`
+# with neither `catch` nor `finally` does not compile and a mutation that never
+# ran proves nothing.
+perl -0pi -e 's/    this\.polling = true;\n    try \{\n      return await this\.poll\(now\);\n    \} finally \{.*?\n      this\.polling = false;\n    \}/    this.polling = true;\n    const result = await this.poll(now);\n    this.polling = false;\n    return result;/s' "$POLL"
+check "guard never released after a throw (the poller goes silent for good)" "$POLL" poller.service
+
+perl -0pi -e 's/      return this\.barrenResult\(now, true\);/      return this.barrenResult(now, false);/' "$POLL"
+check "a deferred tick reports as an ordinary quiet poll" "$POLL" poller.service
+
+echo ""
+echo "=== the breaker: the edge, and what counts as recovery ==="
+
+perl -0pi -e 's/    if \(this\.breaker\.recordFailure\(\)\) \{/    this.breaker.recordFailure();\n    if (this.breaker.isDegraded()) {/' "$POLL"
+check "branches on isDegraded (a message every 2s until the channel is muted)" "$POLL" poller.service
+
+perl -0pi -e 's/    this\.breaker\.recordSuccess\(\);\n    await this\.reportBlindFeed\(page\);/    await this.reportBlindFeed(page);/' "$POLL"
+check "success never recorded (one blip and the breaker never clears)" "$POLL" poller.service
+
+perl -0pi -e 's/    this\.breaker\.recordSuccess\(\);/    if (page.filings.length > 0) this.breaker.recordSuccess();/' "$POLL"
+check "recovery gated on records arriving (a quiet market trips the breaker)" "$POLL" poller.service
+
+perl -0pi -e 's/        formatDegradedAlert\(this\.breaker\.consecutiveFailures\(\), message\),/        formatDegradedAlert(1, message),/' "$POLL"
+check "failure count hardcoded (the outage duration is lost)" "$POLL" poller.service
+
+echo ""
+echo "=== the blind-feed alarm: received 0 is normal, all-rejected is not ==="
+
+perl -0pi -e 's/    if \(page\.received === 0 \|\| page\.filings\.length > 0\) \{/    if (page.filings.length > 0) {/' "$POLL"
+check "an empty day alarms (every market holiday pages the operator)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(page\.received === 0 \|\| page\.filings\.length > 0\) \{/    if (page.received === 0) {/' "$POLL"
+check "a partially rejected page alarms (one bad record is not blindness)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(this\.feedBlind\) return;\n//' "$POLL"
+check "alarm not edge-triggered (a message every 2s until it is muted)" "$POLL" poller.service
+
+perl -0pi -e 's/      this\.feedBlind = false;\n      return;/      return;/' "$POLL"
+check "latch never re-armed (a second episode is never reported)" "$POLL" poller.service
+
+perl -0pi -e 's/    await this\.reportBlindFeed\(page\);\n//' "$POLL"
+check "blind feed never announced (an id-format change silences the feed)" "$POLL" poller.service
+
+echo ""
+echo "=== the write-failure alarm ==="
+
+perl -0pi -e 's/    if \(!this\.writeFailing\) \{\n      this\.writeFailing = true;\n      await this\.telegram\.send\(formatWriteFailureAlert\(batch\.length, message\)\);\n    \}\n\n//' "$POLL"
+check "failed write never announced (rows stored without alerting, in silence)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(!this\.writeFailing\) \{\n      this\.writeFailing = true;\n//' "$POLL"
+perl -0pi -e 's/      await this\.telegram\.send\(formatWriteFailureAlert\(batch\.length, message\)\);\n    \}/      await this.telegram.send(formatWriteFailureAlert(batch.length, message));/' "$POLL"
+check "alarm not edge-triggered (a database outage floods the channel)" "$POLL" poller.service
+
+perl -0pi -e 's/      inserted = await this\.repository\.insertNew\(candidates\);\n      this\.writeFailing = false;/      inserted = await this.repository.insertNew(candidates);/' "$POLL"
+check "latch never re-armed (a second outage is never reported)" "$POLL" poller.service
+
+echo ""
+echo "=== alerting is gated on confirmed inserts ==="
+
+perl -0pi -e 's/    const alerted = await this\.alertOn\(inserted, now\);/    const alerted = await this.alertOn(candidates, now);/' "$POLL"
+check "the whole poll result alerted (every record re-notifies on every poll)" "$POLL" poller.service
+
+perl -0pi -e 's/    try \{\n      return \(await this\.alerts\.processInserted\(inserted, now\)\)\.length;\n    \} catch \(error\) \{.*?\n    \}\n/    return (await this.alerts.processInserted(inserted, now)).length;\n/s' "$POLL"
+check "alert failure propagates (one poison record wedges the cursor forever)" "$POLL" poller.service
+
+echo ""
+echo "=== cadence and startup ==="
+
+perl -0pi -e 's/      delayMs: this\.delayFor\(newSeqIds\.length, now\),/      delayMs: this.delayFor(0, now),/' "$POLL"
+check "burst signal dropped (the page turns over while we wait out the interval)" "$POLL" poller.service
+
+perl -0pi -e 's/    return nextPollDelayMs\(\{ newCount, now, \.\.\.this\.options \}\);/    return nextPollDelayMs({ newCount, now: new Date(0), ...this.options });/' "$POLL"
+check "cadence read off a frozen clock, not the instant supplied" "$POLL" poller.service
+
+perl -0pi -e 's/    await this\.repository\.assertIndexes\(\);\n\n//' "$POLL"
+check "index assertion skipped (a restart re-alerts the whole day)" "$POLL" poller.service
+
+perl -0pi -e 's/    await this\.repository\.assertIndexes\(\);\n\n    this\.cursor = await this\.repository\.getMaxSeqId\(\);/    this.cursor = await this.repository.getMaxSeqId();\n    await this.repository.assertIndexes();/' "$POLL"
+check "index asserted after the cursor read, not before it" "$POLL" poller.service
+
+perl -0pi -e 's/      if \(this\.running && delayMs > 0\) await this\.sleep\(delayMs\);/      if (delayMs > 0) await this.sleep(delayMs);/' "$POLL"
+check "sleeps after being told to stop (shutdown waits out a full interval)" "$POLL" poller.service
+
+perl -0pi -e 's/    const wake = this\.wake;\n    this\.clearSleep\(\);\n    wake\?\.\(\);/    this.clearSleep();/' "$POLL"
+check "stop does not wake the sleeper (SIGTERM hangs for the idle interval)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(this\.running\) \{\n      throw new Error\(.PollerService is already running.\);\n    \}\n\n//' "$POLL"
+check "a second loop allowed to start (two schedules against one cursor)" "$POLL" poller.service
+
+perl -0pi -e 's/    try \{\n      return \(await this\.tick\(\)\)\.delayMs;\n    \} catch \(error\) \{.*?\n    \}\n/    return (await this.tick()).delayMs;\n/s' "$POLL"
+check "loop dies on a contract violation (reads as a quiet market from outside)" "$POLL" poller.service
+
+echo ""
+echo "=== independence checks ==="
+echo "Each guarantee must die to the suite that OWNS it, not merely to the"
+echo "whole file. Otherwise deleting a describe block would silently cost"
+echo "coverage that looks covered."
+
+perl -0pi -e 's/    if \(this\.polling\) \{.*?\n    \}\n\n    this\.polling = true;/    this.polling = true;/s' "$POLL"
+check "guard removed, in-flight suite only" "$POLL" poller.service -t "the in-flight guard"
+
+perl -0pi -e 's/    if \(holeDetected\) \{\n      this\.logger\.warn/    if (holeDetected \&\& newSeqIds.length > 0) {\n      this.logger.warn/' "$POLL"
+check "drain inferred from the count, drain suite only" "$POLL" poller.service -t "ingest and drain"
+
+perl -0pi -e 's/    if \(!drainFailed\) \{\n      this\.advanceCursor\(\[\.\.\.page\.filings, \.\.\.dayFilings\]\);\n    \}/    this.advanceCursor([...page.filings, ...dayFilings]);/' "$POLL"
+check "advances past a failed drain, cursor suite only" "$POLL" poller.service -t "cursor discipline"
+
+perl -0pi -e 's/    if \(this\.breaker\.recordFailure\(\)\) \{/    this.breaker.recordFailure();\n    if (this.breaker.isDegraded()) {/' "$POLL"
+check "branches on isDegraded, breaker suite only" "$POLL" poller.service -t "circuit breaker"
+
+perl -0pi -e 's/  if \(!Number\.isFinite\(value\)\) \{\n    throw new Error\(\n      `\$\{key\} must be a finite number.*?\n    \);\n  \}\n\n  if \(!Number\.isInteger\(value\)\) \{\n    throw new Error\(`\$\{key\} must be a whole number, but was "\$\{raw\}"\.`\);\n  \}\n\n//s' "$CONF"
+check "bare lower bound, numeric-validation suite only" "$CONF" configuration -t "numeric validation"
+
+echo ""
+if [ "$FAILURES" -eq 0 ] && [ "$NOOPS" -eq 0 ]; then
+  echo "RESULT: all mutations applied and were caught ($CRASHES by crashing the"
+  echo "        runner rather than by an assertion); no test gaps."
+else
+  echo "RESULT: $FAILURES survived (test gap), $NOOPS no-op (harness stale)."
+fi
+
+cd "$ROOT" && npx jest poller.service configuration 2>&1 |
+  grep -E "^(Tests|Test Suites):"
+exit $((FAILURES + NOOPS))
