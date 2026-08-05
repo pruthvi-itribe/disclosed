@@ -5,3 +5,5 @@ coverage/
 *.log
 data/corpus/
 .superpowers/
+.idea/
+.vscode/
