@@ -190,7 +190,10 @@ check() {
   # A mutation that does not type-check proves nothing: ts-jest fails the suite
   # before a single test runs. Counted as a failure, because a mutation that
   # never ran exercised no assertion.
-  if echo "$out" | grep -qE "Test suite failed to run"; then
+  # A TYPE error specifically: "Test suite failed to run" on its own is also
+  # printed when a jest worker dies at runtime, which is a kill, not a stale
+  # mutation. Requiring a `TS####` diagnostic keeps the two apart.
+  if echo "$out" | grep -qE "error TS[0-9]+"; then
     echo "COMPILE  | $label"
     echo "           <-- mutation did not type-check; no assertion was exercised"
     FAILURES=$((FAILURES + 1))
@@ -202,14 +205,28 @@ check() {
   # reports anything at all. The suite is red, so the mutation IS detected — but
   # a crashed run is labelled apart from an ordinary assertion failure, because
   # "no verdict" must never be quietly read as either a clean kill or a survivor.
+  #
+  # POSITIVE EVIDENCE IS REQUIRED before that may be scored as a kill. A non-zero
+  # exit with no `Tests:` line is also what a typo'd suite name, a broken jest
+  # config, an OOM or a missing `npx` produces: `npx jest zzz-no-such-suite`
+  # exits 1 with no `Tests:` line, and the old branch counted that as caught AND
+  # excluded it from the exit code — turning a fail-safe misclassification into
+  # a fail-open one, on the harness that backs the no-loss guarantee. So a
+  # CRASHED verdict now requires proof that jest reached a suite at all;
+  # anything else is a HARNESS ERROR and counts toward FAILURES.
   if ! echo "$out" | grep -qE "^Tests:"; then
     if [ "$rc" -eq 0 ]; then
       echo "SURVIVED | $label   <-- TEST GAP"
       FAILURES=$((FAILURES + 1))
-    else
+    elif echo "$out" | grep -qE "^(Test Suites:|PASS |FAIL )"; then
       echo "CRASHED  | $label"
       echo "           runner died before reporting (exit $rc); the suite is red"
       CRASHES=$((CRASHES + 1))
+    else
+      echo "HARNESS ERROR | $label"
+      echo "           jest never reached a suite (exit $rc). No verdict, and NOT"
+      echo "           a kill — check the pattern, the config and the toolchain."
+      FAILURES=$((FAILURES + 1))
     fi
     restore_verified || on_exit
     return
