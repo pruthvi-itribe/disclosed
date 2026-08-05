@@ -479,8 +479,29 @@ Expected: FAIL — `Cannot find module './nse-date'`
 
 - [ ] **Step 4: Implement parseNseDate**
 
-Create `libs/filings/src/nse/nse-date.ts`:
+First create `libs/filings/src/logic/safe-echo.ts` — untrusted payload content is
+echoed into error messages that get logged, so it must be bounded and single-line.
+An unbounded echo lets a corrupt or hostile field forge a log line:
+
 ```ts
+const MAX_ECHO_LENGTH = 32;
+
+/**
+ * Bounds and flattens untrusted input before it is interpolated into an error
+ * message. Truncation caps log volume; replacing CR/LF/TAB keeps one record on
+ * one line, so a forged newline cannot fabricate a second log entry.
+ */
+export function safeEcho(value: string): string {
+  return value.slice(0, MAX_ECHO_LENGTH).replace(/[\r\n\t]/g, ' ');
+}
+```
+
+Export it from `libs/filings/src/index.ts` alongside the other logic modules.
+
+Then create `libs/filings/src/nse/nse-date.ts`:
+```ts
+import { safeEcho } from '../logic/safe-echo';
+
 const MONTHS: Readonly<Record<string, number>> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
