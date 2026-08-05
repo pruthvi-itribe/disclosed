@@ -1,3 +1,4 @@
+import axios, { type AxiosError } from 'axios';
 import nock from 'nock';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -57,7 +58,7 @@ describe('NseAdapter', () => {
     nock.cleanAll();
     session = new StubSession();
     logger = new StubLogger();
-    adapter = new NseAdapter(session, undefined, logger);
+    adapter = new NseAdapter(session, logger);
   });
 
   afterAll(() => {
@@ -237,6 +238,30 @@ describe('NseAdapter', () => {
       .reply(403, 'Access Denied');
 
     await expect(adapter.fetchLatest()).rejects.toThrow(/NSE request failed/);
+
+    // The retry budget is exactly one, and Task 12 designs its load arithmetic
+    // against that number. Without these, an implementation that looped three
+    // times would exhaust the interceptors, fail on nock's net-connect guard,
+    // get wrapped in the same message and still pass.
+    expect(session.issued).toBe(2);
+    expect(session.invalidated).toBe(1);
+  });
+
+  it('exposes the underlying failure as the error cause', async () => {
+    nock(HOST)
+      .get('/api/corporate-announcements')
+      .query({ index: 'equities' })
+      .twice()
+      .reply(403, 'Access Denied');
+
+    const error = await adapter.fetchLatest().catch((e: unknown) => e);
+
+    // Task 12's breaker should read the status off the cause rather than
+    // pattern-matching the message text.
+    expect(error).toBeInstanceOf(Error);
+    const cause = (error as Error & { cause?: unknown }).cause;
+    expect(axios.isAxiosError(cause)).toBe(true);
+    expect((cause as AxiosError).response?.status).toBe(403);
   });
 
   it('does not retry a non-auth failure', async () => {
@@ -250,15 +275,61 @@ describe('NseAdapter', () => {
     expect(session.issued).toBe(1);
   });
 
-  it('throws when the payload is not an array (NSE error strings)', async () => {
-    nock(HOST)
-      .get('/api/corporate-announcements')
-      .query({ index: 'equities' })
-      .reply(200, '"No Record Found!"');
+  describe('non-array payloads', () => {
+    // The exchange answers with a bare JSON string rather than an error status
+    // when it has nothing to give. That is an empty day, not a fault: a market
+    // holiday or a pre-open drain must not look like a contract change, or the
+    // poller alarms every quiet evening.
+    it.each([
+      ['the recorded marker', '"No Record Found!"'],
+      ['no trailing exclamation', '"No Record Found"'],
+      ['different case', '"NO RECORD FOUND!"'],
+      ['surrounding whitespace', '"  No Record Found!  "'],
+    ])('treats %s as an empty day, not a fault', async (_label, body) => {
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({ index: 'equities' })
+        .reply(200, body);
 
-    await expect(adapter.fetchLatest()).rejects.toThrow(
-      /Unexpected NSE payload/,
-    );
+      const result = await adapter.fetchLatest();
+
+      expect(result.filings).toHaveLength(0);
+      expect(result.received).toBe(0);
+      expect(result.skipped).toBe(0);
+    });
+
+    it('still throws on a block page, which is a genuine fault', async () => {
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({ index: 'equities' })
+        .reply(200, '<html><body>Access Denied</body></html>');
+
+      await expect(adapter.fetchLatest()).rejects.toThrow(
+        /Unexpected NSE payload/,
+      );
+    });
+
+    it('still throws on an error object, keeping its diagnostic content', async () => {
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({ index: 'equities' })
+        .reply(200, { error: 'Bot detected' });
+
+      // An object body must not render as a bare "object" - the message is the
+      // only record of what the exchange actually said.
+      await expect(adapter.fetchLatest()).rejects.toThrow(/Bot detected/);
+    });
+
+    it('does not mistake a message that merely mentions no records', async () => {
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({ index: 'equities' })
+        .reply(200, '"No Record Found for this query, contact support"');
+
+      await expect(adapter.fetchLatest()).rejects.toThrow(
+        /Unexpected NSE payload/,
+      );
+    });
   });
 
   it('skips unmappable records rather than failing the whole batch', async () => {
@@ -329,7 +400,7 @@ describe('NseAdapter', () => {
         throw new Error('log sink is down');
       },
     };
-    const guarded = new NseAdapter(session, undefined, hostile);
+    const guarded = new NseAdapter(session, hostile);
     nock(HOST)
       .get('/api/corporate-announcements')
       .query({ index: 'equities' })
