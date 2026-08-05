@@ -25,6 +25,10 @@ describe('loadConfig: defaults', () => {
     ['hotIntervalMs', CONFIG_DEFAULTS.NSE_HOT_INTERVAL_MS],
     ['idleIntervalMs', CONFIG_DEFAULTS.NSE_IDLE_INTERVAL_MS],
     ['drainIntervalMs', CONFIG_DEFAULTS.NSE_DRAIN_INTERVAL_MS],
+    [
+      'telegramMinSendIntervalMs',
+      CONFIG_DEFAULTS.TELEGRAM_MIN_SEND_INTERVAL_MS,
+    ],
     ['alertWindowMs', CONFIG_DEFAULTS.ALERT_WINDOW_MS],
     ['burstThreshold', CONFIG_DEFAULTS.BURST_THRESHOLD],
     ['failureThreshold', CONFIG_DEFAULTS.FAILURE_THRESHOLD],
@@ -173,6 +177,7 @@ describe('loadConfig: numeric validation', () => {
         NSE_HOT_INTERVAL_MS: '11',
         NSE_IDLE_INTERVAL_MS: '22',
         NSE_DRAIN_INTERVAL_MS: '66',
+        TELEGRAM_MIN_SEND_INTERVAL_MS: '77',
         ALERT_WINDOW_MS: '33',
         BURST_THRESHOLD: '44',
         FAILURE_THRESHOLD: '55',
@@ -182,6 +187,7 @@ describe('loadConfig: numeric validation', () => {
     expect(config.hotIntervalMs).toBe(11);
     expect(config.idleIntervalMs).toBe(22);
     expect(config.drainIntervalMs).toBe(66);
+    expect(config.telegramMinSendIntervalMs).toBe(77);
     expect(config.alertWindowMs).toBe(33);
     expect(config.burstThreshold).toBe(44);
     expect(config.failureThreshold).toBe(55);
@@ -269,6 +275,7 @@ describe('describeConfig', () => {
     expect(line).toContain('hot=2000ms');
     expect(line).toContain('idle=30000ms');
     expect(line).toContain('drain=300000ms');
+    expect(line).toContain('send=1000ms');
     expect(line).toContain('window=600000ms');
     expect(line).toContain('burst=8');
     expect(line).toContain('failures=3');

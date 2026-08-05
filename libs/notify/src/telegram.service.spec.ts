@@ -12,17 +12,30 @@ const MockedBot = TelegramBot as unknown as jest.MockedClass<
 /**
  * A stub rather than a real ConfigService: the real one falls through to
  * `process.env`, so a developer with TELEGRAM_BOT_TOKEN exported would silently
- * turn the "no credentials" suite green for the wrong reason. `as unknown as`
- * rather than `any` — the service only ever calls `get`.
+ * turn the "no credentials" suite green for the wrong reason.
+ *
+ * The keys are `loadConfig`'s VALIDATED camelCase output, not the raw
+ * environment names — the service reads the config factory's result, which is
+ * the single place every setting is read, defaulted and checked. `getOrThrow`
+ * rather than `get`, matching the service and every other consumer.
+ *
+ * The pacing interval defaults to 0 here so the ordinary suites do not each pay
+ * a second per message; the suite that owns the pacing sets its own.
  */
-const configWith = (values: Readonly<Record<string, string>>): ConfigService =>
+const configWith = (
+  values: Readonly<Record<string, string>>,
+  minSendIntervalMs = 0,
+): ConfigService =>
   ({
-    get: (key: string): string | undefined => values[key],
+    getOrThrow: (key: string): string | number =>
+      key === 'telegramMinSendIntervalMs'
+        ? minSendIntervalMs
+        : (values[key] ?? ''),
   }) as unknown as ConfigService;
 
 const FULL_CREDENTIALS = {
-  TELEGRAM_BOT_TOKEN: '123456:AAF-test-token',
-  TELEGRAM_CHAT_ID: '-1001234567890',
+  telegramBotToken: '123456:AAF-test-token',
+  telegramChatId: '-1001234567890',
 };
 
 const ALERT = 'PANACEABIO — UPDATES\n\nOrder received.\n\n10:28:18 IST';
@@ -58,7 +71,7 @@ describe('TelegramService', () => {
       // consuming updates. This bot only ever pushes.
       expect(MockedBot).toHaveBeenCalledTimes(1);
       expect(MockedBot).toHaveBeenCalledWith(
-        FULL_CREDENTIALS.TELEGRAM_BOT_TOKEN,
+        FULL_CREDENTIALS.telegramBotToken,
         {
           polling: false,
         },
@@ -76,7 +89,7 @@ describe('TelegramService', () => {
 
       expect(MockedBot.prototype.sendMessage).toHaveBeenCalledTimes(1);
       expect(MockedBot.prototype.sendMessage).toHaveBeenCalledWith(
-        FULL_CREDENTIALS.TELEGRAM_CHAT_ID,
+        FULL_CREDENTIALS.telegramChatId,
         ALERT,
         { parse_mode: 'HTML', disable_web_page_preview: true },
       );
@@ -148,15 +161,12 @@ describe('TelegramService', () => {
     const ABSENT_CASES: ReadonlyArray<
       readonly [string, Readonly<Record<string, string>>]
     > = [
-      ['no token', { TELEGRAM_CHAT_ID: FULL_CREDENTIALS.TELEGRAM_CHAT_ID }],
-      [
-        'no chat id',
-        { TELEGRAM_BOT_TOKEN: FULL_CREDENTIALS.TELEGRAM_BOT_TOKEN },
-      ],
+      ['no token', { telegramChatId: FULL_CREDENTIALS.telegramChatId }],
+      ['no chat id', { telegramBotToken: FULL_CREDENTIALS.telegramBotToken }],
       ['neither token nor chat id', {}],
-      ['an empty token', { ...FULL_CREDENTIALS, TELEGRAM_BOT_TOKEN: '' }],
-      ['an empty chat id', { ...FULL_CREDENTIALS, TELEGRAM_CHAT_ID: '' }],
-      ['both empty', { TELEGRAM_BOT_TOKEN: '', TELEGRAM_CHAT_ID: '' }],
+      ['an empty token', { ...FULL_CREDENTIALS, telegramBotToken: '' }],
+      ['an empty chat id', { ...FULL_CREDENTIALS, telegramChatId: '' }],
+      ['both empty', { telegramBotToken: '', telegramChatId: '' }],
     ];
 
     it.each(ABSENT_CASES)('constructs with %s', (_label, values) => {
@@ -211,7 +221,7 @@ describe('TelegramService', () => {
      */
     it('warns that the chat id is missing when only the chat id is absent', () => {
       new TelegramService(
-        configWith({ TELEGRAM_BOT_TOKEN: FULL_CREDENTIALS.TELEGRAM_BOT_TOKEN }),
+        configWith({ telegramBotToken: FULL_CREDENTIALS.telegramBotToken }),
       );
 
       const warned = warnSpy.mock.calls
@@ -345,7 +355,7 @@ describe('TelegramService', () => {
       await service.send('second');
 
       expect(MockedBot.prototype.sendMessage).toHaveBeenLastCalledWith(
-        FULL_CREDENTIALS.TELEGRAM_CHAT_ID,
+        FULL_CREDENTIALS.telegramChatId,
         'second',
         { parse_mode: 'HTML', disable_web_page_preview: true },
       );
@@ -366,5 +376,213 @@ describe('TelegramService', () => {
       ]);
       expect(errorSpy).toHaveBeenCalledTimes(5);
     });
+  });
+});
+
+/**
+ * Telegram enforces roughly one message a second per chat and answers a burst
+ * with 429s. A 429 here is not a delay — the client rejects, `send()` swallows
+ * it, and the filing is never delivered. Pacing turns a dropped alert into a
+ * late one; the corpus says that costs a few seconds at the observed peak (no
+ * 30-second window carries more than nine filings, no minute more than twelve).
+ */
+describe('TelegramService: pacing and rate limits', () => {
+  const PACE_MS = 40;
+
+  let errorSpy: jest.SpyInstance;
+
+  beforeAll(() => Logger.overrideLogger(false));
+
+  beforeEach(() => {
+    MockedBot.mockClear();
+    MockedBot.prototype.sendMessage.mockReset();
+    MockedBot.prototype.sendMessage.mockResolvedValue(
+      {} as Awaited<ReturnType<TelegramBot['sendMessage']>>,
+    );
+    errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    jest.spyOn(Logger.prototype, 'log').mockImplementation();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  const paced = (): TelegramService =>
+    new TelegramService(configWith(FULL_CREDENTIALS, PACE_MS));
+
+  /** A rejection shaped like the client's, with the API body it wraps. */
+  const rateLimitRejection = (retryAfter?: number): unknown => ({
+    response: {
+      body: {
+        ok: false,
+        error_code: 429,
+        description: 'Too Many Requests: retry after 30',
+        ...(retryAfter === undefined
+          ? {}
+          : { parameters: { retry_after: retryAfter } }),
+      },
+    },
+  });
+
+  it('leaves at least the configured gap between two sends', async () => {
+    const service = paced();
+    const started = Date.now();
+
+    await service.send('first');
+    await service.send('second');
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(PACE_MS);
+    expect(MockedBot.prototype.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not delay the very first send', async () => {
+    const started = Date.now();
+
+    await paced().send('first');
+
+    expect(Date.now() - started).toBeLessThan(PACE_MS);
+  });
+
+  it('serialises concurrent callers rather than letting them race', async () => {
+    // Concurrent sends would defeat the pacing AND arrive in completion order,
+    // undoing the chronological ordering the alert service sorts for.
+    const service = paced();
+    const order: string[] = [];
+    MockedBot.prototype.sendMessage.mockImplementation((async (
+      _chat: string,
+      text: string,
+    ) => {
+      order.push(text);
+      return {};
+    }) as never);
+
+    await Promise.all([
+      service.send('one'),
+      service.send('two'),
+      service.send('three'),
+    ]);
+
+    expect(order).toEqual(['one', 'two', 'three']);
+  });
+
+  it('counts a delivered message', async () => {
+    const service = paced();
+
+    await service.send(ALERT);
+
+    expect(service.stats()).toEqual({
+      delivered: 1,
+      rateLimited: 0,
+      failed: 0,
+    });
+  });
+
+  it('counts a rate-limited send separately from any other failure', async () => {
+    // The distinction is the point: a 429 is self-inflicted and recoverable,
+    // and reporting it as a generic failure made a systematically dropped
+    // alert stream read as occasional noise.
+    const service = paced();
+    MockedBot.prototype.sendMessage.mockRejectedValueOnce(rateLimitRejection());
+    MockedBot.prototype.sendMessage.mockRejectedValueOnce(new Error('502'));
+
+    await service.send('one');
+    await service.send('two');
+
+    expect(service.stats()).toEqual({
+      delivered: 0,
+      rateLimited: 1,
+      failed: 1,
+    });
+  });
+
+  it('says the alert was lost, and how many have been', async () => {
+    const service = paced();
+    MockedBot.prototype.sendMessage.mockRejectedValue(rateLimitRejection());
+
+    await service.send('one');
+    await service.send('two');
+
+    const logged = errorSpy.mock.calls
+      .map((call) => String(call[0]))
+      .join('\n');
+    expect(logged).toContain('LOST');
+    expect(logged).toContain('2 dropped so far');
+  });
+
+  it('does not discard the response body a 429 carried', async () => {
+    const service = paced();
+    MockedBot.prototype.sendMessage.mockRejectedValueOnce(
+      rateLimitRejection(30),
+    );
+
+    await service.send(ALERT);
+
+    expect(String(errorSpy.mock.calls[0][0])).toContain('Too Many Requests');
+  });
+
+  it('honours the server retry_after for the next send', async () => {
+    const service = paced();
+    MockedBot.prototype.sendMessage.mockRejectedValueOnce(
+      // 0.15s, deliberately longer than the ordinary pace.
+      rateLimitRejection(0.15),
+    );
+
+    await service.send('one');
+    const started = Date.now();
+    await service.send('two');
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100);
+  });
+
+  it('reports the retry_after as absent when Telegram omitted it', async () => {
+    const service = paced();
+    MockedBot.prototype.sendMessage.mockRejectedValueOnce(rateLimitRejection());
+
+    await service.send(ALERT);
+
+    expect(String(errorSpy.mock.calls[0][0])).toContain('retry_after=absent');
+  });
+
+  const NOT_RATE_LIMITS: ReadonlyArray<readonly [string, unknown]> = [
+    ['a plain Error', new Error('socket hang up')],
+    ['a 400 from the API', { response: { body: { error_code: 400 } } }],
+    ['a body that is not an object', { response: { body: 'nope' } }],
+    ['a response that is not an object', { response: 'nope' }],
+    ['null', null],
+    ['a bare string', 'boom'],
+  ];
+
+  it.each(NOT_RATE_LIMITS)(
+    'does not read %s as a rate limit',
+    async (_label, rejection) => {
+      const service = paced();
+      MockedBot.prototype.sendMessage.mockRejectedValueOnce(rejection);
+
+      await service.send(ALERT);
+
+      expect(service.stats().rateLimited).toBe(0);
+      expect(service.stats().failed).toBe(1);
+    },
+  );
+
+  it('keeps sending after a rate limit rather than wedging the queue', async () => {
+    const service = paced();
+    MockedBot.prototype.sendMessage.mockRejectedValueOnce(rateLimitRejection());
+
+    await service.send('dropped');
+    await service.send('delivered');
+
+    expect(service.stats().delivered).toBe(1);
+  });
+
+  it('keeps sending after a rejection that is not an Error at all', async () => {
+    // A poisoned queue would silence the channel permanently, so the chain is
+    // advanced with a caught copy rather than on the contract alone.
+    const service = paced();
+    MockedBot.prototype.sendMessage.mockRejectedValueOnce(null);
+
+    await service.send('dropped');
+    await service.send('delivered');
+
+    expect(service.stats().delivered).toBe(1);
   });
 });

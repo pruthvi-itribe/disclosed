@@ -11,6 +11,7 @@ export interface IngestConfig {
   readonly mongoUri: string;
   readonly telegramBotToken: string;
   readonly telegramChatId: string;
+  readonly telegramMinSendIntervalMs: number;
   readonly hotIntervalMs: number;
   readonly idleIntervalMs: number;
   readonly drainIntervalMs: number;
@@ -25,6 +26,7 @@ export const NUMERIC_KEYS = [
   'NSE_HOT_INTERVAL_MS',
   'NSE_IDLE_INTERVAL_MS',
   'NSE_DRAIN_INTERVAL_MS',
+  'TELEGRAM_MIN_SEND_INTERVAL_MS',
   'ALERT_WINDOW_MS',
   'BURST_THRESHOLD',
   'FAILURE_THRESHOLD',
@@ -46,6 +48,10 @@ export const CONFIG_DEFAULTS = {
   // has anything to find, and re-pulling the day more often than that buys
   // nothing but load.
   NSE_DRAIN_INTERVAL_MS: 300_000,
+  // Telegram enforces roughly one message a second per chat and answers a
+  // burst with 429s. A 429 is not a delay, it is an alert that is never
+  // delivered, so sends are paced rather than fired as fast as they arrive.
+  TELEGRAM_MIN_SEND_INTERVAL_MS: 1_000,
   ALERT_WINDOW_MS: 600_000,
   BURST_THRESHOLD: 8,
   FAILURE_THRESHOLD: 3,
@@ -149,6 +155,7 @@ export const loadConfig = (
   mongoUri: readString('MONGO_URI', env, CONFIG_DEFAULTS.MONGO_URI),
   telegramBotToken: readString('TELEGRAM_BOT_TOKEN', env, ''),
   telegramChatId: readString('TELEGRAM_CHAT_ID', env, ''),
+  telegramMinSendIntervalMs: readNumeric('TELEGRAM_MIN_SEND_INTERVAL_MS', env),
   hotIntervalMs: readNumeric('NSE_HOT_INTERVAL_MS', env),
   idleIntervalMs: readNumeric('NSE_IDLE_INTERVAL_MS', env),
   drainIntervalMs: readNumeric('NSE_DRAIN_INTERVAL_MS', env),
@@ -181,6 +188,7 @@ export const describeConfig = (config: IngestConfig): string =>
     `hot=${config.hotIntervalMs}ms`,
     `idle=${config.idleIntervalMs}ms`,
     `drain=${config.drainIntervalMs}ms`,
+    `send=${config.telegramMinSendIntervalMs}ms`,
     `window=${config.alertWindowMs}ms`,
     `burst=${config.burstThreshold}`,
     `failures=${config.failureThreshold}`,
