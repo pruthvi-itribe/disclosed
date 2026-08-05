@@ -202,7 +202,22 @@ check() {
   # A TYPE error specifically: "Test suite failed to run" on its own is also
   # printed when a jest worker dies at runtime, which is a kill, not a stale
   # mutation. Requiring a `TS####` diagnostic keeps the two apart.
-  if echo "$out" | grep -qE "error TS[0-9]+"; then
+  #
+  # `.*` BETWEEN THE TWO WORDS, NOT A SPACE. ts-jest re-emits TypeScript's own
+  # coloured diagnostics whether or not stdout is a TTY, so the literal bytes
+  # are `error<ESC>[0m<ESC>[90m TS2322` and a space-separated pattern never
+  # matches. Measured against a deliberately non-compiling mutant: the old
+  # `error TS[0-9]+` scored 0 matches and the verdict printed was
+  # `SURVIVED <-- TEST GAP` — a stale mutation reported as a test gap, and in a
+  # multi-suite run where another suite fails an assertion, reported as CAUGHT.
+  # A COMPILE verdict was unreachable. This pattern scores 1 and restores it.
+  # HERE-STRINGS, NOT `echo "$out" | grep -q`. With `set -o pipefail` in force,
+  # `grep -q` exits at its first match, `echo` then dies of SIGPIPE, and the
+  # PIPELINE reports 141 even though the pattern matched — so a verdict that DID
+  # match reads as unmatched and falls through to the wrong branch. Observed on
+  # tools/mutation/poller-mutations.sh, where a fully caught mutation was scored
+  # HARNESS ERROR. A here-string is not a pipeline, so there is nothing to break.
+  if grep -qE "error.*TS[0-9]+" <<<"$out"; then
     echo "COMPILE  | $label"
     echo "           <-- mutation did not type-check; no assertion was exercised"
     FAILURES=$((FAILURES + 1))
@@ -230,11 +245,11 @@ check() {
   # process dies before jest prints ANY completion line — but the stack it dies
   # with runs through jest-circus. Checked both ways: `zzz-no-such-suite`
   # matches none of these patterns, and the dropped-await run matches eleven.
-  if ! echo "$out" | grep -qE "^Tests:"; then
+  if ! grep -qE "^Tests:" <<<"$out"; then
     if [ "$rc" -eq 0 ]; then
       echo "SURVIVED | $label   <-- TEST GAP"
       FAILURES=$((FAILURES + 1))
-    elif echo "$out" | grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/jest-(circus|runner)|Ran all test suites"; then
+    elif grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/jest-(circus|runner)|Ran all test suites" <<<"$out"; then
       echo "CRASHED  | $label"
       echo "           runner died before reporting (exit $rc); the suite is red"
       CRASHES=$((CRASHES + 1))
@@ -248,7 +263,7 @@ check() {
     return
   fi
 
-  if echo "$out" | grep -qE "Tests:.*failed"; then
+  if grep -qE "Tests:.*failed" <<<"$out"; then
     echo "CAUGHT   | $label"
     echo "$out" | grep -E "^\s+●\s" | grep -v Console | sed 's/^/           /' |
       sort -u | head -3
@@ -470,7 +485,10 @@ check "hot latch never re-armed (a second drift episode is never reported)" "$PO
 perl -0pi -e 's/    if \(hot\.skipped === hot\.received\) return;\n\n//' "$POLL"
 check "a wholly rejected page double-reported (two alerts, two remedies)" "$POLL" poller.service
 
-perl -0pi -e 's/        drainTally = \{ skipped: drain\.skipped, received: drain\.received \};\n//' "$POLL"
+# Zeroed rather than deleted: dropping the only assignment narrows `drainTally`
+# to `null` and the mutant stops type-checking (TS2339), and a mutation that
+# never ran exercises no assertion.
+perl -0pi -e 's/        drainTally = \{ skipped: drain\.skipped, received: drain\.received \};/        drainTally = { skipped: 0, received: drain.received };/' "$POLL"
 check "drain skips not counted (a day-wide mapper drift is never reported)" "$POLL" poller.service
 
 perl -0pi -e 's/      skipped,\n      deferred: false,/      skipped: 0,\n      deferred: false,/' "$POLL"

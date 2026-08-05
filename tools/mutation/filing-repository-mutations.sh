@@ -125,7 +125,13 @@ check() {
     exit 130
   fi
 
-  if echo "$out" | grep -qE "Tests:.*failed"; then
+  # HERE-STRINGS, NOT `echo "$out" | grep -q`. With `set -o pipefail` in force,
+  # `grep -q` exits at its first match, `echo` then dies of SIGPIPE, and the
+  # PIPELINE reports 141 even though the pattern matched — so a verdict that DID
+  # match reads as unmatched and falls through to the wrong branch. Observed on
+  # tools/mutation/poller-mutations.sh, where a fully caught mutation was scored
+  # HARNESS ERROR. A here-string is not a pipeline, so there is nothing to break.
+  if grep -qE "Tests:.*failed" <<<"$out"; then
     echo "CAUGHT   | $label"
     echo "$out" | grep -E "^\s+●\s" | grep -v Console | sed 's/^/           /' |
       sort -u | head -3

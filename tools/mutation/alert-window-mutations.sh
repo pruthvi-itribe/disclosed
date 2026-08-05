@@ -127,7 +127,13 @@ check() {
   # (The same latent issue is documented at
   # tools/mutation/filing-repository-mutations.sh:35-44 and ledgered on Task 6.
   # Back-porting this branch to the other two harnesses is worthwhile.)
-  if echo "$out" | grep -qE "Test suite failed to run"; then
+  # HERE-STRINGS, NOT `echo "$out" | grep -q`. With `set -o pipefail` in force,
+  # `grep -q` exits at its first match, `echo` then dies of SIGPIPE, and the
+  # PIPELINE reports 141 even though the pattern matched — so a verdict that DID
+  # match reads as unmatched and falls through to the wrong branch. Observed on
+  # tools/mutation/poller-mutations.sh, where a fully caught mutation was scored
+  # HARNESS ERROR. A here-string is not a pipeline, so there is nothing to break.
+  if grep -qE "Test suite failed to run" <<<"$out"; then
     echo "COMPILE  | $label"
     echo "           <-- mutation did not type-check; no assertion was exercised"
     echo "           (without this branch the verdict would misread as SURVIVED)"
@@ -136,7 +142,7 @@ check() {
     return
   fi
 
-  if echo "$out" | grep -qE "Tests:.*failed"; then
+  if grep -qE "Tests:.*failed" <<<"$out"; then
     echo "CAUGHT   | $label"
     echo "$out" | grep -E "^\s+●\s" | grep -v Console | sed 's/^/           /' |
       sort -u | head -4

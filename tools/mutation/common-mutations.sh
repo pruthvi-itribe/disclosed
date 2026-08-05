@@ -152,7 +152,20 @@ check() {
   # banner, and one of the mutations below does exactly that while still
   # failing twelve assertions in the suites that survive. Requiring a `TS####`
   # diagnostic keeps a genuine kill from being reported as a harness defect.
-  if echo "$out" | grep -qE "error TS[0-9]+"; then
+  #
+  # `.*` BETWEEN THE TWO WORDS, NOT A SPACE. ts-jest re-emits TypeScript's own
+  # coloured diagnostics whether or not stdout is a TTY, so the literal bytes
+  # are `error<ESC>[0m<ESC>[90m TS2322` and a space-separated pattern never
+  # matches. Measured against a deliberately non-compiling mutant, the old
+  # `error TS[0-9]+` scored 0 matches and the verdict printed was
+  # `SURVIVED <-- TEST GAP`; this pattern scores 1 and prints COMPILE.
+  # HERE-STRINGS, NOT `echo "$out" | grep -q`. With `set -o pipefail` in force,
+  # `grep -q` exits at its first match, `echo` then dies of SIGPIPE, and the
+  # PIPELINE reports 141 even though the pattern matched — so a verdict that DID
+  # match reads as unmatched and falls through to the wrong branch. Observed on
+  # tools/mutation/poller-mutations.sh, where a fully caught mutation was scored
+  # HARNESS ERROR. A here-string is not a pipeline, so there is nothing to break.
+  if grep -qE "error.*TS[0-9]+" <<<"$out"; then
     echo "COMPILE  | $label"
     echo "           <-- mutation did not type-check; no assertion was exercised"
     FAILURES=$((FAILURES + 1))
@@ -166,11 +179,11 @@ check() {
   # The evidence is a completion line OR a stack frame from inside a running
   # test, because a mutation that kills the process mid-test prints neither
   # `PASS` nor `FAIL`. `npx jest zzz-no-such-suite` matches none of them.
-  if ! echo "$out" | grep -qE "^Tests:"; then
+  if ! grep -qE "^Tests:" <<<"$out"; then
     if [ "$rc" -eq 0 ]; then
       echo "SURVIVED | $label   <-- TEST GAP"
       FAILURES=$((FAILURES + 1))
-    elif echo "$out" | grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/jest-(circus|runner)|Ran all test suites"; then
+    elif grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/jest-(circus|runner)|Ran all test suites" <<<"$out"; then
       echo "CRASHED  | $label"
       echo "           runner died before reporting (exit $rc); the suite is red"
       CRASHES=$((CRASHES + 1))
@@ -183,7 +196,7 @@ check() {
     return
   fi
 
-  if echo "$out" | grep -qE "Tests:.*failed"; then
+  if grep -qE "Tests:.*failed" <<<"$out"; then
     echo "CAUGHT   | $label"
     echo "$out" | grep -E "^\s+●\s" | grep -v Console | sed 's/^/           /' |
       sort -u | head -3
