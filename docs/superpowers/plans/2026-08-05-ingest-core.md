@@ -85,7 +85,7 @@ redbox/
 cd /Users/pruthvi/workspace/personal/redbox
 npm init -y
 npm i --legacy-peer-deps \
-  @nestjs/common@^10.0.0 @nestjs/core@^10.0.0 @nestjs/platform-express@^10.0.0 \
+  @nestjs/common@^10.0.0 @nestjs/core@^10.0.0 \
   @nestjs/config@^4.0.2 @nestjs/schedule@^4.1.2 @nestjs/event-emitter@^2.1.1 \
   @nestjs/mongoose@^11.0.4 mongoose@^8.21.0 \
   @nestjs/bull@^11.0.4 bull@^4.16.5 \
@@ -95,8 +95,18 @@ npm i -D --legacy-peer-deps \
   @nestjs/cli@^10.0.0 @nestjs/schematics@^10.0.0 @nestjs/testing@^10.0.0 \
   typescript@^5.1.3 ts-node@^10.9.1 ts-jest@^29.1.0 jest@^29.5.0 \
   @types/jest@^29.5.2 @types/node@^20.0.0 @types/node-telegram-bot-api@^0.64.13 \
-  nock@^13.5.4
+  nock@^13.5.4 \
+  eslint@^8.0.0 @typescript-eslint/eslint-plugin@^8.0.0 @typescript-eslint/parser@^8.0.0 \
+  eslint-config-prettier@^9.0.0 eslint-plugin-prettier@^5.0.0 prettier@^3.0.0
 ```
+
+No platform adapter is installed: `main.ts` uses `NestFactory.createApplicationContext`,
+so there is no HTTP server. `@nestjs/platform-express` would pull in the `multer`
+advisory chain for nothing. If a later phase adds an HTTP surface, the dependency
+returns and `main.ts` switches to `NestFactory.create`.
+
+Copy `.eslintrc.js` and `.prettierrc` from `cat-trader` rather than inventing a style,
+adjusting only the lint glob to `{apps,libs,tools}`.
 
 - [ ] **Step 2: Write tsconfig.json**
 
