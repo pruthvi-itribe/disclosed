@@ -106,11 +106,31 @@ check() {
     exit 130
   fi
 
-  # A mutation that breaks compilation is caught by the type checker, not by an
-  # assertion, so it proves nothing about the tests. Report it separately.
+  # A mutation that does not type-check proves nothing: ts-jest fails the suite
+  # before a single test runs. Note which way that cuts, because it is the
+  # opposite of the intuitive guess. jest prints:
+  #
+  #     Test Suites: 1 failed, 1 total
+  #     Tests:       0 total
+  #
+  # The `Tests:` line carries no failure count, so the `Tests:.*failed` grep
+  # below does NOT match and control falls through to the else branch — the
+  # verdict printed would be SURVIVED. A non-compiling mutant therefore raises a
+  # false TEST GAP, never a false kill. That is the safe direction, but it is
+  # misleading noise: someone would go hunting for a missing assertion that was
+  # never missing.
+  #
+  # This branch does not prevent a false kill. It converts that confusing false
+  # SURVIVED into an accurate diagnostic. It is still counted as a failure,
+  # because a mutation that never ran is a mutation that proved nothing.
+  #
+  # (The same latent issue is documented at
+  # tools/mutation/filing-repository-mutations.sh:35-44 and ledgered on Task 6.
+  # Back-porting this branch to the other two harnesses is worthwhile.)
   if echo "$out" | grep -qE "Test suite failed to run"; then
     echo "COMPILE  | $label"
     echo "           <-- mutation did not type-check; no assertion was exercised"
+    echo "           (without this branch the verdict would misread as SURVIVED)"
     FAILURES=$((FAILURES + 1))
     restore_verified || on_exit
     return
@@ -138,6 +158,12 @@ check "boundary widened by one ms"
 
 perl -0pi -e 's/return age < windowMs;/return age < 600000;/' "$AW"
 check "windowMs ignored for a hardcoded ten minutes"
+
+# A plausible future "fix" for the NaN hazard that belongs in config validation,
+# not here: it silently papers over a malformed ALERT_WINDOW_MS instead of
+# failing loudly, and quietly overrides a deliberate zero.
+perl -0pi -e 's/return age < windowMs;/return age < (windowMs || 600000);/' "$AW"
+check "windowMs defaulted in-function (masks a malformed config)"
 
 echo ""
 echo "=== isWithinAlertWindow: clock skew must not suppress a fresh alert ==="

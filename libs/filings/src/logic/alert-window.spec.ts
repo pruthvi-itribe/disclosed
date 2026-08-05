@@ -71,7 +71,7 @@ describe('isWithinAlertWindow: the boundary is exclusive, to the millisecond', (
     ['age -1 ms, one ms into the future', '2026-08-05T05:00:00.001Z', true],
   ];
 
-  it.each(BOUNDARY_CASES)('%s -> %s', (_label, iso, expected) => {
+  it.each(BOUNDARY_CASES)('%s (%s) -> %s', (_label, iso, expected) => {
     expect(isWithinAlertWindow(at(iso), now, WINDOW)).toBe(expected);
   });
 
@@ -260,16 +260,53 @@ describe('isWithinAlertWindow: tolerates a string disseminatedAt from storage', 
     expect(silent[0]).toBe(stored[1]);
   });
 
-  it('stays silent on an unparseable timestamp rather than alerting', () => {
-    // NaN age. `NaN < windowMs` is false, so a corrupt record is stored
-    // silently instead of firing an alert nobody can act on. Pinned because it
-    // is a real consequence of accepting strings at this boundary.
-    const corrupt = {
-      ...at('2026-08-05T04:59:50.000Z'),
-      disseminatedAt: 'not-a-date',
-    } as unknown as Filing;
+  // A partial document is likelier than a literal bad string: a projection that
+  // omits the field, or a record written before the field existed, yields
+  // undefined or null. Every unusable value below is suppressed, but by two
+  // different mechanisms, and the distinction is worth knowing:
+  //
+  //   'not-a-date', '', undefined  ->  getTime() is NaN, and `NaN < windowMs`
+  //                                    is false.
+  //   null                         ->  `new Date(null)` is NOT NaN; null
+  //                                    coerces to 0, i.e. the 1970 epoch, so
+  //                                    the age is ~56 years and it is stale by
+  //                                    the ordinary rule.
+  //
+  // Either way a corrupt record is stored silently instead of firing an alert
+  // nobody can act on. Pinned because it is a real consequence of accepting
+  // unparsed values at this boundary.
+  const UNUSABLE_TIMESTAMPS: ReadonlyArray<readonly [string, unknown]> = [
+    ['an unparseable string', 'not-a-date'],
+    ['an empty string', ''],
+    ['undefined (field absent from the document)', undefined],
+    ['null (field present but never written)', null],
+  ];
 
-    expect(isWithinAlertWindow(corrupt, now, WINDOW)).toBe(false);
+  it.each(UNUSABLE_TIMESTAMPS)(
+    'stays silent on %s rather than alerting',
+    (_label, value) => {
+      const corrupt = {
+        ...at('2026-08-05T04:59:50.000Z'),
+        disseminatedAt: value,
+      } as unknown as Filing;
+
+      expect(isWithinAlertWindow(corrupt, now, WINDOW)).toBe(false);
+    },
+  );
+
+  it('routes an unusable timestamp to silent, not to alertable', () => {
+    const batch = UNUSABLE_TIMESTAMPS.map(
+      ([, value]) =>
+        ({
+          ...at('2026-08-05T04:59:50.000Z'),
+          disseminatedAt: value,
+        }) as unknown as Filing,
+    );
+
+    const { alertable, silent } = partitionForAlerting(batch, now, WINDOW);
+
+    expect(alertable).toEqual([]);
+    expect(silent).toHaveLength(UNUSABLE_TIMESTAMPS.length);
   });
 });
 
@@ -487,7 +524,8 @@ describe('partitionForAlerting: degenerate windows', () => {
   it('silences everything already disseminated when the window is zero', () => {
     // Pins the consequence rather than endorsing it: with windowMs = 0 only a
     // future-dated filing satisfies `age < 0`, so a misconfigured window mutes
-    // the bot completely. TASK 12 MUST REJECT alertWindowMs < 1 at config load.
+    // the bot completely. See the NaN case below for the exact shape the Task
+    // 12 config guard has to reject.
     const batch = [
       at('2026-08-05T05:00:00.000Z'),
       at('2026-08-05T04:59:59.999Z'),
@@ -497,6 +535,54 @@ describe('partitionForAlerting: degenerate windows', () => {
 
     expect(alertable).toEqual([]);
     expect(silent).toHaveLength(2);
+  });
+
+  it('silences a fresh filing when the window is NaN', () => {
+    // The whole-bot mute, arriving through the one input this function takes on
+    // trust. `parseInt(process.env.ALERT_WINDOW_MS)` yields NaN whenever the
+    // variable is missing or malformed, and every comparison against NaN is
+    // false — so `age < NaN` is false for EVERY filing and nothing ever alerts,
+    // with no error raised anywhere.
+    //
+    // Note why the obvious guard does not catch this: `NaN < 1` is also false,
+    // so a `windowMs < 1` rejection ACCEPTS NaN and lets it straight through.
+    //
+    // TASK 12 MUST REQUIRE `Number.isFinite(windowMs) && windowMs >= 1` at
+    // config load. A bare lower-bound comparison is not sufficient.
+    const fresh = at('2026-08-05T04:59:50.000Z');
+
+    expect(isWithinAlertWindow(fresh, now, Number.NaN)).toBe(false);
+  });
+
+  it('proves a bare lower-bound config check would admit NaN', () => {
+    // Executable form of the note above, so the hazard cannot be quietly
+    // reintroduced by someone writing the intuitive guard.
+    const badGuard = (windowMs: number): boolean => windowMs < 1;
+    const goodGuard = (windowMs: number): boolean =>
+      !(Number.isFinite(windowMs) && windowMs >= 1);
+
+    expect(badGuard(Number.NaN)).toBe(false); // does not reject NaN
+    expect(goodGuard(Number.NaN)).toBe(true); // rejects NaN
+
+    // Both agree on the ordinary bad values, so the fix costs nothing.
+    expect(badGuard(0)).toBe(true);
+    expect(goodGuard(0)).toBe(true);
+    expect(badGuard(600000)).toBe(false);
+    expect(goodGuard(600000)).toBe(false);
+  });
+
+  it('silences everything when the window is NaN, across a whole batch', () => {
+    const batch = [
+      at('2026-08-05T04:59:59.000Z'),
+      at('2026-08-05T05:00:00.000Z'),
+      at('2026-08-05T05:00:05.000Z'),
+      at('2026-08-04T10:00:00.000Z'),
+    ];
+
+    const { alertable, silent } = partitionForAlerting(batch, now, Number.NaN);
+
+    expect(alertable).toEqual([]);
+    expect(silent).toHaveLength(4);
   });
 
   it('alerts on everything when the window is enormous', () => {

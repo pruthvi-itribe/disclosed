@@ -15,10 +15,22 @@ import type { Filing } from '../filing.types';
  *    freshest possible filing, so `<` alone is correct here and any absolute
  *    value or lower bound on age would suppress a live alert.
  *
- * `disseminatedAt` is typed as a Date but arrives as an ISO string from Mongo
- * and from JSONL replay, so it is re-wrapped rather than read directly. An
- * unparseable value yields NaN, and `NaN < windowMs` is false — a corrupt
- * record is stored silently instead of alerting.
+ * `disseminatedAt` is typed as a Date but is NOT always one, so it is re-wrapped
+ * rather than read directly. Be precise about where that comes from, because a
+ * future reader who checks the wrong source will find Dates and delete the wrap:
+ *
+ *   - JSONL replay is the demonstrated source. `tools/corpus/analyse-corpus.ts`
+ *     declares its own `StoredFiling` with `disseminatedAt: string` for exactly
+ *     this reason — anything that has been through `JSON.parse` has strings.
+ *   - Mongo is NOT the source today. `insertNew` hands back the caller's own
+ *     objects with their Dates intact, and mongoose `.lean()` deserializes BSON
+ *     dates to Date. The wrap is a boundary guard against the general case, not
+ *     a workaround for the driver.
+ *
+ * An unparseable value yields NaN, and `NaN < windowMs` is false — a corrupt
+ * record is stored silently instead of alerting. (`null` is the exception: it
+ * coerces to the 1970 epoch rather than NaN, so it is suppressed for being
+ * ancient instead. Same outcome, different route.)
  */
 export function isWithinAlertWindow(
   filing: Filing,
