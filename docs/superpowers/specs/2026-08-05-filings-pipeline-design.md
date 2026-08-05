@@ -1,7 +1,8 @@
 # Redbox — NSE/BSE Filings Pipeline
 
 **Date:** 2026-08-05
-**Status:** Design approved, pending implementation plan
+**Status:** Design approved. Phases 1–3 implemented; corrected 2026-08-05 against the
+recorded 32-day corpus after the whole-branch review (see **Corrections** below).
 
 ## Context
 
@@ -45,9 +46,31 @@ All figures below were measured directly on 2026-08-05, not assumed.
 
 Relevant fields per record:
 
-- `seq_id` — monotonic, unique, totally ordered. **Global across all NSE announcement
-  streams**, so the equities feed is a filtered view: gaps are normal and do NOT imply
-  loss. Valid as a cursor; invalid as a completeness proof.
+- `seq_id` — unique, and **global across all NSE announcement streams**, so the equities
+  feed is a filtered view: gaps are normal and do NOT imply loss.
+
+  **NOT monotonic and NOT totally ordered by dissemination time. CORRECTED
+  2026-08-05.** The original claim here — "monotonic, unique, totally ordered …
+  valid as a cursor" — was assumed, not measured, and the recorded corpus refutes it.
+  Walking `data/corpus/05-07-2026_05-08-2026.jsonl` in `exchdisstime` order, **414 of
+  17,442 filings (2.37%, ~12.9/day) on 23 of 32 IST days arrive with a `seq_id` BELOW
+  the stream's running maximum**, and 355 of those carry a real `exchdisstime` rather
+  than the `an_dt` fallback. Two shapes:
+
+  | Shape | Evidence from the corpus |
+  |---|---|
+  | Adjacent-id reversal | `106689007` (RCOM) at 2026-07-07T10:03:43Z, then `106689006` (APTECHT) at 10:03:45Z — two seconds later, one id lower. |
+  | Block excursion | At 2026-07-06T05:35:48Z the stream is at `106687146` (BODALCHEM); 117s later `106603022` (CONSOFINVT) arrives — **84,124 ids below** — followed by a descending run (`106603016`, `106603008`, `106602971`, …). |
+
+  Concentrated in back-filled disclosure categories: SEBI Takeover Regulations (264),
+  Spurt in Volume (50), Reply to Clarification (21), News Verification (20), Price
+  movement (20).
+
+  **`seq_id` is therefore invalid as a newness filter and invalid as a completeness
+  proof.** It remains useful for exactly one thing: as a high-water mark for the
+  rollover test, where "has the page moved past what we last overlapped" is the
+  question. Newness is decided by the database — a unique index on `seq_id` plus an
+  insert-only write — and never by comparison against a cursor.
 - `exchdisstime` — exchange dissemination timestamp. Authoritative clock for all latency
   measurement. Never use local time.
 - `an_dt`, `difference` — announcement time and NSE's own dissemination lag (observed
@@ -101,18 +124,35 @@ Two tiers over the same adapter.
 
 Loop:
 
-1. Hot poll returns the 20 newest. Ingest everything with `seq_id > cursor`.
+1. Hot poll returns the 20 newest. Offer **the whole page** to the insert-only write and
+   let the unique index on `seq_id` reject what is already held. Do NOT filter on
+   `seq_id > cursor` — see the `seq_id` correction above; that filter silently discards
+   2.37% of the feed.
 2. **Rollover check** — if the *oldest* `seq_id` on the page is still `> cursor`, the page
    turned over between polls and a hole exists.
-3. On rollover, immediately drain today's full range and set-difference against stored
-   `seq_id`s.
-4. Scheduled drain every 5 minutes regardless. Final drain at 23:30 closes the day.
+3. On rollover, immediately drain the full range and set-difference against stored
+   `seq_id`s. The range runs from the IST day of the newest record already stored through
+   today, bounded to 7 days — **a drain of today alone cannot close a hole that spans IST
+   midnight**, because the IST day rolls at 18:30 UTC and a restart across that boundary
+   would never re-fetch yesterday beyond the newest 20.
+4. Scheduled drain every 5 minutes regardless. Final drain at 23:30 IST closes the day.
+   The cursor never moves backwards, so an out-of-order excursion cannot manufacture a
+   permanent rollover.
 
 Because the drain endpoint is date-addressable and uncapped, any hole is recoverable by
 re-pulling the day and diffing. There is no state in which a filing is silently lost.
 
-The 2s hot poll only loses data if more than 20 filings land within 2s — plausible at the
-17:00:00 results spike, and precisely what rollover detection catches.
+**Step 4 is not optional, and the corpus is why.** No 2-second window in the recorded
+month holds more than 6 filings, no 30-second window more than 9, and no 60-second window
+more than 12 — against a 20-record page. So rollover CANNOT fire at either poll cadence:
+replaying all 32 days through the implemented poller triggers it once, at cold start. Left
+to rollover alone, reconciliation runs about once per process lifetime, and every
+out-of-order filing goes from "recovered late" to "lost". With the scheduled drains the
+same replay performs 9,059 periodic and 31 closing drains and stores 17,441 of 17,442.
+
+(The earlier claim that "the 2s hot poll only loses data if more than 20 filings land
+within 2s" was the reasoning that made step 4 look optional. It is true and it is not the
+binding constraint: out-of-order dissemination loses filings at any rate.)
 
 Adaptive tightening: if a poll returns ≥8 new records, re-poll immediately rather than
 waiting out the interval.
@@ -132,6 +172,25 @@ circuit breaker emits a Telegram `ingest degraded` alert after 3 consecutive fai
 
 **Duplicate alerts on restart.** Cursor persists in Mongo, never memory. Unique index on
 `seq_id`; alerts fire on insert only, never on upsert-update.
+
+**Out-of-order dissemination.** 2.37% of filings arrive with a `seq_id` below the stream
+position (see above). A cursor used as a newness filter drops them with no log, no counter
+and no alert, and the rollover check cannot see it because the page's oldest id is below
+the cursor. Mitigation: the database decides newness; the cursor is a rollover marker only.
+
+**Partially unmappable pages.** A page where every record is rejected is loud — nothing is
+ingested. A page where nineteen of twenty map is indistinguishable from a healthy poll:
+the fetch succeeded, filings arrived, the breaker is clean, the cursor moved. Mitigation:
+the skip count is alarmed in its own right, and the scheduled drain re-offers the day so a
+mapper fix recovers the records without a backfill.
+
+**The default watchlist is a firehose.** `WATCHLIST=` means alert on everything, and 71.2%
+of the corpus (12,415 of 17,442) clears the routine-category gate — ~388 Telegram messages
+a day, peak 106 in one hour. The operator mutes the channel within a day and every alert
+above dies with it. Mitigation: the semantics are unchanged, but the measured volume is
+stated at startup, in `.env.example` and in the README. Telegram's ~1 msg/s per-chat limit
+also means an unpaced sender loses messages to 429s outright, so sends are queued, paced
+and the drops counted.
 
 **Double-posting to Instagram.** Telegram callback tapped twice, or retry after an
 ambiguous API response. Approval state flips `pending → approved` atomically via
@@ -225,6 +284,10 @@ replaying the deterministic stages over the 31-day corpus.
 
 - **Rollover logic** — table-driven tests over synthetic `seq_id` sequences. Highest-value
   test in the system; it guards the no-loss guarantee.
+- **Out-of-order dissemination** — replay the REAL reversed sequences from the corpus
+  (both the adjacent-id case and the 84,124-id block excursion, with their recorded page
+  compositions) through the poller and assert the previously-dropped filings are stored.
+  Synthetic sequences cannot produce this shape, because nobody thought to write it.
 - **Adapter** — recorded NSE fixtures. Never live NSE in CI.
 - **Gate tuning** — replay job over the 31-day corpus (17,254 filings, 5.7s to fetch)
   against a hand-labelled subset, measuring precision/recall offline before shipping.
@@ -242,6 +305,22 @@ path is a licensed-vendor swap rather than a rewrite.
 
 Content output carries no recommendations, keeping it clear of SEBI research-analyst
 registration requirements.
+
+## Corrections
+
+Recorded here rather than edited away, because the failure mode is more useful than the
+final text: every one of these was a premise stated confidently in this document, inherited
+without question by the implementation plan, and implemented correctly against a brief that
+was wrong. Mutation testing cannot detect a mechanism that was never built.
+
+| Claim as written | What the corpus showed | Where it now stands |
+|---|---|---|
+| `seq_id` is "monotonic, unique, totally ordered … valid as a cursor" | 414 of 17,442 filings (2.37%, 23 of 32 days) disseminate BELOW the stream position | Corrected under *Verified source behaviour*; the database decides newness |
+| The rollover drain covers the loss cases | No window shorter than a minute can roll a 20-record page; rollover fired once in 32 days | The spec's own step 4 (periodic + 23:30 drains) is now mandatory, not incidental |
+| A day drain closes any hole | The IST day rolls at 18:30 UTC, so a restart across midnight never re-fetches yesterday | The drain spans from the last day with evidence through today, bounded to 7 |
+
+The measurement that refutes all three was available from the moment the Phase 1 corpus
+existed. It was not run against the ingest design, only against the content funnel.
 
 ## Open questions
 

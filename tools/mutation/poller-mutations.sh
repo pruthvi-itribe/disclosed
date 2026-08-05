@@ -214,11 +214,18 @@ check() {
   # a fail-open one, on the harness that backs the no-loss guarantee. So a
   # CRASHED verdict now requires proof that jest reached a suite at all;
   # anything else is a HARNESS ERROR and counts toward FAILURES.
+  #
+  # The evidence is a completion line OR a stack frame from inside a running
+  # test. The second form is load-bearing: a mutation that drops an `await`
+  # leaves a floating rejection, Node raises an uncaughtException, and the
+  # process dies before jest prints ANY completion line — but the stack it dies
+  # with runs through jest-circus. Checked both ways: `zzz-no-such-suite`
+  # matches none of these patterns, and the dropped-await run matches eleven.
   if ! echo "$out" | grep -qE "^Tests:"; then
     if [ "$rc" -eq 0 ]; then
       echo "SURVIVED | $label   <-- TEST GAP"
       FAILURES=$((FAILURES + 1))
-    elif echo "$out" | grep -qE "^(Test Suites:|PASS |FAIL )"; then
+    elif echo "$out" | grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/jest-(circus|runner)|Ran all test suites"; then
       echo "CRASHED  | $label"
       echo "           runner died before reporting (exit $rc); the suite is red"
       CRASHES=$((CRASHES + 1))

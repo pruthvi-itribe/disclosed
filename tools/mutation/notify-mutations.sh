@@ -320,7 +320,7 @@ echo "=== absent credentials must degrade, never crash and never lose the alert 
 perl -0pi -e 's/this\.bot = token \? new TelegramBot\(token, \{ polling: false \}\) : null;/this.bot = new TelegramBot(token, { polling: false });/' "$SVC"
 check "bot constructed with an empty token (throws at boot on a fresh .env)" telegram.service
 
-perl -0pi -e 's/    if \(!this\.bot \|\| !this\.chatId\) \{/    if (!this.bot) {/' "$SVC"
+perl -0pi -e 's/    if \(!bot \|\| !this\.chatId\) \{/    if (!bot) {/' "$SVC"
 check "chat id guard dropped (sends to an empty chat id every poll)" telegram.service
 
 perl -0pi -e 's/this\.logger\.warn\(.TELEGRAM_BOT_TOKEN[^;]*;//' "$SVC"
@@ -356,7 +356,7 @@ check "truncated summary, wire structure suite only" alert-formatter -t "wire st
 perl -0pi -e 's/\$\{describeError\(error\)\}/\${(error as Error).message}/' "$SVC"
 check "naive error description, failure suite only" telegram.service -t "when Telegram fails"
 
-perl -0pi -e 's/    if \(!this\.bot \|\| !this\.chatId\) \{/    if (!this.bot) {/' "$SVC"
+perl -0pi -e 's/    if \(!bot \|\| !this\.chatId\) \{/    if (!bot) {/' "$SVC"
 check "chat id guard dropped, absent-credentials suite only" telegram.service -t "with credentials absent"
 
 echo ""

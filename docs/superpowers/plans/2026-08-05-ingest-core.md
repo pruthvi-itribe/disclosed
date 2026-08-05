@@ -6,14 +6,14 @@
 
 **Architecture:** NestJS monorepo with one app (`apps/ingest`) over two libs (`libs/filings`, `libs/notify`). All decision logic — date parsing, rollover detection, cadence, alert gating — lives in pure functions in `libs/filings` so it is testable without HTTP, Mongo, or timers. The adapter interface isolates NSE so a licensed vendor feed can replace it later without touching anything above it.
 
-**Tech Stack:** Node 18.20.8, TypeScript 5.1, NestJS 10, Mongoose 8 (MongoDB), Bull 4 + Redis, `node-telegram-bot-api` 0.67, Jest 29 + ts-jest, `nock` for HTTP fixtures.
+**Tech Stack:** Node 18.20.8, TypeScript 5.1, NestJS 10, Mongoose 8 (MongoDB), `node-telegram-bot-api` 0.67, Jest 29 + ts-jest, `nock` for HTTP fixtures. (Bull 4 + Redis belong to the phase-4 cold path and were removed from `package.json` after the final review: nothing in phases 1–3 imports them.)
 
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-08-05-filings-pipeline-design.md`. Read it before Task 1.
 - **`exchdisstime` is the authoritative clock.** Never use local time for latency or alert-window decisions.
 - **NSE timestamps are IST with no timezone marker.** Naive `new Date()` parsing is a 5.5-hour bug on a UTC server. Always parse via `parseNseDate`.
-- **`seq_id` is a global counter across all NSE streams.** It is a valid cursor. It is NOT a completeness proof — gaps are normal and prove nothing.
+- **`seq_id` is a global counter across all NSE streams.** Gaps are normal and prove nothing, so it is NOT a completeness proof. **CORRECTED 2026-08-05: it is not a valid newness filter either.** The recorded corpus shows 414 of 17,442 filings (2.37%, on 23 of 32 IST days) disseminating with an id BELOW the stream position — `106689007` at 10:03:43 then `106689006` at 10:03:45, and a block excursion of 84,124 ids at 2026-07-06T05:37:45Z followed by a descending run. Filtering on `seq_id > cursor` discards every one of them silently. Newness is decided by the unique index on `seqId` plus the insert-only write; the cursor is a ROLLOVER marker only, and never moves backwards. See *Amendments* at the end of this plan.
 - **No live NSE calls in tests.** All HTTP is `nock`-mocked from recorded fixtures.
 - `strict: true` in tsconfig. This is a greenfield product core, deliberately stricter than `cat-trader`.
 - Conventional commits: `<type>: <description>`.
@@ -3285,3 +3285,118 @@ git commit -m "feat: add poller service, application wiring and readme"
 **Deliberately deferred, matching the spec's Open Questions:** the market-cap materiality gate (needs a securities master), the BSE adapter (endpoint unverified), and all phase 4 content components. Task 4 measures the funnel *upstream* of the market-cap gate and prints an explicit verdict, which is the phase 1 deliverable.
 
 **Known interface consistency points:** `SessionProvider` (T5) is what `SessionService` (T5) implements and what `NseAdapter` consumes. `FilingRepository.insertNew` returns only new rows (T7) — that return value is exactly what `AlertService.processInserted` consumes (T11), which is the mechanism preventing re-alerting on restart. `nextPollDelayMs` (T6) takes the same options object shape that `PollerOptions` (T12) supplies.
+
+
+---
+
+## Amendments (whole-branch review, 2026-08-05)
+
+The twelve tasks above were each implemented correctly against their brief. Three of those
+briefs inherited a premise from the design spec that the recorded corpus refutes, and one
+mechanism the spec called for never reached this plan at all. What follows is what the plan
+SHOULD have said; the tasks are left as written because the historical record of what was
+built from what is the useful part.
+
+Every figure below is measured against `data/corpus/05-07-2026_05-08-2026.jsonl`
+(17,442 filings, 32 IST days) — the corpus Task 3 recorded and Task 4 analysed. It was
+available from Task 3 onward and was never pointed at the ingest design.
+
+### A1 — The database decides newness, not the cursor
+
+**Was:** Task 6 and Task 12 filter the page to `seq_id > cursor` and ingest only that.
+
+**Is:** `PollerService` offers the ENTIRE hot page to `FilingRepository.insertNew` on every
+poll. The unique index on `seqId` plus `insertNew`'s return value already decide newness
+correctly and idempotently; the cursor never should have been a second, weaker copy of that
+decision.
+
+`detectRollover` and `holeDetected` are UNCHANGED and keep their real job — deciding
+whether the page rolled past us. `newSeqIds` survives only as the cadence burst signal,
+which is still the right input there: it measures how fast the page is turning over.
+
+**Evidence:** replaying all 32 days through the fixed service at the real 2s cadence
+(904,536 polls) stores 413 filings the cursor filter dropped.
+
+**Cost control:** offering ~20 rows a poll is 558,122 rows/day of which 545 are new, and an
+all-duplicate `insertNew` resolves through mongoose's bulk-write ERROR path at 1.02 ms a
+call. `RecentSeqIds` (`apps/ingest/src/poller/recent-seq-ids.ts`) is a bounded pre-filter
+over ids a RESOLVED `insertNew` already proved stored: 1,024x fewer rows, 98.2% of polls
+skip the database entirely. It is never the authority — a miss falls through to
+`insertNew`, and a write that throws remembers nothing. Capacity 4,096, chosen against the
+drain (the busiest IST day held 1,023 filings, so a smaller bound would let each drain
+evict the entries the next one needs).
+
+### A2 — The scheduled drains the spec asked for
+
+**Was:** absent. The spec's ingest loop says "Scheduled drain every 5 minutes regardless.
+Final drain at 23:30 closes the day"; neither reached this plan, and Task 12 implemented
+only the rollover drain.
+
+**Is:** `libs/filings/src/logic/drain-schedule.ts` (pure, clock-injected) decides when a
+drain is owed; `PollerService` runs all three reasons — `rollover`, `periodic`, `closing` —
+through ONE code path, one in-flight guard, one merge-and-offer to `insertNew`, one route
+through `AlertService` (so the cold-start window still suppresses recovered filings) and
+one `drainFailing` latch with the existing `INGEST DRAIN FAILED` alert. A rollover outranks
+a schedule. A failed SCHEDULED drain does not hold the cursor — the hot page proved
+continuity on its own, and holding it would manufacture a permanent rollover loop. The
+drain clock is stamped on attempt, so a refusing endpoint is retried on the interval rather
+than every 2 seconds.
+
+**Why it was not optional:** no 2-second window in the corpus holds more than 6 filings, no
+30-second window more than 9, no 60-second window more than 12 — against a 20-record page.
+Rollover cannot fire at either poll cadence. The 32-day replay triggers it ONCE.
+Reconciliation was running about once per process lifetime, which turned A1's out-of-order
+filings from "recovered late" into "lost".
+
+**Config:** `NSE_DRAIN_INTERVAL_MS`, default 300000, validated with the same
+`Number.isFinite(v) && v >= 1` rule as every other numeric key, documented in
+`.env.example`. The 23:30 IST closing time is fixed by the spec, not configurable.
+
+### A3 — The drain range spans IST midnight
+
+**Was:** `fetchDay(now)` — today's IST day only.
+
+**Is:** `drainRange(anchor, now)` returns the IST days from the day of the newest record
+already stored through now, bounded to `MAX_DRAIN_DAYS` (7). The anchor is
+`FilingRepository.getMaxDisseminatedAt()`, deliberately NOT the timestamp of the highest
+`seqId`: per A1 those are different records, and the question a drain asks is how far
+forward in TIME there is evidence for. Days beyond the bound are counted and warned about
+rather than silently skipped; the number of days drained is logged and returned on
+`PollResult`. A failure on ANY day fails the whole drain — a partial range is not a
+reconciled range.
+
+**Why:** the IST day rolls at 18:30 UTC. A restart whose downtime crossed it drained today
+while yesterday's filings beyond the newest 20 were never fetched, and `advanceCursor`
+stepped past them. Replayed against the corpus (stop 21:00 IST 30-Jul, restart 10:00 IST
+31-Jul): the old behaviour recovers 14 of 71 of yesterday's tail; the fixed range recovers
+71 of 71.
+
+### A4 — Supporting changes
+
+- **`libs/common`** — a library that depends on nothing, so `libs/filings` and `libs/notify`
+  can share code without either depending on the other. Holds `describeError`/`safeText`/
+  `safeJson`/`stackOf`/`UNPRINTABLE` and `IST_OFFSET_MS`/`pad2`, which had been written out
+  by hand in five, five and three places respectively. One copy was wrong:
+  `nse.adapter.ts` called `String(error)` unguarded from inside the catch that stops one
+  bad record discarding a page, and `String()` raises on a null-prototype object.
+- **`INGEST RECORDS SKIPPED`** — a partly-rejected page was log-only. It is now alarmed in
+  its own right, edge-triggered, distinct from `INGEST BLIND`.
+- **Telegram** — reads the validated config rather than raw `process.env`; sends are
+  serialised and paced (`TELEGRAM_MIN_SEND_INTERVAL_MS`, default 1000) because a 429 is not
+  a delay but a lost alert; rate limits are counted and surfaced instead of swallowed.
+- **`coverageThreshold`** in `jest.config.js`, so Step 9's 80% bar is enforced rather than
+  checked by hand.
+- **Mutation harnesses** — `tools/mutation/common-mutations.sh` is new; the `CRASHED`
+  branch in the poller and alert-service harnesses required no evidence that jest had
+  reached a suite, so an infrastructure failure scored as a kill AND was excluded from the
+  exit code.
+
+### The lesson worth keeping
+
+All three corrections trace to this plan and to the spec, not to the implementation. Every
+task correctly implemented its brief; the brief inherited a premise nobody measured. The
+corpus that refutes it was recorded in Task 3 and only ever aimed at the content funnel.
+
+**Before specifying a mechanism over a data source, replay the recorded data through the
+mechanism.** Mutation testing proves the tests kill mutants of the code AS WRITTEN — it is
+structurally incapable of detecting a mechanism that was never built.

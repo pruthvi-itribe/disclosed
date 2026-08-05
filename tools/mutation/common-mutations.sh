@@ -163,11 +163,14 @@ check() {
   # No `Tests:` line means the runner never reached a verdict. Positive evidence
   # that jest got as far as a suite is required before that may be scored as a
   # kill; without it, it is a harness or environment failure and is counted.
+  # The evidence is a completion line OR a stack frame from inside a running
+  # test, because a mutation that kills the process mid-test prints neither
+  # `PASS` nor `FAIL`. `npx jest zzz-no-such-suite` matches none of them.
   if ! echo "$out" | grep -qE "^Tests:"; then
     if [ "$rc" -eq 0 ]; then
       echo "SURVIVED | $label   <-- TEST GAP"
       FAILURES=$((FAILURES + 1))
-    elif echo "$out" | grep -qE "^(Test Suites:|PASS |FAIL )"; then
+    elif echo "$out" | grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/jest-(circus|runner)|Ran all test suites"; then
       echo "CRASHED  | $label"
       echo "           runner died before reporting (exit $rc); the suite is red"
       CRASHES=$((CRASHES + 1))
