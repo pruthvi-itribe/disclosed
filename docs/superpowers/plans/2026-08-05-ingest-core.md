@@ -502,13 +502,15 @@ const PATTERN = /^(\d{2})-([A-Za-z]{3})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/;
 export function parseNseDate(input: string): Date {
   const match = PATTERN.exec(input.trim());
   if (!match) {
-    throw new Error(`Unparseable NSE date: "${input}"`);
+    throw new Error(`Unparseable NSE date: "${safeEcho(input)}"`);
   }
 
   const [, dd, mon, yyyy, hh, mm, ss] = match;
   const month = MONTHS[mon.toLowerCase()];
   if (month === undefined) {
-    throw new Error(`Unparseable NSE date: "${input}" (unknown month "${mon}")`);
+    throw new Error(
+      `Unparseable NSE date: "${safeEcho(input)}" (unknown month "${safeEcho(mon)}")`,
+    );
   }
 
   const utcMillis = Date.UTC(
