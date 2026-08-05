@@ -1,4 +1,9 @@
-import { formatFilingAlert, formatDegradedAlert } from './alert-formatter';
+import {
+  formatBlindFeedAlert,
+  formatDegradedAlert,
+  formatFilingAlert,
+  formatWriteFailureAlert,
+} from './alert-formatter';
 import type { Filing } from '@app/filings';
 
 const filing: Filing = {
@@ -563,5 +568,103 @@ describe('formatDegradedAlert', () => {
 
     expect(output).toContain('INGEST DEGRADED');
     expect(output).toContain('3 consecutive poll failures.');
+  });
+});
+
+/**
+ * The second way the pipeline goes blind, and the harder one to notice: the
+ * fetch succeeds, so the breaker stays healthy and the logs stay calm, but every
+ * record on the page failed to map. `seq_id` is validated digits-only, so an
+ * exchange-side id format change produces exactly this — a permanently silent
+ * feed wearing the face of a slow evening.
+ */
+describe('formatBlindFeedAlert', () => {
+  it('states how many records were rejected', () => {
+    const output = formatBlindFeedAlert(20);
+
+    expect(output).toContain('INGEST BLIND');
+    expect(output).toContain('20');
+  });
+
+  it('lays the operator alert out on its own fixed shape', () => {
+    expect(formatBlindFeedAlert(20).split('\n')).toEqual([
+      'INGEST BLIND',
+      '',
+      'NSE returned 20 record(s) and every one was rejected as unmappable.',
+      'Nothing can be ingested until the mapper matches the feed again; an id or',
+      'field format change is the usual cause.',
+    ]);
+  });
+
+  it('reports the count it is given', () => {
+    expect(formatBlindFeedAlert(1)).toContain('1 record(s)');
+    expect(formatBlindFeedAlert(500)).toContain('500 record(s)');
+  });
+
+  it('emits no raw markup', () => {
+    const output = formatBlindFeedAlert(20);
+
+    expect(output).not.toMatch(/[<>]/);
+    expect(output.match(/&(?!amp;|lt;|gt;)/g)).toBeNull();
+  });
+});
+
+/**
+ * A write that threw is not a retryable no-op. Mongoose can put valid documents
+ * in the collection before it reports a validation failure, so rows may be
+ * persisted and never alerted — and a retry will not return them a second time,
+ * because the unique index will reject them as already present.
+ */
+describe('formatWriteFailureAlert', () => {
+  it('states the batch size and the error', () => {
+    const output = formatWriteFailureAlert(12, 'connection timed out');
+
+    expect(output).toContain('INGEST WRITE FAILED');
+    expect(output).toContain('12');
+    expect(output).toContain('connection timed out');
+  });
+
+  it('lays the operator alert out on its own fixed shape', () => {
+    expect(
+      formatWriteFailureAlert(12, 'connection timed out').split('\n'),
+    ).toEqual([
+      'INGEST WRITE FAILED',
+      '',
+      'A batch of 12 filing(s) could not be written.',
+      'Rows may be stored WITHOUT having alerted; a retry will not re-return them.',
+      'Last error: connection timed out',
+    ]);
+  });
+
+  /**
+   * The error text carries whatever the driver put in it — a document fragment,
+   * a URI, an HTML proxy error — so it is escaped exactly like exchange text.
+   */
+  const WRITE_ERROR_CASES: ReadonlyArray<readonly [string, string, string]> = [
+    [
+      'a document fragment with angle brackets',
+      'E11000 duplicate key on <filings>',
+      'Last error: E11000 duplicate key on &lt;filings&gt;',
+    ],
+    [
+      'a connection string with an ampersand',
+      'mongodb://h/db?a=1&b=2 unreachable',
+      'Last error: mongodb://h/db?a=1&amp;b=2 unreachable',
+    ],
+    ['an empty message', '', 'Last error: '],
+  ];
+
+  it.each(WRITE_ERROR_CASES)('escapes %s', (_label, raw, expected) => {
+    expect(formatWriteFailureAlert(3, raw)).toContain(expected);
+  });
+
+  it('emits no raw markup for a hostile error string', () => {
+    const output = formatWriteFailureAlert(
+      7,
+      '<a href="https://evil.example">tap</a> & more',
+    );
+
+    expect(output).not.toMatch(/[<>]/);
+    expect(output.match(/&(?!amp;|lt;|gt;)/g)).toBeNull();
   });
 });

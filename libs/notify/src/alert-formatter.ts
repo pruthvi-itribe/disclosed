@@ -89,3 +89,48 @@ export function formatDegradedAlert(
     `Last error: ${escapeHtml(lastError)}`,
   ].join('\n');
 }
+
+/**
+ * The operator alert for a feed that answers but yields nothing usable.
+ *
+ * This is the blindness the degraded alert cannot see: the request succeeded,
+ * so the circuit breaker stays healthy, yet every record on the page failed to
+ * map. `seq_id` is validated digits-only, so an exchange-side id format change
+ * lands here — and without a message it presents as a quiet market for as long
+ * as nobody reads the logs.
+ *
+ * `received` is a count, so there is nothing to escape; it is stated plainly
+ * because "how many did it throw away" is the first question an operator asks.
+ */
+export function formatBlindFeedAlert(received: number): string {
+  return [
+    'INGEST BLIND',
+    '',
+    `NSE returned ${received} record(s) and every one was rejected as unmappable.`,
+    'Nothing can be ingested until the mapper matches the feed again; an id or',
+    'field format change is the usual cause.',
+  ].join('\n');
+}
+
+/**
+ * The operator alert for a batch the database refused.
+ *
+ * Deliberately louder than a retry notice, because a failed write is not a
+ * retryable no-op: mongoose can put valid documents in the collection before it
+ * reports a validation failure, so rows may be persisted and never alerted —
+ * and the unique index will reject them on a retry, so they never come back.
+ * `lastError` is driver text carrying document fragments and URIs, so it is
+ * escaped exactly like exchange text.
+ */
+export function formatWriteFailureAlert(
+  batchSize: number,
+  lastError: string,
+): string {
+  return [
+    'INGEST WRITE FAILED',
+    '',
+    `A batch of ${batchSize} filing(s) could not be written.`,
+    'Rows may be stored WITHOUT having alerted; a retry will not re-return them.',
+    `Last error: ${escapeHtml(lastError)}`,
+  ].join('\n');
+}

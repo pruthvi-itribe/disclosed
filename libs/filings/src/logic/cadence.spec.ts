@@ -167,7 +167,11 @@ describe('nextPollDelayMs: burst threshold edge', () => {
     // Pins the consequence of a degenerate config rather than endorsing it:
     // `newCount >= 0` is always true, so a zero threshold returns a zero delay
     // forever and busy-loops the poller. This function is pure and takes its
-    // config on trust — TASK 12 MUST REJECT burstThreshold < 1 at config load.
+    // config on trust — the guard lives at config load, in
+    // `apps/ingest/src/config/configuration.ts`, and is deliberately
+    // `Number.isFinite(v) && v >= 1` rather than a bare lower bound: `NaN < 1`
+    // is FALSE, so `if (v < 1) throw` would accept NaN, and `newCount >= NaN`
+    // is false forever — losing the burst escape hatch just as silently.
     const degenerate = { ...opts, burstThreshold: 0 };
 
     expect(
