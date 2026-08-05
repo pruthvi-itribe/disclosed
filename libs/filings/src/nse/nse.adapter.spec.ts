@@ -71,7 +71,7 @@ describe('NseAdapter', () => {
       .query({ index: 'equities' })
       .reply(200, livePage);
 
-    const filings = await adapter.fetchLatest();
+    const { filings } = await adapter.fetchLatest();
 
     expect(filings).toHaveLength(livePage.length);
     expect(typeof filings[0].seqId).toBe('number');
@@ -97,7 +97,7 @@ describe('NseAdapter', () => {
       .query({ index: 'equities' })
       .reply(200, shuffled);
 
-    const filings = await adapter.fetchLatest();
+    const { filings } = await adapter.fetchLatest();
     const ids = filings.map((f) => f.seqId);
     const expected = shuffled
       .map((raw) => Number(raw.seq_id))
@@ -120,11 +120,96 @@ describe('NseAdapter', () => {
       })
       .reply(200, dayRange);
 
-    const filings = await adapter.fetchDay(
+    const { filings } = await adapter.fetchDay(
       new Date('2026-08-04T10:00:00.000Z'),
     );
 
     expect(filings).toHaveLength(dayRange.length);
+  });
+
+  describe('completeness accounting', () => {
+    it('reports every record mapped on a clean page', async () => {
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({ index: 'equities' })
+        .reply(200, livePage);
+
+      const result = await adapter.fetchLatest();
+
+      expect(result.received).toBe(livePage.length);
+      expect(result.skipped).toBe(0);
+      expect(result.filings).toHaveLength(result.received);
+    });
+
+    it('reports the counts when only some records are unmappable', async () => {
+      const page = [
+        { ...livePage[0], an_dt: 'garbage' },
+        livePage[1],
+        livePage[2],
+      ];
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({ index: 'equities' })
+        .reply(200, page);
+
+      const result = await adapter.fetchLatest();
+
+      expect(result.received).toBe(3);
+      expect(result.skipped).toBe(1);
+      expect(result.filings).toHaveLength(2);
+      expect(result.received - result.skipped).toBe(result.filings.length);
+    });
+
+    it('reports a wholly rejected page as received > 0 with no filings', async () => {
+      // This is the case Task 12 alarms on. seq_id is validated digits-only, so
+      // an exchange-side move to alphanumeric ids rejects every record and the
+      // feed goes silent - indistinguishable from a quiet market on the filings
+      // alone, which is why the counts are part of the return value.
+      const allBad = livePage.map((raw) => ({ ...raw, seq_id: 'A106726004' }));
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({ index: 'equities' })
+        .reply(200, allBad);
+
+      const result = await adapter.fetchLatest();
+
+      expect(result.received).toBe(allBad.length);
+      expect(result.received).toBeGreaterThan(0);
+      expect(result.skipped).toBe(result.received);
+      expect(result.filings).toHaveLength(0);
+    });
+
+    it('distinguishes an empty page from a wholly rejected one', async () => {
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({ index: 'equities' })
+        .reply(200, []);
+
+      const result = await adapter.fetchLatest();
+
+      // Both return zero filings; only `received` tells them apart.
+      expect(result.received).toBe(0);
+      expect(result.skipped).toBe(0);
+      expect(result.filings).toHaveLength(0);
+    });
+
+    it('reports counts on fetchDay as well as fetchLatest', async () => {
+      nock(HOST)
+        .get('/api/corporate-announcements')
+        .query({
+          index: 'equities',
+          from_date: '04-08-2026',
+          to_date: '04-08-2026',
+        })
+        .reply(200, dayRange);
+
+      const result = await adapter.fetchDay(
+        new Date('2026-08-04T10:00:00.000Z'),
+      );
+
+      expect(result.received).toBe(dayRange.length);
+      expect(result.skipped).toBe(0);
+    });
   });
 
   it('invalidates the session and retries once on 403', async () => {
@@ -137,7 +222,7 @@ describe('NseAdapter', () => {
       .query({ index: 'equities' })
       .reply(200, livePage);
 
-    const filings = await adapter.fetchLatest();
+    const { filings } = await adapter.fetchLatest();
 
     expect(session.invalidated).toBe(1);
     expect(session.issued).toBe(2);
@@ -182,7 +267,7 @@ describe('NseAdapter', () => {
       .query({ index: 'equities' })
       .reply(200, [{ ...livePage[0], an_dt: 'garbage' }, livePage[1]]);
 
-    const filings = await adapter.fetchLatest();
+    const { filings } = await adapter.fetchLatest();
 
     expect(filings).toHaveLength(1);
     expect(filings[0].seqId).toBe(Number(livePage[1].seq_id));
@@ -205,18 +290,14 @@ describe('NseAdapter', () => {
   });
 
   it('summarises the skip count so a wholly rejected page is one line', async () => {
-    // The failure mode behind this: seq_id is validated as digits only, so an
-    // exchange-side change to alphanumeric ids rejects every record on the page
-    // and the feed goes silent. The summary makes that visible at a glance.
     const allBad = livePage.map((raw) => ({ ...raw, seq_id: 'A106726004' }));
     nock(HOST)
       .get('/api/corporate-announcements')
       .query({ index: 'equities' })
       .reply(200, allBad);
 
-    const filings = await adapter.fetchLatest();
+    await adapter.fetchLatest();
 
-    expect(filings).toHaveLength(0);
     expect(logger.warnings).toContain(
       `Skipped ${allBad.length} of ${allBad.length} NSE records as unmappable`,
     );
@@ -231,9 +312,11 @@ describe('NseAdapter', () => {
       .query({ index: 'equities' })
       .reply(200, [null, livePage[0], 'not-a-record', 42]);
 
-    const filings = await adapter.fetchLatest();
+    const result = await adapter.fetchLatest();
 
-    expect(filings).toHaveLength(1);
+    expect(result.filings).toHaveLength(1);
+    expect(result.received).toBe(4);
+    expect(result.skipped).toBe(3);
     expect(
       logger.warnings.filter((line) => line.includes('Skipped unmappable')),
     ).toHaveLength(3);
@@ -252,6 +335,9 @@ describe('NseAdapter', () => {
       .query({ index: 'equities' })
       .reply(200, [null, livePage[0]]);
 
-    await expect(guarded.fetchLatest()).resolves.toHaveLength(1);
+    const result = await guarded.fetchLatest();
+
+    expect(result.filings).toHaveLength(1);
+    expect(result.skipped).toBe(1);
   });
 });

@@ -3,6 +3,7 @@ import axios, { type AxiosInstance } from 'axios';
 import type { Filing } from '../filing.types';
 import type {
   AdapterLogger,
+  FetchResult,
   SessionProvider,
   SourceAdapter,
 } from '../source-adapter.interface';
@@ -75,17 +76,17 @@ export class NseAdapter implements SourceAdapter {
       });
   }
 
-  async fetchLatest(): Promise<Filing[]> {
+  async fetchLatest(): Promise<FetchResult> {
     return this.fetch({ index: 'equities' });
   }
 
-  async fetchDay(date: Date): Promise<Filing[]> {
+  async fetchDay(date: Date): Promise<FetchResult> {
     const day = toNseDateParam(date);
     return this.fetch({ index: 'equities', from_date: day, to_date: day });
   }
 
   /** Issues the request, retrying exactly once after a session refresh on 401/403. */
-  private async fetch(params: Record<string, string>): Promise<Filing[]> {
+  private async fetch(params: Record<string, string>): Promise<FetchResult> {
     try {
       return await this.request(params);
     } catch (error) {
@@ -101,7 +102,7 @@ export class NseAdapter implements SourceAdapter {
     }
   }
 
-  private async request(params: Record<string, string>): Promise<Filing[]> {
+  private async request(params: Record<string, string>): Promise<FetchResult> {
     const cookie = await this.session.getCookieHeader();
     const response = await this.http.get<unknown>(BASE_PATH, {
       params,
@@ -122,11 +123,12 @@ export class NseAdapter implements SourceAdapter {
    * Maps a page, dropping the records that cannot become Filings.
    *
    * A single malformed record must not discard the whole batch, but a silently
-   * dropped one is the exact loss this pipeline exists to prevent - so every
-   * skip is logged individually, and a summary line makes a wholly rejected
-   * page (an exchange-side schema change) visible without reading them all.
+   * dropped one is the exact loss this pipeline exists to prevent. So every skip
+   * is logged individually, a summary line makes a wholly rejected page visible
+   * without reading them all, and the counts are returned so the caller can
+   * alarm on the condition instead of only reading it in a log.
    */
-  private mapPage(records: readonly unknown[]): Filing[] {
+  private mapPage(records: readonly unknown[]): FetchResult {
     const filings: Filing[] = [];
     for (const raw of records) {
       const filing = this.mapOrSkip(raw);
@@ -140,7 +142,11 @@ export class NseAdapter implements SourceAdapter {
       );
     }
 
-    return filings.sort((a, b) => b.seqId - a.seqId);
+    return {
+      filings: filings.sort((a, b) => b.seqId - a.seqId),
+      received: records.length,
+      skipped,
+    };
   }
 
   private mapOrSkip(raw: unknown): Filing | null {
