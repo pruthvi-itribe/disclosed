@@ -1,12 +1,16 @@
 services:
   mongo:
     image: mongo:7
-    ports: ['27017:27017']
+    # Bound to loopback, not 0.0.0.0: this instance has no auth, so exposing it
+    # to the local network would be an unauthenticated database on the LAN.
+    # Host port is 27117 because 27017 is commonly taken by another project's
+    # instance; MONGO_URI in .env.example points here.
+    ports: ['127.0.0.1:27117:27017']
     volumes: ['redbox-mongo:/data/db']
   # For the cold-path queues in phase 4. Nothing in the ingest app reads it
   # today, which is why no REDIS_* setting appears in .env.example.
   redis:
     image: redis:7-alpine
-    ports: ['6379:6379']
+    ports: ['127.0.0.1:6479:6379']
 volumes:
   redbox-mongo:
