@@ -14,6 +14,50 @@ Without Telegram credentials the pipeline still boots, polls and persists —
 alerts are written to the log instead. That is deliberate: a missing
 notification channel must never become a total outage.
 
+## Watching it work
+
+    npm run start:dashboard    # then open http://127.0.0.1:7717
+
+A separate, **read-only** Nest application (`apps/dashboard`) that serves one
+self-contained HTML page and four JSON routes. It polls itself every four
+seconds, so filings appear as they land.
+
+| Route             | Returns                                                                    |
+| ----------------- | -------------------------------------------------------------------------- |
+| `/`               | The page. Inline CSS and JS, no CDN, no external font, no build step.      |
+| `/api/summary`    | Total, count for the current IST day, newest `disseminatedAt`, max `seqId`, feed lag. |
+| `/api/filings`    | Newest-first page. `?limit=&offset=&symbol=&category=`                     |
+| `/api/categories` | Category breakdown with counts, largest first. `?limit=`                   |
+| `/api/daily`      | Filings per IST day, zero-filled, oldest first. `?days=`                   |
+
+Every JSON route answers with `{ success, data, error, meta }`. A malformed
+query is a `400` naming the key, never a silently applied default.
+
+**It is a separate application on purpose, and must stay one.** `apps/ingest`
+has no HTTP server: it runs `NestFactory.createApplicationContext`, and
+`@nestjs/platform-express` is deliberately absent from it because it pulls in
+`multer`, whose advisory history is a run of high-severity denial-of-service
+reports, for a process that serves nothing. The dashboard is where that
+dependency lives. It registers no multipart route, runs with `bodyParser: false`
+so no request body is read at all, and `package.json` carries `overrides`
+pinning `multer`, `express`, `body-parser` and `qs` past the advisories that
+`@nestjs/platform-express@10` would otherwise pin in — `npm audit --omit=dev`
+reports the same findings with the dashboard as without it. The reasoning is
+written out at the top of `apps/dashboard/src/dashboard.module.ts`.
+
+**It never writes.** The query service is handed a `FilingReadModel` — the
+mongoose model narrowed to `find`, `findOne`, `countDocuments` and `aggregate` —
+so a write is a compile error, not a review comment. It also connects with
+`autoIndex: false`, so it cannot even create an index behind the poller. That
+matters because it shares a live collection: a stray write would corrupt the
+cursor the poller resumes from.
+
+**All times shown are IST**, rendered server-side from
+`libs/common/src/ist.ts` — the one definition of the offset in the codebase. The
+browser is never asked to format a stored instant, because a browser left on UTC
+would render every filing five and a half hours early and look entirely normal
+doing it.
+
 ## Phase 1 measurement
 
     npm run corpus:fetch -- --days 31
@@ -110,14 +154,17 @@ is the only alert that says the no-loss guarantee is currently not being met.
 
 ## Configuration
 
-Every setting is read in `apps/ingest/src/config/configuration.ts` and nowhere
-else. Numeric settings must be whole numbers `>= 1`; anything else stops the
-process at startup naming the key. A blank assignment (`KEY=`) is read as unset
-and falls back to the default.
+Every ingest setting is read in `apps/ingest/src/config/configuration.ts` and
+nowhere else; the dashboard's own port is read in
+`apps/dashboard/src/config/configuration.ts` and nowhere else. Numeric settings
+must be whole numbers `>= 1`; anything else stops the process at startup naming
+the key. A blank assignment (`KEY=`) is read as unset and falls back to the
+default.
 
 | Variable               | Default                              | Purpose                                       |
 | ---------------------- | ------------------------------------ | --------------------------------------------- |
-| `MONGO_URI`            | `mongodb://localhost:27017/redbox`   | Storage.                                      |
+| `MONGO_URI`            | `mongodb://localhost:27117/redbox`   | Storage. Read by both apps.                   |
+| `DASHBOARD_PORT`       | `7717`                               | Dashboard listen port, 1024–65535. Always bound to `127.0.0.1`; the interface is not configurable. |
 | `TELEGRAM_BOT_TOKEN`   | _(empty)_                            | Unset ⇒ alerts are logged, not sent.          |
 | `TELEGRAM_CHAT_ID`     | _(empty)_                            | Unset ⇒ alerts are logged, not sent.          |
 | `NSE_HOT_INTERVAL_MS`  | `2000`                               | Poll interval inside 07:00–23:00 IST.         |
@@ -155,6 +202,13 @@ than aspirational. `main.ts` and `ingest.module.ts` stay in the report at 0%
 rather than being excluded to flatter the number: they are composition, verified
 by running the process, and hiding them would also hide `main.ts`'s shutdown
 re-entrancy latch, which no test covers.
+
+The dashboard's equivalent latch is the exception: it lives in
+`apps/dashboard/src/lifecycle/shutdown.ts` rather than inline in `main.ts`
+precisely so it can be tested, including the race where a second signal arrives
+while the first close is still in flight. `apps/dashboard/src/dashboard.e2e.spec.ts`
+boots the real module against an in-memory mongod on a loopback port and drives
+the routes over HTTP, so the module wiring is covered too.
 
 Beyond the suites, each component that carries a silent failure mode has a
 committed mutation harness under `tools/mutation/`. Each breaks the

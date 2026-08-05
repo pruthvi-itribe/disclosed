@@ -14,28 +14,45 @@
       "root": "apps/ingest",
       "entryFile": "main",
       "sourceRoot": "apps/ingest/src",
-      "compilerOptions": { "tsConfigPath": "apps/ingest/tsconfig.app.json" }
+      "compilerOptions": {
+        "tsConfigPath": "apps/ingest/tsconfig.app.json"
+      }
+    },
+    "dashboard": {
+      "type": "application",
+      "root": "apps/dashboard",
+      "entryFile": "main",
+      "sourceRoot": "apps/dashboard/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/dashboard/tsconfig.app.json"
+      }
     },
     "common": {
       "type": "library",
       "root": "libs/common",
       "entryFile": "index",
       "sourceRoot": "libs/common/src",
-      "compilerOptions": { "tsConfigPath": "libs/common/tsconfig.lib.json" }
+      "compilerOptions": {
+        "tsConfigPath": "libs/common/tsconfig.lib.json"
+      }
     },
     "filings": {
       "type": "library",
       "root": "libs/filings",
       "entryFile": "index",
       "sourceRoot": "libs/filings/src",
-      "compilerOptions": { "tsConfigPath": "libs/filings/tsconfig.lib.json" }
+      "compilerOptions": {
+        "tsConfigPath": "libs/filings/tsconfig.lib.json"
+      }
     },
     "notify": {
       "type": "library",
       "root": "libs/notify",
       "entryFile": "index",
       "sourceRoot": "libs/notify/src",
-      "compilerOptions": { "tsConfigPath": "libs/notify/tsconfig.lib.json" }
+      "compilerOptions": {
+        "tsConfigPath": "libs/notify/tsconfig.lib.json"
+      }
     }
   }
 }
