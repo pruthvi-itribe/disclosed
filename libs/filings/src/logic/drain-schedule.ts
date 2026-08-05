@@ -16,8 +16,7 @@
  * the state, this owns the arithmetic.
  */
 
-/** IST is UTC+05:30 year-round; India observes no daylight saving. */
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+import { IST_OFFSET_MS } from '@app/common';
 
 const MINUTES_PER_HOUR = 60;
 

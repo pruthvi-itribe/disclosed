@@ -1,3 +1,4 @@
+import { IST_OFFSET_MS } from '@app/common';
 import { safeEcho } from '../logic/safe-echo';
 
 const MONTHS: Readonly<Record<string, number>> = {
@@ -14,9 +15,6 @@ const MONTHS: Readonly<Record<string, number>> = {
   nov: 10,
   dec: 11,
 };
-
-/** IST is UTC+05:30 year-round; India observes no daylight saving. */
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 const PATTERN = /^(\d{2})-([A-Za-z]{3})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/;
 

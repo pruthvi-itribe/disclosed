@@ -10,6 +10,7 @@
  */
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { IST_OFFSET_MS } from '@app/common';
 import {
   isRoutine,
   ROUTINE_CATEGORIES,
@@ -35,13 +36,10 @@ type StoredFiling = Omit<
   ingestedAt: string;
 };
 
-/**
- * NSE disseminates on IST (UTC+05:30). Bucketing a filing by its raw UTC
- * calendar day splits the IST day at 18:30 UTC, so everything filed between
- * 00:00 and 05:30 IST is attributed to the previous day and the day count that
- * divides every per-day figure below is wrong.
- */
-const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+// NSE disseminates on IST (UTC+05:30). Bucketing a filing by its raw UTC
+// calendar day splits the IST day at 18:30 UTC, so everything filed between
+// 00:00 and 05:30 IST is attributed to the previous day and the day count that
+// divides every per-day figure below is wrong.
 
 function parseTimestamp(iso: string): number {
   const ms = Date.parse(iso);

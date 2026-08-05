@@ -41,6 +41,12 @@
 #
 # NOT covered by mutation, and why:
 #
+#   - `IST_OFFSET_MS` itself. It moved to `libs/common` when five hand-written
+#     copies were consolidated, and is mutated by
+#     tools/mutation/common-mutations.sh — which runs it against the cadence and
+#     drain-schedule suites specifically, so neither guarantee moved off a test.
+#     The offset ARITHMETIC in each consumer is still mutated here.
+#
 #   - `drainRange`'s `Math.min(istDayStartMs(from), end)` clamp. Dropping it is
 #     an EQUIVALENT mutant, verified rather than assumed: with an anchor stamped
 #     ahead of the clock, `total` goes negative, `kept` follows it, the
@@ -230,12 +236,6 @@ check "window open >= becomes > (closed for the 07:00 hour)" "$CAD" cadence
 perl -0pi -e 's/if \(newCount >= burstThreshold\)/if (newCount > burstThreshold)/' "$CAD"
 check "burst >= becomes > (threshold-exact burst missed)" "$CAD" cadence
 
-perl -0pi -e 's/const IST_OFFSET_MS = 5\.5 \* 60 \* 60 \* 1000;/const IST_OFFSET_MS = 0;/' "$CAD"
-check "IST offset dropped (window read in UTC)" "$CAD" cadence
-
-perl -0pi -e 's/const IST_OFFSET_MS = 5\.5 \* 60 \* 60 \* 1000;/const IST_OFFSET_MS = 5 * 60 * 60 * 1000;/' "$CAD"
-check "IST offset rounded to 5h (loses the half hour)" "$CAD" cadence
-
 perl -0pi -e 's/const istHour = new Date\(now\.getTime\(\) \+ IST_OFFSET_MS\)\.getUTCHours\(\);/const istHour = new Date(now.setTime(now.getTime() + IST_OFFSET_MS)).getUTCHours();/' "$CAD"
 check "shift mutates the caller Date" "$CAD" cadence
 
@@ -280,9 +280,6 @@ check "final day is a stand-in, not the instant supplied" "$DRAIN" drain-schedul
 
 perl -0pi -e 's/    days\.push\(new Date\(end - i \* MS_PER_DAY \+ MS_PER_DAY \/ 2\)\);/    days.push(new Date(end - i * MS_PER_DAY));/' "$DRAIN"
 check "intermediate instants sit on the IST midnight boundary" "$DRAIN" drain-schedule
-
-perl -0pi -e 's/const IST_OFFSET_MS = 5\.5 \* 60 \* 60 \* 1000;/const IST_OFFSET_MS = 5 * 60 * 60 * 1000;/' "$DRAIN"
-check "IST offset rounded to 5h (the day boundary moves by 30 minutes)" "$DRAIN" drain-schedule
 
 echo ""
 echo "=== independence check ==="

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { describeError, safeText, stackOf } from '@app/common';
 import { isRoutine, partitionForAlerting, type Filing } from '@app/filings';
 import { formatFilingAlert, TelegramService } from '@app/notify';
 
@@ -11,35 +12,6 @@ export interface AlertOptions {
    */
   watchlist: readonly string[];
 }
-
-/** Shown when a value cannot be converted to text by any means at all. */
-const UNPRINTABLE = '[unprintable]';
-
-/**
- * Coerces to text without throwing. `String(value)` is not total: an object
- * with a null prototype has neither `Symbol.toPrimitive` nor `toString`, so it
- * raises "Cannot convert object to primitive value". Every path here must
- * terminate in a string, because the only caller is a catch block.
- */
-const safeText = (value: unknown): string => {
-  try {
-    return String(value);
-  } catch {
-    return UNPRINTABLE;
-  }
-};
-
-/**
- * Describes a failure for the log, whatever shape it arrives in.
- *
- * DUPLICATION, ACCEPTED DELIBERATELY: `libs/notify` carries a fuller version of
- * this for its own catch block. It is module-private there, and exporting an
- * internal helper across a library boundary to save seven lines would couple
- * the alerting policy to the notification client's internals. Flagged for
- * consolidation into a neutral module if a third consumer appears.
- */
-const describeError = (error: unknown): string =>
-  error instanceof Error ? `${error.name}: ${error.message}` : safeText(error);
 
 /**
  * Uppercases and trims, so the two sides of a watchlist comparison are
@@ -160,7 +132,7 @@ export class AlertService {
           `Alert failed for seqId ${safeText(filing.seqId)}: ${describeError(
             error,
           )}`,
-          error instanceof Error ? error.stack : undefined,
+          stackOf(error),
         );
       }
     }

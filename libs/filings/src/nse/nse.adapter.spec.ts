@@ -1,4 +1,4 @@
-import axios, { type AxiosError } from 'axios';
+import axios, { type AxiosError, type AxiosInstance } from 'axios';
 import nock from 'nock';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -392,6 +392,34 @@ describe('NseAdapter', () => {
       logger.warnings.filter((line) => line.includes('Skipped unmappable')),
     ).toHaveLength(3);
     expect(logger.warnings[0]).toContain('seq_id=unknown');
+  });
+
+  it('survives a record whose failure cannot be converted to text', async () => {
+    // The realised cost of the five-way duplication of this helper: the copy
+    // here called `String(error)` unguarded, and `String()` raises on a
+    // null-prototype object. That throw came from INSIDE the catch that exists
+    // to stop one bad record discarding a page, so it escaped `mapOrSkip`,
+    // escaped `mapPage`, and lost the whole 20-record response.
+    const hostile: Record<string, unknown> = { seq_id: '106725630' };
+    Object.defineProperty(hostile, 'symbol', {
+      get(): never {
+        throw Object.create(null) as never;
+      },
+      enumerable: true,
+    });
+
+    const http = {
+      get: async () => ({ data: [hostile, livePage[0]] }),
+    } as unknown as AxiosInstance;
+    const injected = new NseAdapter(session, logger, http);
+
+    const result = await injected.fetchLatest();
+
+    expect(result.filings).toHaveLength(1);
+    expect(result.received).toBe(2);
+    expect(result.skipped).toBe(1);
+    expect(logger.warnings[0]).toContain('seq_id=106725630');
+    expect(logger.warnings[0]).toContain('[unprintable]');
   });
 
   it('does not let a throwing logger fail the batch', async () => {

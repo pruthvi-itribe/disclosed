@@ -49,15 +49,18 @@
 # NOT covered by mutation, and why: the em dash and the exact line ordering of
 # the wire format are pinned by a whole-message equality assertion rather than
 # by behaviour, so mutating them proves only that the assertion exists. The
-# IST_OFFSET_MS duplication with libs/filings is a known, accepted design call
-# (see the constant's comment), not something a mutation can speak to. The
+# The
 # "adds no interpretation, recommendation or advisory framing" test is a ratchet
 # against a sentiment tag or price being added to the template LATER — there is
 # no such code to mutate today, so it is deliberately outside this harness, in
 # the same way the circuit breaker's no-time-based-behaviour suite is outside
-# its own.
+# its own. `IST_OFFSET_MS`, `pad2`, `safeText`, `safeJson` and `stackOf` moved
+# to `libs/common` and are mutated by tools/mutation/common-mutations.sh, which
+# runs them against THIS suite as well as its own — including the half-hour
+# offset against the IST-clock tests specifically — so no guarantee moved off a
+# test when the copies were consolidated.
 #
-# Tally, so a report can quote it without recounting: 40 mutations across nine
+# Tally, so a report can quote it without recounting: 36 mutations across nine
 # groups, plus 5 independence checks = 45 `check` calls.
 
 set -uo pipefail
@@ -218,17 +221,11 @@ check "escape before uppercase, emitting &AMP; which Telegram will not parse" al
 echo ""
 echo "=== the IST clock: the one number a reader acts on ==="
 
-perl -0pi -e 's/const IST_OFFSET_MS = 5\.5 \* 60 \* 60 \* 1000;/const IST_OFFSET_MS = 5 * 60 * 60 * 1000;/' "$FMT"
-check "offset drops the half hour (every alert 30 minutes wrong)" alert-formatter
-
 perl -0pi -e 's/new Date\(new Date\(date\)\.getTime\(\) \+ IST_OFFSET_MS\)/new Date(new Date(date).getTime() - IST_OFFSET_MS)/' "$FMT"
 check "offset applied backwards (11 hours wrong)" alert-formatter
 
 perl -0pi -e 's/new Date\(new Date\(date\)\.getTime\(\) \+ IST_OFFSET_MS\)/new Date(date.getTime() + IST_OFFSET_MS)/' "$FMT"
 check "storage re-wrap dropped (a string disseminatedAt throws mid-send)" alert-formatter
-
-perl -0pi -e 's/String\(n\)\.padStart\(2, .0.\)/String(n)/' "$FMT"
-check "zero padding dropped (09:03:03 renders as 9:3:3)" alert-formatter
 
 perl -0pi -e 's/toIstClock\(filing\.disseminatedAt\)/toIstClock(filing.ingestedAt)/' "$FMT"
 check "clock reads ingestedAt (our wall time, 'now' for a whole cold-start drain)" alert-formatter
@@ -290,10 +287,10 @@ check "write error not escaped (a document fragment breaks the message)" alert-f
 echo ""
 echo "=== the deliberate swallow must stay loud ==="
 
-perl -0pi -e 's/        error instanceof Error \? error\.stack : undefined,\n      \);/        error instanceof Error ? error.stack : undefined,\n      );\n      throw error;/' "$SVC"
+perl -0pi -e 's/        stackOf\(error\),\n      \);/        stackOf(error),\n      );\n      throw error;/' "$SVC"
 check "rethrows after logging (a Telegram 502 reaches the poll loop)" telegram.service
 
-perl -0pi -e 's/      this\.logger\.error\(\n        `Telegram send failed: \$\{describeError\(error\)\}`,\n        error instanceof Error \? error\.stack : undefined,\n      \);/      \/* swallowed silently *\//' "$SVC"
+perl -0pi -e 's/      this\.logger\.error\(\n        `Telegram send failed: \$\{describeError\(error\)\}`,\n        stackOf\(error\),\n      \);/      \/* swallowed silently *\//' "$SVC"
 check "bare catch, nothing logged (the bot goes quiet with no trace)" telegram.service
 
 perl -0pi -e 's/      this\.logger\.error\(\n        `Telegram send failed:/      this.logger.log(\n        `Telegram send failed:/' "$SVC"
@@ -302,11 +299,8 @@ check "logged at info level (lost in the poll-cycle noise)" telegram.service
 perl -0pi -e 's/\$\{describeError\(error\)\}/\${(error as Error).message}/' "$SVC"
 check "naive error description (throws on a null rejection, inside the catch)" telegram.service
 
-perl -0pi -e 's/        error instanceof Error \? error\.stack : undefined,\n//' "$SVC"
+perl -0pi -e 's/        stackOf\(error\),\n//' "$SVC"
 check "stack dropped (a programming bug reads as a flaky channel)" telegram.service
-
-perl -0pi -e 's/    return JSON\.stringify\(value\) \?\? safeString\(value\);\n  \} catch \{\n[^}]*    return safeString\(value\);/    return JSON.stringify(value) ?? String(value);\n  } catch {\n    return String(value);/' "$SVC"
-check "bare String() fallback (a null-prototype object throws from the catch)" telegram.service
 
 echo ""
 echo "=== send options are a contract with the formatter ==="
@@ -343,9 +337,6 @@ echo "silently cost coverage that looks covered."
 
 perl -0pi -e 's/escapeHtml\(filing\.symbol\.toUpperCase\(\)\)/filing.symbol.toUpperCase()/' "$FMT"
 check "unescaped symbol, all-fields suite only" alert-formatter -t "every interpolated field is escaped"
-
-perl -0pi -e 's/const IST_OFFSET_MS = 5\.5 \* 60 \* 60 \* 1000;/const IST_OFFSET_MS = 5 * 60 * 60 * 1000;/' "$FMT"
-check "half-hour offset, IST clock suite only" alert-formatter -t "IST clock"
 
 perl -0pi -e 's/    escapeHtml\(filing\.summary\),/    escapeHtml(filing.summary).slice(0, 100),/' "$FMT"
 check "truncated summary, wire structure suite only" alert-formatter -t "wire structure"

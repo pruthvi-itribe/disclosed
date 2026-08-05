@@ -1,4 +1,4 @@
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+import { IST_OFFSET_MS } from '@app/common';
 
 /**
  * Filings land far outside market hours — results routinely arrive 17:00–21:00

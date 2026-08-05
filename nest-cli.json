@@ -16,6 +16,13 @@
       "sourceRoot": "apps/ingest/src",
       "compilerOptions": { "tsConfigPath": "apps/ingest/tsconfig.app.json" }
     },
+    "common": {
+      "type": "library",
+      "root": "libs/common",
+      "entryFile": "index",
+      "sourceRoot": "libs/common/src",
+      "compilerOptions": { "tsConfigPath": "libs/common/tsconfig.lib.json" }
+    },
     "filings": {
       "type": "library",
       "root": "libs/filings",

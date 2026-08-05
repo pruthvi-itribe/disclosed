@@ -2,28 +2,13 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { getModelToken } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
+import { describeError, stackOf } from '@app/common';
 import type { FilingDocument } from '@app/filings';
 import { describeConfig, loadConfig } from './config/configuration';
 import { FILING_MODEL, IngestModule } from './ingest.module';
 import { PollerService } from './poller/poller.service';
 
 const logger = new Logger('bootstrap');
-
-/**
- * `String()` is not total: an object with a null prototype has neither
- * `Symbol.toPrimitive` nor `toString`, so it raises "Cannot convert object to
- * primitive value". Both callers are catch blocks — one of them the top-level
- * bootstrap handler — so a throw here would replace the diagnostic with an
- * unhandled rejection and lose the only account of why the process died.
- */
-const describe = (error: unknown): string => {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  try {
-    return String(error);
-  } catch {
-    return '[unprintable]';
-  }
-};
 
 async function bootstrap(): Promise<void> {
   // Creating the context runs `loadConfig`, so a malformed setting stops the
@@ -61,7 +46,7 @@ async function bootstrap(): Promise<void> {
     try {
       await app.close();
     } catch (error) {
-      logger.error(`Shutdown failed: ${describe(error)}`);
+      logger.error(`Shutdown failed: ${describeError(error)}`);
     }
     process.exit(0);
   };
@@ -79,8 +64,8 @@ async function bootstrap(): Promise<void> {
 
 void bootstrap().catch((error: unknown) => {
   logger.error(
-    `Ingest failed to start: ${describe(error)}`,
-    error instanceof Error ? error.stack : undefined,
+    `Ingest failed to start: ${describeError(error)}`,
+    stackOf(error),
   );
   process.exit(1);
 });

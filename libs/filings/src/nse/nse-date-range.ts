@@ -1,6 +1,4 @@
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-
-const pad = (n: number): string => String(n).padStart(2, '0');
+import { IST_OFFSET_MS, pad2 } from '@app/common';
 
 /**
  * Formats a Date as the `dd-mm-yyyy` parameter NSE's date-range endpoint expects,
@@ -9,5 +7,5 @@ const pad = (n: number): string => String(n).padStart(2, '0');
  */
 export function toNseDateParam(date: Date): string {
   const ist = new Date(date.getTime() + IST_OFFSET_MS);
-  return `${pad(ist.getUTCDate())}-${pad(ist.getUTCMonth() + 1)}-${ist.getUTCFullYear()}`;
+  return `${pad2(ist.getUTCDate())}-${pad2(ist.getUTCMonth() + 1)}-${ist.getUTCFullYear()}`;
 }

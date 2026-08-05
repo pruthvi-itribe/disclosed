@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { describeError, stackOf } from '@app/common';
 import {
   detectRollover,
   drainRange,
@@ -58,37 +59,6 @@ export interface PollResult {
   /** What the caller should wait before the next tick. */
   delayMs: number;
 }
-
-/** Shown when a value cannot be converted to text by any means at all. */
-const UNPRINTABLE = '[unprintable]';
-
-/**
- * Describes a failure for the log, whatever shape it arrives in.
- *
- * `(error as Error).message` is unsound here: a rejection can carry a string, a
- * bare object or nothing at all, and reading `.message` off `null` THROWS from
- * inside the catch block whose whole job is to contain the failure. `String()`
- * is not total either — a null-prototype object has no `toString` — so it is
- * itself contained.
- *
- * DUPLICATION, ACCEPTED DELIBERATELY: `libs/notify` and `apps/ingest/src/alert`
- * each carry a version of this for their own catch blocks, and this is the third
- * consumer that their notes anticipated. Consolidating is the right move but not
- * here: both existing copies are pinned line-for-line by committed mutation
- * harnesses, so moving them is a refactor with its own tests and its own commit,
- * not something to smuggle into the integration task.
- */
-const describeError = (error: unknown): string => {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  try {
-    return String(error);
-  } catch {
-    return UNPRINTABLE;
-  }
-};
-
-const stackOf = (error: unknown): string | undefined =>
-  error instanceof Error ? error.stack : undefined;
 
 /** Newest-first union of two pages, one entry per seqId. */
 const mergeById = (a: readonly Filing[], b: readonly Filing[]): Filing[] => {

@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
+import { safeText } from '@app/common';
 import type { Filing } from '../filing.types';
 import type {
   AdapterLogger,
@@ -67,11 +68,20 @@ const seqIdLabel = (raw: unknown): string => {
 /**
  * `(error as Error).message` is unsound - a non-Error throw would render as
  * `undefined` and erase the only clue the log carries.
+ *
+ * `safeText` rather than `String`, and that distinction is the whole point:
+ * `String()` raises on a null-prototype object, and this is called from inside
+ * the catch that exists to stop ONE bad record discarding a 20-record page. A
+ * throw here escapes `mapOrSkip`, escapes `mapPage`, and loses the response.
+ *
+ * The shared `describeError` is not used because the value is exchange-supplied
+ * and lands in a log: `safeEcho` bounds it to 32 characters and strips the
+ * newlines that would otherwise forge a second log line.
  */
 const describeError = (error: unknown): string =>
   error instanceof Error
     ? error.message
-    : `non-Error throw: ${safeEcho(String(error))}`;
+    : `non-Error throw: ${safeEcho(safeText(error))}`;
 
 /**
  * Attaches `cause` with ES2022 semantics.

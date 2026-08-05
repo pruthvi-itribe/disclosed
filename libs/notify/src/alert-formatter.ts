@@ -1,17 +1,5 @@
+import { IST_OFFSET_MS, pad2 } from '@app/common';
 import type { Filing } from '@app/filings';
-
-/**
- * IST is UTC+05:30 year-round; India observes no daylight saving.
- *
- * DUPLICATION, ACCEPTED DELIBERATELY: `libs/filings` carries the same constant
- * and the same offset arithmetic in its date modules. Sharing it would mean
- * `libs/notify` importing `libs/filings` for a formatting detail, which is a
- * worse coupling than one duplicated constant. Flagged for consolidation into a
- * neutral module if a third consumer appears.
- */
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-
-const pad = (n: number): string => String(n).padStart(2, '0');
 
 /**
  * Renders the wall-clock time in IST.
@@ -23,7 +11,7 @@ const pad = (n: number): string => String(n).padStart(2, '0');
  */
 const toIstClock = (date: Date): string => {
   const ist = new Date(new Date(date).getTime() + IST_OFFSET_MS);
-  return `${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}:${pad(ist.getUTCSeconds())} IST`;
+  return `${pad2(ist.getUTCHours())}:${pad2(ist.getUTCMinutes())}:${pad2(ist.getUTCSeconds())} IST`;
 };
 
 /**

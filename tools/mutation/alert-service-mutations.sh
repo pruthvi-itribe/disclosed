@@ -73,9 +73,14 @@
 #   - The message BODY is the formatter's contract, not this service's, and is
 #     mutated by tools/mutation/notify-mutations.sh. The single assertion here
 #     is that the text sent is `formatFilingAlert`'s output verbatim.
+#   - `safeText`, `describeError` and `stackOf` themselves. They moved to
+#     `libs/common` when four hand-written copies were consolidated, and are
+#     mutated by tools/mutation/common-mutations.sh — which runs them against
+#     THIS suite as well as its own, so the guarantee did not move off a test.
+#     What is still mutated here is every CALL to them.
 #
-# Tally, so a report can quote it without recounting: 30 mutations across five
-# groups, plus 6 independence checks = 36 `check` calls.
+# Tally, so a report can quote it without recounting: 29 mutations across five
+# groups, plus 6 independence checks = 35 `check` calls.
 
 set -uo pipefail
 
@@ -231,7 +236,7 @@ echo "=== containment: one bad record must not cost the batch ==="
 perl -0pi -e 's/      try \{\n        if \(!this\.shouldAlert\(filing\)\) continue;\n        await this\.telegram\.send\(formatFilingAlert\(filing\)\);\n        attempted\.push\(filing\);\n      \} catch \(error\) \{.*?\n      \}\n/      if (!this.shouldAlert(filing)) continue;\n      await this.telegram.send(formatFilingAlert(filing));\n      attempted.push(filing);\n/s' "$SRC"
 check "try\/catch removed (a projected read aborts the whole batch)"
 
-perl -0pi -e 's/          error instanceof Error \? error\.stack : undefined,\n        \);\n/          error instanceof Error ? error.stack : undefined,\n        );\n        throw error;\n/' "$SRC"
+perl -0pi -e 's/          stackOf\(error\),\n        \);\n/          stackOf(error),\n        );\n        throw error;\n/' "$SRC"
 check "rethrows after logging (the containment is decorative)"
 
 perl -0pi -e 's/        this\.logger\.error\(\n          `Alert failed.*?\n        \);\n/        \/* swallowed silently *\/\n/s' "$SRC"
@@ -246,14 +251,11 @@ check "seqId dropped from the log (the loss is no longer replayable)"
 perl -0pi -e 's/\$\{describeError\(\n            error,\n          \)\}/\${(error as Error).message}/' "$SRC"
 check "naive error description (throws on a null rejection, inside the catch)"
 
-perl -0pi -e 's/\n          error instanceof Error \? error\.stack : undefined,//' "$SRC"
+perl -0pi -e 's/\n          stackOf\(error\),//' "$SRC"
 check "stack dropped (a programming bug reads as a bad record)"
 
 perl -0pi -e 's/safeText\(filing\.seqId\)/String(filing.seqId)/' "$SRC"
 check "bare String() on the seqId (throws while formatting the log line)"
-
-perl -0pi -e 's/  try \{\n    return String\(value\);\n  \} catch \{\n    return UNPRINTABLE;\n  \}/  return String(value);/' "$SRC"
-check "safeText made partial (the log formatter can throw from the catch)"
 
 perl -0pi -e 's/        await this\.telegram\.send\(formatFilingAlert\(filing\)\);\n        attempted\.push\(filing\);/        attempted.push(filing);\n        await this.telegram.send(formatFilingAlert(filing));/' "$SRC"
 check "counted before sending (claims filings the formatter rejected)"

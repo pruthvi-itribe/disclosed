@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import TelegramBot from 'node-telegram-bot-api';
+import { safeJson, stackOf } from '@app/common';
 
 type SendOptions = NonNullable<Parameters<TelegramBot['sendMessage']>[2]>;
 
@@ -18,34 +19,6 @@ const SEND_OPTIONS: SendOptions = {
   disable_web_page_preview: true,
 };
 
-/** Shown when a value cannot be converted to text by any means at all. */
-const UNPRINTABLE = '[unprintable]';
-
-/**
- * Coerces to text without throwing. `String(value)` is not total: a
- * null-prototype object has neither `Symbol.toPrimitive` nor `toString`, so it
- * raises "Cannot convert object to primitive value". Every path in this file
- * must terminate in a string, because the caller is a catch block.
- */
-const safeString = (value: unknown): string => {
-  try {
-    return String(value);
-  } catch {
-    return UNPRINTABLE;
-  }
-};
-
-/** Serialises a non-Error rejection without throwing on a circular object. */
-const safeJson = (value: unknown): string => {
-  try {
-    return JSON.stringify(value) ?? safeString(value);
-  } catch {
-    // Circular or otherwise unserialisable. This is a fallback formatter for a
-    // log line, not an error path: any description beats losing the log.
-    return safeString(value);
-  }
-};
-
 /**
  * Describes a rejection for the log, whatever shape it arrives in.
  *
@@ -56,6 +29,12 @@ const safeJson = (value: unknown): string => {
  * `send()` and reach the poll loop, which is precisely the outcome the catch
  * exists to prevent. The rest yield the literal text "undefined", which tells
  * an operator nothing.
+ *
+ * Deliberately richer than the shared `describeError`, and built on the same
+ * `safeText`/`safeJson` primitives. Telegram's client rejects with plain API
+ * objects — `{ ok: false, error_code: 429, parameters: { retry_after: 30 } }` —
+ * whose CONTENTS are the entire diagnostic. Flattening one of those to
+ * `[object Object]` would throw away the only thing worth reading.
  */
 const describeError = (error: unknown): string => {
   if (error instanceof Error) return `${error.name}: ${error.message}`;
@@ -123,7 +102,7 @@ export class TelegramService {
       // swallow stays diagnosable rather than silent.
       this.logger.error(
         `Telegram send failed: ${describeError(error)}`,
-        error instanceof Error ? error.stack : undefined,
+        stackOf(error),
       );
     }
   }
