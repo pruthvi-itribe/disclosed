@@ -24,19 +24,6 @@ const sample: NseRawRecord = {
   exchdisstime: '05-Aug-2026 10:28:18',
 };
 
-/**
- * Returns a copy of the record with `field` genuinely absent, mirroring an NSE
- * payload that omits the key. The cast is deliberate: it is the runtime shape
- * the mapper must survive, which the compile-time type cannot express.
- */
-const withoutField = (
-  record: NseRawRecord,
-  field: keyof NseRawRecord,
-): NseRawRecord =>
-  Object.fromEntries(
-    Object.entries(record).filter(([key]) => key !== field),
-  ) as unknown as NseRawRecord;
-
 describe('mapNseRecord', () => {
   it('maps identity fields', () => {
     const filing = mapNseRecord(sample);
@@ -65,7 +52,8 @@ describe('mapNseRecord', () => {
   });
 
   it('falls back to an_dt when exchdisstime is missing', () => {
-    const filing = mapNseRecord(withoutField(sample, 'exchdisstime'));
+    const { exchdisstime, ...withoutDiss } = sample;
+    const filing = mapNseRecord(withoutDiss as NseRawRecord);
     expect(filing.disseminatedAt.toISOString()).toBe(
       '2026-08-05T04:58:17.000Z',
     );
@@ -74,7 +62,8 @@ describe('mapNseRecord', () => {
   it('throws on a record whose category is absent or not a string', () => {
     // NSE JSON is untrusted: the NseRawRecord type does not validate at runtime,
     // and a non-string category would make isRoutine() throw far downstream.
-    expect(() => mapNseRecord(withoutField(sample, 'desc'))).toThrow(
+    const { desc, ...withoutDesc } = sample;
+    expect(() => mapNseRecord(withoutDesc as NseRawRecord)).toThrow(
       /Malformed NSE record/,
     );
     expect(() =>
@@ -89,5 +78,87 @@ describe('mapNseRecord', () => {
       expect(Number.isFinite(filing.seqId)).toBe(true);
       expect(filing.disseminatedAt.getTime()).not.toBeNaN();
     }
+  });
+});
+
+describe('mapNseRecord boundary validation', () => {
+  const REQUIRED_FIELDS: ReadonlyArray<keyof NseRawRecord> = [
+    'seq_id',
+    'symbol',
+    'sm_name',
+    'sm_isin',
+    'desc',
+    'an_dt',
+  ];
+
+  /** Reading an absent key and reading an explicitly undefined key are the same
+   * thing at runtime, so this expresses "field missing" without a helper. */
+  const withValue = (field: keyof NseRawRecord, value: unknown): NseRawRecord =>
+    ({ ...sample, [field]: value }) as unknown as NseRawRecord;
+
+  it.each(REQUIRED_FIELDS)('rejects a record with %s absent', (field) => {
+    expect(() => mapNseRecord(withValue(field, undefined))).toThrow(
+      new RegExp(`Malformed NSE record.*"${field}"`),
+    );
+  });
+
+  it.each(REQUIRED_FIELDS)('rejects a record with %s blank', (field) => {
+    expect(() => mapNseRecord(withValue(field, '   '))).toThrow(
+      new RegExp(`Malformed NSE record.*"${field}"`),
+    );
+  });
+
+  it.each(REQUIRED_FIELDS)('rejects a record with %s not a string', (field) => {
+    expect(() => mapNseRecord(withValue(field, 42))).toThrow(
+      new RegExp(`Malformed NSE record.*"${field}"`),
+    );
+  });
+
+  it('rejects a seq_id that does not parse to a finite number', () => {
+    // Number('not-a-number') is NaN, and NaN > cursor is false, so an unguarded
+    // record would be silently skipped by the cursor - a lost filing.
+    expect(() => mapNseRecord({ ...sample, seq_id: 'not-a-number' })).toThrow(
+      /Malformed NSE record.*"seq_id".*finite number/,
+    );
+    expect(() => mapNseRecord({ ...sample, seq_id: 'Infinity' })).toThrow(
+      /Malformed NSE record.*"seq_id".*finite number/,
+    );
+  });
+
+  it('still maps a valid numeric seq_id string', () => {
+    const filing = mapNseRecord({ ...sample, seq_id: '106725631' });
+    expect(filing.seqId).toBe(106725631);
+    expect(Number.isFinite(filing.seqId)).toBe(true);
+  });
+
+  it('names the offending field and the seq_id so a skip is diagnosable', () => {
+    const { symbol, ...withoutSymbol } = sample;
+    expect(() => mapNseRecord(withoutSymbol as NseRawRecord)).toThrow(
+      /Malformed NSE record \(seq_id=106725630\): "symbol"/,
+    );
+  });
+
+  it('reports seq_id as unknown when seq_id itself is the bad field', () => {
+    const { seq_id, ...withoutSeqId } = sample;
+    expect(() => mapNseRecord(withoutSeqId as NseRawRecord)).toThrow(
+      /Malformed NSE record \(seq_id=unknown\): "seq_id"/,
+    );
+  });
+
+  it('accepts a record carrying only the required fields', () => {
+    const {
+      smIndustry,
+      attchmntText,
+      attchmntFile,
+      exchdisstime,
+      ...onlyRequired
+    } = sample;
+    const filing = mapNseRecord(onlyRequired as NseRawRecord);
+    expect(filing.industry).toBeNull();
+    expect(filing.summary).toBe('');
+    expect(filing.attachmentUrl).toBeNull();
+    expect(filing.disseminatedAt.toISOString()).toBe(
+      '2026-08-05T04:58:17.000Z',
+    );
   });
 });
