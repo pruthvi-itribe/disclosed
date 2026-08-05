@@ -1,4 +1,5 @@
 import type { Filing } from '../filing.types';
+import { safeEcho } from '../logic/safe-echo';
 import { parseNseDate } from './nse-date';
 import type { NseRawRecord } from './nse.types';
 
@@ -16,24 +17,32 @@ const REQUIRED_STRING_FIELDS: ReadonlyArray<keyof NseRawRecord> = [
   'an_dt',
 ];
 
-/** Bound on the untrusted seq_id echoed into error messages and logs. */
-const MAX_LABELLED_SEQ_ID_LENGTH = 32;
+/**
+ * NSE sequence ids are plain digit strings. Hex, decimals and scientific
+ * notation all coerce to some number, but not the one the exchange issued, so
+ * they are rejected rather than silently accepted as a different record.
+ */
+const SEQ_ID_PATTERN = /^\d+$/;
 
-const nullIfBlank = (value: string | null | undefined): string | null => {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
-};
+/**
+ * Normalises an optional field to a trimmed string or null.
+ *
+ * Takes `unknown` on purpose: the NSE payload is untrusted JSON, so an
+ * optional field can hold anything. Non-string junk is absent data, not an
+ * error - coercing it to null keeps the record mappable, where an earlier
+ * `value?.trim()` threw a bare TypeError naming neither field nor record.
+ */
+const nullIfBlank = (value: unknown): string | null =>
+  typeof value === 'string' ? value.trim() || null : null;
 
 /**
  * Identifies the record in an error message: `seq_id=106725630` when usable,
- * `seq_id=unknown` when seq_id is itself the malformed field. Length-capped
- * because the value is untrusted and ends up in logs.
+ * `seq_id=unknown` when seq_id is itself the malformed field. Passed through
+ * safeEcho because the value is untrusted and ends up in logs.
  */
 const labelFor = (raw: NseRawRecord): string => {
-  const seqId = typeof raw.seq_id === 'string' ? raw.seq_id.trim() : '';
-  return seqId
-    ? `seq_id=${seqId.slice(0, MAX_LABELLED_SEQ_ID_LENGTH)}`
-    : 'seq_id=unknown';
+  const seqId = nullIfBlank(raw.seq_id);
+  return seqId ? `seq_id=${safeEcho(seqId)}` : 'seq_id=unknown';
 };
 
 /** Describes what arrived without echoing an untrusted value into the log. */
@@ -63,10 +72,26 @@ const assertWellFormed = (raw: NseRawRecord): void => {
       );
     }
   }
+};
 
-  if (!Number.isFinite(Number(raw.seq_id))) {
-    throw malformed(raw, 'seq_id', 'must parse to a finite number');
+/**
+ * Validates and returns the sequence id in one place, so the guarantee and the
+ * value cannot drift apart.
+ *
+ * Must run after `assertWellFormed`, which establishes that seq_id is a
+ * non-empty string. `Number.isSafeInteger` rather than `Number.isFinite`: ids
+ * past MAX_SAFE_INTEGER collapse distinct values onto the same double, and two
+ * filings that compare equal to the cursor means one of them is never emitted.
+ */
+const parseSeqId = (raw: NseRawRecord): number => {
+  const text = raw.seq_id.trim();
+  const seqId = Number(text);
+
+  if (!SEQ_ID_PATTERN.test(text) || !Number.isSafeInteger(seqId)) {
+    throw malformed(raw, 'seq_id', 'must parse to a safe integer');
   }
+
+  return seqId;
 };
 
 /**
@@ -83,11 +108,12 @@ export function mapNseRecord(
 ): Filing {
   assertWellFormed(raw);
 
+  const seqId = parseSeqId(raw);
   const announcedAt = parseNseDate(raw.an_dt);
   const disseminated = nullIfBlank(raw.exchdisstime);
 
   return {
-    seqId: Number(raw.seq_id),
+    seqId,
     symbol: raw.symbol,
     isin: raw.sm_isin,
     companyName: raw.sm_name,

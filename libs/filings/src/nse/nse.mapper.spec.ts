@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import type { Filing } from '../filing.types';
 import { mapNseRecord } from './nse.mapper';
 import type { NseRawRecord } from './nse.types';
 
@@ -114,21 +115,37 @@ describe('mapNseRecord boundary validation', () => {
     );
   });
 
-  it('rejects a seq_id that does not parse to a finite number', () => {
-    // Number('not-a-number') is NaN, and NaN > cursor is false, so an unguarded
-    // record would be silently skipped by the cursor - a lost filing.
-    expect(() => mapNseRecord({ ...sample, seq_id: 'not-a-number' })).toThrow(
-      /Malformed NSE record.*"seq_id".*finite number/,
-    );
-    expect(() => mapNseRecord({ ...sample, seq_id: 'Infinity' })).toThrow(
-      /Malformed NSE record.*"seq_id".*finite number/,
+  // Every one of these is a cursor hazard, not a style point: a seq_id that
+  // parses to the wrong number, or to a double that cannot represent it
+  // exactly, makes `seqId > cursor` compare against something that is not the
+  // exchange's id - so a filing is skipped or replayed with no error.
+  const BAD_SEQ_IDS: ReadonlyArray<[string, string]> = [
+    ['not-a-number', 'NaN, and NaN > cursor is false, so the record vanishes'],
+    ['Infinity', 'not NaN, so a finite check alone would admit it'],
+    ['1.5', 'a decimal is not an exchange sequence id'],
+    ['0x1F', 'hex silently becomes 31, a different record'],
+    ['1e5', 'scientific notation silently becomes 100000'],
+    ['9007199254740993', 'past MAX_SAFE_INTEGER: distinct ids alias'],
+  ];
+
+  it.each(BAD_SEQ_IDS)('rejects seq_id %s (%s)', (seqId) => {
+    expect(() => mapNseRecord({ ...sample, seq_id: seqId })).toThrow(
+      /Malformed NSE record.*"seq_id".*safe integer/,
     );
   });
 
   it('still maps a valid numeric seq_id string', () => {
     const filing = mapNseRecord({ ...sample, seq_id: '106725631' });
     expect(filing.seqId).toBe(106725631);
-    expect(Number.isFinite(filing.seqId)).toBe(true);
+    expect(Number.isSafeInteger(filing.seqId)).toBe(true);
+  });
+
+  it('maps the largest seq_id that a double still represents exactly', () => {
+    const filing = mapNseRecord({
+      ...sample,
+      seq_id: String(Number.MAX_SAFE_INTEGER),
+    });
+    expect(filing.seqId).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('names the offending field and the seq_id so a skip is diagnosable', () => {
@@ -160,5 +177,56 @@ describe('mapNseRecord boundary validation', () => {
     expect(filing.disseminatedAt.toISOString()).toBe(
       '2026-08-05T04:58:17.000Z',
     );
+  });
+
+  // Optional fields are genuinely optional, so junk normalises to absent
+  // rather than throwing. `value?.trim()` guarded only null and undefined, so
+  // a non-string used to escape as a bare TypeError carrying no field name and
+  // no seq_id - an undiagnosable skip in a per-record catch.
+  const JUNK_VALUES: readonly unknown[] = [42, {}, [], true];
+
+  const OPTIONAL_FIELD_CASES: ReadonlyArray<
+    [keyof NseRawRecord, (filing: Filing) => unknown, unknown]
+  > = [
+    ['smIndustry', (filing) => filing.industry, null],
+    ['attchmntText', (filing) => filing.summary, ''],
+    ['attchmntFile', (filing) => filing.attachmentUrl, null],
+    [
+      'exchdisstime',
+      (filing) => filing.disseminatedAt.toISOString(),
+      '2026-08-05T04:58:17.000Z',
+    ],
+  ];
+
+  it.each(OPTIONAL_FIELD_CASES)(
+    'normalises a non-string %s to absent instead of throwing',
+    (field, read, expected) => {
+      for (const junk of JUNK_VALUES) {
+        const filing = mapNseRecord(withValue(field, junk));
+        expect(read(filing)).toEqual(expected);
+      }
+    },
+  );
+
+  it('keeps the error contract: nothing escapes as a bare TypeError', () => {
+    // Every rejection a caller can see must be identifiable, so Task 5's
+    // catch-and-skip logs a field and a seq_id rather than "x.trim is not a
+    // function".
+    const cases: ReadonlyArray<keyof NseRawRecord> = [
+      ...REQUIRED_FIELDS,
+      'smIndustry',
+      'attchmntText',
+      'attchmntFile',
+      'exchdisstime',
+    ];
+    for (const field of cases) {
+      for (const junk of JUNK_VALUES) {
+        try {
+          mapNseRecord(withValue(field, junk));
+        } catch (error) {
+          expect((error as Error).message).toMatch(/^Malformed NSE record/);
+        }
+      }
+    }
   });
 });
