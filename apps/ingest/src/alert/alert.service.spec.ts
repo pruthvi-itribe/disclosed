@@ -671,18 +671,36 @@ describe('AlertService: the return value is attempted, not delivered', () => {
     expect(alerted).toHaveLength(1);
   });
 
-  it('omits a filing it never attempted to send', async () => {
-    // The one thing the value does promise: a record that threw before the send
-    // is not in it.
-    const channel = makeChannel();
+  /**
+   * The one thing the value does promise: a record that threw before the send
+   * was issued is not in it.
+   *
+   * Both throw sites are covered, and the second is the load-bearing one. A
+   * record that fails CLASSIFICATION never reaches the send either way, so it
+   * cannot tell an implementation that counts a filing before sending it from
+   * one that counts it after. Only a record that survives classification and
+   * then fails FORMATTING can.
+   */
+  const THROW_SITES: ReadonlyArray<readonly [string, Record<string, unknown>]> =
+    [
+      ['classification, in isRoutine', { category: undefined }],
+      ['formatting, after the gates passed', { symbol: undefined }],
+    ];
 
-    const alerted = await build(channel.telegram).processInserted(
-      [makeFiling({ seqId: 1 }), malformed({ seqId: 2, category: undefined })],
-      now,
-    );
+  it.each(THROW_SITES)(
+    'omits a filing that threw during %s',
+    async (_label, overrides) => {
+      const channel = makeChannel();
 
-    expect(alerted.map((filing) => filing.seqId)).toEqual([1]);
-  });
+      const alerted = await build(channel.telegram).processInserted(
+        [makeFiling({ seqId: 1 }), malformed({ seqId: 2, ...overrides })],
+        now,
+      );
+
+      expect(alerted.map((filing) => filing.seqId)).toEqual([1]);
+      expect(channel.sent).toHaveLength(1);
+    },
+  );
 
   it('returns the caller filings by reference, not copies', async () => {
     // Task 12 correlates these against what it inserted, and re-wrapping would
