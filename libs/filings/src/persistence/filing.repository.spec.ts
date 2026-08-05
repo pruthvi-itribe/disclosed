@@ -401,7 +401,11 @@ describe('FilingRepository.insertNew: failures are never reported as "nothing ne
     // NaN is a `number` to the type system, so this is reachable without any
     // cast. Mongoose drops such a document client-side and, by default,
     // resolves as though nothing had happened.
-    await expect(repo.insertNew([makeFiling(NaN)])).rejects.toThrow();
+    //
+    // The error must also name the field that failed. An operator reading it
+    // has to know WHICH filing to go and look at; a generic "the batch was
+    // short" tells them a filing was lost but not which one.
+    await expect(repo.insertNew([makeFiling(NaN)])).rejects.toThrow(/seqId/);
     expect(await storedSeqIds()).toEqual([]);
   });
 
@@ -412,7 +416,7 @@ describe('FilingRepository.insertNew: failures are never reported as "nothing ne
     // promises never to have.
     const invalid: Filing = { ...makeFiling(20), symbol: '' };
 
-    await expect(repo.insertNew([invalid])).rejects.toThrow();
+    await expect(repo.insertNew([invalid])).rejects.toThrow(/symbol/);
     expect(await storedSeqIds()).toEqual([]);
   });
 
@@ -421,7 +425,7 @@ describe('FilingRepository.insertNew: failures are never reported as "nothing ne
 
     await expect(
       repo.insertNew([makeFiling(10), invalid, makeFiling(30)]),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/symbol/);
 
     // Mongoose writes the valid documents before it reports the failure, so
     // the survivors are persisted. They are deliberately NOT returned: the
@@ -491,6 +495,26 @@ describe('FilingRepository.insertNew: refuses to guess under unfamiliar errors',
     // re-alert an entire batch we already had.
     const repoStub = new FilingRepository(
       rejectingWith(bulkError({ code: DUPLICATE_KEY, insertedDocs: [] })),
+    );
+
+    await expect(
+      repoStub.insertNew([makeFiling(10), makeFiling(20)]),
+    ).rejects.toThrow();
+  });
+
+  it('rethrows an error whose report explains nothing that failed', async () => {
+    // The report says every row went in, yet an error was raised anyway — a
+    // write-concern failure has this shape. There is no per-row rejection to
+    // interpret, so "all of them are new" is a guess. Vacuous truth makes this
+    // the easy case to get wrong: `[].every(isDuplicate)` is true.
+    const repoStub = new FilingRepository(
+      rejectingWith(
+        bulkError({
+          code: DUPLICATE_KEY,
+          writeErrors: [],
+          insertedDocs: [{ seqId: 10 }, { seqId: 20 }],
+        }),
+      ),
     );
 
     await expect(
