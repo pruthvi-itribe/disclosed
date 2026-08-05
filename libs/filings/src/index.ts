@@ -14,3 +14,4 @@ export * from './logic/rollover';
 export * from './logic/cadence';
 export * from './persistence/filing.schema';
 export * from './persistence/filing.repository';
+export * from './logic/alert-window';
