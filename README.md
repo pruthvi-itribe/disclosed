@@ -53,15 +53,22 @@ A silent pipeline and a quiet market look identical from outside, so each way of
 going silent has its own operator alert, sent once per episode rather than once
 per poll:
 
-| Alert                 | Means                                                              |
-| --------------------- | ------------------------------------------------------------------ |
-| `INGEST DEGRADED`     | N consecutive poll failures — usually Akamai blocking the requests. |
-| `INGEST BLIND`        | NSE returned records and every one failed to map (format change).   |
-| `INGEST WRITE FAILED` | The database refused a batch; rows may be stored but never alerted. |
+| Alert                 | Means                                                               |
+| --------------------- | ------------------------------------------------------------------- |
+| `INGEST DEGRADED`     | N consecutive poll failures — usually Akamai blocking the requests.  |
+| `INGEST BLIND`        | NSE returned records and every one failed to map (format change).    |
+| `INGEST DRAIN FAILED` | The page rolled over but the day re-pull failed, so the gap is open. |
+| `INGEST WRITE FAILED` | The database refused a batch; rows may be stored but never alerted.  |
 
-Polling continues through all three. The circuit breaker decides when to speak
+Polling continues through all four. The circuit breaker decides when to speak
 up, never whether to send the next request — a retry is the only thing that can
 recover.
+
+`INGEST DRAIN FAILED` is the one worth waking up for. The other three are loud
+in their consequences; this one is not. The hot fetch still succeeds so the
+breaker stays healthy, the cursor is held so no filing is skipped, and nothing
+downstream misbehaves — the records inside the gap are simply never fetched. It
+is the only alert that says the no-loss guarantee is currently not being met.
 
 ## Configuration
 

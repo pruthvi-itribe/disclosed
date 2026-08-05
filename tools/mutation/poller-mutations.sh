@@ -70,8 +70,8 @@
 #     redaction and its configured/unconfigured verdict ARE mutated, because
 #     both are load-bearing.
 #
-# Tally, so a report can quote it without recounting: 34 mutations against the
-# poller and 12 against the configuration, plus 5 independence checks = 51
+# Tally, so a report can quote it without recounting: 40 mutations against the
+# poller and 12 against the configuration, plus 5 independence checks = 57
 # `check` calls.
 
 set -uo pipefail
@@ -329,11 +329,17 @@ check "failure count hardcoded (the outage duration is lost)" "$POLL" poller.ser
 echo ""
 echo "=== the blind-feed alarm: received 0 is normal, all-rejected is not ==="
 
-perl -0pi -e 's/    if \(page\.received === 0 \|\| page\.filings\.length > 0\) \{/    if (page.filings.length > 0) {/' "$POLL"
+perl -0pi -e 's/    \/\/ `received === 0` is the ordinary quiet-market and market-holiday signal\.\n    if \(page\.received === 0\) return;\n//' "$POLL"
 check "an empty day alarms (every market holiday pages the operator)" "$POLL" poller.service
 
-perl -0pi -e 's/    if \(page\.received === 0 \|\| page\.filings\.length > 0\) \{/    if (page.received === 0) {/' "$POLL"
+perl -0pi -e 's/    if \(page\.filings\.length > 0\) \{\n      this\.feedBlind = false;\n      return;\n    \}/    if (page.received === 0) {\n      this.feedBlind = false;\n      return;\n    }/' "$POLL"
 check "a partially rejected page alarms (one bad record is not blindness)" "$POLL" poller.service
+
+# Re-arming on an empty page is not the same as re-arming on filings: an empty
+# page is evidence of nothing, and a feed alternating empty and all-rejected
+# would re-arm on every empty poll and re-alert on every blind one.
+perl -0pi -e 's/    if \(page\.filings\.length > 0\) \{\n      this\.feedBlind = false;\n      return;\n    \}\n\n    \/\/ `received === 0` is the ordinary quiet-market and market-holiday signal\.\n    if \(page\.received === 0\) return;/    if (page.received === 0 || page.filings.length > 0) {\n      this.feedBlind = false;\n      return;\n    }/' "$POLL"
+check "latch re-armed by an empty page (alternating feed re-alerts every episode)" "$POLL" poller.service
 
 perl -0pi -e 's/    if \(this\.feedBlind\) return;\n//' "$POLL"
 check "alarm not edge-triggered (a message every 2s until it is muted)" "$POLL" poller.service
@@ -343,6 +349,21 @@ check "latch never re-armed (a second episode is never reported)" "$POLL" poller
 
 perl -0pi -e 's/    await this\.reportBlindFeed\(page\);\n//' "$POLL"
 check "blind feed never announced (an id-format change silences the feed)" "$POLL" poller.service
+
+echo ""
+echo "=== the drain-failure alarm: the hole stays open and nothing else notices ==="
+
+perl -0pi -e 's/        await this\.reportDrainFailure\(error\);/        this.logger.error("Drain failed");/' "$POLL"
+check "failed drain never announced (the no-loss guarantee silently lapses)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(this\.drainFailing\) return;\n    this\.drainFailing = true;\n//' "$POLL"
+check "alarm not edge-triggered (a bad day endpoint floods the channel)" "$POLL" poller.service
+
+perl -0pi -e 's/        this\.drainFailing = false;\n//' "$POLL"
+check "latch never re-armed (a second drain outage is never reported)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(this\.drainFailing\) return;\n    this\.drainFailing = true;\n    await this\.telegram\.send\(formatDrainFailureAlert\(message\)\);/    if (this.breaker.recordFailure()) {\n      await this.telegram.send(formatDegradedAlert(1, message));\n    }/' "$POLL"
+check "failed drain counted as a failed poll (claims an outage that is not happening)" "$POLL" poller.service
 
 echo ""
 echo "=== the write-failure alarm ==="
@@ -369,8 +390,17 @@ check "alert failure propagates (one poison record wedges the cursor forever)" "
 echo ""
 echo "=== cadence and startup ==="
 
-perl -0pi -e 's/      delayMs: this\.delayFor\(newSeqIds\.length, now\),/      delayMs: this.delayFor(0, now),/' "$POLL"
+perl -0pi -e 's/      delayMs: this\.delayFor\(drainFailed \? 0 : newSeqIds\.length, now\),/      delayMs: this.delayFor(0, now),/' "$POLL"
 check "burst signal dropped (the page turns over while we wait out the interval)" "$POLL" poller.service
+
+# The defect this guard was added for. `newSeqIds` is derived from the cursor and
+# a failed drain HOLDS the cursor, so the same ids stay "new" on every poll: pass
+# that count through and the burst rule returns a zero delay forever, turning the
+# loop into a fetchLatest+fetchDay storm at network speed against an endpoint
+# that is already refusing. The breaker cannot see it — the hot fetch succeeds —
+# and the in-flight guard cannot either, because the calls are sequential.
+perl -0pi -e 's/      delayMs: this\.delayFor\(drainFailed \? 0 : newSeqIds\.length, now\),/      delayMs: this.delayFor(newSeqIds.length, now),/' "$POLL"
+check "held-cursor count feeds the burst rule (busy-loops on a failed drain)" "$POLL" poller.service
 
 perl -0pi -e 's/    return nextPollDelayMs\(\{ newCount, now, \.\.\.this\.options \}\);/    return nextPollDelayMs({ newCount, now: new Date(0), ...this.options });/' "$POLL"
 check "cadence read off a frozen clock, not the instant supplied" "$POLL" poller.service

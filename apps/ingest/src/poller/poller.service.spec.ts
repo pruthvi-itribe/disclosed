@@ -557,6 +557,51 @@ describe('PollerService: cadence', () => {
     expect((await service.tick(now)).delayMs).toBe(expected);
   });
 
+  /**
+   * The burst signal is derived from the cursor, and a failed drain HOLDS the
+   * cursor — so the same ids stay "new" on every subsequent poll. Feeding that
+   * count to the burst rule returns a zero delay forever: `start()` skips the
+   * sleep and the loop issues fetchLatest + fetchDay back to back at network
+   * speed, indefinitely, while the breaker sits at zero failures because the
+   * HOT fetch keeps succeeding. It is the request storm the in-flight guard
+   * exists to prevent, arriving through the no-loss path instead — and the
+   * guard cannot help, because the calls are sequential rather than stacked.
+   *
+   * It fires exactly when the heavier uncapped day endpoint is unhappy during a
+   * genuine burst: under load, against Akamai.
+   */
+  it('does not busy-loop when the drain keeps failing', async () => {
+    const { adapter, service } = build();
+    adapter.latest = page([makeFiling(20)]);
+    await service.tick(IN_WINDOW);
+
+    adapter.failDay = new Error('drain 403');
+    adapter.latest = page(
+      Array.from({ length: 20 }, (_, i) => makeFiling(100 + i)),
+    );
+
+    const first = await service.tick(IN_WINDOW);
+    const second = await service.tick(IN_WINDOW);
+    const third = await service.tick(IN_WINDOW);
+
+    expect(first.drained).toBe(true);
+    expect(first.delayMs).toBe(HOT);
+    expect(second.delayMs).toBe(HOT);
+    expect(third.delayMs).toBe(HOT);
+  });
+
+  it('still honours the burst signal when the drain succeeded', async () => {
+    // The fallback above must not cost the burst escape hatch on the path that
+    // actually earned it: a drain that worked means the cursor moved.
+    const { adapter, service } = build();
+    adapter.latest = page(
+      Array.from({ length: 20 }, (_, i) => makeFiling(100 + i)),
+    );
+    adapter.day = adapter.latest;
+
+    expect((await service.tick(IN_WINDOW)).delayMs).toBe(0);
+  });
+
   it('keeps the hot interval when a poll found nothing new', async () => {
     const { adapter, service } = build();
     adapter.latest = page([makeFiling(30)]);
@@ -796,10 +841,103 @@ describe('PollerService: a wholly rejected page is a blind feed', () => {
     expect(telegram.sent).toHaveLength(2);
   });
 
+  it('does not re-arm on an empty page, which proves nothing either way', async () => {
+    // A feed alternating empty and all-rejected would otherwise re-arm on every
+    // empty poll and re-alert on every blind one — the flood the latch exists
+    // to prevent. Only filings arriving are evidence the mapper works again.
+    const { adapter, telegram, service } = build();
+
+    for (let i = 0; i < 4; i += 1) {
+      adapter.latest = page([], 20);
+      await service.tick(IN_WINDOW);
+      adapter.latest = page([], 0);
+      await service.tick(IN_WINDOW);
+    }
+
+    expect(telegram.sent).toHaveLength(1);
+  });
+
   it('does not count a rejected page as a failed poll', async () => {
     const { adapter, breaker, service } = build();
     adapter.latest = page([], 20);
 
+    for (let i = 0; i < 5; i += 1) await service.tick(IN_WINDOW);
+
+    expect(breaker.consecutiveFailures()).toBe(0);
+  });
+});
+
+/**
+ * A drain that keeps failing is the most consequential silence of the three:
+ * the hole the entire no-loss guarantee exists to close is never closed, and
+ * nothing else in the system notices. The HOT fetch keeps succeeding, so the
+ * breaker stays healthy; the cursor is held, so no filing is skipped — the
+ * records inside the gap are simply never fetched, and nobody is told.
+ */
+describe('PollerService: a failed drain is an incident', () => {
+  const rolledOver = (harness: Harness): void => {
+    harness.adapter.latest = page([makeFiling(90)]);
+  };
+
+  it('alarms the operator when the day re-pull fails', async () => {
+    const harness = build();
+    const { adapter, telegram, service } = harness;
+    adapter.latest = page([makeFiling(20)]);
+    await service.tick(IN_WINDOW);
+
+    adapter.failDay = new Error('drain 403 Access Denied');
+    rolledOver(harness);
+    await service.tick(IN_WINDOW);
+
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0]).toContain('INGEST DRAIN FAILED');
+    expect(telegram.sent[0]).toContain('403 Access Denied');
+  });
+
+  it('signals once per episode, not once per poll', async () => {
+    const harness = build();
+    const { adapter, telegram, service } = harness;
+    adapter.latest = page([makeFiling(20)]);
+    await service.tick(IN_WINDOW);
+
+    adapter.failDay = new Error('drain 403');
+    rolledOver(harness);
+    for (let i = 0; i < 10; i += 1) await service.tick(IN_WINDOW);
+
+    expect(telegram.sent).toHaveLength(1);
+  });
+
+  it('re-arms once a drain succeeds again', async () => {
+    const harness = build();
+    const { adapter, telegram, service } = harness;
+    adapter.latest = page([makeFiling(20)]);
+    await service.tick(IN_WINDOW);
+
+    adapter.failDay = new Error('drain 403');
+    rolledOver(harness);
+    await service.tick(IN_WINDOW);
+
+    adapter.failDay = null;
+    adapter.day = page([makeFiling(90), makeFiling(50)]);
+    await service.tick(IN_WINDOW);
+
+    adapter.failDay = new Error('drain 403 again');
+    adapter.latest = page([makeFiling(200)]);
+    await service.tick(IN_WINDOW);
+
+    expect(telegram.sent).toHaveLength(2);
+  });
+
+  it('does not count a failed drain as a failed poll', async () => {
+    // The hot fetch worked. Counting this on the breaker would report an
+    // outage that is not happening and mask the one that is.
+    const harness = build();
+    const { adapter, breaker, service } = harness;
+    adapter.latest = page([makeFiling(20)]);
+    await service.tick(IN_WINDOW);
+
+    adapter.failDay = new Error('drain 403');
+    rolledOver(harness);
     for (let i = 0; i < 5; i += 1) await service.tick(IN_WINDOW);
 
     expect(breaker.consecutiveFailures()).toBe(0);

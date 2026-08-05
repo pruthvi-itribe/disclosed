@@ -9,8 +9,21 @@ import { PollerService } from './poller/poller.service';
 
 const logger = new Logger('bootstrap');
 
-const describe = (error: unknown): string =>
-  error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+/**
+ * `String()` is not total: an object with a null prototype has neither
+ * `Symbol.toPrimitive` nor `toString`, so it raises "Cannot convert object to
+ * primitive value". Both callers are catch blocks — one of them the top-level
+ * bootstrap handler — so a throw here would replace the diagnostic with an
+ * unhandled rejection and lose the only account of why the process died.
+ */
+const describe = (error: unknown): string => {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  try {
+    return String(error);
+  } catch {
+    return '[unprintable]';
+  }
+};
 
 async function bootstrap(): Promise<void> {
   // Creating the context runs `loadConfig`, so a malformed setting stops the

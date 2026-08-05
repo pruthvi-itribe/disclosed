@@ -57,8 +57,8 @@
 # the same way the circuit breaker's no-time-based-behaviour suite is outside
 # its own.
 #
-# Tally, so a report can quote it without recounting: 33 mutations across eight
-# groups, plus 5 independence checks = 38 `check` calls.
+# Tally, so a report can quote it without recounting: 40 mutations across nine
+# groups, plus 5 independence checks = 45 `check` calls.
 
 set -uo pipefail
 
@@ -256,6 +256,36 @@ check "error text not escaped (NSE's HTML error page breaks the message)" alert-
 
 perl -0pi -e 's/.INGEST DEGRADED./"Ingest degraded"/' "$FMT"
 check "headline no longer shouts (operator filters miss it)" alert-formatter
+
+echo ""
+echo "=== the other three operator alerts: same escaping, same shouted headline ==="
+echo "Each names a different way the pipeline goes silent while looking healthy."
+echo "The escaping is not cosmetic on any of them: all three interpolate driver"
+echo "or exchange text, and HTML that does not parse makes Telegram REJECT the"
+echo "message outright — losing the one alert that says something is wrong."
+
+perl -0pi -e 's/.INGEST BLIND./"Ingest blind"/' "$FMT"
+check "blind-feed headline no longer shouts (operator filters miss it)" alert-formatter
+
+perl -0pi -e 's/NSE returned \$\{received\} record\(s\)/NSE returned 20 record(s)/' "$FMT"
+check "blind-feed count hardcoded (says 20 whatever NSE actually sent)" alert-formatter
+
+perl -0pi -e 's/.INGEST DRAIN FAILED./"Ingest drain failed"/' "$FMT"
+check "drain-failure headline no longer shouts (operator filters miss it)" alert-formatter
+
+# Anchored on the line above, because the `Last error:` line is identical in
+# three formatters and an unanchored pattern would mutate the first one only.
+perl -0pi -e 's/(have not been fetched[^\n]*\n    `Last error: )\$\{escapeHtml\(lastError\)\}/$1\${lastError}/' "$FMT"
+check "drain error not escaped (NSE's HTML block page breaks the message)" alert-formatter
+
+perl -0pi -e 's/.INGEST WRITE FAILED./"Ingest write failed"/' "$FMT"
+check "write-failure headline no longer shouts (operator filters miss it)" alert-formatter
+
+perl -0pi -e 's/A batch of \$\{batchSize\} filing\(s\)/A batch of 0 filing(s)/' "$FMT"
+check "write-failure batch size hardcoded (reports 0 rows at risk, always)" alert-formatter
+
+perl -0pi -e 's/(re-return them[^\n]*\n    `Last error: )\$\{escapeHtml\(lastError\)\}/$1\${lastError}/' "$FMT"
+check "write error not escaped (a document fragment breaks the message)" alert-formatter
 
 echo ""
 echo "=== the deliberate swallow must stay loud ==="

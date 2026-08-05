@@ -10,6 +10,7 @@ import {
 import {
   formatBlindFeedAlert,
   formatDegradedAlert,
+  formatDrainFailureAlert,
   formatWriteFailureAlert,
   type TelegramService,
 } from '@app/notify';
@@ -101,9 +102,10 @@ const mergeById = (a: readonly Filing[], b: readonly Filing[]): Filing[] => {
  *   - THE CURSOR ONLY MOVES ON PROOF. Not from an empty page, not past a drain
  *     that failed, and not past a write that threw.
  *   - EVERY SILENCE IS ANNOUNCED. A blind poller, a feed whose every record is
- *     rejected, and a database refusing writes all look identical from outside:
- *     no messages. Each gets its own operator alert, each edge-triggered so the
- *     channel does not get muted by the very outage it exists to report.
+ *     rejected, a day re-pull that leaves a detected hole open, and a database
+ *     refusing writes all look identical from outside: no messages. Each gets
+ *     its own operator alert, each edge-triggered so the channel does not get
+ *     muted by the very outage it exists to report.
  *
  * `tick()` never throws. A poll failure must be counted, not propagated, or one
  * bad response ends the loop that would have recovered from it.
@@ -120,6 +122,8 @@ export class PollerService {
 
   /** Set while the feed is answering with records that all fail to map. */
   private feedBlind = false;
+  /** Set while the day re-pull is failing, leaving a detected hole open. */
+  private drainFailing = false;
   /** Set while writes are failing. */
   private writeFailing = false;
 
@@ -247,15 +251,13 @@ export class PollerService {
         const day = await this.adapter.fetchDay(now);
         dayFilings = day.filings;
         candidates = mergeById(newOnPage, dayFilings);
+        this.drainFailing = false;
       } catch (error) {
         // The hole is unresolved. Store what the hot page did give us, but
         // leave the cursor where it is so the next poll detects the same hole
         // and retries rather than stepping over the missing records.
         drainFailed = true;
-        this.logger.error(
-          `Drain failed, cursor held at ${this.cursor}: ${describeError(error)}`,
-          stackOf(error),
-        );
+        await this.reportDrainFailure(error);
       }
     }
 
@@ -278,7 +280,18 @@ export class PollerService {
       alerted,
       drained: holeDetected,
       deferred: false,
-      delayMs: this.delayFor(newSeqIds.length, now),
+      // A FAILED drain must not feed the burst rule. `newSeqIds` is derived
+      // from the cursor, and a failed drain HOLDS the cursor — so the same ids
+      // stay "new" on every subsequent poll. Passing that count through returns
+      // a zero delay forever, `start()` skips the sleep, and the loop issues
+      // fetchLatest + fetchDay back to back at network speed for as long as the
+      // day endpoint stays unhappy. That is a request storm against Akamai
+      // arriving through the no-loss path, and the in-flight guard cannot stop
+      // it because the calls are sequential rather than stacked. The breaker
+      // cannot either: the hot fetch keeps succeeding. Fall back to the
+      // ordinary interval, which is what an unresolved hole deserves — retry
+      // steadily, not as fast as the socket allows.
+      delayMs: this.delayFor(drainFailed ? 0 : newSeqIds.length, now),
     };
   }
 
@@ -343,10 +356,18 @@ export class PollerService {
    * logs its own skips.
    */
   private async reportBlindFeed(page: FetchResult): Promise<void> {
-    if (page.received === 0 || page.filings.length > 0) {
+    // Filings arriving is the ONLY evidence the mapper works again. An empty
+    // page is evidence of nothing, so it must not re-arm the latch: a feed
+    // alternating empty and all-rejected would otherwise re-arm on every empty
+    // poll and re-alert on every blind one, which is the flood the latch exists
+    // to prevent.
+    if (page.filings.length > 0) {
       this.feedBlind = false;
       return;
     }
+
+    // `received === 0` is the ordinary quiet-market and market-holiday signal.
+    if (page.received === 0) return;
 
     this.logger.error(
       `NSE returned ${page.received} record(s) and all ${page.skipped} were ` +
@@ -356,6 +377,33 @@ export class PollerService {
     if (this.feedBlind) return;
     this.feedBlind = true;
     await this.telegram.send(formatBlindFeedAlert(page.received));
+  }
+
+  /**
+   * Announces a day re-pull that failed, leaving a detected hole open.
+   *
+   * The most consequential silence this class produces, and the least visible
+   * without a message. Nothing else notices: the hot fetch succeeded so the
+   * breaker stays healthy, and the cursor is held so no filing is skipped and
+   * nothing downstream misbehaves. The records inside the gap are simply never
+   * fetched — and a drain that keeps failing means the hole the whole no-loss
+   * guarantee exists to close is never closed.
+   *
+   * Deliberately NOT counted on the breaker: the poll itself worked, and
+   * reporting it as a poll failure would claim an outage that is not happening
+   * while masking the one that is. Edge-triggered like the others, and re-armed
+   * by a drain that succeeds.
+   */
+  private async reportDrainFailure(error: unknown): Promise<void> {
+    const message = describeError(error);
+    this.logger.error(
+      `Drain failed, cursor held at ${this.cursor}: ${message}`,
+      stackOf(error),
+    );
+
+    if (this.drainFailing) return;
+    this.drainFailing = true;
+    await this.telegram.send(formatDrainFailureAlert(message));
   }
 
   /**

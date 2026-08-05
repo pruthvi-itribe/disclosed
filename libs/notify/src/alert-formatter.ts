@@ -113,6 +113,28 @@ export function formatBlindFeedAlert(received: number): string {
 }
 
 /**
+ * The operator alert for a day re-pull that failed.
+ *
+ * The most consequential of these messages and the least visible without one.
+ * The hot fetch succeeded, so the circuit breaker stays healthy; the cursor is
+ * held, so no filing is skipped and nothing downstream misbehaves. The records
+ * inside the gap are simply never fetched, and a drain that keeps failing means
+ * the hole the entire no-loss guarantee exists to close is never closed.
+ *
+ * `lastError` is exchange-supplied — routinely NSE's HTML block page or the
+ * date-range URL with its parameters — so it is escaped like any other.
+ */
+export function formatDrainFailureAlert(lastError: string): string {
+  return [
+    'INGEST DRAIN FAILED',
+    '',
+    'The page rolled over and the day re-pull failed, so the gap it would have',
+    'closed is still open. Filings inside that gap have not been fetched.',
+    `Last error: ${escapeHtml(lastError)}`,
+  ].join('\n');
+}
+
+/**
  * The operator alert for a batch the database refused.
  *
  * Deliberately louder than a retry notice, because a failed write is not a

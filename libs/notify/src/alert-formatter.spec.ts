@@ -1,6 +1,7 @@
 import {
   formatBlindFeedAlert,
   formatDegradedAlert,
+  formatDrainFailureAlert,
   formatFilingAlert,
   formatWriteFailureAlert,
 } from './alert-formatter';
@@ -661,6 +662,64 @@ describe('formatWriteFailureAlert', () => {
   it('emits no raw markup for a hostile error string', () => {
     const output = formatWriteFailureAlert(
       7,
+      '<a href="https://evil.example">tap</a> & more',
+    );
+
+    expect(output).not.toMatch(/[<>]/);
+    expect(output.match(/&(?!amp;|lt;|gt;)/g)).toBeNull();
+  });
+});
+
+/**
+ * The most consequential silence of the four, and the least visible. The hot
+ * fetch succeeded, so the breaker stays healthy and no filing is skipped — the
+ * records inside the gap are simply never fetched. A drain that keeps failing
+ * means the hole the whole no-loss guarantee exists to close is never closed.
+ */
+describe('formatDrainFailureAlert', () => {
+  it('states that the gap is still open, and why', () => {
+    const output = formatDrainFailureAlert(
+      'Request failed with status code 403',
+    );
+
+    expect(output).toContain('INGEST DRAIN FAILED');
+    expect(output).toContain('403');
+  });
+
+  it('lays the operator alert out on its own fixed shape', () => {
+    expect(
+      formatDrainFailureAlert('Request failed with status code 403').split(
+        '\n',
+      ),
+    ).toEqual([
+      'INGEST DRAIN FAILED',
+      '',
+      'The page rolled over and the day re-pull failed, so the gap it would have',
+      'closed is still open. Filings inside that gap have not been fetched.',
+      'Last error: Request failed with status code 403',
+    ]);
+  });
+
+  const DRAIN_ERROR_CASES: ReadonlyArray<readonly [string, string, string]> = [
+    [
+      'an HTML block page',
+      '<html>Access Denied</html>',
+      'Last error: &lt;html&gt;Access Denied&lt;/html&gt;',
+    ],
+    [
+      'a date-range url with parameters',
+      '/api/x?from_date=05-08-2026&to_date=05-08-2026',
+      'Last error: /api/x?from_date=05-08-2026&amp;to_date=05-08-2026',
+    ],
+    ['an empty message', '', 'Last error: '],
+  ];
+
+  it.each(DRAIN_ERROR_CASES)('escapes %s', (_label, raw, expected) => {
+    expect(formatDrainFailureAlert(raw)).toContain(expected);
+  });
+
+  it('emits no raw markup for a hostile error string', () => {
+    const output = formatDrainFailureAlert(
       '<a href="https://evil.example">tap</a> & more',
     );
 
