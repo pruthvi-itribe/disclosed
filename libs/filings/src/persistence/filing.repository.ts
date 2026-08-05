@@ -5,9 +5,17 @@ import type { FilingDocument } from './filing.schema';
 /** MongoDB duplicate-key error code. */
 const DUPLICATE_KEY = 11000;
 
+/** MongoDB "collection does not exist" error code. */
+const NAMESPACE_NOT_FOUND = 26;
+
+/** The shape of a listed index that this repository inspects. */
+interface IndexDescription {
+  readonly key?: Record<string, unknown>;
+  readonly unique?: boolean;
+}
+
 /** The subset of a bulk-write error this repository is willing to interpret. */
 interface BulkWriteFailure {
-  readonly code?: number;
   readonly writeErrors?: ReadonlyArray<{
     readonly index?: number;
     readonly code?: number;
@@ -27,6 +35,14 @@ export class FilingRepository {
    * a record we have already seen. Using unordered insertMany plus duplicate-key
    * filtering keeps that decision atomic at the database, so a restart mid-poll
    * cannot re-alert.
+   *
+   * PRECONDITION: the collection MUST carry the unique index on `seqId`. This
+   * method does not decide for itself whether a filing is new — it asks the
+   * database to reject the ones it already has. Without that index nothing is
+   * rejected, every re-seen filing is written again AND returned as new, and
+   * the alert gate inverts: a restart re-alerts the whole day, which is the one
+   * failure this repository exists to prevent. The failure is silent, so call
+   * `assertIndexes()` at startup rather than trusting the deployment.
    *
    * Contract:
    * - The result is a subset of `filings`, in the caller's order, holding the
@@ -90,17 +106,76 @@ export class FilingRepository {
   }
 
   /**
+   * Verifies the precondition insertNew rests on: a unique index on `seqId`
+   * present in the DATABASE, not merely declared on the schema. Call it once at
+   * startup, before polling.
+   *
+   * It deliberately does NOT create the index. A missing one means the running
+   * database is not what this code assumes, and the consequence — an inverted
+   * alert gate that re-alerts a day of filings after a restart — is silent
+   * enough that it must fail loudly rather than be repaired underneath the
+   * operator.
+   *
+   * @throws when the collection has no unique, single-field index on `seqId`,
+   * including when the collection does not exist yet.
+   */
+  async assertIndexes(): Promise<void> {
+    const indexes = await this.listIndexes();
+
+    const hasUniqueSeqId = indexes.some(
+      (index) =>
+        index.unique === true &&
+        index.key !== undefined &&
+        Object.keys(index.key).length === 1 &&
+        index.key.seqId !== undefined,
+    );
+
+    if (hasUniqueSeqId) return;
+
+    throw new Error(
+      `collection "${this.model.collection.collectionName}" has no unique index on seqId. ` +
+        'insertNew does not decide for itself whether a filing is new: it asks the database ' +
+        'to reject the ones it already holds. Without that index nothing is rejected, every ' +
+        're-seen filing is written again AND returned as new, and a restart re-alerts the ' +
+        'whole day. Build the index (for example with syncIndexes()) before polling.',
+    );
+  }
+
+  private async listIndexes(): Promise<readonly IndexDescription[]> {
+    try {
+      return await this.model.collection.indexes();
+    } catch (error) {
+      // A collection that does not exist yet has no indexes either, and the
+      // remedy is the same. Any other failure — connection, auth — belongs to
+      // the caller and must not be flattened into "the index is missing".
+      if ((error as { code?: number }).code === NAMESPACE_NOT_FOUND) return [];
+      throw error;
+    }
+  }
+
+  /**
    * Works out which filings a failed insertMany actually wrote, or returns null
    * when that cannot be established beyond doubt — in which case the caller
    * rethrows.
    *
-   * Mongoose removes documents that fail validation BEFORE sending the batch,
-   * so the driver's write-error indexes count positions in that filtered array,
-   * not in `filings`. Matching on those indexes silently returns the wrong rows
-   * whenever a batch carries both an invalid row and a duplicate — it can hand
-   * back a filing we already had, which is exactly the re-alert this repository
-   * exists to prevent. Mongoose's `insertedDocs` is index-free and is therefore
-   * the only signal trusted here.
+   * The ACCOUNTING CHECK below is the load-bearing guard. Mongoose removes
+   * documents that fail validation BEFORE sending the batch and reports no
+   * per-row error for them, so those rows appear in neither `writeErrors` nor
+   * `insertedDocs`. The complement of `writeErrors` therefore includes rows that
+   * were never written: for `[invalid(20), duplicate(10), new(30)]` it yields
+   * seqIds 20 and 30, and 20 does not exist in the database at all. Alerting on
+   * it would announce a filing we do not have. Requiring written + rejected to
+   * equal the batch size is what detects the discrepancy.
+   *
+   * (Mongoose remaps the TOP-LEVEL write-error index back to the caller's array
+   * before the error escapes — lib/model.js, via validDocIndexToOriginalIndex —
+   * so those indexes are not filtered-relative; only the nested `err.index` is.
+   * When nothing is filtered out the remap is the identity and index-matching
+   * and seqId-matching provably agree.)
+   *
+   * `matchInserted` is then defence in depth: `insertedDocs` is index-free, so
+   * the mapping cannot go wrong even if a future driver reports indexes this
+   * code does not expect.
    */
   private extractInserted(
     error: unknown,
@@ -116,8 +191,11 @@ export class FilingRepository {
 
     // A row rejected for any other reason failed to persist for a reason worth
     // surfacing; dropping it quietly from the result would lose it in silence.
+    // The batch-level code is deliberately NOT consulted: it belongs to whichever
+    // row failed first, so inferring it for a row whose own report carries no
+    // code would file that row under "duplicate" and discard it.
     const allDuplicates = writeErrors.every(
-      (we) => (we.err?.code ?? we.code ?? bulk.code) === DUPLICATE_KEY,
+      (we) => (we.err?.code ?? we.code) === DUPLICATE_KEY,
     );
     if (!allDuplicates) return null;
 

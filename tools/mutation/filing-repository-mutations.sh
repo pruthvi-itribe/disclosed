@@ -32,9 +32,16 @@
 #   * Every restore is verified against the backup; the backup is deleted only
 #     once the restore is confirmed byte-identical.
 #
-# Every mutant below must still COMPILE. ts-jest fails a suite that does not
-# type-check, which would print CAUGHT for a mutation the assertions never
-# actually killed.
+# Every mutant below must still COMPILE — but note which way that cuts. When a
+# mutant does not type-check, ts-jest fails the suite before a single test runs
+# and jest prints "Tests: 0 total" with no failure count, so the `Tests:.*failed`
+# grep below does NOT match and the verdict printed is SURVIVED. A non-compiling
+# mutant therefore raises a false TEST GAP, never a false kill. That is the safe
+# direction, but it is still noise: before believing a SURVIVED verdict, check it
+# is not simply a compile error.
+#
+# (That grep is shared with the rollover/cadence harness and the same latent
+# issue is ledgered on Task 6. It is left identical here on purpose.)
 
 set -uo pipefail
 
@@ -176,6 +183,24 @@ check "bare duplicate error with no write errors treated as all-inserted"
 
 perl -0pi -e 's/    if \(filings\.length === 0\) return \[\];\n\n//' "$REPO"
 check "empty-batch short circuit removed (the database is touched for nothing)"
+
+perl -0pi -e 's/\(we\.err\?\.code \?\? we\.code\) === DUPLICATE_KEY/(we.err?.code ?? we.code ?? (error as { code?: number }).code) === DUPLICATE_KEY/' "$REPO"
+check "row error code inferred from the batch-level code"
+
+echo ""
+echo "=== assertIndexes: the precondition behind the whole alert gate ==="
+
+perl -0pi -e 's/    if \(hasUniqueSeqId\) return;/    if (true) return;/' "$REPO"
+check "index guard neutered (a missing unique index passes startup)"
+
+perl -0pi -e 's/        index\.unique === true &&\n//' "$REPO"
+check "uniqueness not required (a plain seqId index accepted)"
+
+perl -0pi -e 's/        Object\.keys\(index\.key\)\.length === 1 &&\n//' "$REPO"
+check "single-field check dropped (a compound unique index accepted)"
+
+perl -0pi -e 's/      if \(\(error as \{ code\?: number \}\)\.code === NAMESPACE_NOT_FOUND\) return \[\];\n      throw error;/      throw error;/' "$REPO"
+check "missing collection surfaces the raw driver error, not the consequence"
 
 echo ""
 echo "=== independence check ==="

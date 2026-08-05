@@ -435,17 +435,21 @@ describe('FilingRepository.insertNew: failures are never reported as "nothing ne
   });
 
   it('rethrows when a duplicate and an invalid row share a batch', async () => {
-    // The dangerous shape. Mongoose filters the invalid document out before
-    // the write, so the duplicate-key error that comes back is indexed against
-    // the FILTERED batch, not the caller's array. Trusting those indexes would
-    // return the wrong rows — here it would report the already-known filing as
-    // new and re-alert it.
+    // The dangerous shape. Mongoose drops the invalid document before the write
+    // and reports no per-row error for it, so it appears in neither the write
+    // errors nor the inserted docs. Taking the complement of the write errors
+    // would therefore return a row that was never written: measured against
+    // real Mongo, this batch yields seqIds 20 and 30 while only 10 and 30 are
+    // stored — an alert announcing filing 20, which does not exist in the
+    // database at all. The accounting check is what catches it.
     await repo.insertNew([makeFiling(10)]);
     const invalid: Filing = { ...makeFiling(20), symbol: '' };
 
     await expect(
       repo.insertNew([invalid, makeFiling(10), makeFiling(30)]),
     ).rejects.toThrow();
+
+    expect(await storedSeqIds()).toEqual([10, 30]);
   });
 
   it('propagates a connection failure', async () => {
@@ -562,12 +566,40 @@ describe('FilingRepository.insertNew: refuses to guess under unfamiliar errors',
   });
 
   it('rethrows when an inserted row is not one of the filings submitted', async () => {
+    // DO NOT DELETE AS REDUNDANT. This is the only possible pin for two
+    // mutations: reverting to the brief's write-error-index complement, and
+    // dropping the check that every written row was matched. No real-Mongo
+    // case can distinguish them — whenever mongoose filters a row out, the
+    // accounting check throws first, and whenever it filters nothing out,
+    // mongoose's index remap is the identity and index-matching and
+    // seqId-matching provably agree. Only a hand-built error reaches here.
     const repoStub = new FilingRepository(
       rejectingWith(
         bulkError({
           code: DUPLICATE_KEY,
           writeErrors: [{ index: 0, err: { index: 0, code: DUPLICATE_KEY } }],
           insertedDocs: [{ seqId: 999 }],
+        }),
+      ),
+    );
+
+    await expect(
+      repoStub.insertNew([makeFiling(10), makeFiling(20)]),
+    ).rejects.toThrow();
+  });
+
+  it('does not infer a row error code from the batch-level code', async () => {
+    // The row failed, but its own report carries no code. The batch-level
+    // 11000 belongs to some OTHER row, so reading it here would file this row
+    // under "duplicate" and quietly drop it from the result — losing whatever
+    // actually went wrong with it. Accounting adds up, so only the code chain
+    // can catch this.
+    const repoStub = new FilingRepository(
+      rejectingWith(
+        bulkError({
+          code: DUPLICATE_KEY,
+          writeErrors: [{ index: 0, err: { index: 0 } }],
+          insertedDocs: [{ seqId: 20 }],
         }),
       ),
     );
@@ -613,6 +645,111 @@ describe('FilingRepository.insertNew: refuses to guess under unfamiliar errors',
     await expect(
       new FilingRepository(exploding).insertNew([]),
     ).resolves.toEqual([]);
+  });
+});
+
+/**
+ * insertNew delegates the entire new-versus-seen decision to the database's
+ * unique index. The existing "enforces uniqueness on seqId at the index level"
+ * test proves the SCHEMA declares that index; it says nothing about whether the
+ * running database has built it. Nothing in production wiring calls
+ * syncIndexes(), and mongoose's autoIndex default is routinely turned off in
+ * production, so this precondition can be absent at runtime with no warning.
+ */
+describe('FilingRepository.assertIndexes: the unique index is a precondition', () => {
+  /** A model whose collection is never given the unique index. */
+  const looseModel = (collection: string): Model<FilingDocument> => {
+    const schema = FilingSchema.clone();
+    schema.set('autoIndex', false);
+    return mongoose.model<FilingDocument>(collection, schema, collection);
+  };
+
+  it('resolves when the collection carries the unique index', async () => {
+    await expect(repo.assertIndexes()).resolves.toBeUndefined();
+  });
+
+  it('throws when the collection has no unique index on seqId', async () => {
+    const loose = looseModel('filings_no_index');
+    await loose.collection.insertOne({ seqId: 1 });
+
+    await expect(new FilingRepository(loose).assertIndexes()).rejects.toThrow(
+      /seqId/,
+    );
+  });
+
+  it('names the consequence, not just the missing index', async () => {
+    const loose = looseModel('filings_no_index_message');
+    await loose.collection.insertOne({ seqId: 1 });
+
+    // Whoever reads this at startup needs to know why it matters, not merely
+    // that an index is absent.
+    await expect(new FilingRepository(loose).assertIndexes()).rejects.toThrow(
+      /unique/i,
+    );
+  });
+
+  it('rejects a non-unique index on seqId', async () => {
+    const loose = looseModel('filings_plain_index');
+    await loose.collection.insertOne({ seqId: 1 });
+    await loose.collection.createIndex({ seqId: 1 });
+
+    // An index makes the query fast; only uniqueness makes insertNew correct.
+    await expect(new FilingRepository(loose).assertIndexes()).rejects.toThrow(
+      /seqId/,
+    );
+  });
+
+  it('rejects a compound unique index that only includes seqId', async () => {
+    const loose = looseModel('filings_compound_index');
+    await loose.collection.insertOne({ seqId: 1 });
+    await loose.collection.createIndex(
+      { seqId: 1, symbol: 1 },
+      { unique: true },
+    );
+
+    // Uniqueness of the PAIR permits the same seqId twice under two symbols,
+    // which is precisely the duplicate insertNew must never be handed.
+    await expect(new FilingRepository(loose).assertIndexes()).rejects.toThrow(
+      /seqId/,
+    );
+  });
+
+  it('throws when the collection does not exist yet', async () => {
+    const loose = looseModel('filings_never_created');
+
+    // A fresh deployment is exactly when this guard earns its keep.
+    await expect(new FilingRepository(loose).assertIndexes()).rejects.toThrow(
+      /seqId/,
+    );
+  });
+
+  it('does not create the missing index behind the operator back', async () => {
+    const loose = looseModel('filings_not_created_for_me');
+    await loose.collection.insertOne({ seqId: 1 });
+
+    await expect(new FilingRepository(loose).assertIndexes()).rejects.toThrow();
+
+    const indexes = await loose.collection.indexes();
+    expect(indexes.filter((i) => i.key?.seqId !== undefined)).toEqual([]);
+  });
+
+  it('is what stands between a missing index and a re-alert of the whole day', async () => {
+    // The teeth behind the precondition. Without the unique index the database
+    // accepts the same filing twice, so insertNew hands back a row it has
+    // already returned once — the restart re-alert this repository exists to
+    // prevent. The alert gate inverts silently; nothing throws.
+    const loose = looseModel('filings_inverted_gate');
+    const looseRepo = new FilingRepository(loose);
+
+    const first = await looseRepo.insertNew([makeFiling(10)]);
+    const second = await looseRepo.insertNew([makeFiling(10)]);
+
+    expect(first.map((f) => f.seqId)).toEqual([10]);
+    expect(second.map((f) => f.seqId)).toEqual([10]);
+    expect(await loose.countDocuments()).toBe(2);
+
+    // assertIndexes is the only thing that would have caught this at startup.
+    await expect(looseRepo.assertIndexes()).rejects.toThrow();
   });
 });
 
