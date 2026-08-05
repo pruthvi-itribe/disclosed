@@ -60,7 +60,7 @@
 # offset against the IST-clock tests specifically — so no guarantee moved off a
 # test when the copies were consolidated.
 #
-# Tally, so a report can quote it without recounting: 36 mutations across nine
+# Tally, so a report can quote it without recounting: 39 mutations across ten
 # groups, plus 5 independence checks = 45 `check` calls.
 
 set -uo pipefail
@@ -328,6 +328,18 @@ check "startup warning removed (silent channel looks like a quiet market)" teleg
 
 perl -0pi -e 's/      this\.logger\.log\(`\[alert suppressed\]\\n\$\{text\}`\);\n//' "$SVC"
 check "suppressed alert not logged (the filing is lost, not deferred)" telegram.service
+
+echo ""
+echo "=== the partial-skip alert names a different fault from blindness ==="
+
+perl -0pi -e "s/    'INGEST RECORDS SKIPPED',/    'INGEST BLIND',/" "$FMT"
+check "skip alert reuses the blindness banner (wrong fault, wrong remedy)" alert-formatter
+
+perl -0pi -e 's/    `\$\{skipped\} of \$\{received\} record\(s\) could not be mapped and were dropped\.`,/    `Some records could not be mapped and were dropped.`,/' "$FMT"
+check "counts dropped from the skip alert (scale of the drift is lost)" alert-formatter
+
+perl -0pi -e "s/    'The rest were ingested, so nothing else will report this\. A field or id',/    'A field or id',/" "$FMT"
+check "the invisibility is not stated (reads as an ordinary warning)" alert-formatter
 
 echo ""
 echo "=== independence checks ==="

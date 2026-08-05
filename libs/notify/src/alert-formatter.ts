@@ -101,6 +101,35 @@ export function formatBlindFeedAlert(received: number): string {
 }
 
 /**
+ * The operator alert for a page the mapper only PARTIALLY understood.
+ *
+ * The quiet sibling of the blind-feed alert, and the one that was missing. A
+ * page where every record is rejected is loud by construction — nothing is
+ * ingested at all. A page where nineteen of twenty map is indistinguishable
+ * from a healthy poll in every signal the system produces: the fetch
+ * succeeded, filings arrived, the breaker is clean, the cursor moves, and the
+ * one record that was dropped exists only in a warn line nobody is reading.
+ *
+ * Both counts are numbers, so there is nothing to escape. The recovery path is
+ * stated because it is not obvious: the scheduled drain re-pulls the whole IST
+ * day every few minutes, so a mapper fix picks these records up on the next
+ * sweep without a backfill — but only if someone is told to make the fix.
+ */
+export function formatSkippedRecordsAlert(
+  skipped: number,
+  received: number,
+): string {
+  return [
+    'INGEST RECORDS SKIPPED',
+    '',
+    `${skipped} of ${received} record(s) could not be mapped and were dropped.`,
+    'The rest were ingested, so nothing else will report this. A field or id',
+    'format change is the usual cause; the scheduled drain re-offers the whole',
+    'day, so fixing the mapper recovers them without a backfill.',
+  ].join('\n');
+}
+
+/**
  * The operator alert for a day re-pull that failed.
  *
  * The most consequential of these messages and the least visible without one.

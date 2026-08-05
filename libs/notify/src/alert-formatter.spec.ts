@@ -2,6 +2,7 @@ import {
   formatBlindFeedAlert,
   formatDegradedAlert,
   formatDrainFailureAlert,
+  formatSkippedRecordsAlert,
   formatFilingAlert,
   formatWriteFailureAlert,
 } from './alert-formatter';
@@ -676,6 +677,41 @@ describe('formatWriteFailureAlert', () => {
  * records inside the gap are simply never fetched. A drain that keeps failing
  * means the hole the whole no-loss guarantee exists to close is never closed.
  */
+describe('formatSkippedRecordsAlert', () => {
+  it('states how many were dropped, out of how many', () => {
+    const output = formatSkippedRecordsAlert(4, 20);
+
+    expect(output).toContain('INGEST RECORDS SKIPPED');
+    expect(output).toContain('4 of 20');
+  });
+
+  it('lays the operator alert out on its own fixed shape', () => {
+    expect(formatSkippedRecordsAlert(1, 20).split('\n')).toEqual([
+      'INGEST RECORDS SKIPPED',
+      '',
+      '1 of 20 record(s) could not be mapped and were dropped.',
+      'The rest were ingested, so nothing else will report this. A field or id',
+      'format change is the usual cause; the scheduled drain re-offers the whole',
+      'day, so fixing the mapper recovers them without a backfill.',
+    ]);
+  });
+
+  it('says the rest were ingested, which is what makes it invisible', () => {
+    // The distinguishing fact against INGEST BLIND: this page produced
+    // filings, so the fetch, the breaker and the cursor all look healthy.
+    expect(formatSkippedRecordsAlert(2, 20)).toContain(
+      'The rest were ingested',
+    );
+  });
+
+  it('carries nothing that needs escaping, because both inputs are counts', () => {
+    const output = formatSkippedRecordsAlert(3, 20);
+
+    expect(output).not.toContain('&');
+    expect(output).not.toContain('<');
+  });
+});
+
 describe('formatDrainFailureAlert', () => {
   it('states that the gap is still open, and why', () => {
     const output = formatDrainFailureAlert(

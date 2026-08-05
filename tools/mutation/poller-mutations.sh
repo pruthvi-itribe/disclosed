@@ -27,11 +27,13 @@
 #   4. THE IN-FLIGHT GUARD. A hard Akamai block takes ~30s to reject against a
 #      2s interval, so an unguarded poller stacks ~15 requests during exactly
 #      the outage where NSE is least willing to serve.
-#   5. THE ALARMS. Three different silences — a blind poller, a feed whose every
-#      record is rejected, a database refusing writes — each edge-triggered so
-#      the outage cannot mute the channel that reports it. Weaken the edge and
-#      the operator gets ~1800 messages an hour and mutes the bot; remove it and
-#      they get none.
+#   5. THE ALARMS. Four different silences — a blind poller, a page the mapper
+#      only partly understood, a day re-pull that failed, and a database
+#      refusing writes — each edge-triggered so the outage cannot mute the
+#      channel that reports it. Weaken the edge and the operator gets ~1800
+#      messages an hour and mutes the bot; remove it and they get none. The
+#      partial skip is the quietest of the four: the fetch succeeded, filings
+#      arrived, the breaker is clean and the cursor moved.
 #
 # All five are the kind a passing suite can imply without proving. So this
 # script breaks the implementation one way at a time, re-runs the suite, and
@@ -75,8 +77,8 @@
 #     redaction and its configured/unconfigured verdict ARE mutated, because
 #     both are load-bearing.
 #
-# Tally, so a report can quote it without recounting: 55 mutations against the
-# poller and 12 against the configuration, plus 7 independence checks = 74
+# Tally, so a report can quote it without recounting: 61 mutations against the
+# poller and 12 against the configuration, plus 7 independence checks = 80
 # `check` calls.
 
 set -uo pipefail
@@ -340,10 +342,10 @@ check "drain collapsed to today (a hole spanning IST midnight stays open)" "$POL
 perl -0pi -e 's/    const anchor = await this\.repository\.getMaxDisseminatedAt\(\);/    const anchor: Date | null = null;/' "$POLL"
 check "range anchor never read (every drain is a single day again)" "$POLL" poller.service
 
-perl -0pi -e 's/      const result = await this\.adapter\.fetchDay\(day\);\n      filings\.push\(\.\.\.result\.filings\);/      const result = await this.adapter.fetchDay(day).catch(() => null);\n      if (result) filings.push(...result.filings);/' "$POLL"
+perl -0pi -e 's/      const result = await this\.adapter\.fetchDay\(day\);\n      filings\.push\(\.\.\.result\.filings\);\n      skipped \+= result\.skipped;\n      received \+= result\.received;/      const result = await this.adapter\n        .fetchDay(day)\n        .catch(() => ({ filings: [], skipped: 0, received: 0 }));\n      filings.push(...result.filings);\n      skipped += result.skipped;\n      received += result.received;/' "$POLL"
 check "a failed day in the range swallowed (a partial range reports as reconciled)" "$POLL" poller.service
 
-perl -0pi -e 's/    return \{ filings, days: days\.length \};/    return { filings, days: 1 };/' "$POLL"
+perl -0pi -e 's/    return \{ filings, days: days\.length, skipped, received \};/    return { filings, days: 1, skipped, received };/' "$POLL"
 check "day count hardcoded (a multi-day drain is invisible in the result)" "$POLL" poller.service
 
 echo ""
@@ -419,6 +421,27 @@ check "latch never re-armed (a second episode is never reported)" "$POLL" poller
 
 perl -0pi -e 's/    await this\.reportBlindFeed\(page\);\n//' "$POLL"
 check "blind feed never announced (an id-format change silences the feed)" "$POLL" poller.service
+
+echo ""
+echo "=== the partial-skip alarm: nineteen of twenty looks entirely healthy ==="
+
+perl -0pi -e 's/    await this\.reportSkippedRecords\(skipped, received\);\n\n//' "$POLL"
+check "dropped records never announced (a mapper drift is invisible)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(this\.feedPartial\) return;\n    this\.feedPartial = true;\n//' "$POLL"
+check "alarm not edge-triggered (a drifted mapper floods the channel)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(skipped === 0\) \{\n      this\.feedPartial = false;\n      return;\n    \}/    if (skipped === 0) return;/' "$POLL"
+check "latch never re-armed (a second drift episode is never reported)" "$POLL" poller.service
+
+perl -0pi -e 's/    if \(skipped === received\) return;\n\n//' "$POLL"
+check "a wholly rejected page double-reported (two alerts, two remedies)" "$POLL" poller.service
+
+perl -0pi -e 's/        skipped \+= drain\.skipped;\n//' "$POLL"
+check "drain skips not counted (a day-wide mapper drift reads as one bad record)" "$POLL" poller.service
+
+perl -0pi -e 's/      skipped,\n      deferred: false,/      skipped: 0,\n      deferred: false,/' "$POLL"
+check "skip count never reported (the caller cannot alarm on it either)" "$POLL" poller.service
 
 echo ""
 echo "=== the drain-failure alarm: the hole stays open and nothing else notices ==="

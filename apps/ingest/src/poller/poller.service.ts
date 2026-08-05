@@ -16,6 +16,7 @@ import {
   formatBlindFeedAlert,
   formatDegradedAlert,
   formatDrainFailureAlert,
+  formatSkippedRecordsAlert,
   formatWriteFailureAlert,
   type TelegramService,
 } from '@app/notify';
@@ -50,6 +51,8 @@ export interface PollResult {
   drainReason: DrainReason | null;
   /** IST days the drain covered. `0` when no drain ran. */
   drainedDays: number;
+  /** Records the mapper refused, across the hot page and any drained day. */
+  skipped: number;
   /**
    * True when this tick did no work because another poll still held the lock.
    * Distinguished from a quiet poll on purpose: "nothing arrived" and "we never
@@ -145,6 +148,8 @@ export class PollerService {
 
   /** Set while the feed is answering with records that all fail to map. */
   private feedBlind = false;
+  /** Set while SOME records are being dropped and the rest ingested. */
+  private feedPartial = false;
   /** Set while the day re-pull is failing, leaving a detected hole open. */
   private drainFailing = false;
   /** Set while writes are failing. */
@@ -282,6 +287,9 @@ export class PollerService {
         });
 
     let drainedDays = 0;
+    // Accounting across everything this tick fetched, hot page and drain alike.
+    let skipped = page.skipped;
+    let received = page.received;
 
     if (reason !== null) {
       // Recorded BEFORE the attempt and for every outcome, including a failure.
@@ -297,6 +305,8 @@ export class PollerService {
         const drain = await this.drain(reason, now);
         dayFilings = drain.filings;
         drainedDays = drain.days;
+        skipped += drain.skipped;
+        received += drain.received;
         // The set difference is the database's job, not ours: every row is
         // offered and the unique index rejects the ones already held.
         candidates = mergeById(page.filings, dayFilings);
@@ -334,6 +344,8 @@ export class PollerService {
       }
     }
 
+    await this.reportSkippedRecords(skipped, received);
+
     const alerted = await this.alertOn(inserted, now);
 
     if (!holdCursor) {
@@ -346,6 +358,7 @@ export class PollerService {
       drained: reason !== null,
       drainReason: reason,
       drainedDays,
+      skipped,
       deferred: false,
       // A FAILED drain must not feed the burst rule. `newSeqIds` is derived
       // from the cursor, and a failed drain HOLDS the cursor — so the same ids
@@ -379,7 +392,12 @@ export class PollerService {
   private async drain(
     reason: DrainReason,
     now: Date,
-  ): Promise<{ filings: readonly Filing[]; days: number }> {
+  ): Promise<{
+    filings: readonly Filing[];
+    days: number;
+    skipped: number;
+    received: number;
+  }> {
     const anchor = await this.repository.getMaxDisseminatedAt();
     const { days, skippedDays } = drainRange(anchor, now);
 
@@ -398,12 +416,16 @@ export class PollerService {
     }
 
     const filings: Filing[] = [];
+    let skipped = 0;
+    let received = 0;
     for (const day of days) {
       const result = await this.adapter.fetchDay(day);
       filings.push(...result.filings);
+      skipped += result.skipped;
+      received += result.received;
     }
 
-    return { filings, days: days.length };
+    return { filings, days: days.length, skipped, received };
   }
 
   /**
@@ -493,6 +515,53 @@ export class PollerService {
     if (this.feedBlind) return;
     this.feedBlind = true;
     await this.telegram.send(formatBlindFeedAlert(page.received));
+  }
+
+  /**
+   * Announces records the mapper dropped while ingesting the rest.
+   *
+   * The quiet half of the blindness problem, and the one nothing else reports.
+   * A wholly rejected page is loud by construction — nothing is ingested. A
+   * page where nineteen of twenty map looks exactly like a healthy poll in
+   * every signal this class produces: the fetch succeeded, filings arrived, the
+   * breaker is clean, the cursor moves. The dropped record existed only in a
+   * warn line from the adapter.
+   *
+   * `page.skipped` was added in Task 5 precisely so this could be alarmed
+   * rather than only logged, and it never was.
+   *
+   * The wholly-rejected case is deliberately left to `reportBlindFeed`: that
+   * message names the right remedy and this one would double-report it.
+   *
+   * NOT a lost filing, and the message says so. The cursor is no longer a
+   * newness filter, so a skipped record is re-offered on every poll it remains
+   * on the page for, and by the scheduled drain's re-pull of the whole IST day
+   * for as long as it keeps running. Fixing the mapper is therefore sufficient
+   * to recover them — which is exactly why somebody has to be told.
+   *
+   * Edge-triggered like the others, and re-armed by a clean fetch.
+   */
+  private async reportSkippedRecords(
+    skipped: number,
+    received: number,
+  ): Promise<void> {
+    if (skipped === 0) {
+      this.feedPartial = false;
+      return;
+    }
+
+    // Every record rejected is blindness, not a partial skip; it has its own
+    // alert with its own remedy.
+    if (skipped === received) return;
+
+    this.logger.error(
+      `Dropped ${skipped} of ${received} record(s) as unmappable; the rest ` +
+        'were ingested, so nothing else reports this',
+    );
+
+    if (this.feedPartial) return;
+    this.feedPartial = true;
+    await this.telegram.send(formatSkippedRecordsAlert(skipped, received));
   }
 
   /**
@@ -587,6 +656,7 @@ export class PollerService {
       drained: false,
       drainReason: null,
       drainedDays: 0,
+      skipped: 0,
       deferred,
       delayMs: this.delayFor(0, now),
     };

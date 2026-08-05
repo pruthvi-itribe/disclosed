@@ -859,13 +859,17 @@ describe('PollerService: a wholly rejected page is a blind feed', () => {
     expect(telegram.sent).toHaveLength(0);
   });
 
-  it('stays quiet when only some records were rejected', async () => {
+  it('does not report a partly rejected page as blindness', async () => {
+    // A partial skip has its own alert with its own remedy; reporting it as
+    // blindness would name the wrong fault and double-report the same page.
     const { adapter, telegram, service } = build();
     adapter.latest = page([makeFiling(30)], 5);
 
     await service.tick(IN_WINDOW);
 
-    expect(telegram.sent).toHaveLength(0);
+    expect(
+      telegram.sent.filter((m) => m.includes('INGEST BLIND')),
+    ).toHaveLength(0);
   });
 
   it('signals once per episode, not once per poll', async () => {
@@ -1757,5 +1761,106 @@ describe('PollerService: a drain that spans IST midnight', () => {
     const second = await service.tick(TODAY_1000_IST);
 
     expect(second.drainedDays).toBe(0);
+  });
+});
+
+/**
+ * A PARTLY rejected page is the quiet half of the blindness problem. A page
+ * where every record is rejected is loud by construction — nothing is ingested
+ * at all. A page where nineteen of twenty map looks exactly like a healthy poll
+ * in every signal the poller produces, and Task 5 added `skipped` to the fetch
+ * result precisely so this could be alarmed rather than only logged.
+ */
+describe('PollerService: records the mapper dropped', () => {
+  it('alarms when some records were dropped and the rest ingested', async () => {
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)], 5);
+
+    const result = await service.tick(IN_WINDOW);
+
+    expect(result.skipped).toBe(4);
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0]).toContain('INGEST RECORDS SKIPPED');
+    expect(telegram.sent[0]).toContain('4 of 5');
+  });
+
+  it('counts records the drain dropped as well as the hot page', async () => {
+    const { adapter, service } = build();
+    adapter.latest = page([makeFiling(30)], 2);
+    adapter.day = page([makeFiling(30), makeFiling(20)], 5);
+
+    const result = await service.tick(IN_WINDOW);
+
+    expect(result.skipped).toBe(4);
+  });
+
+  it('reports zero skips on a clean page', async () => {
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)]);
+
+    const result = await service.tick(IN_WINDOW);
+
+    expect(result.skipped).toBe(0);
+    expect(telegram.sent).toHaveLength(0);
+  });
+
+  it('signals once per episode, not once per poll', async () => {
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)], 5);
+
+    for (let i = 0; i < 10; i += 1) await service.tick(IN_WINDOW);
+
+    expect(telegram.sent).toHaveLength(1);
+  });
+
+  it('re-arms once a clean page arrives', async () => {
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([makeFiling(30)], 5);
+    await service.tick(IN_WINDOW);
+
+    adapter.latest = page([makeFiling(31), makeFiling(30)]);
+    await service.tick(IN_WINDOW);
+
+    adapter.latest = page([makeFiling(32)], 4);
+    await service.tick(IN_WINDOW);
+
+    expect(
+      telegram.sent.filter((m) => m.includes('INGEST RECORDS SKIPPED')),
+    ).toHaveLength(2);
+  });
+
+  it('leaves a wholly rejected page to the blind-feed alert alone', async () => {
+    const { adapter, telegram, service } = build();
+    adapter.latest = page([], 20);
+
+    const result = await service.tick(IN_WINDOW);
+
+    expect(result.skipped).toBe(20);
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0]).toContain('INGEST BLIND');
+  });
+
+  it('does not count a failed drain as a skip', async () => {
+    const { adapter, service } = build();
+    adapter.latest = page([makeFiling(20)]);
+    await service.tick(IN_WINDOW);
+
+    adapter.failDay = new Error('drain 503');
+    adapter.latest = page([makeFiling(90)]);
+    const result = await service.tick(IN_WINDOW);
+
+    expect(result.skipped).toBe(0);
+  });
+
+  it('does not alarm on a poll whose fetch failed outright', async () => {
+    const { adapter, telegram, service } = build();
+    adapter.failLatest = new Error('network down');
+
+    const result = await service.tick(IN_WINDOW);
+
+    expect(result.skipped).toBe(0);
+    expect(
+      telegram.sent.filter((m) => m.includes('INGEST RECORDS SKIPPED')),
+    ).toHaveLength(0);
   });
 });
