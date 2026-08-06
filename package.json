@@ -34,7 +34,8 @@
     "ambiguity:measure": "ts-node -r tsconfig-paths/register tools/extraction/measure-ambiguity-scope.ts",
     "coverage:measure": "ts-node -r tsconfig-paths/register tools/outcome/measure-coverage.ts",
     "basis:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-basis-reach.ts",
-    "routing:prove": "ts-node -r tsconfig-paths/register tools/parsing/prove-routing.ts"
+    "routing:prove": "ts-node -r tsconfig-paths/register tools/parsing/prove-routing.ts",
+    "results:prove": "ts-node -r tsconfig-paths/register tools/results/prove-results-route.ts"
   },
   "keywords": [],
   "author": "",
