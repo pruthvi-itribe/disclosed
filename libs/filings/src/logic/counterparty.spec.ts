@@ -3,6 +3,7 @@ import {
   isTraceableName,
   MAX_NAME_CHARS,
   MAX_NAME_TOKEN_CHARS,
+  MIN_NAME_CHARS,
   PARTY_WINDOW_CHARS,
   type CounterpartyRefusalReason,
 } from './counterparty';
@@ -299,5 +300,45 @@ describe('isTraceableName', () => {
     ],
   ])('rejects when %s', (_label, evidence, offset, name) => {
     expect(isTraceableName(text, evidence, offset, name)).toBe(false);
+  });
+});
+
+describe('extractCounterparty — the bounds, pinned against literals', () => {
+  it.each([
+    ['a two-letter row', '\nIn \n'],
+    ['a two-letter acronym', '\nGE \n'],
+  ])('refuses %s as illegible rather than falling through', (_label, value) => {
+    // The reason matters as much as the refusal. Without the minimum length
+    // these reach the legal-form test and are refused as `no-entity-form`,
+    // which tells a reviewer the filer named a company this module did not
+    // recognise — when in fact the row holds nothing that could be a name.
+    expect(MIN_NAME_CHARS).toBeGreaterThan(1);
+    const result = extractCounterparty(row(value));
+    expect(result).toEqual({ outcome: 'refused', reason: 'illegible' });
+  });
+
+  it('does not reach past the window for a name when the row is empty', () => {
+    // The window is what stops an EMPTY row borrowing a name from a later part
+    // of the document. Blank lines are dropped when the row is rendered, so
+    // without the bound this whitespace gap closes and the disclosure below is
+    // published as the awarding entity.
+    const gap = '\n'.repeat(PARTY_WINDOW_CHARS + 100);
+    const text =
+      'Name of the entity awarding the order(s)/contract(s);' +
+      `${gap}Acme Industries Limited\nSignificant terms and conditions`;
+
+    const result = extractCounterparty(text);
+    expect(result).toEqual({ outcome: 'refused', reason: 'empty-row' });
+  });
+
+  it('never quotes more evidence than the window allows', () => {
+    const text =
+      'Name of the entity awarding the order(s)/contract(s);\n' +
+      'Genus Power Infrastructures Limited\n' +
+      'x'.repeat(PARTY_WINDOW_CHARS * 3);
+
+    const result = extractCounterparty(text);
+    if (result.outcome !== 'extracted') return;
+    expect(result.evidence.length).toBeLessThanOrEqual(PARTY_WINDOW_CHARS);
   });
 });

@@ -101,3 +101,31 @@ describe('isTrustedAttachmentHost', () => {
     expect(isTrustedAttachmentHost(host)).toBe(false);
   });
 });
+
+describe('decideAttachment — the reason a terminal verdict carries', () => {
+  it.each([
+    ['a value that is not a URL at all', 'not a url'],
+    ['a relative path', '/corporate/file.pdf'],
+    ['a bare filename', 'RAILTEL.pdf'],
+  ])('files %s under no-attachment, not under not-a-pdf', (_label, url) => {
+    // The reason is what a human reviewing the queue reads. `not-a-pdf` says
+    // the exchange published something this pipeline does not parse;
+    // `no-attachment` says the field held nothing usable. They lead to
+    // different fixes and must not be interchangeable.
+    expect(decideAttachment(url).outcome).toBe('skip');
+    expect(decideAttachment(url)).toEqual({
+      outcome: 'skip',
+      reason: 'no-attachment',
+    });
+  });
+
+  it("treats NSE's sentinel exactly as it treats an unusable value", () => {
+    // `new URL('-')` throws, so the explicit sentinel check and the catch reach
+    // the same verdict. The check stays because it states the exchange's
+    // contract where a reader looks for it, and this pins the equivalence so a
+    // future URL parser that ACCEPTS `-` cannot make them diverge silently.
+    expect(decideAttachment(NO_ATTACHMENT_SENTINEL)).toEqual(
+      decideAttachment('not a url'),
+    );
+  });
+});

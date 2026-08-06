@@ -195,6 +195,12 @@ describe('composeHeadline — the wire discipline', () => {
       if (typeof component !== 'string') continue;
       expect(component.length).toBeLessThanOrEqual(MAX_COMPONENT_CHARS);
     }
+    // Pinned against a LITERAL as well as the constant. An assertion written
+    // only against MAX_COMPONENT_CHARS moves with the bound it is meant to
+    // hold, so raising the constant to 100,000 would keep this green while the
+    // wire convention quietly stopped applying.
+    expect(MAX_COMPONENT_CHARS).toBeLessThanOrEqual(200);
+    expect(headline.text.length).toBeLessThanOrEqual(600);
   });
 
   it('carries no advisory, predictive or valuation framing', () => {
