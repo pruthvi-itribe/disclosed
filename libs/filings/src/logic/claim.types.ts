@@ -1,3 +1,4 @@
+import type { CoverageSkipReason } from './claim-eligibility';
 import type { SummaryRefusalReason } from './claim-summary';
 
 /**
@@ -157,6 +158,16 @@ export interface ClaimOutcome {
   readonly refusalReason: ClaimRefusalReason | null;
   readonly refusalDetail: string | null;
   /**
+   * The machine-readable code for why no model read this document.
+   *
+   * SEPARATE FROM `refusalReason`, which says what the CLAIM LANE produced.
+   * "The document was never sent to a model" and "the model was sent it and
+   * found nothing" are the two facts the results gap made indistinguishable,
+   * and only one of them is a decision this pipeline made. Null when a model
+   * was called. `claim-eligibility.ts` owns the vocabulary.
+   */
+  readonly skip: CoverageSkipReason | null;
+  /**
    * The model's own prose summary, vetted but NOT verified.
    *
    * Carried alongside the claims rather than among them. Nothing downstream
@@ -174,6 +185,7 @@ export const NO_CLAIMS: ClaimOutcome = {
   proposed: null,
   refusalReason: null,
   refusalDetail: null,
+  skip: null,
   summary: null,
   summaryRefusalReason: null,
 };

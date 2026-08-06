@@ -1,111 +1,84 @@
 import type { Filing } from '../filing.types';
 import { isLegallyBlocked } from './legal-block';
-import { isRoutine } from './taxonomy';
 
 /**
- * Which filings are worth spending a model call on.
+ * Which filings are read for insights, and the two reasons one is not.
  *
  * ================================================================
- * THIS IS THE COST CONTROL, AND IT IS DETERMINISTIC ON PURPOSE
+ * THIS WAS A CATEGORY ALLOWLIST, AND THE ALLOWLIST WAS THE BUG
  * ================================================================
  *
- * ~700 documents a day reach the worker. Sending every one to a frontier model
- * would be both wasteful and pointless: 147 of the 1,075 filings in the live
- * collection are newspaper-publication scans, 27 are record-date notices, and
- * a large share of the rest are covering letters whose entire content is "the
- * enclosed is enclosed". None of those contain a notable claim, and no amount
- * of model capability makes one appear.
+ * Until this rewrite, the first thing this function did was look the filing's
+ * category up in a set of 22 names and refuse anything absent. It was justified
+ * as a cost control — "failing closed costs a claim from a category nobody has
+ * added yet, which is recoverable by adding it" — and that justification was
+ * wrong in a way that took weeks to surface.
  *
- * So four cheap tests run first, in this order, and each is a regex or a set
- * lookup over text already in memory:
+ * `Outcome of Board Meeting` was not in the set. It is 1,346 of the 17,442
+ * filings in the recorded month, 243 of the 2,085 live, and it is where a listed
+ * company publishes its quarterly results. Every one of them was refused before
+ * a model was called, and the refusal was invisible: a filing that was never
+ * read renders exactly like a filing with nothing in it. **The largest recurring
+ * event in an equity market's calendar produced no output at all, and the
+ * dashboard looked healthy throughout.**
  *
- *   1. the category is one where a company states things about itself
- *   2. the filing carries no legal exposure
- *   3. the document is long enough to be more than a covering letter
- *   4. the document uses at least one word from the claim vocabulary
+ * Adding the category back fixed that instance. It did not fix the mechanism.
+ * The mechanism is that a fail-closed test keyed on a name NSE controls will
+ * silently drop the next thing NSE names differently — and NSE publishes 111
+ * distinct categories, 44 of them five times or fewer, adding new ones without
+ * notice.
  *
  * ================================================================
- * WHY A CATEGORY ALLOWLIST AND NOT A BLOCKLIST
+ * WHAT REPLACED IT, AND WHY THESE TWO TESTS CANNOT HIDE THE SAME GAP
  * ================================================================
  *
- * The opposite of the amount extractor's choice, and deliberately so. The
- * extractor refuses to gate on category because its anchors are structural and
- * hold whatever the category says. This gate is not about correctness at all —
- * a claim from an unusual category would still have to survive the verbatim
- * gate — it is about not paying for calls that cannot pay back. Failing closed
- * costs a claim from a category nobody has added yet, which is recoverable by
- * adding it; failing open costs money on every newspaper scan, forever.
+ * Two tests, and NEITHER LOOKS AT THE CATEGORY:
+ *
+ *   1. **Legal exposure.** Not a cost control and never was. A litigation,
+ *      enforcement or insolvency filing must not reach an extractor at all,
+ *      because the cheapest way to be sure nothing is drafted about a regulatory
+ *      action is for nothing to be drafted. `legal-block.ts` owns it.
+ *   2. **The document is a covering letter.** A structural property of the bytes
+ *      in hand, measured in characters.
+ *
+ * The distinction that matters: **a test on the document cannot hide a
+ * category.** If NSE invents `Quarterly Results Summary` tomorrow, it is read —
+ * there is no list for it to be missing from. If a filing in a category nobody
+ * anticipated carries a genuine business update, it is read. The only filings
+ * skipped are ones this pipeline is holding and can see are empty, and it can
+ * say so about each of them by name.
+ *
+ * ================================================================
+ * WHAT WAS DELIBERATELY NOT KEPT
+ * ================================================================
+ *
+ * **The vocabulary gate.** `CLAIM_SIGNAL_PATTERN` required a document to use one
+ * of about forty words before a model saw it, and it refused 100 of the 932
+ * live filings the gate has judged — 10.7%. It is the same fail-closed shape as
+ * the category list wearing different clothes: a filing announcing that a
+ * company has been admitted to an industry standards body states something worth
+ * a line and need not contain any of `guidance`, `ebitda`, `capacity` or
+ * `order book`. A cost filter that can only be shown to be safe by enumerating
+ * every phrasing a company might use is not safe.
+ *
+ * **The routine-category list.** `taxonomy.ts` still owns it and it still
+ * decides what reaches TELEGRAM, which is a volume problem with a measured
+ * 388-messages-a-day constraint behind it. It is not reused here, and the
+ * measurement says why: 98.1% of `Updates` summaries and 74.6% of
+ * `General Updates` summaries state something their category does not — one of
+ * them is a ₹-crore investment approval by a committee of directors. Those are
+ * routine to ALERT on and are not empty.
+ *
+ * ================================================================
+ * COST, MEASURED RATHER THAN FEARED
+ * ================================================================
+ *
+ * The old comment argued that failing open "costs money on every newspaper scan,
+ * forever". At the configured provider that is $0.00081 a document, so reading
+ * every filing this pipeline stores is on the order of **$0.80 a day** at the
+ * live rate of ~1,000 filings — which is a Q1-results-season peak, not an
+ * average. That is not a number worth going blind on quarterly results for.
  */
-
-/**
- * Categories where a company states things about itself in prose.
- *
- * Chosen from the live collection's own distribution. The three at the top are
- * where every one of the competitor's published lines came from — an investor
- * presentation, a press release and an earnings-call intimation — and the rest
- * are the categories whose documents are narrative rather than tabular.
- *
- * ================================================================
- * `Outcome of Board Meeting` WAS EXCLUDED, AND THAT WAS WRONG
- * ================================================================
- *
- * This list used to carry a comment excluding the category as "almost entirely
- * results tables the amount extractor already reads". Both halves were false.
- *
- * The first half: 200 of the 1,699 live filings are in this category and 64.4%
- * of the 1,346 in the recorded month say in their own exchange summary that they
- * carry financial results — so a third of them are NOT results tables at all.
- * They are dividend declarations, fundraising approvals, plant approvals and
- * business updates, and every one of them was refused before a model was called.
- *
- * The second half: the amount extractor does not read a results table and cannot.
- * It returns ONE rupee figure — the value of a single disclosed event — and it
- * refuses a statement of accounts outright, because a statement has no single
- * material amount in it. What a results filing carries is a SET of figures with
- * their year-ago comparisons, which is a different shape needing a different
- * gate: `results-eligibility.ts` and `results-verify.ts`.
- *
- * So the category is admitted here for the claims it genuinely carries, and the
- * results lane reads the table separately. APOLLOTYRE seqId 106729105 is the
- * filing that proved it: 69,723 characters of consolidated and standalone
- * statements, `enrichment.state=enriched`, `claims: []`, and the recorded reason
- * "Outcome of Board Meeting is not a claim-bearing category".
- *
- * Still deliberately NOT here: `Copy of Newspaper Publication` (241 live, raster
- * scans of adverts), `Record Date`, `Shareholders meeting` and the whole
- * board-change family, which name people and are blocked downstream anyway; and
- * `Clarification - Financial Results` / `Reply to Clarification- Financial
- * results`, which are the exchange's discrepancy correspondence rather than a
- * company stating anything about itself — `results-eligibility.ts` argues those
- * two at length.
- */
-export const CLAIM_BEARING_CATEGORIES: ReadonlySet<string> = new Set([
-  'investor presentation',
-  'press release',
-  'analysts/institutional investor meet/con. call updates',
-  'monthly business updates',
-  'business update',
-  'updates on acquisition',
-  'acquisition',
-  'agreements',
-  'arrangements for strategic, technical, manufacturing, or marketing tie up',
-  'joint venture',
-  'capacity addition',
-  'commencement of commercial production/operations',
-  'product launch',
-  'new product launch',
-  'awarding of order(s)/contract(s)',
-  'bagging/receiving of orders/contracts',
-  'amalgamation/merger',
-  'credit rating',
-  'credit rating- new',
-  'credit rating- revision',
-  'disclosure of material issue',
-  'integrated filing- financial',
-  // Admitted by this work. See the argument above.
-  'outcome of board meeting',
-  'press release (revised)',
-]);
 
 /**
  * Characters below which a document is a covering letter and nothing else.
@@ -113,78 +86,70 @@ export const CLAIM_BEARING_CATEGORIES: ReadonlySet<string> = new Set([
  * Measured against the live collection: the median earnings-call intimation is
  * 1,967 characters and consists of two exchange addresses, one sentence saying
  * a recording exists, and a signature block. `WELENT`'s is 1,269 and says only
- * that an audio file is on the company website — there is no claim in it to
- * find, and the competitor's Welspun line was tagged `TV INTERVIEWS` because it
- * did not come from the filing either.
+ * that an audio file is on the company website.
  *
  * Set at 1,500 rather than at the median, because the cost of being wrong is
- * asymmetric: a skipped claim is invisible, so the threshold sits low enough
+ * asymmetric: a skipped document is invisible, so the threshold sits low enough
  * that it only removes documents which are structurally incapable of carrying
- * one. The keyword gate below does the rest of the work.
+ * anything.
+ *
+ * NOTE that a filing skipped here still produces an OUTCOME and a CATEGORY
+ * GROUP — see `filing-outcome.ts`. This decides whether a model reads the
+ * document, not whether the filing appears. That separation is the whole of the
+ * coverage fix: the expensive, fallible step became optional, and the row did
+ * not.
  */
 export const MIN_CLAIM_DOCUMENT_CHARS = 1_500;
 
-/**
- * Vocabulary a document must use before it is worth reading for claims.
- *
- * DELIBERATELY BROAD. This is a cost filter, not a correctness one, and every
- * word it fails to include is a claim nobody will ever see was missed. It is
- * calibrated against the six lines the competitor actually published: guidance
- * and volume growth (`guidance`, `growth`), an adjusted-EBITDA target
- * (`target`, `ebitda`), a strengthened supply network and an expanding
- * commercial footprint (`network`, `expand`, `footprint`), and joining an
- * industry association (`join`, `partner`).
- *
- * A covering letter contains none of them: "please find enclosed", "take the
- * above on record", "the audio recording is available at the following link".
- */
-export const CLAIM_SIGNAL_PATTERN =
-  /\b(?:guidance|outlook|target\w*|expect\w*|anticipat\w*|aims?|aiming|on track|trajector\w*|growth|margins?|ebitda|revenue|volumes?|capacit\w*|expand\w*|expansion|footprint|network|commission\w*|commenc\w*|launch\w*|entered into|partner\w*|tie-?up|collaborat\w*|alliance|joins?|joined|member of|approv\w*|certif\w*|accredit\w*|clearance|licen[cs]e|acquir\w*|acquisition|divest\w*|stake|order book|greenfield|brownfield|plant|facility|facilities)\b/i;
+/** Why a document was not read for insights. */
+export type CoverageSkipReason =
+  /** Litigation, enforcement, insolvency or fraud. A safety refusal. */
+  | 'legal-exposure'
+  /** The document is too short to be more than a covering letter. */
+  | 'covering-letter';
 
 export type ClaimEligibility =
   | { readonly eligible: true }
-  | { readonly eligible: false; readonly reason: string };
+  | {
+      readonly eligible: false;
+      readonly skip: CoverageSkipReason;
+      readonly reason: string;
+    };
 
-const not = (reason: string): ClaimEligibility => ({ eligible: false, reason });
+const not = (skip: CoverageSkipReason, reason: string): ClaimEligibility => ({
+  eligible: false,
+  skip,
+  reason,
+});
 
 /**
- * Whether this filing's document is worth a model call.
+ * Whether this filing's document is read for insights.
  *
- * The reason is returned rather than a boolean so a filing that was never sent
- * can say why on the dashboard. "Nothing was found" and "nothing was looked
- * for" are opposite facts about a filing and must not render the same.
+ * The reason AND a machine-readable skip code are returned rather than a
+ * boolean, so a filing that was never sent can say why on the dashboard and be
+ * counted there. "Nothing was found" and "nothing was looked for" are opposite
+ * facts about a filing and must not render the same — and after the results gap,
+ * a skip that cannot be counted is a skip that can hide.
+ *
+ * NEVER THROWS. Reads `category` and `summary` through `isLegallyBlocked`, which
+ * a malformed record would throw from, so callers invoke it inside their own
+ * per-filing containment.
  */
 export function claimEligibility(
   filing: Pick<Filing, 'category' | 'summary'>,
   documentText: string,
 ): ClaimEligibility {
-  const category = filing.category.trim().toLowerCase();
-
-  // Routine first: it is the cheapest test and it removes the largest single
-  // block of the collection.
-  if (isRoutine(filing.category)) {
-    return not(`${filing.category} is a routine category`);
-  }
-
-  if (!CLAIM_BEARING_CATEGORIES.has(category)) {
-    return not(`${filing.category} is not a claim-bearing category`);
-  }
-
-  // BEFORE the model, not after. A litigation or enforcement filing must never
-  // reach an extractor at all — the cheapest way to be sure nothing is drafted
-  // about a regulatory action is for nothing to be drafted.
+  // FIRST, and before any consideration of what the document might be worth. A
+  // filing carrying legal exposure must never reach an extractor.
   if (isLegallyBlocked(filing)) {
-    return not('the filing carries legal exposure');
+    return not('legal-exposure', 'the filing carries legal exposure');
   }
 
   if (documentText.length < MIN_CLAIM_DOCUMENT_CHARS) {
     return not(
+      'covering-letter',
       `the document is ${documentText.length} characters, which is a covering letter`,
     );
-  }
-
-  if (!CLAIM_SIGNAL_PATTERN.test(documentText)) {
-    return not('the document uses none of the claim vocabulary');
   }
 
   return { eligible: true };
