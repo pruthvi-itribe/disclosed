@@ -5,6 +5,7 @@ import {
   CLAIM_SYSTEM_PROMPT,
   MAX_DOCUMENT_CHARS,
   parseClaimResponse,
+  parseSummaryResponse,
 } from './claim-prompt';
 
 describe('CLAIM_SYSTEM_PROMPT', () => {
@@ -196,5 +197,42 @@ describe('buildClaimRequest — the document cap is configurable', () => {
     const built = buildClaimRequest({ ...input, maxDocumentChars: cap });
     expect(built).toContain(`first ${MAX_DOCUMENT_CHARS} characters`);
     expect(built).toContain('x'.repeat(1000));
+  });
+});
+
+describe('parseSummaryResponse', () => {
+  it.each([
+    ['a string summary', { summary: 'a short summary' }, 'a short summary'],
+    ['an empty string', { summary: '' }, ''],
+    ['no summary key', { claims: [] }, null],
+    ['a non-string summary', { summary: 42 }, null],
+    ['a null summary', { summary: null }, null],
+    ['a non-object body', 'the model wrote prose', null],
+    ['null', null, null],
+    ['undefined', undefined, null],
+  ])('reads %s', (_label, raw, expected) => {
+    expect(parseSummaryResponse(raw)).toBe(expected);
+  });
+
+  it('is separate from parseClaimResponse all the way down', () => {
+    // The two outputs of ONE call have different guarantees — a claim is
+    // verified against the document and a summary cannot be — so they are
+    // never carried in a structure a caller could treat uniformly.
+    const body = {
+      claims: [
+        { span: 'a real sentence here', text: 'a claim', kind: 'target' },
+      ],
+      summary: 'what the document is',
+    };
+    expect(parseClaimResponse(body)).toHaveLength(1);
+    expect(parseSummaryResponse(body)).toBe('what the document is');
+  });
+
+  it('reads a summary out of a reply carrying no usable claims', () => {
+    // The case a summary matters most for: a filing with nothing worth a wire
+    // line is exactly the one a reviewer wants a sentence about.
+    const body = { claims: [{ span: 1 }], summary: 'a covering letter' };
+    expect(parseClaimResponse(body)).toEqual([]);
+    expect(parseSummaryResponse(body)).toBe('a covering letter');
   });
 });

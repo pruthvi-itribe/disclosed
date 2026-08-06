@@ -20,6 +20,7 @@ export * from './logic/claim-advisory';
 export * from './logic/claim-numbers';
 export * from './logic/claim-period';
 export * from './logic/claim-eligibility';
+export * from './logic/claim-summary';
 export * from './logic/claim-verify';
 export * from './logic/claim-line';
 export * from './logic/claim-prompt';

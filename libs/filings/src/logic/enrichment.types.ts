@@ -5,6 +5,7 @@ import type {
   ClaimRefusalReason,
   VerifiedClaim,
 } from './claim.types';
+import type { SummaryRefusalReason } from './claim-summary';
 
 /**
  * What the background worker did with a filing's attachment, and what it found.
@@ -168,6 +169,22 @@ export interface FilingEnrichment {
   readonly claimRefusalReason: ClaimRefusalReason | null;
   readonly claimRefusalDetail: string | null;
 
+  // --- the model's own summary, which is NOT a claim -------------------------
+  /**
+   * One or two sentences of MODEL PROSE about the document. Unverified.
+   *
+   * DELIBERATELY NOT IN `claims`, and the separation is the point. Every claim
+   * carries the sentence it was read from and was matched against the document
+   * before it was stored; this cannot be, because a summary compresses a whole
+   * document and there is no single sentence to match. It exists for the
+   * dashboard and the later human-reviewed teardown lane, and it must NEVER
+   * reach the Telegram path or any other outward-facing surface as fact.
+   * `claim-summary.ts` argues it in full.
+   */
+  readonly documentSummary: string | null;
+  /** Why there is no summary. Null when there is one, or none was attempted. */
+  readonly documentSummaryRefusalReason: SummaryRefusalReason | null;
+
   /** The composed headline, stored so what was sent can be audited later. */
   readonly headline: string | null;
   /** The derived-context line, or null when none could be computed. */
@@ -200,6 +217,8 @@ export const PENDING_ENRICHMENT: FilingEnrichment = {
   claimsProposed: null,
   claimRefusalReason: null,
   claimRefusalDetail: null,
+  documentSummary: null,
+  documentSummaryRefusalReason: null,
   headline: null,
   contextLine: null,
 };

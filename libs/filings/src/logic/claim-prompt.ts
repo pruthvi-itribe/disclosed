@@ -79,7 +79,9 @@ Rules:
 7. Skip anything conditional or unconfirmed: a letter of intent, an in-principle approval, a memorandum of understanding, a media report, anything "subject to" a further step.
 8. Return at most ${MAX_CLAIMS_PER_FILING} claims, best first. Keep each "text" under ${MAX_CLAIM_CHARS} characters and each "span" under ${MAX_SPAN_CHARS}.
 
-Most filings contain nothing worth a wire line. Returning an empty list is the normal and correct answer, not a failure. A claim you cannot quote exactly is a claim you must not return.`;
+Most filings contain nothing worth a wire line. Returning an empty list is the normal and correct answer, not a failure. A claim you cannot quote exactly is a claim you must not return.
+
+Separately from the claims, also return "summary": one or two sentences saying what this document is, in plain language, for a reader deciding whether to open it. This is NOT a claim and is never published: it is context for a human reviewer. It needs no span and is not checked against the document, so keep it to what the document plainly says. The same rules 4, 6 and 7 above apply to it — no view about the security, nothing about litigation or enforcement, nothing conditional stated as fact. Return an empty string if the document says too little to summarise.`;
 
 /**
  * The response shape, enforced by the API rather than by hope.
@@ -115,8 +117,16 @@ export const CLAIM_OUTPUT_SCHEMA = {
         additionalProperties: false,
       },
     },
+    // AFTER `claims`, deliberately, and the reason is the same one that puts
+    // `span` before `text`: the model quotes before it composes. A summary
+    // written first is a frame the claims would then be selected to fit.
+    summary: {
+      type: 'string',
+      description:
+        'One or two plain sentences saying what this document is. Never published.',
+    },
   },
-  required: ['claims'],
+  required: ['claims', 'summary'],
   additionalProperties: false,
 } as const;
 
@@ -193,4 +203,22 @@ export function parseClaimResponse(raw: unknown): readonly ProposedClaim[] {
     proposed.push({ span, text, kind });
   }
   return proposed;
+}
+
+/**
+ * Reads the summary out of the same reply, or nothing.
+ *
+ * A SEPARATE FUNCTION from `parseClaimResponse`, and separate all the way
+ * down. The two outputs of one call have different guarantees — claims are
+ * verified against the document and a summary cannot be — so they are never
+ * carried in one structure that a caller could accidentally treat uniformly.
+ *
+ * Returns the raw string. `vetSummary` is what decides whether it is usable,
+ * for the same reason `verifyClaims` rather than this module decides about a
+ * claim: reading a reply and judging it are different jobs.
+ */
+export function parseSummaryResponse(raw: unknown): string | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const summary = (raw as { summary?: unknown }).summary;
+  return typeof summary === 'string' ? summary : null;
 }

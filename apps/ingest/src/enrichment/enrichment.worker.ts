@@ -18,6 +18,7 @@ import {
   passesContentGates,
   readDocument,
   verifyClaims,
+  vetSummary,
   type AttachmentFetcher,
   type ClaimedFiling,
   type ClaimExtractor,
@@ -580,6 +581,12 @@ export class EnrichmentWorker {
       claimsProposed: claims.proposed,
       claimRefusalReason: claims.refusalReason,
       claimRefusalDetail: claims.refusalDetail,
+      // STORED, NEVER PUBLISHED. `announce` below is handed the claim line and
+      // the headline and nothing else, so there is no path from here to
+      // Telegram — see `claim-summary.ts` for why that separation is the whole
+      // design rather than an oversight.
+      documentSummary: claims.summary,
+      documentSummaryRefusalReason: claims.summaryRefusalReason,
       headline: verdict.headline,
       contextLine,
     };
@@ -679,9 +686,22 @@ export class EnrichmentWorker {
     }
 
     const proposed = extraction.claims.length;
+    // THE SUMMARY IS READ WHETHER OR NOT THERE ARE CLAIMS, and vetted rather
+    // than verified — nothing can verify it. A document with nothing worth a
+    // wire line is exactly the document a reviewer most wants a sentence about.
+    const vetted = vetSummary(extraction.summary);
+    const summary = vetted.outcome === 'ok' ? vetted.summary : null;
+    const summaryRefusalReason = vetted.outcome === 'ok' ? null : vetted.reason;
+
     if (proposed === 0) {
       // The ordinary answer. Most filings state nothing worth a wire line.
-      return { ...NO_CLAIMS, proposed: 0, refusalReason: 'no-claims' };
+      return {
+        ...NO_CLAIMS,
+        proposed: 0,
+        refusalReason: 'no-claims',
+        summary,
+        summaryRefusalReason,
+      };
     }
 
     const { claims, discards } = verifyClaims({
@@ -703,6 +723,8 @@ export class EnrichmentWorker {
       proposed,
       refusalReason: claims.length === 0 ? 'all-discarded' : null,
       refusalDetail: null,
+      summary,
+      summaryRefusalReason,
     };
   }
 
@@ -964,6 +986,8 @@ const blankVerdict = (
   claimsProposed: null,
   claimRefusalReason: null,
   claimRefusalDetail: null,
+  documentSummary: null,
+  documentSummaryRefusalReason: null,
   headline: null,
   contextLine: null,
 });

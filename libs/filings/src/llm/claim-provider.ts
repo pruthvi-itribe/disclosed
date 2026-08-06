@@ -1,4 +1,7 @@
-import { parseClaimResponse } from '../logic/claim-prompt';
+import {
+  parseClaimResponse,
+  parseSummaryResponse,
+} from '../logic/claim-prompt';
 import type { ClaimExtractionResult } from './claim-extractor';
 
 /**
@@ -193,7 +196,16 @@ export const claimsFromText = (
   if (text.trim().length === 0) {
     return { outcome: 'failed', message: 'the model returned no text' };
   }
-  return { outcome: 'ok', claims: parseClaimResponse(JSON.parse(text)), usage };
+  const payload: unknown = JSON.parse(text);
+  return {
+    outcome: 'ok',
+    claims: parseClaimResponse(payload),
+    // Carried on the SAME reply and kept in a separate field all the way down,
+    // because the two have different guarantees: a claim is verified against
+    // the document and a summary cannot be. See `claim-summary.ts`.
+    summary: parseSummaryResponse(payload),
+    usage,
+  };
 };
 
 /** Reads a number off an untyped payload, or zero. Never NaN. */

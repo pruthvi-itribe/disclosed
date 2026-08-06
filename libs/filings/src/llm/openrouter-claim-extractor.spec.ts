@@ -182,6 +182,7 @@ describe('OpenRouterClaimExtractor — the reply', () => {
     const result = await extractorWith(new RecordingChat()).extract(REQUEST);
     expect(result).toEqual({
       outcome: 'ok',
+      summary: null,
       claims: [
         {
           span: 'The Company has joined the association.',

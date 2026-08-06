@@ -544,6 +544,9 @@ function toEnrichmentView(
       detail: row.detail,
     })),
     claimsProposed: enrichment?.claimsProposed ?? null,
+    documentSummary: enrichment?.documentSummary ?? null,
+    documentSummaryRefusalReason:
+      enrichment?.documentSummaryRefusalReason ?? null,
     claimRefusalReason: enrichment?.claimRefusalReason ?? null,
     claimRefusalDetail: enrichment?.claimRefusalDetail ?? null,
   };

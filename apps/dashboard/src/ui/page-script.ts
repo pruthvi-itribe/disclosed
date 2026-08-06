@@ -231,6 +231,22 @@ export const PAGE_SCRIPT = `
       cell.appendChild(box);
     }
 
+    // THE MODEL SUMMARY, and it is deliberately unlike everything above it.
+    // Every claim in this cell carries a sentence matched against the source;
+    // this carries nothing. It is labelled, dashed and muted so a reader
+    // scanning the column can tell at a glance which line nothing verified,
+    // and it is never sent to Telegram.
+    if (e.documentSummary) {
+      var summary = document.createElement('div');
+      summary.className = 'modelsummary';
+      var label = document.createElement('span');
+      label.className = 'tagm';
+      label.textContent = 'model summary - not verified';
+      summary.appendChild(label);
+      summary.appendChild(document.createTextNode(String(e.documentSummary)));
+      cell.appendChild(summary);
+    }
+
     // Which archived files the text came from. Shown because a filing whose
     // text is three concatenated documents is a different object from one
     // whose text is a document, and a span has to be traceable to a file.

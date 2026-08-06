@@ -68,6 +68,16 @@ export interface EnrichmentView {
   /** Each refused claim, with the rule that refused it. */
   readonly claimDiscards: readonly ClaimDiscardView[];
   readonly claimsProposed: number | null;
+  /**
+   * The model's own prose summary. UNVERIFIED, and rendered as such.
+   *
+   * Never merged into `claims` and never sent anywhere outward-facing. The
+   * page marks it visibly as model-generated, because a reader scanning a
+   * column of verified quotes must be able to tell at a glance which line is
+   * not one. See `libs/filings/src/logic/claim-summary.ts`.
+   */
+  readonly documentSummary: string | null;
+  readonly documentSummaryRefusalReason: string | null;
   readonly claimRefusalReason: string | null;
   readonly claimRefusalDetail: string | null;
 }

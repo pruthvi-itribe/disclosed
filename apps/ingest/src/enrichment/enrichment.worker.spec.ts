@@ -1621,3 +1621,148 @@ describe('EnrichmentWorker — ZIP attachments', () => {
     expect(onlyRecorded(repository).documentSource).toBeNull();
   });
 });
+
+/**
+ * The summary, and the wall between it and everything this pipeline publishes.
+ *
+ * Every test here exists because a summary is MODEL PROSE that no span
+ * verifies. The claim list is the thing this project publishes from, and the
+ * one property that must never quietly regress is that unverified text cannot
+ * get into it or onto the wire.
+ */
+describe('EnrichmentWorker — the document summary', () => {
+  const SUMMARY =
+    'A press release in which the company sets out its FY31 vision and a ' +
+    'target to build a Rs 10,000 Cr adjusted EBITDA business.';
+
+  it('stores the summary in its own field, not among the claims', async () => {
+    const { worker, repository } = claimHarness(
+      new StubExtractor({
+        outcome: 'ok',
+        claims: [TRUE_CLAIM],
+        summary: SUMMARY,
+      }),
+    );
+
+    await worker.tick(NOW);
+    const recorded = onlyRecorded(repository);
+    expect(recorded.documentSummary).toBe(SUMMARY);
+    // THE WALL. One verified claim, and the summary is not among them.
+    expect(recorded.claims).toHaveLength(1);
+    expect(recorded.claims.map((claim) => claim.text)).not.toContain(SUMMARY);
+    expect(recorded.claimsProposed).toBe(1);
+  });
+
+  it('NEVER puts the summary on the wire', async () => {
+    // The single most important assertion in this file. Telegram is the
+    // outward-facing surface and it must carry only what the document says.
+    const { worker, telegram } = claimHarness(
+      new StubExtractor({
+        outcome: 'ok',
+        claims: [TRUE_CLAIM],
+        summary: SUMMARY,
+      }),
+    );
+
+    await worker.tick(NOW);
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0]).not.toContain(SUMMARY);
+    expect(telegram.sent[0]).not.toContain('FY31 vision');
+    // And what it DOES carry is the verified claim.
+    expect(telegram.sent[0]).toContain('MICROSOFT INTELLIGENT SECURITY');
+  });
+
+  it('keeps the summary out of the claim line', async () => {
+    const { worker, repository } = claimHarness(
+      new StubExtractor({
+        outcome: 'ok',
+        claims: [TRUE_CLAIM],
+        summary: SUMMARY,
+      }),
+    );
+
+    await worker.tick(NOW);
+    expect(onlyRecorded(repository).claimLine).not.toContain('FY31');
+  });
+
+  it('stores a summary for a document that yielded no claim at all', async () => {
+    // The case a summary is most useful for: a reviewer asking what a filing
+    // with no wire line was about.
+    const { worker, repository, telegram } = claimHarness(
+      new StubExtractor({ outcome: 'ok', claims: [], summary: SUMMARY }),
+    );
+
+    await worker.tick(NOW);
+    const recorded = onlyRecorded(repository);
+    expect(recorded.documentSummary).toBe(SUMMARY);
+    expect(recorded.claimRefusalReason).toBe('no-claims');
+    // And still nothing on the wire, because there is nothing verified to say.
+    expect(telegram.sent).toEqual([]);
+  });
+
+  it('stores a summary even when every claim was discarded', async () => {
+    const { worker, repository } = claimHarness(
+      new StubExtractor({
+        outcome: 'ok',
+        claims: [{ ...TRUE_CLAIM, span: 'a sentence the document never had' }],
+        summary: SUMMARY,
+      }),
+    );
+
+    await worker.tick(NOW);
+    const recorded = onlyRecorded(repository);
+    expect(recorded.claimRefusalReason).toBe('all-discarded');
+    expect(recorded.documentSummary).toBe(SUMMARY);
+  });
+
+  it.each([
+    [
+      'an advisory summary',
+      'This filing is clearly positive for the stock and supports a re-rating.',
+      'advisory-language',
+    ],
+    [
+      'a summary about litigation',
+      'The company disclosed a civil suit filed before the Bombay High Court.',
+      'legally-blocked',
+    ],
+    ['a fragment', 'an update', 'empty'],
+  ])('refuses %s and says why', async (_label, summary, reason) => {
+    const { worker, repository } = claimHarness(
+      new StubExtractor({ outcome: 'ok', claims: [TRUE_CLAIM], summary }),
+    );
+
+    await worker.tick(NOW);
+    const recorded = onlyRecorded(repository);
+    expect(recorded.documentSummary).toBeNull();
+    expect(recorded.documentSummaryRefusalReason).toBe(reason);
+    // The claim survives. The two lanes are independent, so a refused summary
+    // must not cost a verified claim.
+    expect(recorded.claims).toHaveLength(1);
+  });
+
+  it('records no summary when the reply carried none', async () => {
+    const { worker, repository } = claimHarness(
+      new StubExtractor({ outcome: 'ok', claims: [TRUE_CLAIM] }),
+    );
+
+    await worker.tick(NOW);
+    expect(onlyRecorded(repository)).toMatchObject({
+      documentSummary: null,
+      documentSummaryRefusalReason: 'empty',
+    });
+  });
+
+  it('records no summary when the filing never reached a model', async () => {
+    const { worker, repository } = claimHarness(null, {
+      category: 'Copy of Newspaper Publication',
+    });
+
+    await worker.tick(NOW);
+    expect(onlyRecorded(repository)).toMatchObject({
+      documentSummary: null,
+      documentSummaryRefusalReason: null,
+      claimRefusalReason: 'not-eligible',
+    });
+  });
+});

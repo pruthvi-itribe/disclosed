@@ -105,6 +105,9 @@ describe('the enrichment view on a filing row', () => {
       claimsProposed: null,
       claimRefusalReason: null,
       claimRefusalDetail: null,
+      // Model prose, kept in its own field and never merged into `claims`.
+      documentSummary: null,
+      documentSummaryRefusalReason: null,
       attemptedAtIst: null,
       unparseableReason: null,
       lastError: null,

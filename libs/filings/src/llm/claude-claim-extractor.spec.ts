@@ -167,6 +167,7 @@ describe('ClaudeClaimExtractor — the reply', () => {
     );
     expect(result).toEqual({
       outcome: 'ok',
+      summary: null,
       claims: [
         {
           span: 'The Company has joined the association.',
@@ -252,7 +253,7 @@ describe('ClaudeClaimExtractor — the reply', () => {
       ],
     });
     const result = await extractorWith(messages).extract(REQUEST);
-    expect(result).toEqual({ outcome: 'ok', claims: [] });
+    expect(result).toEqual({ outcome: 'ok', claims: [], summary: null });
   });
 
   it('checks stop_reason BEFORE it reads content', async () => {
@@ -299,7 +300,7 @@ describe('ClaudeClaimExtractor — the reply', () => {
       ],
     });
     const result = await extractorWith(messages).extract(REQUEST);
-    expect(result).toEqual({ outcome: 'ok', claims: [] });
+    expect(result).toEqual({ outcome: 'ok', claims: [], summary: null });
   });
 
   it('fails rather than throws when the body is not JSON', async () => {

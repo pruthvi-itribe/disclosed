@@ -30,6 +30,19 @@ export type ClaimExtractionResult =
       readonly outcome: 'ok';
       readonly claims: readonly ProposedClaim[];
       /**
+       * The model's own prose summary of the document, unverified.
+       *
+       * A SEPARATE FIELD FROM `claims`, and it must stay separate everywhere.
+       * A claim carries the sentence it was read from and is matched against
+       * the document; a summary is compressed prose over the whole thing and
+       * there is nothing to match it against. Merging them would put
+       * unverifiable text into the one list this pipeline publishes from.
+       * `claim-summary.ts` argues the whole design.
+       *
+       * Null when the reply carried none, which is not a failure.
+       */
+      readonly summary?: string | null;
+      /**
        * What the call cost, when the provider said.
        *
        * OPTIONAL, and absent rather than zeroed when a reply carried no usage

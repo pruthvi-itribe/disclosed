@@ -1,3 +1,5 @@
+import type { SummaryRefusalReason } from './claim-summary';
+
 /**
  * What a claim is, and every way one can fail to become a published line.
  *
@@ -154,6 +156,15 @@ export interface ClaimOutcome {
   readonly proposed: number | null;
   readonly refusalReason: ClaimRefusalReason | null;
   readonly refusalDetail: string | null;
+  /**
+   * The model's own prose summary, vetted but NOT verified.
+   *
+   * Carried alongside the claims rather than among them. Nothing downstream
+   * may treat this as a claim: it reaches no wire line, no alert and no
+   * published surface. See `claim-summary.ts`.
+   */
+  readonly summary: string | null;
+  readonly summaryRefusalReason: SummaryRefusalReason | null;
 }
 
 /** The outcome of a filing nothing was attempted on. */
@@ -163,4 +174,6 @@ export const NO_CLAIMS: ClaimOutcome = {
   proposed: null,
   refusalReason: null,
   refusalDetail: null,
+  summary: null,
+  summaryRefusalReason: null,
 };

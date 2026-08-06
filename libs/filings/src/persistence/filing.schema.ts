@@ -72,6 +72,10 @@ const EnrichmentSchema = new Schema<FilingEnrichment>(
     claimsProposed: { type: Number, default: null },
     claimRefusalReason: { type: String, default: null },
     claimRefusalDetail: { type: String, default: null },
+    // A SEPARATE FIELD from `claims`, and never merged into it: this is model
+    // prose that no span verifies. See `claim-summary.ts`.
+    documentSummary: { type: String, default: null },
+    documentSummaryRefusalReason: { type: String, default: null },
     headline: { type: String, default: null },
     contextLine: { type: String, default: null },
   },

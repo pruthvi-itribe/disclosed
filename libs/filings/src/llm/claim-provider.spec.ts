@@ -129,6 +129,7 @@ describe('claimsFromText', () => {
     );
     expect(result).toEqual({
       outcome: 'ok',
+      summary: null,
       claims: [{ span: 'a sentence', text: 'a claim', kind: 'target' }],
       usage: undefined,
     });
