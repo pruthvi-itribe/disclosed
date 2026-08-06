@@ -27,7 +27,8 @@
     "start:enrichment:dev": "nest start enrichment --watch",
     "start:enrichment:prod": "node dist/apps/ingest/src/enrichment.main",
     "claims:measure": "ts-node -r tsconfig-paths/register tools/claims/measure-claim-gate.ts",
-    "claims:verify": "ts-node -r tsconfig-paths/register tools/claims/verify-corpus.ts"
+    "claims:verify": "ts-node -r tsconfig-paths/register tools/claims/verify-corpus.ts",
+    "claims:compare": "ts-node -r tsconfig-paths/register tools/claims/compare-providers.ts"
   },
   "keywords": [],
   "author": "",
