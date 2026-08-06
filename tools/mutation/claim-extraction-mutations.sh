@@ -44,6 +44,9 @@
 #   9. THE EXTRACTOR'S CONTRACT. It must never throw and must check
 #      `stop_reason` before it reads `content`.
 #
+# Tally, so a report can quote it without recounting: 47 mutations across ten
+# groups, plus 4 independence checks = 51 `check` calls.
+#
 # Usage:  bash tools/mutation/claim-extraction-mutations.sh
 # Exit:   0 only if every mutation applied AND was caught.
 #
