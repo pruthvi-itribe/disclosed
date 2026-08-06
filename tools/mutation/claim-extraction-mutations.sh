@@ -301,7 +301,7 @@ echo "=== the gate's bookkeeping ==="
 perl -0pi -e 's/  const match = findVerbatimSpan\(documentText, claim\.span\);/  const match = { offset: 0, evidence: claim.span };/' "$V"
 check "the span is never looked for in the document at all"
 
-perl -0pi -e 's/    if \(seen\.has\(key\(result\.text\)\)\) \{/    if (seen.has(key(result.text)) \&\& false) {/' "$V"
+perl -0pi -e "s/seen\.has\(key\(result\.text\)\)/seen.has(key(result.text) + 'ZZZ')/" "$V"
 check "the same claim published twice on one line"
 
 perl -0pi -e 's/    claims: ranked\.slice\(0, limit\),/    claims: ranked,/' "$V"
@@ -346,7 +346,7 @@ check "documents with no claim vocabulary sent to a model"
 echo ""
 echo "=== the reply parser: the model's output is untrusted input ==="
 
-perl -0pi -e "s/  typeof value === 'string' && \(CLAIM_KINDS as readonly string\[\]\)\.includes\(value\);/  typeof value === 'string';/" "$P"
+perl -0pi -e "s/  typeof value === 'string' &&\n  \(CLAIM_KINDS as readonly string\[\]\)\.includes\(value\);/  typeof value === 'string';/" "$P"
 check "an unknown claim kind accepted (the ranker reads undefined)"
 
 perl -0pi -e "s/    if \(typeof entry !== 'object' \|\| entry === null\) continue;//" "$P"
@@ -388,14 +388,17 @@ check "a retry scheduled past the window it will then be refused by"
 echo ""
 echo "=== the worker's claim stage ==="
 
-perl -0pi -e 's/    if \(!eligibility\.eligible\) \{/    if (!eligibility.eligible \&\& false) {/' "$W"
+perl -0pi -e 's/    const eligibility = claimEligibility\(filing, documentText\);/    const eligibility = { eligible: true } as ReturnType<typeof claimEligibility>;/' "$W"
 check "the eligibility gate bypassed by the worker"
 
-perl -0pi -e 's/    if \(this\.claimExtractor === null\) \{/    if (this.claimExtractor === null \&\& false) {/' "$W"
-check "an absent extractor called anyway"
+perl -0pi -e "s/    private readonly claimExtractor: ClaimExtractor \| null = null,/    private readonly claimExtractor: ClaimExtractor | null = { extract: async () => ({ outcome: 'ok', claims: [] }) },/" "$W"
+check "an absent extractor silently replaced by one that finds nothing"
 
-perl -0pi -e 's/    const \{ claims, discards \} = verifyClaims\(\{/    const { claims, discards } = ({ claims: extraction.claims, discards: [] } as never) ?? verifyClaims({/' "$W"
+perl -0pi -e 's/    const result = checkOne\(proposal, input\.documentText\);/    const result = { text: proposal.text, span: proposal.span, kind: proposal.kind };/' "$V"
 check "the gate skipped entirely: proposed claims published unverified"
+
+perl -0pi -e 's/      maxClaims: this\.options\.maxClaims,/      maxClaims: Number.MAX_SAFE_INTEGER,/' "$W"
+check "the worker ignores the configured per-filing claim cap"
 
 echo ""
 echo "=== independence checks ==="
