@@ -91,6 +91,9 @@ async function main(): Promise<void> {
       maxAttempts: config.enrichmentMaxAttempts,
       retryBaseMs: config.enrichmentRetryBaseMs,
       retryMaxMs: config.enrichmentRetryMaxMs,
+      parseWindowMs: config.enrichmentParseWindowMs,
+      maxParseAttempts: config.enrichmentMaxParseAttempts,
+      parseRetryBaseMs: config.enrichmentParseRetryBaseMs,
       leaseMs: config.enrichmentLeaseMs,
       alertWindowMs: config.alertWindowMs,
       watchlist: config.watchlist,
@@ -110,6 +113,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     `claimed=${result.claimed} enriched=${result.enriched} ` +
       `(amount refused on ${result.refused}) unparseable=${result.unparseable} ` +
+      `parse-retried=${result.parseRetried} ` +
       `retried=${result.retried} failed=${result.failed} ` +
       `would-alert=${result.alerted} in ${(elapsed / 1000).toFixed(1)}s\n`,
   );

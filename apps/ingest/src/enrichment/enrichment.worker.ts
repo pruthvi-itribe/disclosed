@@ -3,6 +3,8 @@ import { describeError, stackOf } from '@app/common';
 import {
   classifyFetchFailure,
   decideAttachment,
+  decideParseFailure,
+  describeParseRetry,
   extractPdfText,
   hasUsableTextLayer,
   isWithinAlertWindow,
@@ -32,6 +34,12 @@ export interface EnrichmentOptions {
   maxAttempts: number;
   retryBaseMs: number;
   retryMaxMs: number;
+  /** How long after dissemination a parse failure may still be an upload race. */
+  parseWindowMs: number;
+  /** Reads that ended without usable text before the failure becomes terminal. */
+  maxParseAttempts: number;
+  /** First parse-retry delay. Doubles per parse attempt. */
+  parseRetryBaseMs: number;
   /** How long a claim reserves a filing before another worker may take it. */
   leaseMs: number;
   /** Cold-start suppression, shared with the poller's own alert gate. */
@@ -46,6 +54,11 @@ export interface EnrichmentTickResult {
   /** Documents read successfully whose amount the extractor refused. */
   readonly refused: number;
   readonly unparseable: number;
+  /**
+   * Parse failures put back to be looked at again, because the filing is young
+   * enough that NSE's own upload could still be the explanation.
+   */
+  readonly parseRetried: number;
   /** Transient failures put back with a backoff. */
   readonly retried: number;
   /** Transient failures that exhausted the attempt budget. */
@@ -59,6 +72,7 @@ const EMPTY_TICK: EnrichmentTickResult = {
   enriched: 0,
   refused: 0,
   unparseable: 0,
+  parseRetried: 0,
   retried: 0,
   failed: 0,
   alerted: 0,
@@ -107,10 +121,15 @@ const EMPTY_TICK: EnrichmentTickResult = {
  *
  *   - **`tick()` never throws.** Every failure is counted and logged. A worker
  *     that dies on one bad document stops enriching every document after it.
- *   - **Terminal states are terminal.** A ZIP, a `"-"` sentinel, a truncated
- *     PDF and a raster scan all reach `unparseable` with a reason and are never
- *     claimed again. Without that, 3.3% of filings are an infinite retry loop
- *     aimed at NSE.
+ *   - **Terminal states are terminal.** A ZIP, a `"-"` sentinel and a raster
+ *     scan all reach `unparseable` with a reason and are never claimed again.
+ *     Without that, 3.3% of filings are an infinite retry loop aimed at NSE.
+ *   - **Except while the filing is young enough to be an upload in progress.**
+ *     Bytes that will not parse are provisional for the first hour after
+ *     dissemination and permanent afterwards, because this pipeline has already
+ *     lost a filing to NSE's own upload race. `parse-retry.ts` owns that call
+ *     and argues the window; every no-document verdict is routed through it, so
+ *     no state can reach the database without it having been consulted.
  *   - **Persist, then alert.** The same order the poller uses, for the same
  *     reason: a message about a verdict that was never stored cannot be
  *     explained afterwards.
@@ -266,89 +285,96 @@ export class EnrichmentWorker {
     claimed: ClaimedFiling,
     now: Date,
   ): Promise<EnrichmentTickResult> {
-    const { filing, attempts } = claimed;
+    const { filing, attempts, parseAttempts } = claimed;
     const base = { ...EMPTY_TICK, claimed: 1 };
+
+    /**
+     * Every no-document verdict leaves through here, so no reason can reach the
+     * database without the retry policy having seen it. Routing the states that
+     * can never be a race (a ZIP, a `"-"` url) through the same call is what
+     * makes that true — the policy answers `terminal` for them and the worker
+     * has one path rather than two that must be kept in step.
+     */
+    const noDocument = async (
+      reason: UnparseableReason,
+      detail: string | null,
+    ): Promise<EnrichmentTickResult> => ({
+      ...base,
+      ...(await this.recordParseVerdict(
+        filing,
+        attempts,
+        parseAttempts + 1,
+        now,
+        reason,
+        detail,
+      )),
+    });
 
     const decision = decideAttachment(filing.attachmentUrl);
     if (decision.outcome === 'skip') {
-      await this.recordUnparseable(
-        filing,
-        attempts,
-        now,
-        decision.reason,
-        null,
-      );
-      return { ...base, unparseable: 1 };
+      return noDocument(decision.reason, null);
     }
 
     const fetched = await this.fetcher.fetch(decision.url);
 
     if (fetched.outcome === 'oversized') {
-      await this.recordUnparseable(
-        filing,
-        attempts,
-        now,
+      return noDocument(
         'oversized',
         `attachment exceeds the download cap (${fetched.bytes ?? 'unknown'} bytes)`,
       );
-      return { ...base, unparseable: 1 };
     }
 
     if (fetched.outcome === 'failed') {
       const verdict = classifyFetchFailure(fetched.status);
       if (verdict.kind === 'terminal') {
-        await this.recordUnparseable(
-          filing,
-          attempts,
-          now,
-          verdict.reason,
-          fetched.message,
-        );
-        return { ...base, unparseable: 1 };
+        return noDocument(verdict.reason, fetched.message);
       }
       return {
         ...base,
-        ...(await this.recordRetry(filing, attempts, now, fetched.message)),
+        ...(await this.recordRetry(
+          filing,
+          attempts,
+          parseAttempts,
+          now,
+          fetched.message,
+        )),
       };
     }
 
     const parsed = await extractPdfText(fetched.body, this.pdfParser);
     if (parsed.outcome === 'unreadable') {
-      // NOT retryable either way, and this is the measurement the whole
-      // terminal-state design rests on: NSE serves a percent or so of its PDFs
-      // truncated at origin, with its own content-length matching the short
-      // body, so re-fetching returns identical bytes forever. The reason is
-      // read off the bytes rather than assumed — see `parseFailureReason`.
-      await this.recordUnparseable(
-        filing,
-        attempts,
-        now,
-        parseFailureReason(fetched.body),
-        parsed.message,
-      );
-      return { ...base, unparseable: 1 };
+      // The reason is READ OFF THE BYTES rather than assumed — see
+      // `parseFailureReason` — and whether it is final is a separate question
+      // the policy answers from the filing's age. NSE serves a percent or so of
+      // its PDFs genuinely truncated at origin and re-fetching those returns
+      // identical bytes forever; it also serves a document that is simply still
+      // being written, and this pipeline has already lost one of those.
+      return noDocument(parseFailureReason(fetched.body), parsed.message);
     }
 
     if (!hasUsableTextLayer(parsed.text)) {
-      await this.recordUnparseable(
-        filing,
-        attempts,
-        now,
+      return noDocument(
         'no-text-layer',
         `${parsed.pages} page(s) yielded no text layer`,
       );
-      return { ...base, unparseable: 1 };
     }
 
     return {
       ...base,
-      ...(await this.readAndRecord(filing, attempts, now, parsed.text)),
+      ...(await this.readAndRecord(
+        filing,
+        attempts,
+        parseAttempts,
+        now,
+        parsed.text,
+      )),
     };
   }
 
   private async readAndRecord(
     filing: Filing,
     attempts: number,
+    parseAttempts: number,
     now: Date,
     documentText: string,
   ): Promise<Partial<EnrichmentTickResult>> {
@@ -368,6 +394,7 @@ export class EnrichmentWorker {
     const enrichment: FilingEnrichment = {
       state: 'enriched',
       attempts,
+      parseAttempts,
       attemptedAt: now,
       nextAttemptAt: null,
       unparseableReason: null,
@@ -471,44 +498,75 @@ export class EnrichmentWorker {
     }
   }
 
-  private async recordUnparseable(
+  /**
+   * Records a read that produced no document, terminally or provisionally.
+   *
+   * THE POLICY DECIDES, NOT THIS METHOD. `decideParseFailure` is pure and owns
+   * both the age window and the parse-attempt budget; everything here is the
+   * write that follows from its answer. Keeping the decision out of the worker
+   * is what lets the LICHSGFIN case — a filing lost to NSE's own upload race —
+   * be exercised without a network, a clock or a database.
+   *
+   * On a retry the filing goes back to `pending` with `unparseableReason` left
+   * NULL. That is deliberate: the dashboard groups unreadable documents by that
+   * field, and a filing still queued for another look is not yet an unreadable
+   * document. What it saw is written to `lastError`, which the dashboard already
+   * shows, so the operator loses nothing.
+   */
+  private async recordParseVerdict(
     filing: Filing,
     attempts: number,
+    parseAttempts: number,
     now: Date,
     reason: UnparseableReason,
     lastError: string | null,
-  ): Promise<void> {
+  ): Promise<Partial<EnrichmentTickResult>> {
+    const disposition = decideParseFailure({
+      reason,
+      disseminatedAt: filing.disseminatedAt,
+      now,
+      parseAttempts,
+      maxParseAttempts: this.options.maxParseAttempts,
+      windowMs: this.options.parseWindowMs,
+      baseMs: this.options.parseRetryBaseMs,
+    });
+
+    if (disposition.kind === 'retry') {
+      this.logger.log(
+        `seqId ${filing.seqId} (${filing.symbol}) would not parse (${reason}) ` +
+          `and is young enough to be NSE's upload still running; ` +
+          `parse attempt ${parseAttempts} of ${this.options.maxParseAttempts}, ` +
+          `next at ${disposition.nextAttemptAt.toISOString()}`,
+      );
+      await this.repository.recordEnrichment(filing.seqId, {
+        ...blankVerdict(attempts, parseAttempts, now),
+        state: 'pending',
+        nextAttemptAt: disposition.nextAttemptAt,
+        lastError: describeParseRetry(reason, lastError),
+      });
+      return { parseRetried: 1 };
+    }
+
     this.logger.log(
       `seqId ${filing.seqId} (${filing.symbol}) is unparseable: ${reason}`,
     );
     await this.repository.recordEnrichment(filing.seqId, {
+      ...blankVerdict(attempts, parseAttempts, now),
       state: 'unparseable',
-      attempts,
-      attemptedAt: now,
-      // Explicitly null: a terminal filing must not carry a future attempt
-      // time, or a later reader will believe it is still queued.
-      nextAttemptAt: null,
+      // `nextAttemptAt` stays null from `blankVerdict`: a terminal filing must
+      // not carry a future attempt time, or a later reader will believe it is
+      // still queued.
       unparseableReason: reason,
       lastError,
-      documentChars: null,
-      amountRupees: null,
-      amountEvidence: null,
-      amountAnchor: null,
-      amountLabel: null,
-      amountRefusalReason: null,
-      amountRefusalDetail: null,
-      counterparty: null,
-      counterpartyEvidence: null,
-      counterpartyRefusalReason: null,
-      headline: null,
-      contextLine: null,
     });
+    return { unparseable: 1 };
   }
 
   /** Puts a transient failure back with a backoff, or gives up on it. */
   private async recordRetry(
     filing: Filing,
     attempts: number,
+    parseAttempts: number,
     now: Date,
     message: string,
   ): Promise<Partial<EnrichmentTickResult>> {
@@ -528,24 +586,14 @@ export class EnrichmentWorker {
     }
 
     await this.repository.recordEnrichment(filing.seqId, {
+      // The parse budget is carried through UNCHANGED. A timeout is not a
+      // failure to read bytes, and spending the upload-race allowance on one
+      // would put a filing back in exactly the hole `parse-retry.ts` exists to
+      // fill.
+      ...blankVerdict(attempts, parseAttempts, now),
       state: exhausted ? 'failed' : 'pending',
-      attempts,
-      attemptedAt: now,
       nextAttemptAt: exhausted ? null : new Date(now.getTime() + delayMs),
-      unparseableReason: null,
       lastError: message,
-      documentChars: null,
-      amountRupees: null,
-      amountEvidence: null,
-      amountAnchor: null,
-      amountLabel: null,
-      amountRefusalReason: null,
-      amountRefusalDetail: null,
-      counterparty: null,
-      counterpartyEvidence: null,
-      counterpartyRefusalReason: null,
-      headline: null,
-      contextLine: null,
     });
 
     return exhausted ? { failed: 1 } : { retried: 1 };
@@ -596,6 +644,41 @@ export class EnrichmentWorker {
  * seven branches no input can reach — and an unreachable branch is a claim
  * nobody can check.
  */
+/**
+ * An enrichment carrying no verdict: the counters, the clock, and eighteen
+ * nulls.
+ *
+ * Exists because `recordEnrichment` `$set`s the WHOLE block rather than the
+ * fields that changed, which is what stops a filing ending up with an amount
+ * from one attempt and a refusal reason from another. Three call sites need
+ * that same wall of nulls, and three hand-written copies is three chances for
+ * one of them to forget a field and silently carry a stale value forward.
+ */
+const blankVerdict = (
+  attempts: number,
+  parseAttempts: number,
+  now: Date,
+): Omit<FilingEnrichment, 'state'> => ({
+  attempts,
+  parseAttempts,
+  attemptedAt: now,
+  nextAttemptAt: null,
+  unparseableReason: null,
+  lastError: null,
+  documentChars: null,
+  amountRupees: null,
+  amountEvidence: null,
+  amountAnchor: null,
+  amountLabel: null,
+  amountRefusalReason: null,
+  amountRefusalDetail: null,
+  counterparty: null,
+  counterpartyEvidence: null,
+  counterpartyRefusalReason: null,
+  headline: null,
+  contextLine: null,
+});
+
 const merge = (
   tally: EnrichmentTickResult,
   delta: EnrichmentTickResult,
@@ -604,6 +687,7 @@ const merge = (
   enriched: tally.enriched + delta.enriched,
   refused: tally.refused + delta.refused,
   unparseable: tally.unparseable + delta.unparseable,
+  parseRetried: tally.parseRetried + delta.parseRetried,
   retried: tally.retried + delta.retried,
   failed: tally.failed + delta.failed,
   alerted: tally.alerted + delta.alerted,

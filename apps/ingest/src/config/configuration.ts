@@ -30,6 +30,10 @@ export interface IngestConfig {
   readonly enrichmentMaxAttempts: number;
   readonly enrichmentRetryBaseMs: number;
   readonly enrichmentRetryMaxMs: number;
+  /** How long after dissemination a parse failure may still be an upload race. */
+  readonly enrichmentParseWindowMs: number;
+  readonly enrichmentMaxParseAttempts: number;
+  readonly enrichmentParseRetryBaseMs: number;
   readonly enrichmentLeaseMs: number;
   readonly enrichmentMaxBytes: number;
   /** IST days the derived-context line asks about, before clamping to coverage. */
@@ -51,6 +55,9 @@ export const NUMERIC_KEYS = [
   'ENRICH_MAX_ATTEMPTS',
   'ENRICH_RETRY_BASE_MS',
   'ENRICH_RETRY_MAX_MS',
+  'ENRICH_PARSE_WINDOW_MS',
+  'ENRICH_MAX_PARSE_ATTEMPTS',
+  'ENRICH_PARSE_RETRY_BASE_MS',
   'ENRICH_LEASE_MS',
   'ENRICH_MAX_BYTES',
   'CONTEXT_WINDOW_DAYS',
@@ -96,6 +103,14 @@ export const CONFIG_DEFAULTS = {
   ENRICH_MAX_ATTEMPTS: 5,
   ENRICH_RETRY_BASE_MS: 60_000,
   ENRICH_RETRY_MAX_MS: 3_600_000,
+  // A parse failure is only ever an upload race while the filing is minutes
+  // old; an hour is an order of magnitude beyond the one observed case and is
+  // short enough that a backfill of week-old filings retries nothing. The
+  // reasoning, and the LICHSGFIN filing this exists for, are in
+  // `libs/filings/src/logic/parse-retry.ts`.
+  ENRICH_PARSE_WINDOW_MS: 3_600_000,
+  ENRICH_MAX_PARSE_ATTEMPTS: 3,
+  ENRICH_PARSE_RETRY_BASE_MS: 300_000,
   // Twice the fetch timeout plus parse time: long enough that a second worker
   // cannot take a document still being fetched, short enough that a crashed
   // worker's claims free up within a couple of minutes.
@@ -253,6 +268,9 @@ export const loadConfig = (
   enrichmentMaxAttempts: readNumeric('ENRICH_MAX_ATTEMPTS', env),
   enrichmentRetryBaseMs: readNumeric('ENRICH_RETRY_BASE_MS', env),
   enrichmentRetryMaxMs: readNumeric('ENRICH_RETRY_MAX_MS', env),
+  enrichmentParseWindowMs: readNumeric('ENRICH_PARSE_WINDOW_MS', env),
+  enrichmentMaxParseAttempts: readNumeric('ENRICH_MAX_PARSE_ATTEMPTS', env),
+  enrichmentParseRetryBaseMs: readNumeric('ENRICH_PARSE_RETRY_BASE_MS', env),
   enrichmentLeaseMs: readNumeric('ENRICH_LEASE_MS', env),
   enrichmentMaxBytes: readNumeric('ENRICH_MAX_BYTES', env),
   contextWindowDays: readNumeric('CONTEXT_WINDOW_DAYS', env),

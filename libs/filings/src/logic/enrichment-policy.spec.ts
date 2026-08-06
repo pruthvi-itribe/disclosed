@@ -244,8 +244,12 @@ describe('the enrichment state machine', () => {
   it('starts every filing pending with nothing claimed', () => {
     expect(PENDING_ENRICHMENT.state).toBe('pending');
     expect(PENDING_ENRICHMENT.attempts).toBe(0);
+    // The parse budget starts unspent as well, and starts at ZERO rather than
+    // at one: a filing that has never been claimed has not failed to read.
+    expect(PENDING_ENRICHMENT.parseAttempts).toBe(0);
+    const counters = new Set(['state', 'attempts', 'parseAttempts']);
     for (const [key, value] of Object.entries(PENDING_ENRICHMENT)) {
-      if (key === 'state' || key === 'attempts') continue;
+      if (counters.has(key)) continue;
       expect(value).toBeNull();
     }
   });

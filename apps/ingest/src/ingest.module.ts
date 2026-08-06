@@ -134,6 +134,13 @@ export const FILING_MODEL = 'Filing';
           maxAttempts: config.getOrThrow<number>('enrichmentMaxAttempts'),
           retryBaseMs: config.getOrThrow<number>('enrichmentRetryBaseMs'),
           retryMaxMs: config.getOrThrow<number>('enrichmentRetryMaxMs'),
+          parseWindowMs: config.getOrThrow<number>('enrichmentParseWindowMs'),
+          maxParseAttempts: config.getOrThrow<number>(
+            'enrichmentMaxParseAttempts',
+          ),
+          parseRetryBaseMs: config.getOrThrow<number>(
+            'enrichmentParseRetryBaseMs',
+          ),
           leaseMs: config.getOrThrow<number>('enrichmentLeaseMs'),
           alertWindowMs: config.getOrThrow<number>('alertWindowMs'),
           watchlist: config.getOrThrow<readonly string[]>('watchlist'),

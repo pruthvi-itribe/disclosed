@@ -13,6 +13,7 @@ export * from './logic/context-line';
 export * from './logic/attachment';
 export * from './logic/enrichment.types';
 export * from './logic/enrichment-policy';
+export * from './logic/parse-retry';
 export * from './logic/html-entities';
 export * from './logic/legal-block';
 export * from './logic/safe-echo';

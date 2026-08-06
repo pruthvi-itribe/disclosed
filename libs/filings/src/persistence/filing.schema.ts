@@ -22,6 +22,7 @@ const EnrichmentSchema = new Schema<FilingEnrichment>(
   {
     state: { type: String, default: 'pending' },
     attempts: { type: Number, default: 0 },
+    parseAttempts: { type: Number, default: 0 },
     attemptedAt: { type: Date, default: null },
     nextAttemptAt: { type: Date, default: null },
     unparseableReason: { type: String, default: null },

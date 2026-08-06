@@ -9,7 +9,14 @@ import type { CounterpartyRefusalReason } from './counterparty';
  *
  *     pending ──fetch+parse ok──▶ enriched     (terminal, the good one)
  *        │
- *        ├──not a PDF / truncated / no text──▶ unparseable  (TERMINAL, never retried)
+ *        ├──not a PDF / no text / oversized─▶ unparseable  (TERMINAL, never retried)
+ *        │
+ *        ├──truncated / unreadable bytes────▶ unparseable, but only once the
+ *        │                                    filing is too old for the failure
+ *        │                                    to be NSE's upload still running.
+ *        │                                    While it is young: pending, with a
+ *        │                                    parse-attempt budget of its own.
+ *        │                                    See `parse-retry.ts`.
  *        │
  *        └──timeout / 5xx / 403 / network───▶ pending (attempts+1, backoff)
  *                                                │
@@ -24,6 +31,15 @@ import type { CounterpartyRefusalReason } from './counterparty';
  * filings in the recorded month) is 100% ZIP, and 146 filings carry the string
  * `"-"` where a URL should be. Without a terminal state each of those is an
  * infinite retry loop pointed at the exchange.
+ *
+ * IT IS ALSO WHERE THIS PIPELINE LOST A FILING. `LICHSGFIN` seqId 106727908 was
+ * fetched minutes after publication, arrived without a `%%EOF`, was recorded
+ * `truncated-at-origin` — and parsed cleanly on a later re-fetch of the same
+ * URL, yielding 75,528 characters. The bytes were not truncated; this pipeline
+ * had raced NSE's own upload and written the loss down as permanent. So the
+ * two states that describe BYTES IN FLIGHT are terminal only once the filing is
+ * old enough that a half-finished upload is no longer a possible explanation.
+ * `parse-retry.ts` owns that decision and argues the window and the budget.
  */
 
 /** The four states a filing's enrichment can be in. */
@@ -74,6 +90,15 @@ export interface FilingEnrichment {
   readonly state: EnrichmentState;
   /** Fetch attempts made, including the one that reached a terminal state. */
   readonly attempts: number;
+  /**
+   * Times reading this filing's attachment ended without usable text.
+   *
+   * A SEPARATE BUDGET from `attempts`, not a subset of it. A timeout and a
+   * half-written PDF are different failures with different remedies, and
+   * sharing one counter would let three timeouts silently spend the allowance
+   * that exists to survive NSE's upload race. See `parse-retry.ts`.
+   */
+  readonly parseAttempts: number;
   /** When the last attempt ran. Null before the first. */
   readonly attemptedAt: Date | null;
   /** Earliest instant the next attempt may run. Null when none is due. */
@@ -112,6 +137,7 @@ export interface FilingEnrichment {
 export const PENDING_ENRICHMENT: FilingEnrichment = {
   state: 'pending',
   attempts: 0,
+  parseAttempts: 0,
   attemptedAt: null,
   nextAttemptAt: null,
   unparseableReason: null,

@@ -62,6 +62,15 @@ export interface ClaimedFiling {
   readonly filing: Filing;
   /** Attempts made INCLUDING this claim. Always at least 1. */
   readonly attempts: number;
+  /**
+   * Parse failures recorded BEFORE this claim. Zero on a first look.
+   *
+   * Not incremented by the claim, unlike `attempts`: most claims never reach
+   * the parser, so incrementing here would spend the parse budget on documents
+   * that fetched and read perfectly. The worker adds one when the bytes it
+   * fetched will not parse.
+   */
+  readonly parseAttempts: number;
 }
 
 /** What the derived-context line needs counted, and the counts themselves. */
@@ -112,6 +121,29 @@ export function attemptsOf(document: {
   return typeof attempts === 'number' && Number.isFinite(attempts)
     ? attempts
     : 1;
+}
+
+/**
+ * Parse failures already recorded on a document, defaulting to none.
+ *
+ * Defaults to 0 rather than 1, unlike `attemptsOf`, and the difference is the
+ * whole point of the two functions being separate. `attempts` is incremented BY
+ * the claim, so a claimed document always has at least one; `parseAttempts` is
+ * incremented only when bytes fail to parse, which most claims never reach.
+ * Defaulting it to 1 would spend a third of the race allowance before the
+ * parser had been asked anything.
+ *
+ * A non-numeric value — a document written by an older schema, which is every
+ * document in the live collection today — reads as 0, so those filings get the
+ * full budget rather than an undefined one that makes the comparison NaN.
+ */
+export function parseAttemptsOf(document: {
+  enrichment?: { parseAttempts?: number };
+}): number {
+  const parseAttempts = document.enrichment?.parseAttempts;
+  return typeof parseAttempts === 'number' && Number.isFinite(parseAttempts)
+    ? parseAttempts
+    : 0;
 }
 
 export class EnrichmentRepository {
@@ -177,10 +209,14 @@ export class EnrichmentRepository {
     if (claimed === null) return null;
 
     const document = claimed as unknown as Filing & {
-      enrichment?: { attempts?: number };
+      enrichment?: { attempts?: number; parseAttempts?: number };
     };
 
-    return { filing: document, attempts: attemptsOf(document) };
+    return {
+      filing: document,
+      attempts: attemptsOf(document),
+      parseAttempts: parseAttemptsOf(document),
+    };
   }
 
   /**

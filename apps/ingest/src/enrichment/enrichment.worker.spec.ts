@@ -12,6 +12,13 @@ import type { FilingContextService } from './filing-context.service';
 import { EnrichmentWorker, type EnrichmentOptions } from './enrichment.worker';
 
 const NOW = new Date('2026-08-06T06:00:00.000Z');
+
+/**
+ * A filing published two hours ago: outside the parse-retry window, so a
+ * document that will not parse is a permanent property of the document rather
+ * than a race with NSE's upload.
+ */
+const OLD = new Date(NOW.getTime() - 7_200_000);
 const PDF_URL = 'https://nsearchives.nseindia.com/corporate/RAILTEL.pdf';
 
 const ORDER_DOCUMENT =
@@ -114,6 +121,9 @@ const OPTIONS: EnrichmentOptions = {
   maxAttempts: 3,
   retryBaseMs: 1000,
   retryMaxMs: 10_000,
+  parseWindowMs: 3_600_000,
+  maxParseAttempts: 3,
+  parseRetryBaseMs: 300_000,
   leaseMs: 60_000,
   alertWindowMs: 600_000,
   watchlist: [],
@@ -135,7 +145,7 @@ function harness(overrides: {
   contextLine?: string | null;
 }): Harness {
   const repository = new StubRepository(
-    overrides.queue ?? [{ filing: filing(), attempts: 1 }],
+    overrides.queue ?? [{ filing: filing(), attempts: 1, parseAttempts: 0 }],
   );
   const fetcher = new StubFetcher(overrides.fetch ?? okBody());
   const telegram = new StubTelegram();
@@ -193,9 +203,9 @@ describe('EnrichmentWorker — the happy path', () => {
   it('drains the whole batch, newest first, until the queue is empty', async () => {
     const { worker, repository } = harness({
       queue: [
-        { filing: filing({ seqId: 3 }), attempts: 1 },
-        { filing: filing({ seqId: 2 }), attempts: 1 },
-        { filing: filing({ seqId: 1 }), attempts: 1 },
+        { filing: filing({ seqId: 3 }), attempts: 1, parseAttempts: 0 },
+        { filing: filing({ seqId: 2 }), attempts: 1, parseAttempts: 0 },
+        { filing: filing({ seqId: 1 }), attempts: 1, parseAttempts: 0 },
       ],
     });
 
@@ -208,6 +218,7 @@ describe('EnrichmentWorker — the happy path', () => {
     const queue = Array.from({ length: 10 }, (_unused, index) => ({
       filing: filing({ seqId: index }),
       attempts: 1,
+      parseAttempts: 0,
     }));
     const { worker } = harness({ queue, options: { batchSize: 4 } });
 
@@ -252,7 +263,13 @@ describe('EnrichmentWorker — the follow-up alert', () => {
 
   it('respects the routine-category gate', async () => {
     const { worker, telegram } = harness({
-      queue: [{ filing: filing({ category: 'Trading Window' }), attempts: 1 }],
+      queue: [
+        {
+          filing: filing({ category: 'Trading Window' }),
+          attempts: 1,
+          parseAttempts: 0,
+        },
+      ],
     });
     await worker.tick(NOW);
     expect(telegram.sent).toHaveLength(0);
@@ -299,7 +316,9 @@ describe('EnrichmentWorker — the follow-up alert', () => {
 
   it('persists before it alerts', async () => {
     const order: string[] = [];
-    const repository = new StubRepository([{ filing: filing(), attempts: 1 }]);
+    const repository = new StubRepository([
+      { filing: filing(), attempts: 1, parseAttempts: 0 },
+    ]);
     const telegram = new StubTelegram();
     const original = repository.recordEnrichment.bind(repository);
     repository.recordEnrichment = async (seqId, enrichment) => {
@@ -342,7 +361,9 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
     ],
   ])('reaches unparseable for %s', async (_label, attachmentUrl, reason) => {
     const { worker, repository, fetcher } = harness({
-      queue: [{ filing: filing({ attachmentUrl }), attempts: 1 }],
+      queue: [
+        { filing: filing({ attachmentUrl }), attempts: 1, parseAttempts: 0 },
+      ],
     });
 
     const result = await worker.tick(NOW);
@@ -357,9 +378,17 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
   });
 
   it('reaches unparseable for a PDF truncated at origin', async () => {
+    // OLD, and that is now load-bearing rather than incidental: the same bytes
+    // on a filing published a minute ago are looked at again, because NSE's own
+    // upload could still be running. See `parse-retry.ts` and the LICHSGFIN
+    // filing this pipeline lost to exactly that race.
     const worker = new EnrichmentWorker(
       new StubRepository([
-        { filing: filing(), attempts: 1 },
+        {
+          filing: filing({ disseminatedAt: OLD }),
+          attempts: 1,
+          parseAttempts: 0,
+        },
       ]) as unknown as EnrichmentRepository,
       new StubFetcher(okBody()) as unknown as AttachmentFetcher,
       new StubContext() as unknown as FilingContextService,
@@ -388,7 +417,11 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
     'reads the reason off %s rather than assuming it',
     async (_label, body, reason) => {
       const repository = new StubRepository([
-        { filing: filing(), attempts: 1 },
+        {
+          filing: filing({ disseminatedAt: OLD }),
+          attempts: 1,
+          parseAttempts: 0,
+        },
       ]);
       const worker = new EnrichmentWorker(
         repository as unknown as EnrichmentRepository,
@@ -487,7 +520,7 @@ describe('EnrichmentWorker — transient failures', () => {
 
   it('doubles the backoff per attempt', async () => {
     const { worker, repository } = harness({
-      queue: [{ filing: filing(), attempts: 2 }],
+      queue: [{ filing: filing(), attempts: 2, parseAttempts: 0 }],
       fetch: { outcome: 'failed', status: 503, message: 'nope' },
     });
 
@@ -499,7 +532,9 @@ describe('EnrichmentWorker — transient failures', () => {
 
   it('gives up once the attempt budget is spent', async () => {
     const { worker, repository } = harness({
-      queue: [{ filing: filing(), attempts: OPTIONS.maxAttempts }],
+      queue: [
+        { filing: filing(), attempts: OPTIONS.maxAttempts, parseAttempts: 0 },
+      ],
       fetch: { outcome: 'failed', status: 503, message: 'still down' },
     });
 
@@ -516,7 +551,9 @@ describe('EnrichmentWorker — transient failures', () => {
 
 describe('EnrichmentWorker — containment', () => {
   it('never throws when a document blows up mid-processing', async () => {
-    const repository = new StubRepository([{ filing: filing(), attempts: 1 }]);
+    const repository = new StubRepository([
+      { filing: filing(), attempts: 1, parseAttempts: 0 },
+    ]);
     repository.recordEnrichment = async () => {
       throw new Error('write failed');
     };
@@ -537,8 +574,8 @@ describe('EnrichmentWorker — containment', () => {
 
   it('one bad document does not cost the rest of the batch', async () => {
     const repository = new StubRepository([
-      { filing: filing({ seqId: 1 }), attempts: 1 },
-      { filing: filing({ seqId: 2 }), attempts: 1 },
+      { filing: filing({ seqId: 1 }), attempts: 1, parseAttempts: 0 },
+      { filing: filing({ seqId: 2 }), attempts: 1, parseAttempts: 0 },
     ]);
     const original = repository.recordEnrichment.bind(repository);
     repository.recordEnrichment = async (seqId, enrichment) => {
@@ -562,7 +599,9 @@ describe('EnrichmentWorker — containment', () => {
   });
 
   it('stops the tick rather than spinning when claiming itself fails', async () => {
-    const repository = new StubRepository([{ filing: filing(), attempts: 1 }]);
+    const repository = new StubRepository([
+      { filing: filing(), attempts: 1, parseAttempts: 0 },
+    ]);
     repository.claimThrows = true;
     const worker = new EnrichmentWorker(
       repository as unknown as EnrichmentRepository,
@@ -578,6 +617,7 @@ describe('EnrichmentWorker — containment', () => {
       enriched: 0,
       refused: 0,
       unparseable: 0,
+      parseRetried: 0,
       retried: 0,
       failed: 0,
       alerted: 0,
@@ -625,7 +665,7 @@ describe('EnrichmentWorker — containment', () => {
 
   it('skips a tick that overlaps one already in flight', async () => {
     const { worker, repository } = harness({
-      queue: [{ filing: filing(), attempts: 1 }],
+      queue: [{ filing: filing(), attempts: 1, parseAttempts: 0 }],
     });
 
     const [first, second] = await Promise.all([
@@ -642,7 +682,7 @@ describe('EnrichmentWorker — containment', () => {
 describe('EnrichmentWorker — the loop', () => {
   it('drains the queue, then idles rather than spinning', async () => {
     const { worker, repository } = harness({
-      queue: [{ filing: filing(), attempts: 1 }],
+      queue: [{ filing: filing(), attempts: 1, parseAttempts: 0 }],
       options: { idleIntervalMs: 20_000, batchSize: 1 },
     });
 
@@ -661,9 +701,9 @@ describe('EnrichmentWorker — the loop', () => {
   it('paces the fetches inside a tick', async () => {
     const { worker } = harness({
       queue: [
-        { filing: filing({ seqId: 1 }), attempts: 1 },
-        { filing: filing({ seqId: 2 }), attempts: 1 },
-        { filing: filing({ seqId: 3 }), attempts: 1 },
+        { filing: filing({ seqId: 1 }), attempts: 1, parseAttempts: 0 },
+        { filing: filing({ seqId: 2 }), attempts: 1, parseAttempts: 0 },
+        { filing: filing({ seqId: 3 }), attempts: 1, parseAttempts: 0 },
       ],
       options: { requestDelayMs: 25 },
     });
@@ -703,9 +743,9 @@ describe('EnrichmentWorker — shutdown mid-drain', () => {
     // Only meaningful while the loop is actually running: a tick invoked
     // directly has never been started, and must drain its whole batch.
     const repository = new StubRepository([
-      { filing: filing({ seqId: 1 }), attempts: 1 },
-      { filing: filing({ seqId: 2 }), attempts: 1 },
-      { filing: filing({ seqId: 3 }), attempts: 1 },
+      { filing: filing({ seqId: 1 }), attempts: 1, parseAttempts: 0 },
+      { filing: filing({ seqId: 2 }), attempts: 1, parseAttempts: 0 },
+      { filing: filing({ seqId: 3 }), attempts: 1, parseAttempts: 0 },
     ]);
     const telegram = new StubTelegram();
     const worker = new EnrichmentWorker(
@@ -727,5 +767,197 @@ describe('EnrichmentWorker — shutdown mid-drain', () => {
     // The first document completes; the loop notices the stop before claiming
     // a second one.
     expect(repository.recorded).toHaveLength(1);
+  });
+});
+
+/**
+ * The regression suite for the filing this pipeline lost.
+ *
+ * `LICHSGFIN` seqId 106727908 was fetched minutes after publication, arrived
+ * with no `%%EOF`, was written off as `truncated-at-origin` — a state the state
+ * machine called terminal — and parsed cleanly on a later re-fetch of the same
+ * URL. Every test here is about that shape: the SAME bytes must be provisional
+ * on a young filing and permanent on an old one.
+ */
+describe('EnrichmentWorker — a parse failure while the filing is still young', () => {
+  /** A worker whose fetcher returns `body` and whose parser always throws. */
+  const unparseableWorker = (
+    repository: StubRepository,
+    body = Buffer.from('%PDF-1.7 body bytes with no terminator'),
+    options: Partial<EnrichmentOptions> = {},
+  ): EnrichmentWorker =>
+    new EnrichmentWorker(
+      repository as unknown as EnrichmentRepository,
+      new StubFetcher({
+        outcome: 'ok',
+        body,
+        bytes: body.length,
+        contentType: 'application/pdf',
+      }) as unknown as AttachmentFetcher,
+      new StubContext() as unknown as FilingContextService,
+      new StubTelegram() as unknown as TelegramService,
+      { ...OPTIONS, ...options },
+      async () => {
+        throw new Error('Invalid PDF structure');
+      },
+    );
+
+  it('puts the filing back rather than losing it', async () => {
+    const repository = new StubRepository([
+      { filing: filing(), attempts: 1, parseAttempts: 0 },
+    ]);
+
+    const result = await unparseableWorker(repository).tick(NOW);
+
+    expect(result).toMatchObject({ parseRetried: 1, unparseable: 0 });
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'pending',
+      parseAttempts: 1,
+      // NOT recorded as an unreadable document: a filing still queued for
+      // another look is not yet one, and the dashboard groups by this field.
+      unparseableReason: null,
+      nextAttemptAt: new Date(NOW.getTime() + OPTIONS.parseRetryBaseMs),
+    });
+  });
+
+  it('says what it saw, so the operator is not left guessing', async () => {
+    const repository = new StubRepository([
+      { filing: filing(), attempts: 1, parseAttempts: 0 },
+    ]);
+    await unparseableWorker(repository).tick(NOW);
+
+    expect(onlyRecorded(repository).lastError).toContain('truncated-at-origin');
+    expect(onlyRecorded(repository).lastError).toContain('Invalid PDF');
+  });
+
+  it('bounds what it echoes from the parser into the record', async () => {
+    const repository = new StubRepository([
+      { filing: filing(), attempts: 1, parseAttempts: 0 },
+    ]);
+    const worker = new EnrichmentWorker(
+      repository as unknown as EnrichmentRepository,
+      new StubFetcher(okBody()) as unknown as AttachmentFetcher,
+      new StubContext() as unknown as FilingContextService,
+      new StubTelegram() as unknown as TelegramService,
+      OPTIONS,
+      async () => {
+        // A parser message is third-party text reaching a stored record and a
+        // log line; a newline in it forges a second log line.
+        throw new Error(`x`.repeat(500) + '\nFAKE LOG LINE');
+      },
+    );
+    await worker.tick(NOW);
+
+    const { lastError } = onlyRecorded(repository);
+    expect(lastError).not.toBeNull();
+    expect(lastError?.length ?? 0).toBeLessThan(80);
+    expect(lastError).not.toContain('\n');
+  });
+
+  it('spends the budget and then gives up for good', async () => {
+    const repository = new StubRepository([
+      {
+        filing: filing(),
+        attempts: 3,
+        parseAttempts: OPTIONS.maxParseAttempts - 1,
+      },
+    ]);
+
+    const result = await unparseableWorker(repository).tick(NOW);
+
+    expect(result).toMatchObject({ unparseable: 1, parseRetried: 0 });
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'unparseable',
+      unparseableReason: 'truncated-at-origin',
+      parseAttempts: OPTIONS.maxParseAttempts,
+      nextAttemptAt: null,
+    });
+  });
+
+  it('reads the second look successfully, which is the whole point', async () => {
+    // The LICHSGFIN case end to end: the same URL, refetched, now complete.
+    const repository = new StubRepository([
+      { filing: filing(), attempts: 2, parseAttempts: 1 },
+    ]);
+    const worker = new EnrichmentWorker(
+      repository as unknown as EnrichmentRepository,
+      new StubFetcher(okBody()) as unknown as AttachmentFetcher,
+      new StubContext() as unknown as FilingContextService,
+      new StubTelegram() as unknown as TelegramService,
+      OPTIONS,
+      parserOf(ORDER_DOCUMENT),
+    );
+
+    expect((await worker.tick(NOW)).enriched).toBe(1);
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'enriched',
+      amountRupees: 185_366_820,
+      // The spent attempt is kept on the record rather than reset, so the
+      // history of a filing that needed a second look survives it.
+      parseAttempts: 1,
+    });
+  });
+
+  it.each([
+    ['a ZIP', 'https://nsearchives.nseindia.com/corporate/x.zip', 'not-a-pdf'],
+    ['a missing url', null, 'no-attachment'],
+    [
+      'a url off the archive host',
+      'https://evil.example/x.pdf',
+      'untrusted-host',
+    ],
+  ] as const)(
+    'still gives up immediately on %s, however young the filing',
+    async (_label, attachmentUrl, reason) => {
+      const repository = new StubRepository([
+        { filing: filing({ attachmentUrl }), attempts: 1, parseAttempts: 0 },
+      ]);
+
+      const result = await unparseableWorker(repository).tick(NOW);
+
+      expect(result).toMatchObject({ unparseable: 1, parseRetried: 0 });
+      expect(onlyRecorded(repository)).toMatchObject({
+        state: 'unparseable',
+        unparseableReason: reason,
+      });
+    },
+  );
+
+  it('still gives up immediately on a raster scan', async () => {
+    // The document parsed. The characters-per-page distribution is bimodal
+    // with a gap two orders of magnitude wide, so this is a scan and no
+    // re-fetch produces a text layer.
+    const { worker, repository } = harness({ text: '   \n \f ' });
+    expect((await worker.tick(NOW)).unparseable).toBe(1);
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'unparseable',
+      unparseableReason: 'no-text-layer',
+    });
+  });
+
+  it('never spends the parse budget on a timeout', async () => {
+    // A network failure is not a failure to READ BYTES. Charging it to the
+    // parse budget would put a filing back in the hole this all exists to fill.
+    const repository = new StubRepository([
+      { filing: filing(), attempts: 1, parseAttempts: 2 },
+    ]);
+    const worker = new EnrichmentWorker(
+      repository as unknown as EnrichmentRepository,
+      new StubFetcher({
+        outcome: 'failed',
+        status: null,
+        message: 'socket hang up',
+      }) as unknown as AttachmentFetcher,
+      new StubContext() as unknown as FilingContextService,
+      new StubTelegram() as unknown as TelegramService,
+      OPTIONS,
+      parserOf(ORDER_DOCUMENT),
+    );
+
+    expect((await worker.tick(NOW)).retried).toBe(1);
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'pending',
+      parseAttempts: 2,
+    });
   });
 });

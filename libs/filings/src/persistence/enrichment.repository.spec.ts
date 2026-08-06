@@ -8,6 +8,7 @@ import {
 } from '../logic/enrichment.types';
 import {
   attemptsOf,
+  parseAttemptsOf,
   DEFAULT_CLAIM_LEASE_MS,
   EnrichmentRepository,
 } from './enrichment.repository';
@@ -509,5 +510,40 @@ describe('attemptsOf', () => {
     // an undefined attempt count makes the backoff NaN and a filing retries on
     // every tick forever — the exact failure the terminal states exist to stop.
     expect(attemptsOf(document)).toBe(1);
+  });
+});
+
+describe('parseAttemptsOf', () => {
+  it.each([
+    ['a fresh filing', { enrichment: { parseAttempts: 0 } }, 0],
+    ['one failed read', { enrichment: { parseAttempts: 1 } }, 1],
+    ['a spent budget', { enrichment: { parseAttempts: 3 } }, 3],
+  ])('reads %s as %d', (_label, document, expected) => {
+    expect(parseAttemptsOf(document)).toBe(expected);
+  });
+
+  it.each([
+    ['no enrichment block at all', {}],
+    ['an enrichment block with no counter', { enrichment: {} }],
+    [
+      'a counter that is not a number',
+      { enrichment: { parseAttempts: undefined } },
+    ],
+    ['NaN', { enrichment: { parseAttempts: Number.NaN } }],
+    ['Infinity', { enrichment: { parseAttempts: Number.POSITIVE_INFINITY } }],
+  ])('falls back to 0 for %s', (_label, document) => {
+    // ZERO, not 1, and the difference from `attemptsOf` is the point: every
+    // document in the live collection today predates this field, and defaulting
+    // it to 1 would silently spend a third of the upload-race allowance on
+    // every one of them before the parser had been asked anything.
+    expect(parseAttemptsOf(document)).toBe(0);
+  });
+
+  it('hands the worker a zero on a first claim through the real query', async () => {
+    await model.create(makeFiling(9101));
+    const claimed = await repo.claimNext(NOW);
+    expect(claimed?.parseAttempts).toBe(0);
+    // While `attempts` is incremented BY the claim, so it is never zero.
+    expect(claimed?.attempts).toBe(1);
   });
 });
