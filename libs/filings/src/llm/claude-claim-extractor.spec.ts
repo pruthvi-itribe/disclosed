@@ -129,6 +129,35 @@ describe('ClaudeClaimExtractor — the request', () => {
 });
 
 describe('ClaudeClaimExtractor — the reply', () => {
+  it('returns the claims the parser read, not a shape of its own', async () => {
+    // Pins the wiring rather than only the happy value: an adapter that stopped
+    // calling `parseClaimResponse` and returned an empty list would look
+    // healthy — every filing would simply record "the model found nothing".
+    const messages = new RecordingMessages({
+      stop_reason: 'end_turn',
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            claims: [
+              { span: 'one sentence', text: 'one claim', kind: 'target' },
+              { span: 'another sentence', text: 'another claim', kind: 'guidance' },
+              { span: 'a malformed one', text: 'a claim', kind: 'not-a-kind' },
+            ],
+          }),
+        },
+      ],
+    });
+
+    const result = await extractorWith(messages).extract(REQUEST);
+
+    expect(result.outcome).toBe('ok');
+    if (result.outcome !== 'ok') throw new Error('expected ok');
+    // Two good, one dropped by the parser — a count no bypass reproduces.
+    expect(result.claims).toHaveLength(2);
+    expect(result.claims[0].kind).toBe('target');
+  });
+
   it('reads the claims out of a good reply', async () => {
     const result = await extractorWith(new RecordingMessages()).extract(
       REQUEST,

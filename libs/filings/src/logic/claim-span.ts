@@ -136,8 +136,11 @@ export function findVerbatimSpan(
   const needle = normaliseSpan(span);
   if (needle.length < MIN_SPAN_CHARS) return null;
   if (needle.length > MAX_SPAN_CHARS) return null;
-  if (documentText.length === 0) return null;
 
+  // No empty-document guard, deliberately. A needle is at least
+  // MIN_SPAN_CHARS long and `''.indexOf(x)` is -1 for every non-empty x, so a
+  // guard here would be a branch no input can distinguish from the ordinary
+  // miss below — and an unreachable branch is a claim nobody can check.
   const haystack = collapse(documentText);
   const at = haystack.text.indexOf(needle);
   if (at === -1) return null;

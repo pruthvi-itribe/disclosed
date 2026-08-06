@@ -246,9 +246,6 @@ check "minimum span reduced to one character"
 perl -0pi -e 's/export const MAX_SPAN_CHARS = 400;/export const MAX_SPAN_CHARS = 100_000;/' "$S"
 check "span length unbounded (a whole document quoted into a Telegram message)"
 
-perl -0pi -e 's/  if \(documentText\.length === 0\) return null;//' "$S"
-check "empty document accepted as a haystack"
-
 perl -0pi -e 's/const WHITESPACE_RUN = \/\\s\+\/;/const WHITESPACE_RUN = \/[\\s\\w]+\/;/' "$S"
 check "whitespace collapse widened to swallow word characters"
 
@@ -270,7 +267,7 @@ echo "=== the number rule, span-scoped ==="
 perl -0pi -e 's/  const supported = new Set\(numbersIn\(span\)\);/  const supported = new Set<string>();\n  numbersIn(span);\n  return [];/' "$N"
 check "number check disabled (a claim states a figure its source does not)"
 
-perl -0pi -e "s/  value\.replace\(\/,\/g, ''\)\.replace\(\/\\\\.\\\$\/, ''\);/  value;/" "$N"
+perl -0pi -e "s/  token\.replace\(\/,\/g, ''\)/  token.replace(\/ZZZ\/g, '')/" "$N"
 check "comma canonicalisation dropped (10,000 stops matching 10000)"
 
 perl -0pi -e 's/const NUMBER_TOKEN = .*;/const NUMBER_TOKEN = \/[0-9]\/g;/' "$N"
@@ -304,7 +301,7 @@ echo "=== the gate's bookkeeping ==="
 perl -0pi -e 's/  const match = findVerbatimSpan\(documentText, claim\.span\);/  const match = { offset: 0, evidence: claim.span };/' "$V"
 check "the span is never looked for in the document at all"
 
-perl -0pi -e 's/    if \(seen\.has\(key\(result\.text\)\)\) \{/    if (false) {/' "$V"
+perl -0pi -e 's/    if \(seen\.has\(key\(result\.text\)\)\) \{/    if (seen.has(key(result.text)) \&\& false) {/' "$V"
 check "the same claim published twice on one line"
 
 perl -0pi -e 's/    claims: ranked\.slice\(0, limit\),/    claims: ranked,/' "$V"
@@ -349,14 +346,14 @@ check "documents with no claim vocabulary sent to a model"
 echo ""
 echo "=== the reply parser: the model's output is untrusted input ==="
 
-perl -0pi -e 's/    if \(!isClaimKind\(kind\)\) continue;//' "$P"
+perl -0pi -e "s/  typeof value === 'string' && \(CLAIM_KINDS as readonly string\[\]\)\.includes\(value\);/  typeof value === 'string';/" "$P"
 check "an unknown claim kind accepted (the ranker reads undefined)"
 
-perl -0pi -e "s/    if \(typeof span !== 'string' \|\| typeof text !== 'string'\) continue;//" "$P"
-check "a claim with no span accepted"
+perl -0pi -e "s/    if \(typeof entry !== 'object' \|\| entry === null\) continue;//" "$P"
+check "a null or bare-string entry accepted"
 
-perl -0pi -e 's/  if \(!Array\.isArray\(claims\)\) return \[\];//' "$P"
-check "a non-array reply iterated"
+perl -0pi -e "s/  if \(typeof raw !== 'object' \|\| raw === null\) return \[\];//" "$P"
+check "a null reply dereferenced instead of refused"
 
 perl -0pi -e 's/  const document = input\.documentText\.slice\(0, MAX_DOCUMENT_CHARS\);/  const document = input.documentText;/' "$P"
 check "the document cap removed from the request"
@@ -367,8 +364,8 @@ echo "=== the extractor's contract ==="
 perl -0pi -e "s/      if \(stopReason === 'refusal'\) \{/      if (false) {/" "$X"
 check "a model refusal read as a parse failure instead"
 
-perl -0pi -e 's/      return \{ outcome: .ok., claims: parseClaimResponse\(JSON\.parse\(body\)\) \};/      return { outcome: "ok", claims: parseClaimResponse(JSON.parse(body)) as never };/' "$X"
-check "reply parsing bypassed"
+perl -0pi -e 's/claims: parseClaimResponse\(JSON\.parse\(body\)\)/claims: []/' "$X"
+check "reply parsing bypassed (every filing records 'the model found nothing')"
 
 perl -0pi -e "s/    if \(apiKey\.trim\(\)\.length === 0\) return null;//" "$X"
 check "an extractor built with no key (700 failing calls a day)"
@@ -391,10 +388,10 @@ check "a retry scheduled past the window it will then be refused by"
 echo ""
 echo "=== the worker's claim stage ==="
 
-perl -0pi -e 's/    if \(!eligibility\.eligible\) \{/    if (false) {/' "$W"
+perl -0pi -e 's/    if \(!eligibility\.eligible\) \{/    if (!eligibility.eligible \&\& false) {/' "$W"
 check "the eligibility gate bypassed by the worker"
 
-perl -0pi -e 's/    if \(this\.claimExtractor === null\) \{/    if (false) {/' "$W"
+perl -0pi -e 's/    if \(this\.claimExtractor === null\) \{/    if (this.claimExtractor === null \&\& false) {/' "$W"
 check "an absent extractor called anyway"
 
 perl -0pi -e 's/    const \{ claims, discards \} = verifyClaims\(\{/    const { claims, discards } = ({ claims: extraction.claims, discards: [] } as never) ?? verifyClaims({/' "$W"

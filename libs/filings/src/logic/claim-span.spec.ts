@@ -95,8 +95,14 @@ describe('findVerbatimSpan', () => {
     });
 
     it('rejects a span longer than what may be stored and shown', () => {
-      const long = 'x'.repeat(MAX_SPAN_CHARS + 1);
+      // Pinned against a LITERAL as well as the constant. A test written only
+      // against `MAX_SPAN_CHARS` moves with the constant, so widening the bound
+      // to a hundred thousand characters would pass it — which is exactly the
+      // mutation that lets a whole document be quoted into a Telegram message.
+      expect(MAX_SPAN_CHARS).toBe(400);
+      const long = 'x'.repeat(401);
       expect(containsVerbatimSpan(long, long)).toBe(false);
+      expect(containsVerbatimSpan('y'.repeat(400), 'y'.repeat(400))).toBe(true);
     });
 
     it.each([[''], ['   '], ['\n\n']])(
