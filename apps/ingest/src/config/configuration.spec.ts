@@ -1,3 +1,4 @@
+import { CLAIM_TIMEOUT_MS } from '@app/filings/llm/claim-provider';
 import {
   claimApiKeyOf,
   CONFIG_DEFAULTS,
@@ -366,7 +367,12 @@ describe('the background attachment worker settings', () => {
     // limiting across 60 sampled requests, because the population is 17,000.
     expect(config.enrichmentRequestDelayMs).toBe(800);
     expect(config.enrichmentMaxAttempts).toBe(5);
-    expect(config.enrichmentLeaseMs).toBe(120_000);
+    // The lease must outlast everything one document can cost. With two model
+    // calls at a 120s ceiling each, plus the fetch, the old 120,000 expired
+    // while the worker still held the filing — which is a second worker
+    // claiming it and both writing a verdict.
+    expect(config.enrichmentLeaseMs).toBe(600_000);
+    expect(config.enrichmentLeaseMs).toBeGreaterThan(2 * CLAIM_TIMEOUT_MS);
     expect(config.contextWindowDays).toBe(30);
     // A parse failure is only an upload race while the filing is minutes old.
     expect(config.enrichmentParseWindowMs).toBe(3_600_000);

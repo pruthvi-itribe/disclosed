@@ -185,10 +185,19 @@ export const CONFIG_DEFAULTS = {
   ENRICH_PARSE_WINDOW_MS: 3_600_000,
   ENRICH_MAX_PARSE_ATTEMPTS: 3,
   ENRICH_PARSE_RETRY_BASE_MS: 300_000,
-  // Twice the fetch timeout plus parse time: long enough that a second worker
-  // cannot take a document still being fetched, short enough that a crashed
-  // worker's claims free up within a couple of minutes.
-  ENRICH_LEASE_MS: 120_000,
+  // RAISED FROM 120,000 BY THE SECOND MODEL CALL. The lease has to outlast
+  // everything one document can cost, and a results-bearing filing now costs a
+  // fetch (30s ceiling), a parse, a claims call and a results call (120s
+  // ceiling each) — up to about five minutes. At 120,000 the lease expired
+  // while the worker was still holding the document, which is not a slow tick:
+  // it is a second worker legitimately claiming a filing the first is midway
+  // through, and both then writing a verdict onto it.
+  //
+  // Ten minutes clears the worst case with margin and is still short enough
+  // that a crashed worker's claims free up inside one poll of a human's
+  // attention. The trade is only ever paid by a crash, which is rare, against
+  // a double-write, which would be silent.
+  ENRICH_LEASE_MS: 600_000,
   // A denial-of-service bound, not a throughput one. The previous 26 MB was set
   // from a corpus whose largest attachment was 22.2 MB and then refused 8 live
   // filings whose true sizes are 25.05 to 41.52 MB — five of the six distinct
