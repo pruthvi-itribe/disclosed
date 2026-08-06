@@ -2,6 +2,9 @@ import type {
   AttachmentFetcher,
   AttachmentResult,
   ClaimedFiling,
+  ClaimExtractionRequest,
+  ClaimExtractionResult,
+  ClaimExtractor,
   EnrichmentRepository,
   Filing,
   FilingEnrichment,
@@ -140,6 +143,7 @@ const OPTIONS: EnrichmentOptions = {
   leaseMs: 60_000,
   alertWindowMs: 600_000,
   watchlist: [],
+  maxClaims: 3,
 };
 
 interface Harness {
@@ -633,6 +637,8 @@ describe('EnrichmentWorker — containment', () => {
       parseRetried: 0,
       retried: 0,
       failed: 0,
+      claimed_lines: 0,
+      claimsDiscarded: 0,
       alerted: 0,
     });
     expect(repository.claimCalls).toBe(1);
@@ -1039,6 +1045,8 @@ describe('EnrichmentWorker — saying that it is alive', () => {
       parseRetried: 1,
       retried: 1,
       failed: 0,
+      claimed_lines: 2,
+      claimsDiscarded: 5,
       alerted: 2,
     });
 
@@ -1049,6 +1057,262 @@ describe('EnrichmentWorker — saying that it is alive', () => {
     expect(line).toContain('parse-retried 1');
     expect(line).toContain('retried 1');
     expect(line).toContain('failed 0');
+    expect(line).toContain('claim-lines 2');
+    expect(line).toContain('5 claim(s) discarded');
     expect(line).toContain('alerted 2');
+  });
+});
+
+/**
+ * The claim stage: what reaches a model, what comes back, and what is stored.
+ *
+ * NO NETWORK. A recorder stands in for the extractor, so every path — including
+ * the ones that only happen when something has gone wrong — is exercised
+ * without a key and without a request leaving the process.
+ */
+class StubExtractor {
+  public readonly requests: ClaimExtractionRequest[] = [];
+
+  constructor(
+    private readonly result: ClaimExtractionResult = {
+      outcome: 'ok',
+      claims: [],
+    },
+    private readonly throws: Error | null = null,
+  ) {}
+
+  async extract(
+    request: ClaimExtractionRequest,
+  ): Promise<ClaimExtractionResult> {
+    this.requests.push(request);
+    if (this.throws !== null) throw this.throws;
+    return this.result;
+  }
+}
+
+/** A press release long enough and narrative enough to be worth a model call. */
+const PRESS_RELEASE = [
+  'Mumbai, India - August 6, 2026: The Company today outlined its FY31 vision,',
+  'setting out its goal to build a Rs. 10,000 Cr Adjusted EBITDA business.',
+  'The Company has joined the Microsoft Intelligent Security Association.',
+  'x'.repeat(1_600),
+].join('\n');
+
+const TRUE_CLAIM = {
+  span: 'The Company has joined the Microsoft Intelligent Security Association.',
+  text: 'joins the Microsoft Intelligent Security Association',
+  kind: 'partnership' as const,
+};
+
+const claimHarness = (
+  extractor: StubExtractor | null,
+  overrides: { category?: string; text?: string } = {},
+) => {
+  const repository = new StubRepository([
+    {
+      filing: filing({ category: overrides.category ?? 'Press Release' }),
+      attempts: 1,
+      parseAttempts: 0,
+    },
+  ]);
+  const worker = new EnrichmentWorker(
+    repository as unknown as EnrichmentRepository,
+    new StubFetcher(okBody()) as unknown as AttachmentFetcher,
+    new StubContext() as unknown as FilingContextService,
+    new StubTelegram() as unknown as TelegramService,
+    OPTIONS,
+    parserOf(overrides.text ?? PRESS_RELEASE),
+    extractor as unknown as ClaimExtractor | null,
+  );
+  return { worker, repository };
+};
+
+describe('EnrichmentWorker — notable claims', () => {
+  it('stores a verified claim, its wire line and the document’s own sentence', async () => {
+    const extractor = new StubExtractor({
+      outcome: 'ok',
+      claims: [TRUE_CLAIM],
+    });
+    const { worker, repository } = claimHarness(extractor);
+
+    const result = await worker.tick(NOW);
+
+    expect(result.claimed_lines).toBe(1);
+    const stored = onlyRecorded(repository);
+    expect(stored.claimLine).toBe(
+      'RAILTEL: JOINS THE MICROSOFT INTELLIGENT SECURITY ASSOCIATION',
+    );
+    expect(stored.claims).toHaveLength(1);
+    expect(PRESS_RELEASE).toContain(stored.claims[0].span);
+    expect(stored.claimsProposed).toBe(1);
+    expect(stored.claimRefusalReason).toBeNull();
+  });
+
+  it('sends the document, the symbol and the exchange’s own words', async () => {
+    const extractor = new StubExtractor();
+    const { worker } = claimHarness(extractor);
+    await worker.tick(NOW);
+
+    expect(extractor.requests).toHaveLength(1);
+    expect(extractor.requests[0].symbol).toBe('RAILTEL');
+    expect(extractor.requests[0].documentText).toBe(PRESS_RELEASE);
+  });
+
+  it('DISCARDS an invented claim and records why', async () => {
+    const extractor = new StubExtractor({
+      outcome: 'ok',
+      claims: [
+        {
+          span: 'The Company will double its capacity within eighteen months.',
+          text: 'plans to double capacity within eighteen months',
+          kind: 'expansion',
+        },
+      ],
+    });
+    const { worker, repository } = claimHarness(extractor);
+
+    const result = await worker.tick(NOW);
+
+    expect(result.claimed_lines).toBe(0);
+    expect(result.claimsDiscarded).toBe(1);
+    const stored = onlyRecorded(repository);
+    expect(stored.claimLine).toBeNull();
+    expect(stored.claims).toEqual([]);
+    expect(stored.claimDiscards[0].reason).toBe('span-not-found');
+    expect(stored.claimRefusalReason).toBe('all-discarded');
+  });
+
+  it('keeps the good claim and drops the invented one from the same reply', async () => {
+    const extractor = new StubExtractor({
+      outcome: 'ok',
+      claims: [
+        TRUE_CLAIM,
+        {
+          span: 'an invented sentence about the company',
+          text: 'an invented claim about it',
+          kind: 'operational',
+        },
+      ],
+    });
+    const { worker, repository } = claimHarness(extractor);
+    await worker.tick(NOW);
+
+    const stored = onlyRecorded(repository);
+    expect(stored.claims).toHaveLength(1);
+    expect(stored.claimDiscards).toHaveLength(1);
+    expect(stored.claimsProposed).toBe(2);
+  });
+
+  it.each([
+    ['a routine category', 'Trading Window'],
+    ['a category that carries no claims', 'Record Date'],
+  ])('never calls the model for %s', async (_label, category) => {
+    const extractor = new StubExtractor();
+    const { worker, repository } = claimHarness(extractor, { category });
+
+    await worker.tick(NOW);
+
+    expect(extractor.requests).toEqual([]);
+    expect(onlyRecorded(repository).claimRefusalReason).toBe('not-eligible');
+  });
+
+  it('never calls the model for a covering letter', async () => {
+    const extractor = new StubExtractor();
+    const { worker, repository } = claimHarness(extractor, {
+      text: 'Please find enclosed the audio recording link. '.repeat(4),
+    });
+
+    await worker.tick(NOW);
+
+    expect(extractor.requests).toEqual([]);
+    const stored = onlyRecorded(repository);
+    expect(stored.claimRefusalReason).toBe('not-eligible');
+    expect(stored.claimRefusalDetail).toContain('covering letter');
+  });
+
+  it('records that nothing is configured rather than silently finding nothing', async () => {
+    // "No extractor" and "the extractor found nothing" are different facts, and
+    // a dashboard that rendered them the same would make an unconfigured
+    // pipeline indistinguishable from a quiet market.
+    const { worker, repository } = claimHarness(null);
+
+    await worker.tick(NOW);
+
+    expect(onlyRecorded(repository).claimRefusalReason).toBe(
+      'extractor-unavailable',
+    );
+  });
+
+  it('records the ordinary answer: the model found nothing', async () => {
+    const { worker, repository } = claimHarness(new StubExtractor());
+    await worker.tick(NOW);
+
+    const stored = onlyRecorded(repository);
+    expect(stored.claimRefusalReason).toBe('no-claims');
+    expect(stored.claimsProposed).toBe(0);
+  });
+
+  it.each([
+    [
+      'the extractor reports a failure',
+      new StubExtractor({ outcome: 'failed', message: '429 rate limited' }),
+    ],
+    [
+      'the extractor throws despite its contract',
+      new StubExtractor(undefined, new Error('socket hang up')),
+    ],
+  ])('stores the verdict anyway when %s', async (_label, extractor) => {
+    // The amount, the counterparty and the headline are already worth storing,
+    // and re-running the filing would spend another NSE request to reach them.
+    const { worker, repository } = claimHarness(extractor);
+
+    const result = await worker.tick(NOW);
+
+    expect(result.enriched).toBe(1);
+    const stored = onlyRecorded(repository);
+    expect(stored.state).toBe('enriched');
+    expect(stored.claimRefusalReason).toBe('extractor-error');
+    expect(stored.claimRefusalDetail).not.toBeNull();
+  });
+
+  it('honours the per-filing claim cap', async () => {
+    const four = ['alpha', 'beta', 'gamma', 'delta'].map((word) => ({
+      ...TRUE_CLAIM,
+      text: `joins the Microsoft Intelligent Security ${word}`,
+    }));
+    const repository = new StubRepository([
+      {
+        filing: filing({ category: 'Press Release' }),
+        attempts: 1,
+        parseAttempts: 0,
+      },
+    ]);
+    const worker = new EnrichmentWorker(
+      repository as unknown as EnrichmentRepository,
+      new StubFetcher(okBody()) as unknown as AttachmentFetcher,
+      new StubContext() as unknown as FilingContextService,
+      new StubTelegram() as unknown as TelegramService,
+      { ...OPTIONS, maxClaims: 2 },
+      parserOf(PRESS_RELEASE),
+      new StubExtractor({
+        outcome: 'ok',
+        claims: four,
+      }) as unknown as ClaimExtractor,
+    );
+
+    await worker.tick(NOW);
+
+    expect(onlyRecorded(repository).claims).toHaveLength(2);
+  });
+
+  it('never lets the claim stage cost the enrichment', async () => {
+    const { worker, repository } = claimHarness(
+      new StubExtractor(undefined, new Error('everything is on fire')),
+    );
+
+    const result = await worker.tick(NOW);
+
+    expect(result).toMatchObject({ enriched: 1, claimed_lines: 0 });
+    expect(onlyRecorded(repository).headline).not.toBeNull();
   });
 });

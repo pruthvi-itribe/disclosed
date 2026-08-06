@@ -1,5 +1,10 @@
 import type { AmountAnchor, AmountRefusalReason } from './amount-extraction';
 import type { CounterpartyRefusalReason } from './counterparty';
+import type {
+  ClaimDiscard,
+  ClaimRefusalReason,
+  VerifiedClaim,
+} from './claim.types';
 
 /**
  * What the background worker did with a filing's attachment, and what it found.
@@ -127,6 +132,27 @@ export interface FilingEnrichment {
   readonly counterpartyEvidence: string | null;
   readonly counterpartyRefusalReason: CounterpartyRefusalReason | null;
 
+  // --- the notable claims, or why there are none ----------------------------
+  /**
+   * Claims that survived the verbatim gate, each carrying the document's own
+   * sentence. Empty is the ordinary case.
+   */
+  readonly claims: readonly VerifiedClaim[];
+  /** The composed wire line, `SYMBOL: CLAIM || CLAIM`, or null. */
+  readonly claimLine: string | null;
+  /**
+   * Claims the gate refused, with the reason.
+   *
+   * STORED RATHER THAN COUNTED. A model that starts inventing shows up here as
+   * a rising `span-not-found` count against specific text somebody can read; a
+   * bare number would say the rate moved and nothing about what moved it.
+   */
+  readonly claimDiscards: readonly ClaimDiscard[];
+  /** How many the extractor proposed. Null when it was never called. */
+  readonly claimsProposed: number | null;
+  readonly claimRefusalReason: ClaimRefusalReason | null;
+  readonly claimRefusalDetail: string | null;
+
   /** The composed headline, stored so what was sent can be audited later. */
   readonly headline: string | null;
   /** The derived-context line, or null when none could be computed. */
@@ -152,6 +178,12 @@ export const PENDING_ENRICHMENT: FilingEnrichment = {
   counterparty: null,
   counterpartyEvidence: null,
   counterpartyRefusalReason: null,
+  claims: [],
+  claimLine: null,
+  claimDiscards: [],
+  claimsProposed: null,
+  claimRefusalReason: null,
+  claimRefusalDetail: null,
   headline: null,
   contextLine: null,
 };

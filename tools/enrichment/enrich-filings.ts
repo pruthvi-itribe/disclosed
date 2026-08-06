@@ -28,6 +28,7 @@ import {
   type FilingDocument,
 } from '@app/filings';
 import type { TelegramService } from '@app/notify';
+import { buildClaimExtractor } from '../../apps/ingest/src/enrichment/claim-extractor.factory';
 import { EnrichmentWorker } from '../../apps/ingest/src/enrichment/enrichment.worker';
 import { FilingContextService } from '../../apps/ingest/src/enrichment/filing-context.service';
 import { loadConfig } from '../../apps/ingest/src/config/configuration';
@@ -97,7 +98,10 @@ async function main(): Promise<void> {
       leaseMs: config.enrichmentLeaseMs,
       alertWindowMs: config.alertWindowMs,
       watchlist: config.watchlist,
+      maxClaims: config.claimMaxClaims,
     },
+    undefined,
+    buildClaimExtractor(config),
   );
 
   const pendingBefore = await repository.pendingCount(new Date());

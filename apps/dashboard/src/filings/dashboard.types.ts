@@ -45,6 +45,44 @@ export interface EnrichmentView {
   /** The composed line. Degrades to the exchange's own words when refused. */
   readonly headline: string | null;
   readonly contextLine: string | null;
+
+  /**
+   * The wire line of notable claims, or null.
+   *
+   * The claim lane and the amount lane refuse for different reasons and must be
+   * readable apart: a filing can carry a verified figure and no claim, a claim
+   * and no figure, both, or neither, and each of those four says something
+   * different about the document.
+   */
+  readonly claimLine: string | null;
+  /** Each accepted claim with the document's own sentence behind it. */
+  readonly claims: readonly ClaimView[];
+  /** Each refused claim, with the rule that refused it. */
+  readonly claimDiscards: readonly ClaimDiscardView[];
+  readonly claimsProposed: number | null;
+  readonly claimRefusalReason: string | null;
+  readonly claimRefusalDetail: string | null;
+}
+
+/** One published claim and the sentence it was read from. */
+export interface ClaimView {
+  readonly text: string;
+  /** The verbatim source sentence. This is what makes the claim checkable. */
+  readonly span: string;
+  readonly kind: string;
+}
+
+/**
+ * One refused claim.
+ *
+ * SHOWN, NOT COUNTED. A model that starts inventing appears here as a rising
+ * `span-not-found` count against text somebody can read; a bare number would
+ * say the rate moved and nothing about what moved it.
+ */
+export interface ClaimDiscardView {
+  readonly reason: string;
+  readonly claim: string;
+  readonly detail: string;
 }
 
 /** One filing, as the recent-filings table shows it. */
@@ -102,6 +140,12 @@ export interface EnrichmentSummaryView {
   readonly withCounterparty: number;
   /** Filings whose composed headline states an amount rather than the category. */
   readonly withEnrichedHeadline: number;
+  /** Filings carrying at least one verified claim. */
+  readonly withClaims: number;
+  /** Proposed claims the verbatim gate refused, by reason. */
+  readonly byClaimDiscard: readonly EnrichmentCount[];
+  /** Read documents that produced no claim line, by reason. */
+  readonly byClaimRefusal: readonly EnrichmentCount[];
   readonly generatedAtIst: string;
 }
 

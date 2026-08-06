@@ -8,11 +8,13 @@ import {
   FilingRepository,
   FilingSchema,
   NseAdapter,
+  type ClaimExtractor,
   type FilingDocument,
 } from '@app/filings';
+import { buildClaimExtractor } from './enrichment/claim-extractor.factory';
 import { TelegramService } from '@app/notify';
 import { AlertService } from './alert/alert.service';
-import { loadConfig } from './config/configuration';
+import { loadConfig, type ClaimEffort } from './config/configuration';
 import { EnrichmentWorker } from './enrichment/enrichment.worker';
 import { FilingContextService } from './enrichment/filing-context.service';
 import { CircuitBreaker } from './poller/circuit-breaker';
@@ -21,6 +23,15 @@ import { SessionService } from './session/session.service';
 
 /** The mongoose model name; the collection itself is named by the schema. */
 export const FILING_MODEL = 'Filing';
+
+/**
+ * The claim extractor's injection token.
+ *
+ * A string token rather than a class, because the provider resolves to `null`
+ * when no key is configured — and Nest cannot key a provider on a type that may
+ * legitimately be absent.
+ */
+export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
 
 /**
  * Wires the ingest application.
@@ -112,6 +123,24 @@ export const FILING_MODEL = 'Filing';
         ),
     },
     {
+      /**
+       * Null when claims are switched off or no key is configured, and that is
+       * a supported state rather than a broken one: the worker keeps reading
+       * documents, and every eligible filing records `extractor-unavailable`
+       * instead of a claim. Built once at startup so an unconfigured pipeline
+       * says so on the startup line rather than discovering it 700 times a day.
+       */
+      provide: CLAIM_EXTRACTOR,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): ClaimExtractor | null =>
+        buildClaimExtractor({
+          claimsEnabled: config.getOrThrow<boolean>('claimsEnabled'),
+          anthropicApiKey: config.getOrThrow<string>('anthropicApiKey'),
+          claimModel: config.getOrThrow<string>('claimModel'),
+          claimEffort: config.getOrThrow<ClaimEffort>('claimEffort'),
+        }),
+    },
+    {
       provide: EnrichmentWorker,
       inject: [
         EnrichmentRepository,
@@ -119,6 +148,7 @@ export const FILING_MODEL = 'Filing';
         FilingContextService,
         TelegramService,
         ConfigService,
+        CLAIM_EXTRACTOR,
       ],
       useFactory: (
         repository: EnrichmentRepository,
@@ -126,25 +156,39 @@ export const FILING_MODEL = 'Filing';
         context: FilingContextService,
         telegram: TelegramService,
         config: ConfigService,
+        claimExtractor: ClaimExtractor | null,
       ) =>
-        new EnrichmentWorker(repository, fetcher, context, telegram, {
-          idleIntervalMs: config.getOrThrow<number>('enrichmentIdleIntervalMs'),
-          requestDelayMs: config.getOrThrow<number>('enrichmentRequestDelayMs'),
-          batchSize: config.getOrThrow<number>('enrichmentBatchSize'),
-          maxAttempts: config.getOrThrow<number>('enrichmentMaxAttempts'),
-          retryBaseMs: config.getOrThrow<number>('enrichmentRetryBaseMs'),
-          retryMaxMs: config.getOrThrow<number>('enrichmentRetryMaxMs'),
-          parseWindowMs: config.getOrThrow<number>('enrichmentParseWindowMs'),
-          maxParseAttempts: config.getOrThrow<number>(
-            'enrichmentMaxParseAttempts',
-          ),
-          parseRetryBaseMs: config.getOrThrow<number>(
-            'enrichmentParseRetryBaseMs',
-          ),
-          leaseMs: config.getOrThrow<number>('enrichmentLeaseMs'),
-          alertWindowMs: config.getOrThrow<number>('alertWindowMs'),
-          watchlist: config.getOrThrow<readonly string[]>('watchlist'),
-        }),
+        new EnrichmentWorker(
+          repository,
+          fetcher,
+          context,
+          telegram,
+          {
+            idleIntervalMs: config.getOrThrow<number>(
+              'enrichmentIdleIntervalMs',
+            ),
+            requestDelayMs: config.getOrThrow<number>(
+              'enrichmentRequestDelayMs',
+            ),
+            batchSize: config.getOrThrow<number>('enrichmentBatchSize'),
+            maxAttempts: config.getOrThrow<number>('enrichmentMaxAttempts'),
+            retryBaseMs: config.getOrThrow<number>('enrichmentRetryBaseMs'),
+            retryMaxMs: config.getOrThrow<number>('enrichmentRetryMaxMs'),
+            parseWindowMs: config.getOrThrow<number>('enrichmentParseWindowMs'),
+            maxParseAttempts: config.getOrThrow<number>(
+              'enrichmentMaxParseAttempts',
+            ),
+            parseRetryBaseMs: config.getOrThrow<number>(
+              'enrichmentParseRetryBaseMs',
+            ),
+            leaseMs: config.getOrThrow<number>('enrichmentLeaseMs'),
+            alertWindowMs: config.getOrThrow<number>('alertWindowMs'),
+            watchlist: config.getOrThrow<readonly string[]>('watchlist'),
+            maxClaims: config.getOrThrow<number>('claimMaxClaims'),
+          },
+          undefined,
+          claimExtractor,
+        ),
     },
     {
       provide: PollerService,

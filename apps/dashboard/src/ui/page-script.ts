@@ -184,6 +184,43 @@ export const PAGE_SCRIPT = `
     head.textContent = e.headline || (String(f.symbol).toUpperCase() + ' — ' + String(f.category).toUpperCase());
     cell.appendChild(head);
 
+    // The claim line sits directly under the headline, because on most filings
+    // it is the only thing said - the headline degrades to the exchange's own
+    // category whenever no amount was verified, and most notable statements
+    // carry no figure at all.
+    if (e.claimLine) {
+      var claim = document.createElement('div');
+      claim.className = 'claimline';
+      claim.textContent = e.claimLine;
+      cell.appendChild(claim);
+    }
+
+    // Each accepted claim's source sentence, so the line can be checked against
+    // the document without leaving the row.
+    var claims = e.claims || [];
+    for (var c = 0; c < claims.length; c++) {
+      var quote = document.createElement('div');
+      quote.className = 'claimspan';
+      quote.textContent = '"' + String(claims[c].span).replace(/\s+/g, ' ').trim() + '"';
+      quote.title = claims[c].kind;
+      cell.appendChild(quote);
+    }
+
+    // A refusal is a value, never a blank. This is the row that says a model
+    // proposed something and the gate threw it away, and what it threw away.
+    var dropped = e.claimDiscards || [];
+    if (dropped.length > 0) {
+      var box = document.createElement('div');
+      box.className = 'discards';
+      for (var d = 0; d < dropped.length; d++) {
+        var t = tag(dropped[d].reason, 'refusal' + (state.refusal === dropped[d].reason ? ' active' : ''), pickRefusal(dropped[d].reason));
+        t.title = dropped[d].detail + ' - "' + dropped[d].claim + '"';
+        box.appendChild(t);
+        box.appendChild(document.createTextNode(' '));
+      }
+      cell.appendChild(box);
+    }
+
     if (e.contextLine) {
       var ctx = document.createElement('div');
       ctx.className = 'context';
@@ -438,7 +475,51 @@ export const PAGE_SCRIPT = `
       box.appendChild(none);
     }
 
+    renderClaims(d);
     renderRefusalChip();
+  }
+
+  // The claim lane's own panel. It is separate from the amount panel because
+  // the two refuse for different reasons and a reader has to be able to tell
+  // "no model is configured" from "the model proposed things the gate threw
+  // away" - and the second of those is the number that says whether to trust
+  // any of this.
+  function renderClaims(d) {
+    var box = el('claims');
+    if (!box) return;
+    clear(box);
+
+    var head = document.createElement('div');
+    head.className = 'reason-group';
+    head.textContent = groupInt(d.withClaims || 0) + ' filing(s) carry a verified claim';
+    box.appendChild(head);
+
+    var groups = [
+      { label: 'claims discarded by the gate', rows: d.byClaimDiscard || [] },
+      { label: 'why a document produced no claim', rows: d.byClaimRefusal || [] }
+    ];
+
+    for (var g = 0; g < groups.length; g++) {
+      if (groups[g].rows.length === 0) continue;
+
+      var heading = document.createElement('div');
+      heading.className = 'reason-group';
+      heading.textContent = groups[g].label;
+      box.appendChild(heading);
+
+      var wrap = document.createElement('div');
+      wrap.className = 'reasons';
+      for (var i = 0; i < groups[g].rows.length; i++) {
+        var r = groups[g].rows[i];
+        var node = tag(r.key, 'refusal' + (state.refusal === r.key ? ' active' : ''), pickRefusal(r.key));
+        var n = document.createElement('span');
+        n.className = 'n';
+        n.textContent = groupInt(r.count);
+        node.appendChild(n);
+        wrap.appendChild(node);
+      }
+      box.appendChild(wrap);
+    }
   }
 
   function renderRefusalChip() {

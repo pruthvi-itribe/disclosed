@@ -247,9 +247,17 @@ describe('the enrichment state machine', () => {
     // The parse budget starts unspent as well, and starts at ZERO rather than
     // at one: a filing that has never been claimed has not failed to read.
     expect(PENDING_ENRICHMENT.parseAttempts).toBe(0);
+    // The claim collections start EMPTY rather than null, and the difference is
+    // deliberate: a filing that has produced no claims has produced a list of
+    // none, which every reader can iterate, while null would make each of them
+    // guard first and eventually one would not.
+    expect(PENDING_ENRICHMENT.claims).toEqual([]);
+    expect(PENDING_ENRICHMENT.claimDiscards).toEqual([]);
+
     const counters = new Set(['state', 'attempts', 'parseAttempts']);
+    const collections = new Set(['claims', 'claimDiscards']);
     for (const [key, value] of Object.entries(PENDING_ENRICHMENT)) {
-      if (counters.has(key)) continue;
+      if (counters.has(key) || collections.has(key)) continue;
       expect(value).toBeNull();
     }
   });

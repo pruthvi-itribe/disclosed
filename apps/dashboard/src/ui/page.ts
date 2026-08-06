@@ -142,6 +142,10 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <div id="refusals"></div>
     </div>
     <div class="panel">
+      <h2><span>Notable claims</span><span class="muted">click to filter</span></h2>
+      <div id="claims"></div>
+    </div>
+    <div class="panel">
       <h2><span>Filings per IST day</span></h2>
       <div id="days" class="days"></div>
       <div class="dayaxis"><span id="day-from">—</span><span id="day-to">—</span></div>
@@ -157,6 +161,8 @@ export const renderDashboardPage = (): string => `<!doctype html>
   Read-only. This view never writes to the filings collection. All times are IST (UTC+05:30), rendered server-side.
   Every headline component is traceable: the symbol and category are stored verbatim, the action phrase is a fixed lookup,
   and the amount and counterparty quote the source document. A refused amount degrades the headline to the exchange's own words.
+  Every notable claim carries the verbatim sentence it was read from, matched against the source document before publication;
+  a claim whose sentence is not in the document is discarded, and the discard is shown here with the rule that refused it.
 </footer>
 
 <script>${PAGE_SCRIPT}</script>

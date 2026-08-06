@@ -18,6 +18,30 @@ export type FilingDocument = Filing &
  * version of this code produces — which is exactly the class of failure that
  * loses a filing quietly.
  */
+/**
+ * One verified claim: the wire text, the document's own sentence, and what kind
+ * of thing it is. `_id: false` for the same reason the enrichment block has it —
+ * these are values hanging off a filing, not entities.
+ */
+const ClaimSchema = new Schema(
+  {
+    text: { type: String, default: '' },
+    span: { type: String, default: '' },
+    kind: { type: String, default: 'operational' },
+  },
+  { _id: false },
+);
+
+/** One refused claim, kept so a refusal can be read rather than counted. */
+const ClaimDiscardSchema = new Schema(
+  {
+    reason: { type: String, default: '' },
+    claim: { type: String, default: '' },
+    detail: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
 const EnrichmentSchema = new Schema<FilingEnrichment>(
   {
     state: { type: String, default: 'pending' },
@@ -37,6 +61,12 @@ const EnrichmentSchema = new Schema<FilingEnrichment>(
     counterparty: { type: String, default: null },
     counterpartyEvidence: { type: String, default: null },
     counterpartyRefusalReason: { type: String, default: null },
+    claims: { type: [ClaimSchema], default: [] },
+    claimLine: { type: String, default: null },
+    claimDiscards: { type: [ClaimDiscardSchema], default: [] },
+    claimsProposed: { type: Number, default: null },
+    claimRefusalReason: { type: String, default: null },
+    claimRefusalDetail: { type: String, default: null },
     headline: { type: String, default: null },
     contextLine: { type: String, default: null },
   },

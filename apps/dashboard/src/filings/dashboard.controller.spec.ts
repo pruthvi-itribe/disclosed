@@ -35,6 +35,9 @@ const ENRICHMENT_SUMMARY: EnrichmentSummaryView = {
   byUnparseable: [{ key: 'not-a-pdf', count: 40 }],
   withCounterparty: 9,
   withEnrichedHeadline: 121,
+  withClaims: 34,
+  byClaimDiscard: [{ key: 'span-not-found', count: 7 }],
+  byClaimRefusal: [{ key: 'not-eligible', count: 600 }],
   generatedAtIst: '2026-08-05 23:32:54',
 };
 

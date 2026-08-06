@@ -5,7 +5,9 @@ import {
   FilingSchema,
   type Filing,
   type FilingDocument,
+  type ClaimDiscard,
   type FilingEnrichment,
+  type VerifiedClaim,
 } from '@app/filings';
 import { FilingQueryService } from './filing-query.service';
 
@@ -95,6 +97,14 @@ describe('the enrichment view on a filing row', () => {
     expect(items[0].enrichment).toEqual({
       state: 'pending',
       attempts: 0,
+      // Empty arrays rather than undefined, so a filing stored before the claim
+      // lane existed renders as "no claims" rather than as a missing field.
+      claims: [],
+      claimDiscards: [],
+      claimLine: null,
+      claimsProposed: null,
+      claimRefusalReason: null,
+      claimRefusalDetail: null,
       attemptedAtIst: null,
       unparseableReason: null,
       lastError: null,
@@ -349,5 +359,124 @@ describe('getEnrichmentSummary', () => {
     expect(summary.withCounterparty).toBe(1);
     // The degraded headline is not counted: it states no figure.
     expect(summary.withEnrichedHeadline).toBe(2);
+  });
+});
+
+/**
+ * The claim lane on the dashboard.
+ *
+ * Against a real mongod for the same reason the rest of this suite is: the
+ * claim fields are sub-document arrays, every filing stored before the lane
+ * existed carries none of them, and "no claims" and "not looked at" must not
+ * render the same.
+ */
+describe('the claim lane', () => {
+  const CLAIM: VerifiedClaim = {
+    text: 'targets ₹10,000 Cr adjusted EBITDA by FY31',
+    span: 'setting out its goal to build a ₹10,000 Cr.\nAdjusted EBITDA business by FY31',
+    kind: 'target',
+  };
+
+  const DISCARD: ClaimDiscard = {
+    reason: 'span-not-found',
+    claim: 'plans to double capacity',
+    detail: 'the quoted source is not in the document',
+  };
+
+  it('shows the line, each claim and the sentence behind it', async () => {
+    await seed([
+      [
+        1,
+        enrichment({
+          claims: [CLAIM],
+          claimLine: 'SWIGGY: TARGETS ₹10,000 CR ADJUSTED EBITDA BY FY31',
+          claimsProposed: 1,
+        }),
+      ],
+    ]);
+
+    const { items } = await page();
+    const view = items[0].enrichment;
+
+    expect(view.claimLine).toBe(
+      'SWIGGY: TARGETS ₹10,000 CR ADJUSTED EBITDA BY FY31',
+    );
+    expect(view.claims).toEqual([CLAIM]);
+    // The document's own line break survives the round trip, because the span
+    // is what a reviewer checks against the source.
+    expect(view.claims[0].span).toContain('\n');
+    expect(view.claimsProposed).toBe(1);
+  });
+
+  it('shows every discard with the rule that refused it', async () => {
+    await seed([
+      [
+        1,
+        enrichment({
+          claimDiscards: [DISCARD],
+          claimsProposed: 1,
+          claimRefusalReason: 'all-discarded',
+        }),
+      ],
+    ]);
+
+    const { items } = await page();
+    const view = items[0].enrichment;
+
+    expect(view.claimDiscards).toEqual([DISCARD]);
+    expect(view.claimRefusalReason).toBe('all-discarded');
+  });
+
+  it('reports empty lists, not absent fields, for a filing stored before the lane', async () => {
+    await seed([[1, enrichment({})]]);
+
+    const { items } = await page();
+    expect(items[0].enrichment.claims).toEqual([]);
+    expect(items[0].enrichment.claimDiscards).toEqual([]);
+    expect(items[0].enrichment.claimLine).toBeNull();
+  });
+
+  it.each([
+    ['emitted', 1],
+    ['none', 2],
+  ] as const)('filters on claim=%s', async (claim, expected) => {
+    await seed([
+      [1, enrichment({ claimLine: 'SYM: A CLAIM' })],
+      [2, enrichment({ claimRefusalReason: 'no-claims' })],
+      [3, undefined],
+    ]);
+
+    const { meta } = await page({ claim });
+    expect(meta.total).toBe(expected);
+  });
+
+  it('lets a discard reason filter the table', async () => {
+    // The refusal filter reaches the claim lane as well as the amount lane, so
+    // clicking `span-not-found` in the panel shows the documents it happened on.
+    await seed([
+      [1, enrichment({ claimDiscards: [DISCARD] })],
+      [2, enrichment({ claimRefusalReason: 'not-eligible' })],
+    ]);
+
+    expect((await page({ refusal: 'span-not-found' })).meta.total).toBe(1);
+    expect((await page({ refusal: 'not-eligible' })).meta.total).toBe(1);
+  });
+
+  it('counts claims and groups every discard in the summary', async () => {
+    await seed([
+      [1, enrichment({ claimLine: 'SYM: A CLAIM', claims: [CLAIM] })],
+      [2, enrichment({ claimDiscards: [DISCARD, DISCARD] })],
+      [3, enrichment({ claimRefusalReason: 'not-eligible' })],
+    ]);
+
+    const summary = await service.getEnrichmentSummary();
+
+    expect(summary.withClaims).toBe(1);
+    // Per DISCARD, not per filing: one document proposing two inventions is two
+    // data points about the extractor rather than one.
+    expect(summary.byClaimDiscard).toEqual([
+      { key: 'span-not-found', count: 2 },
+    ]);
+    expect(summary.byClaimRefusal).toEqual([{ key: 'not-eligible', count: 1 }]);
   });
 });

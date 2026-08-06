@@ -367,6 +367,10 @@ describe('the background attachment worker settings', () => {
     expect(config.enrichmentMaxAttempts).toBe(5);
     expect(config.enrichmentLeaseMs).toBe(120_000);
     expect(config.contextWindowDays).toBe(30);
+    // A parse failure is only an upload race while the filing is minutes old.
+    expect(config.enrichmentParseWindowMs).toBe(3_600_000);
+    expect(config.enrichmentMaxParseAttempts).toBe(3);
+    expect(config.enrichmentParseRetryBaseMs).toBe(300_000);
     // Clears the largest attachment observed in the recorded month (22.2 MB).
     expect(config.enrichmentMaxBytes).toBeGreaterThan(22.2 * 1024 * 1024);
   });
@@ -376,6 +380,14 @@ describe('the background attachment worker settings', () => {
     ['ENRICH_BATCH_SIZE', 'enrichmentBatchSize', '5', 5],
     ['ENRICH_MAX_ATTEMPTS', 'enrichmentMaxAttempts', '2', 2],
     ['ENRICH_LEASE_MS', 'enrichmentLeaseMs', '9000', 9000],
+    ['ENRICH_PARSE_WINDOW_MS', 'enrichmentParseWindowMs', '600000', 600_000],
+    ['ENRICH_MAX_PARSE_ATTEMPTS', 'enrichmentMaxParseAttempts', '2', 2],
+    [
+      'ENRICH_PARSE_RETRY_BASE_MS',
+      'enrichmentParseRetryBaseMs',
+      '30000',
+      30_000,
+    ],
     ['CONTEXT_WINDOW_DAYS', 'contextWindowDays', '7', 7],
   ] as const)('honours %s', (key, field, raw, expected) => {
     expect(loadConfig(withEnv({ [key]: raw }))[field]).toBe(expected);
@@ -385,6 +397,8 @@ describe('the background attachment worker settings', () => {
     ['ENRICH_REQUEST_DELAY_MS'],
     ['ENRICH_MAX_ATTEMPTS'],
     ['ENRICH_MAX_BYTES'],
+    ['ENRICH_PARSE_WINDOW_MS'],
+    ['ENRICH_MAX_PARSE_ATTEMPTS'],
     ['CONTEXT_WINDOW_DAYS'],
   ])('rejects a non-finite %s at load rather than in a consumer', (key) => {
     expect(() => loadConfig(withEnv({ [key]: 'abc' }))).toThrow(
@@ -424,5 +438,95 @@ describe('the background attachment worker settings', () => {
     expect(
       loadConfig(withEnv({ ENRICH_IN_PROCESS: raw })).enrichmentInProcess,
     ).toBe(expected);
+  });
+});
+
+describe('the notable-claim settings', () => {
+  it('ships on, with the current Opus and no key', () => {
+    const config = loadConfig(empty);
+
+    expect(config.claimsEnabled).toBe(true);
+    expect(config.claimModel).toBe('claude-opus-5');
+    expect(config.claimEffort).toBe('medium');
+    expect(config.claimMaxClaims).toBe(3);
+    // No key is a supported state: the worker keeps reading documents and every
+    // eligible filing records `extractor-unavailable` instead of a claim.
+    expect(config.anthropicApiKey).toBe('');
+  });
+
+  it.each([['low'], ['medium'], ['high'], ['xhigh'], ['max']])(
+    'accepts the effort level %s',
+    (raw) => {
+      expect(loadConfig(withEnv({ CLAIM_EFFORT: raw })).claimEffort).toBe(raw);
+    },
+  );
+
+  it('accepts an effort level in any case, with padding', () => {
+    expect(loadConfig(withEnv({ CLAIM_EFFORT: '  HIGH  ' })).claimEffort).toBe(
+      'high',
+    );
+  });
+
+  it.each([['ludicrous'], ['none'], ['1'], ['medium-high']])(
+    'rejects the effort level "%s" at load rather than on every call',
+    (raw) => {
+      // An unrecognised level is a 400 from the API on every single request,
+      // which presents as an extractor that has silently stopped working rather
+      // than as a typo in one environment variable.
+      expect(() => loadConfig(withEnv({ CLAIM_EFFORT: raw }))).toThrow(
+        /must be one of low, medium, high, xhigh, max/,
+      );
+    },
+  );
+
+  it.each([[''], ['   ']])(
+    'treats a blank CLAIM_EFFORT "%s" as unset',
+    (raw) => {
+      expect(loadConfig(withEnv({ CLAIM_EFFORT: raw })).claimEffort).toBe(
+        'medium',
+      );
+    },
+  );
+
+  it('honours an operator’s model and cap', () => {
+    const config = loadConfig(
+      withEnv({ CLAIM_MODEL: 'claude-sonnet-5', CLAIM_MAX_CLAIMS: '2' }),
+    );
+    expect(config.claimModel).toBe('claude-sonnet-5');
+    expect(config.claimMaxClaims).toBe(2);
+  });
+
+  it.each([
+    ['false', false],
+    ['off', false],
+    ['true', true],
+  ])('reads CLAIM_ENABLED=%s as %s', (raw, expected) => {
+    expect(loadConfig(withEnv({ CLAIM_ENABLED: raw })).claimsEnabled).toBe(
+      expected,
+    );
+  });
+
+  it('reports the claim lane in the startup line, all three ways', () => {
+    // "Off" is a decision and "unconfigured" is a misconfiguration, and both
+    // present as a market with nothing to say unless the line distinguishes them.
+    expect(describeConfig(loadConfig(empty))).toContain('claims=unconfigured');
+    expect(
+      describeConfig(loadConfig(withEnv({ CLAIM_ENABLED: 'false' }))),
+    ).toContain('claims=off');
+    expect(
+      describeConfig(
+        loadConfig(
+          withEnv({ ANTHROPIC_API_KEY: 'sk-ant-x', CLAIM_EFFORT: 'low' }),
+        ),
+      ),
+    ).toContain('claims=claude-opus-5/low');
+  });
+
+  it('never prints the key itself', () => {
+    expect(
+      describeConfig(
+        loadConfig(withEnv({ ANTHROPIC_API_KEY: 'sk-ant-secret' })),
+      ),
+    ).not.toContain('sk-ant-secret');
   });
 });

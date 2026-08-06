@@ -830,12 +830,12 @@ describe('formatInsightAlert', () => {
   };
 
   it('leads with the headline and carries the source link', () => {
-    const message = formatInsightAlert(
-      filing,
-      'RAILTEL BAGS ORDER ₹18.54 cr from South Western Railway',
-      '3rd order for RAILTEL in 30 days',
-      'Rs. 18,53,66,820',
-    );
+    const message = formatInsightAlert(filing, {
+      headline: 'RAILTEL BAGS ORDER ₹18.54 cr from South Western Railway',
+      claimLine: null,
+      contextLine: '3rd order for RAILTEL in 30 days',
+      evidence: 'Rs. 18,53,66,820',
+    });
 
     expect(message.split('\n')[0]).toBe(
       'RAILTEL BAGS ORDER ₹18.54 cr from South Western Railway',
@@ -855,12 +855,12 @@ describe('formatInsightAlert', () => {
   ])(
     'omits %s rather than emitting an empty line',
     (_label, context, evidence) => {
-      const message = formatInsightAlert(
-        filing,
-        'RAILTEL BAGS ORDER ₹5 cr',
-        context,
+      const message = formatInsightAlert(filing, {
+        headline: 'RAILTEL BAGS ORDER ₹5 cr',
+        claimLine: null,
+        contextLine: context,
         evidence,
-      );
+      });
       expect(message).not.toMatch(/\n\n\n/);
       expect(message.split('\n')[0]).toBe('RAILTEL BAGS ORDER ₹5 cr');
     },
@@ -868,34 +868,34 @@ describe('formatInsightAlert', () => {
 
   it('collapses evidence broken across lines by the PDF text layer', () => {
     // Real extraction: `Rs\n.\n847\nCrore`.
-    const message = formatInsightAlert(
-      filing,
-      'BEL BAGS ORDER ₹847 cr',
-      null,
-      'Rs\n.\n847\nCrore',
-    );
+    const message = formatInsightAlert(filing, {
+      headline: 'BEL BAGS ORDER ₹847 cr',
+      claimLine: null,
+      contextLine: null,
+      evidence: 'Rs\n.\n847\nCrore',
+    });
     expect(message).toContain('Stated as "Rs . 847 Crore" in the filing');
   });
 
   it('bounds a pathological evidence string', () => {
     // Telegram discards a message over 4,096 characters outright rather than
     // truncating it, so an unbounded quote loses the whole alert.
-    const message = formatInsightAlert(
-      filing,
-      'X BAGS ORDER ₹1 cr',
-      null,
-      'A'.repeat(5000),
-    );
+    const message = formatInsightAlert(filing, {
+      headline: 'X BAGS ORDER ₹1 cr',
+      claimLine: null,
+      contextLine: null,
+      evidence: 'A'.repeat(5000),
+    });
     expect(message.length).toBeLessThan(1000);
   });
 
   it('escapes the headline, the context and the evidence', () => {
-    const message = formatInsightAlert(
-      filing,
-      'M&M BAGS ORDER ₹5 cr from <b>Acme</b> Limited',
-      '2nd order for M&M in 30 days',
-      'Rs. 5 crore <script>',
-    );
+    const message = formatInsightAlert(filing, {
+      headline: 'M&M BAGS ORDER ₹5 cr from <b>Acme</b> Limited',
+      claimLine: null,
+      contextLine: '2nd order for M&M in 30 days',
+      evidence: 'Rs. 5 crore <script>',
+    });
 
     expect(message).toContain('M&amp;M');
     expect(message).toContain('&lt;b&gt;Acme&lt;/b&gt;');
@@ -906,10 +906,71 @@ describe('formatInsightAlert', () => {
   it('omits the source line for a filing with no attachment', () => {
     const message = formatInsightAlert(
       { ...filing, attachmentUrl: null },
-      'RAILTEL BAGS ORDER ₹5 cr',
-      null,
-      null,
+      {
+        headline: 'RAILTEL BAGS ORDER ₹5 cr',
+        claimLine: null,
+        contextLine: null,
+        evidence: null,
+      },
     );
     expect(message).not.toContain('Source:');
+  });
+
+  describe('the claim line', () => {
+    const claims = 'SWIGGY: TARGETS ₹10,000 CR ADJ EBITDA BY FY31';
+
+    it('leads the message when there is no headline to lead it', () => {
+      // The whole point of the claim work: most of what a filings desk wants to
+      // read carries no figure, so a follow-up gated on the amount alone stays
+      // silent on exactly the filings this pipeline was built to stop missing.
+      const message = formatInsightAlert(filing, {
+        headline: null,
+        claimLine: claims,
+        contextLine: null,
+        evidence: null,
+      });
+
+      expect(message.split('\n')[0]).toBe(claims);
+    });
+
+    it('follows the headline when both exist', () => {
+      const message = formatInsightAlert(filing, {
+        headline: 'RAILTEL BAGS ORDER ₹5 cr',
+        claimLine: claims,
+        contextLine: null,
+        evidence: null,
+      });
+
+      const lines = message.split('\n').filter((line) => line.length > 0);
+      expect(lines[0]).toBe('RAILTEL BAGS ORDER ₹5 cr');
+      expect(lines[1]).toBe(claims);
+    });
+
+    it('escapes it like every other exchange-derived string', () => {
+      const message = formatInsightAlert(filing, {
+        headline: null,
+        claimLine: 'M&M: JOINS <b>ACME</b> ALLIANCE',
+        contextLine: null,
+        evidence: null,
+      });
+
+      expect(message).toContain('M&amp;M');
+      expect(message).toContain('&lt;b&gt;ACME&lt;/b&gt;');
+      expect(message).not.toContain('<b>');
+    });
+
+    it.each([[null], ['   ']])(
+      'emits no blank line for a claim line of %s',
+      (claimLine) => {
+        const message = formatInsightAlert(filing, {
+          headline: 'RAILTEL BAGS ORDER ₹5 cr',
+          claimLine,
+          contextLine: null,
+          evidence: null,
+        });
+        expect(message).not.toMatch(/\n\n\n/);
+        expect(message.split('\n')[0]).toBe('RAILTEL BAGS ORDER ₹5 cr');
+      },
+    );
   });
 });

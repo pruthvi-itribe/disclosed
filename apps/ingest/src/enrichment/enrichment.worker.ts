@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { describeError, stackOf } from '@app/common';
 import {
+  claimEligibility,
   classifyFetchFailure,
+  composeClaimLine,
   decideAttachment,
   decideParseFailure,
   describeParseRetry,
@@ -11,10 +13,14 @@ import {
   nextAttemptDelayMs,
   normaliseWatchlist,
   parseFailureReason,
+  NO_CLAIMS,
   passesContentGates,
   readDocument,
+  verifyClaims,
   type AttachmentFetcher,
   type ClaimedFiling,
+  type ClaimExtractor,
+  type ClaimOutcome,
   type EnrichmentRepository,
   type Filing,
   type FilingEnrichment,
@@ -45,6 +51,8 @@ export interface EnrichmentOptions {
   /** Cold-start suppression, shared with the poller's own alert gate. */
   alertWindowMs: number;
   watchlist: readonly string[];
+  /** The most verified claims one wire line may carry. */
+  maxClaims: number;
 }
 
 /** What one tick did, counted by outcome. */
@@ -63,6 +71,10 @@ export interface EnrichmentTickResult {
   readonly retried: number;
   /** Transient failures that exhausted the attempt budget. */
   readonly failed: number;
+  /** Documents that produced at least one verified claim. */
+  readonly claimed_lines: number;
+  /** Proposed claims the verbatim gate refused. */
+  readonly claimsDiscarded: number;
   /** Follow-up messages ATTEMPTED. Not proof of delivery. */
   readonly alerted: number;
 }
@@ -81,7 +93,8 @@ export const describeTick = (result: EnrichmentTickResult): string =>
   `Enrichment tick: claimed ${result.claimed}, enriched ${result.enriched} ` +
   `(amount refused on ${result.refused}), unparseable ${result.unparseable}, ` +
   `parse-retried ${result.parseRetried}, retried ${result.retried}, ` +
-  `failed ${result.failed}, alerted ${result.alerted}`;
+  `failed ${result.failed}, claim-lines ${result.claimed_lines} ` +
+  `(${result.claimsDiscarded} claim(s) discarded), alerted ${result.alerted}`;
 
 const EMPTY_TICK: EnrichmentTickResult = {
   claimed: 0,
@@ -91,6 +104,8 @@ const EMPTY_TICK: EnrichmentTickResult = {
   parseRetried: 0,
   retried: 0,
   failed: 0,
+  claimed_lines: 0,
+  claimsDiscarded: 0,
   alerted: 0,
 };
 
@@ -171,6 +186,12 @@ export class EnrichmentWorker {
     private readonly options: EnrichmentOptions,
     /** Injected in tests so no suite ever loads pdf.js or a PDF fixture. */
     private readonly pdfParser?: PdfParser,
+    /**
+     * Null when no extractor is configured, which is a supported state rather
+     * than a broken one: everything else in this worker keeps working and every
+     * eligible filing records `extractor-unavailable` instead of a claim.
+     */
+    private readonly claimExtractor: ClaimExtractor | null = null,
   ) {
     this.watchlist = normaliseWatchlist(options.watchlist);
   }
@@ -185,7 +206,6 @@ export class EnrichmentWorker {
       `Enrichment worker started: batch ${this.options.batchSize}, ` +
         `${this.options.requestDelayMs}ms between fetches`,
     );
-
     await this.reportQueueDepth();
 
     let idleMs = 0;
@@ -447,6 +467,8 @@ export class EnrichmentWorker {
       verdict.amountRupees,
     );
 
+    const claims = await this.claimsFor(filing, documentText);
+
     const enrichment: FilingEnrichment = {
       state: 'enriched',
       attempts,
@@ -465,6 +487,12 @@ export class EnrichmentWorker {
       counterparty: verdict.counterparty,
       counterpartyEvidence: verdict.counterpartyEvidence,
       counterpartyRefusalReason: verdict.counterpartyRefusalReason,
+      claims: claims.claims,
+      claimLine: composeClaimLine(filing.symbol, claims.claims),
+      claimDiscards: claims.discards,
+      claimsProposed: claims.proposed,
+      claimRefusalReason: claims.refusalReason,
+      claimRefusalDetail: claims.refusalDetail,
       headline: verdict.headline,
       contextLine,
     };
@@ -482,7 +510,112 @@ export class EnrichmentWorker {
     return {
       enriched: 1,
       refused: verdict.amountRupees === null ? 1 : 0,
+      claimed_lines: enrichment.claimLine === null ? 0 : 1,
+      claimsDiscarded: claims.discards.length,
       alerted,
+    };
+  }
+
+  /**
+   * Reads the notable claims out of a document, contained.
+   *
+   * ================================================================
+   * THE ORDER OF THE GATES IS THE COST CONTROL
+   * ================================================================
+   *
+   * `claimEligibility` is deterministic, runs over text already in memory, and
+   * removes the large majority of filings — newspaper scans, record dates,
+   * covering letters — before anything is spent. Only what survives it reaches
+   * a model. Everything after that is contained the same way the context query
+   * is: a failing extractor costs the claims and never the enrichment, because
+   * the amount, the counterparty and the headline are already worth storing and
+   * re-running the filing would spend another NSE request to reach them again.
+   *
+   * EVERY OUTCOME IS RECORDED WITH A REASON. "Nothing was found", "nothing was
+   * looked for", "nothing is configured" and "everything found was refused" are
+   * four different facts about a filing, and a dashboard that rendered them the
+   * same would make a broken extractor indistinguishable from a quiet market.
+   */
+  private async claimsFor(
+    filing: Filing,
+    documentText: string,
+  ): Promise<ClaimOutcome> {
+    const eligibility = claimEligibility(filing, documentText);
+    if (!eligibility.eligible) {
+      return {
+        ...NO_CLAIMS,
+        refusalReason: 'not-eligible',
+        refusalDetail: eligibility.reason,
+      };
+    }
+
+    if (this.claimExtractor === null) {
+      return {
+        ...NO_CLAIMS,
+        refusalReason: 'extractor-unavailable',
+        refusalDetail: 'no claim extractor is configured',
+      };
+    }
+
+    let extraction;
+    try {
+      extraction = await this.claimExtractor.extract({
+        symbol: filing.symbol,
+        category: filing.category,
+        summary: filing.summary,
+        documentText,
+      });
+    } catch (error) {
+      // The extractor is contracted never to throw. This is the belt to that
+      // brace: an exception escaping it must not turn a good enrichment into a
+      // failed one.
+      this.logger.error(
+        `Claim extraction threw for seqId ${filing.seqId}: ${describeError(error)}`,
+        stackOf(error),
+      );
+      return {
+        ...NO_CLAIMS,
+        refusalReason: 'extractor-error',
+        refusalDetail: describeError(error),
+      };
+    }
+
+    if (extraction.outcome === 'failed') {
+      this.logger.warn(
+        `Claim extraction failed for seqId ${filing.seqId}: ${extraction.message}`,
+      );
+      return {
+        ...NO_CLAIMS,
+        refusalReason: 'extractor-error',
+        refusalDetail: extraction.message,
+      };
+    }
+
+    const proposed = extraction.claims.length;
+    if (proposed === 0) {
+      // The ordinary answer. Most filings state nothing worth a wire line.
+      return { ...NO_CLAIMS, proposed: 0, refusalReason: 'no-claims' };
+    }
+
+    const { claims, discards } = verifyClaims({
+      documentText,
+      proposed: extraction.claims,
+      maxClaims: this.options.maxClaims,
+    });
+
+    if (claims.length === 0) {
+      this.logger.warn(
+        `seqId ${filing.seqId} (${filing.symbol}): all ${proposed} proposed ` +
+          `claim(s) were refused (${discards.map((row) => row.reason).join(', ')})`,
+      );
+    }
+
+    return {
+      claims,
+      discards,
+      proposed,
+      refusalReason: claims.length === 0 ? 'all-discarded' : null,
+      refusalDetail: null,
     };
   }
 
@@ -490,9 +623,10 @@ export class EnrichmentWorker {
    * Sends the follow-up, when there is one to send.
    *
    * FOUR GATES, and each blocks a different way of being annoying or wrong:
-   * the headline must carry a verified amount (nothing to add otherwise), the
-   * category must not be routine, the symbol must be watched if a watchlist
-   * exists, and the filing must still be inside the cold-start alert window —
+   * there must be something verified to add (a headline carrying an amount, or
+   * a claim line whose sentences were found in the document), the category must
+   * not be routine, the symbol must be watched if a watchlist exists, and the
+   * filing must still be inside the cold-start alert window —
    * without that last one, a backfill of a thousand stored filings would send a
    * hundred and fifty follow-ups about news from last week.
    *
@@ -507,18 +641,23 @@ export class EnrichmentWorker {
     form: string,
     now: Date,
   ): Promise<number> {
-    if (form !== 'enriched' || enrichment.headline === null) return 0;
+    // TWO INDEPENDENT REASONS TO SEND, and the second is the point of the claim
+    // work: most of what a filings desk wants to read carries no figure at all,
+    // so a follow-up gated on the amount alone stays silent on exactly the
+    // filings this pipeline was built to stop missing.
+    const headline = form === 'enriched' ? enrichment.headline : null;
+    if (headline === null && enrichment.claimLine === null) return 0;
     if (!passesContentGates(filing, this.watchlist)) return 0;
     if (!isWithinAlertWindow(filing, now, this.options.alertWindowMs)) return 0;
 
     try {
       await this.telegram.send(
-        formatInsightAlert(
-          filing,
-          enrichment.headline,
-          enrichment.contextLine,
-          enrichment.amountEvidence,
-        ),
+        formatInsightAlert(filing, {
+          headline,
+          claimLine: enrichment.claimLine,
+          contextLine: enrichment.contextLine,
+          evidence: enrichment.amountEvidence,
+        }),
       );
       return 1;
     } catch (error) {
@@ -731,6 +870,12 @@ const blankVerdict = (
   counterparty: null,
   counterpartyEvidence: null,
   counterpartyRefusalReason: null,
+  claims: [],
+  claimLine: null,
+  claimDiscards: [],
+  claimsProposed: null,
+  claimRefusalReason: null,
+  claimRefusalDetail: null,
   headline: null,
   contextLine: null,
 });
@@ -746,5 +891,7 @@ const merge = (
   parseRetried: tally.parseRetried + delta.parseRetried,
   retried: tally.retried + delta.retried,
   failed: tally.failed + delta.failed,
+  claimed_lines: tally.claimed_lines + delta.claimed_lines,
+  claimsDiscarded: tally.claimsDiscarded + delta.claimsDiscarded,
   alerted: tally.alerted + delta.alerted,
 });

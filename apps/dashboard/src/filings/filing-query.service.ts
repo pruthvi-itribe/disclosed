@@ -30,6 +30,11 @@ export const ENRICHMENT_STATES = [
 
 export type EnrichmentStateFilter = (typeof ENRICHMENT_STATES)[number];
 
+/** Claim outcomes a caller may filter on. */
+export const CLAIM_FILTERS = ['emitted', 'none'] as const;
+
+export type ClaimFilter = (typeof CLAIM_FILTERS)[number];
+
 /** Amount outcomes a caller may filter on. */
 export const AMOUNT_FILTERS = ['extracted', 'refused'] as const;
 
@@ -47,6 +52,8 @@ export interface RecentQuery {
   readonly amount?: AmountFilter;
   /** A specific machine-readable refusal reason. */
   readonly refusal?: string;
+  /** Whether the document produced a wire line of notable claims. */
+  readonly claim?: ClaimFilter;
 }
 
 /** A page of filings and the counts needed to page through them. */
@@ -288,6 +295,9 @@ export class FilingQueryService {
       byUnparseable,
       withCounterparty,
       withEnrichedHeadline,
+      withClaims,
+      byClaimDiscard,
+      byClaimRefusal,
     ] = await Promise.all([
       this.filings.countDocuments({}).exec(),
       this.groupBy('$enrichment.state'),
@@ -312,6 +322,27 @@ export class FilingQueryService {
           'enrichment.headline': { $ne: null },
         })
         .exec(),
+      this.filings
+        .countDocuments({ 'enrichment.claimLine': { $ne: null } })
+        .exec(),
+      // Unwound, because the interesting number is per DISCARD rather than per
+      // filing: one document proposing three inventions is three data points
+      // about the extractor, not one.
+      this.filings
+        .aggregate<GroupedCount<string | null>>([
+          { $unwind: '$enrichment.claimDiscards' },
+          {
+            $group: {
+              _id: '$enrichment.claimDiscards.reason',
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1, _id: 1 } },
+        ])
+        .exec(),
+      this.groupBy('$enrichment.claimRefusalReason', {
+        'enrichment.claimRefusalReason': { $ne: null },
+      }),
     ]);
 
     return {
@@ -323,6 +354,9 @@ export class FilingQueryService {
       byUnparseable: toCounts(byUnparseable, 'unknown'),
       withCounterparty,
       withEnrichedHeadline,
+      withClaims,
+      byClaimDiscard: toCounts(byClaimDiscard, 'unknown'),
+      byClaimRefusal: toCounts(byClaimRefusal, 'unknown'),
       generatedAtIst: istTimestamp(this.now()),
     };
   }
@@ -404,12 +438,20 @@ export class FilingQueryService {
             'enrichment.amountRupees':
               query.amount === 'extracted' ? { $ne: null } : null,
           }),
+      ...(query.claim === undefined
+        ? {}
+        : {
+            'enrichment.claimLine':
+              query.claim === 'emitted' ? { $ne: null } : null,
+          }),
       ...(query.refusal === undefined
         ? {}
         : {
             $or: [
               { 'enrichment.amountRefusalReason': query.refusal },
               { 'enrichment.unparseableReason': query.refusal },
+              { 'enrichment.claimRefusalReason': query.refusal },
+              { 'enrichment.claimDiscards.reason': query.refusal },
             ],
           }),
     };
@@ -482,6 +524,23 @@ function toEnrichmentView(
     counterpartyRefusalReason: enrichment?.counterpartyRefusalReason ?? null,
     headline: enrichment?.headline ?? null,
     contextLine: enrichment?.contextLine ?? null,
+    claimLine: enrichment?.claimLine ?? null,
+    // Defaulted to empty arrays rather than left undefined: every filing stored
+    // before the claim lane existed carries no such field, and a page that had
+    // to test for absence would render "no claims" and "not looked at" the same.
+    claims: (enrichment?.claims ?? []).map((claim) => ({
+      text: claim.text,
+      span: claim.span,
+      kind: claim.kind,
+    })),
+    claimDiscards: (enrichment?.claimDiscards ?? []).map((row) => ({
+      reason: row.reason,
+      claim: row.claim,
+      detail: row.detail,
+    })),
+    claimsProposed: enrichment?.claimsProposed ?? null,
+    claimRefusalReason: enrichment?.claimRefusalReason ?? null,
+    claimRefusalDetail: enrichment?.claimRefusalDetail ?? null,
   };
 }
 

@@ -48,7 +48,22 @@ export interface IngestConfig {
   readonly enrichmentMaxBytes: number;
   /** IST days the derived-context line asks about, before clamping to coverage. */
   readonly contextWindowDays: number;
+
+  // --- notable-claim extraction ---------------------------------------------
+  /** False stops any model being called. Nothing else changes. */
+  readonly claimsEnabled: boolean;
+  /** Empty means no extractor is configured, which is a supported state. */
+  readonly anthropicApiKey: string;
+  readonly claimModel: string;
+  /** Thinking depth and token spend. See `claude-claim-extractor.ts`. */
+  readonly claimEffort: ClaimEffort;
+  readonly claimMaxClaims: number;
 }
+
+/** The effort levels the Messages API accepts. */
+export const CLAIM_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+export type ClaimEffort = (typeof CLAIM_EFFORTS)[number];
 
 /** The environment keys carrying a number, in the order they are validated. */
 export const NUMERIC_KEYS = [
@@ -71,6 +86,7 @@ export const NUMERIC_KEYS = [
   'ENRICH_LEASE_MS',
   'ENRICH_MAX_BYTES',
   'CONTEXT_WINDOW_DAYS',
+  'CLAIM_MAX_CLAIMS',
 ] as const;
 
 export type NumericKey = (typeof NUMERIC_KEYS)[number];
@@ -128,7 +144,31 @@ export const CONFIG_DEFAULTS = {
   // Clears the largest attachment observed in the recorded month (22.2 MB).
   ENRICH_MAX_BYTES: 26_214_400,
   CONTEXT_WINDOW_DAYS: 30,
+  // Three claims is what the wire format carries before a line stops being
+  // readable at a glance, and each extra one is another chance to be wrong.
+  CLAIM_MAX_CLAIMS: 3,
 } as const;
+
+/**
+ * The model asked for notable claims.
+ *
+ * A CONFIGURED VALUE rather than a constant, because the cost/quality trade is
+ * the operator's and can be made without a deploy. The default is the current
+ * Opus: the failure being defended against is a fluent invention, and while
+ * `claim-verify.ts` catches one whatever produced it, a model that proposes more
+ * inventions yields a stream of discards rather than a stream of claims.
+ */
+export const DEFAULT_CLAIM_MODEL_ID = 'claude-opus-5';
+
+/**
+ * Default effort.
+ *
+ * `medium` rather than the documented `high` starting point, because this is
+ * bounded extraction with a hard verification gate downstream — the marginal
+ * value of deeper reasoning is capped by what the gate will accept — and the
+ * honest way to move it is a sweep against a real corpus, not a guess.
+ */
+export const DEFAULT_CLAIM_EFFORT: ClaimEffort = 'medium';
 
 /**
  * The floor every numeric setting shares. Zero is not merely useless in any of
@@ -244,6 +284,26 @@ const readBoolean = (
   return !['false', '0', 'no', 'off'].includes(raw.trim().toLowerCase());
 };
 
+/**
+ * Reads the effort level, or stops the process naming the valid ones.
+ *
+ * Checked against the allowlist rather than passed through, because an
+ * unrecognised value is a 400 from the API on every single call — which
+ * presents as an extractor that has silently stopped working rather than as a
+ * typo in one environment variable.
+ */
+const readEffort = (key: string, env: NodeJS.ProcessEnv): ClaimEffort => {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === '') return DEFAULT_CLAIM_EFFORT;
+  const value = raw.trim().toLowerCase();
+  if (!(CLAIM_EFFORTS as readonly string[]).includes(value)) {
+    throw new Error(
+      `${key} must be one of ${CLAIM_EFFORTS.join(', ')}, but was "${raw}".`,
+    );
+  }
+  return value as ClaimEffort;
+};
+
 const readList = (key: string, env: NodeJS.ProcessEnv): string[] =>
   (env[key] ?? '')
     .split(',')
@@ -285,6 +345,11 @@ export const loadConfig = (
   enrichmentLeaseMs: readNumeric('ENRICH_LEASE_MS', env),
   enrichmentMaxBytes: readNumeric('ENRICH_MAX_BYTES', env),
   contextWindowDays: readNumeric('CONTEXT_WINDOW_DAYS', env),
+  claimsEnabled: readBoolean('CLAIM_ENABLED', env, true),
+  anthropicApiKey: readString('ANTHROPIC_API_KEY', env, ''),
+  claimModel: readString('CLAIM_MODEL', env, DEFAULT_CLAIM_MODEL_ID),
+  claimEffort: readEffort('CLAIM_EFFORT', env),
+  claimMaxClaims: readNumeric('CLAIM_MAX_CLAIMS', env),
 });
 
 /**
@@ -319,6 +384,16 @@ export const describeConfig = (config: IngestConfig): string =>
     `enrichWhere=${config.enrichmentInProcess ? 'in-process' : 'separate-process'}`,
     `enrichDelay=${config.enrichmentRequestDelayMs}ms`,
     `context=${config.contextWindowDays}d`,
+    // Both halves matter and they fail differently: the switch being off is a
+    // decision, and a missing key with the switch on is a misconfiguration that
+    // presents as a market with nothing to say.
+    `claims=${
+      !config.claimsEnabled
+        ? 'off'
+        : config.anthropicApiKey
+          ? `${config.claimModel}/${config.claimEffort}`
+          : 'unconfigured'
+    }`,
     // Both halves are required to send anything, so a half-set pair is reported
     // as unconfigured rather than as a channel that will never deliver.
     `telegram=${

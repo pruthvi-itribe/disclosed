@@ -74,6 +74,24 @@ export function formatFilingAlert(
   return lines.join('\n');
 }
 
+/** Everything the follow-up may carry. Every field is already verified. */
+export interface InsightAlert {
+  /** The composed headline, when a verified AMOUNT produced one. */
+  readonly headline: string | null;
+  /**
+   * The wire line of notable claims, when the document yielded any.
+   *
+   * A SECOND, INDEPENDENT REASON TO SEND. Most of what a filings desk wants to
+   * read carries no figure at all — guidance, an expansion, a partnership — so
+   * a follow-up gated on the amount alone would stay silent on exactly the
+   * filings this pipeline was built to stop missing.
+   */
+  readonly claimLine: string | null;
+  readonly contextLine: string | null;
+  /** The document's own words for the figure. */
+  readonly evidence: string | null;
+}
+
 /**
  * The follow-up a background read of the source PDF earns.
  *
@@ -84,26 +102,35 @@ export function formatFilingAlert(
  * immediately, and says more when it knows more — which is exactly how a squawk
  * desk works.
  *
- * IT IS ONLY EVER SENT WHEN AN AMOUNT WAS VERIFIED. A refused filing produces
- * no second message at all, because there is nothing to add: the first alert
- * already carried the exchange's own words. That gate is also what keeps the
- * volume honest — measured on the corpus, roughly one filing in six yields a
- * figure, so this is a fraction of the traffic the primary alert carries and
- * never a duplicate of it.
+ * IT IS ONLY EVER SENT WHEN THERE IS SOMETHING VERIFIED TO ADD — a figure the
+ * extractor traced to a substring of the source, or a claim whose sentence was
+ * found verbatim in it. A filing that yields neither produces no second message
+ * at all, because there is nothing to add: the first alert already carried the
+ * exchange's own words. That gate is what keeps the volume honest.
  *
- * `headline`, `contextLine` and `evidence` are all escaped. The headline is
- * composed from a symbol and a counterparty name that both originate outside
- * this process, and `evidence` is raw text lifted out of a PDF — the single
- * least trustworthy string in the system, since it is whatever a filer's
- * template happened to put next to a number.
+ * EVERY FIELD IS ESCAPED. The headline is composed from a symbol and a
+ * counterparty name that both originate outside this process; the claim line is
+ * composed from sentences lifted out of a PDF; and `evidence` is raw text from
+ * the same place — the least trustworthy strings in the system, since they are
+ * whatever a filer's template happened to contain.
  */
 export function formatInsightAlert(
   filing: Filing,
-  headline: string,
-  contextLine: string | null,
-  evidence: string | null,
+  insight: InsightAlert,
 ): string {
-  const lines = [escapeHtml(headline)];
+  const { headline, claimLine, contextLine, evidence } = insight;
+
+  // The headline leads when there is one, because it states the size of the
+  // event; the claim line leads when there is not, because then it is the only
+  // thing said. Both appear when both exist, and neither is ever paraphrased.
+  const lines: string[] = [];
+  if (headline !== null && headline.trim().length > 0) {
+    lines.push(escapeHtml(headline));
+  }
+  if (claimLine !== null && claimLine.trim().length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push(escapeHtml(claimLine));
+  }
 
   if (contextLine !== null && contextLine.trim().length > 0) {
     lines.push('', escapeHtml(contextLine));

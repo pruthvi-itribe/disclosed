@@ -17,6 +17,7 @@ import type {
 } from './dashboard.types';
 import {
   AMOUNT_FILTERS,
+  CLAIM_FILTERS,
   ENRICHMENT_STATES,
   FilingQueryService,
 } from './filing-query.service';
@@ -82,7 +83,7 @@ export class DashboardController {
    * Recent filings, newest first, paginated and filterable.
    *
    * Query: `limit`, `offset`, `symbol`, `category`, `state`, `amount`,
-   * `refusal`. Anything unparseable is a 400 rather than a silently applied
+   * `claim`, `refusal`. Anything unparseable is a 400 rather than a silently applied
    * default — a filter that quietly did nothing is indistinguishable from one
    * that matched everything, and on the refusal filters that difference is the
    * whole point of the view.
@@ -107,6 +108,7 @@ export class DashboardController {
       category: readFilter('category', query),
       state: readEnum('state', query, ENRICHMENT_STATES),
       amount: readEnum('amount', query, AMOUNT_FILTERS),
+      claim: readEnum('claim', query, CLAIM_FILTERS),
       refusal: readFilter('refusal', query),
     });
 
