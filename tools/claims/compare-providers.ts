@@ -1,3 +1,9 @@
+// Load .env before anything reads process.env. The Nest apps get this from
+// ConfigModule.forRoot, but this is a plain ts-node script with no Nest
+// container, so without this line a key that is correctly sitting in .env
+// reads as absent and the run exits claiming there are no credentials.
+import 'dotenv/config';
+
 /**
  * Runs BOTH providers over the SAME filings and reports what each one did.
  *
