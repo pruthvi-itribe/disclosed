@@ -63,10 +63,10 @@ Return one table only. If the filing contains both a consolidated and a standalo
 You return:
 
 - "basis": "consolidated" or "standalone" — read from the heading printed above the table you took the figures from, not from anywhere else in the document.
-- "columnsSpan": the line of column period-end dates at the head of that table, quoted EXACTLY as the document writes it. In a PDF these dates often run together with no spaces, like "30.06.202631.03.202630.06.202531.03.2026". Copy them exactly as they appear, including any run-together form.
+- "columnsSpan": the line of column period-end dates at the head of that table, quoted EXACTLY as the document writes it. The document arrives from one of two parsers and the two look very different, so copy whichever you are given, byte for byte. From a flattened PDF the dates often run together with no spaces, like "30.06.202631.03.202630.06.202531.03.2026". From a Markdown table the line carries pipes and padding, like "| PARTICULARS | 30.06.2026 | 31.03.2026 | 30.06.2025 |" \u2014 the pipes and the spaces between them are PART OF THE LINE and must be copied too. Do not tidy a Markdown row into a plain one.
 - "figures": one entry per metric you can read, with:
   - "metric": one of ${RESULTS_METRICS.join(', ')}.
-  - "span": the table row that states it, quoted EXACTLY as the document writes it, from the row's label through the last figure in the row. Copy it character for character. Line breaks may be normalised to single spaces; nothing else may change.
+  - "span": the table row that states it, quoted EXACTLY as the document writes it, from the row's label through the last figure in the row. Copy it character for character, including any leading "|" and the pipes and padding between cells if the row is a Markdown table row. Line breaks may be normalised to single spaces; nothing else may change.
   - "current": the value for the most recent period, copied EXACTLY as the row prints it, including commas and any surrounding parentheses. Write "(4,191.73)" if the document writes "(4,191.73)".
   - "prior": the value for the SAME PERIOD ONE YEAR EARLIER, copied exactly the same way.
 
