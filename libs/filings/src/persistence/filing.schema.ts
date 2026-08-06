@@ -1,7 +1,46 @@
 import { Schema, type Document } from 'mongoose';
 import type { Filing } from '../filing.types';
+import type { FilingEnrichment } from '../logic/enrichment.types';
 
-export type FilingDocument = Filing & Document;
+export type FilingDocument = Filing &
+  Document & { enrichment?: FilingEnrichment };
+
+/**
+ * What the background worker learned from a filing's attachment.
+ *
+ * `_id: false` because this is a value, not an entity — it has no identity
+ * apart from the filing it hangs off, and a generated ObjectId on every one
+ * would be 12 bytes per filing bought for nothing.
+ *
+ * EVERY FIELD DEFAULTS TO NULL AND NOTHING IS REQUIRED. The document is written
+ * by one process and read by another, and a required field would mean a
+ * mongoose validation error inside the worker's write path for a shape a future
+ * version of this code produces — which is exactly the class of failure that
+ * loses a filing quietly.
+ */
+const EnrichmentSchema = new Schema<FilingEnrichment>(
+  {
+    state: { type: String, default: 'pending' },
+    attempts: { type: Number, default: 0 },
+    attemptedAt: { type: Date, default: null },
+    nextAttemptAt: { type: Date, default: null },
+    unparseableReason: { type: String, default: null },
+    lastError: { type: String, default: null },
+    documentChars: { type: Number, default: null },
+    amountRupees: { type: Number, default: null },
+    amountEvidence: { type: String, default: null },
+    amountAnchor: { type: String, default: null },
+    amountLabel: { type: String, default: null },
+    amountRefusalReason: { type: String, default: null },
+    amountRefusalDetail: { type: String, default: null },
+    counterparty: { type: String, default: null },
+    counterpartyEvidence: { type: String, default: null },
+    counterpartyRefusalReason: { type: String, default: null },
+    headline: { type: String, default: null },
+    contextLine: { type: String, default: null },
+  },
+  { _id: false },
+);
 
 export const FilingSchema = new Schema<FilingDocument>(
   {
@@ -16,6 +55,43 @@ export const FilingSchema = new Schema<FilingDocument>(
     announcedAt: { type: Date, required: true },
     disseminatedAt: { type: Date, required: true, index: true },
     ingestedAt: { type: Date, required: true },
+    /**
+     * DELIBERATELY WITHOUT A DEFAULT.
+     *
+     * A default would make `insertNew` write eighteen null fields on every
+     * filing, on the 2-second hot path whose whole job is to store and alert
+     * before anything else happens. Absence means "never attempted" and is read
+     * that way everywhere: the claim query matches a missing `enrichment.state`
+     * alongside an explicit `'pending'`, and the dashboard projects a missing
+     * block to the same pending view. The worker is the only writer.
+     */
+    enrichment: { type: EnrichmentSchema, required: false },
   },
   { collection: 'filings', versionKey: false },
+);
+
+/**
+ * Serves the worker's claim query: the non-terminal states, newest first.
+ *
+ * Without it, draining the queue is a collection scan per tick against the same
+ * collection the poller is inserting into. Partial rather than full — the
+ * terminal states are the overwhelming majority once the backlog is drained,
+ * and they are never the answer to this query.
+ */
+FilingSchema.index(
+  { 'enrichment.state': 1, disseminatedAt: -1 },
+  { name: 'enrichment_state_1_disseminatedAt_-1' },
+);
+
+/**
+ * Serves the derived-context queries, which ask "how many filings of this
+ * category has this symbol made lately" on the alert path.
+ *
+ * `symbol_1` alone would work and would scan every filing the symbol has ever
+ * made; a symbol filing daily accumulates those without bound. This index
+ * answers the count from the index alone.
+ */
+FilingSchema.index(
+  { symbol: 1, category: 1, disseminatedAt: -1 },
+  { name: 'symbol_1_category_1_disseminatedAt_-1' },
 );

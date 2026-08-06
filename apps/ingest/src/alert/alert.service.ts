@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { describeError, safeText, stackOf } from '@app/common';
-import { isRoutine, partitionForAlerting, type Filing } from '@app/filings';
+import {
+  normaliseWatchlist,
+  partitionForAlerting,
+  passesContentGates,
+  type Filing,
+} from '@app/filings';
 import { formatFilingAlert, TelegramService } from '@app/notify';
 
 export interface AlertOptions {
@@ -14,6 +19,20 @@ export interface AlertOptions {
 }
 
 /**
+ * Supplies the derived-context line for a filing, or null when none can be
+ * computed confidently.
+ *
+ * An INTERFACE rather than the concrete service, and nullable in the
+ * constructor, because the alert path must remain runnable — and testable —
+ * with no database attached. The poller's two-second budget is the whole reason
+ * this pipeline exists; a hard dependency from the send path to a collection
+ * would make every alert wait on a query.
+ */
+export interface FilingContextProvider {
+  contextFor(filing: Filing, now: Date): Promise<string | null>;
+}
+
+/**
  * What an empty watchlist actually costs, measured rather than guessed.
  *
  * From the recorded 32-day corpus: 12,415 of 17,442 filings (71.2%) survive the
@@ -23,27 +42,6 @@ export interface AlertOptions {
  */
 const FILINGS_PER_DAY_UNFILTERED = 388;
 const PEAK_FILINGS_PER_HOUR = 106;
-
-/**
- * Uppercases and trims, so the two sides of a watchlist comparison are
- * normalised identically. A config value arrives as `WATCHLIST=RELIANCE, TCS`
- * split on commas, which leaves a leading space on every entry but the first.
- */
-const normalise = (symbol: string): string => symbol.trim().toUpperCase();
-
-/**
- * Blank entries are dropped rather than kept as members that match nothing.
- *
- * `WATCHLIST=` parses to `['']`, not `[]`. Kept as a real entry it matches no
- * symbol and mutes the bot completely — and because the failure mode is "no
- * alerts" rather than an error, a dead channel is indistinguishable from a
- * quiet market. Dropped, it takes the documented empty-watchlist branch and
- * means what the operator wrote: no watchlist.
- */
-const normaliseWatchlist = (
-  watchlist: readonly string[],
-): ReadonlySet<string> =>
-  new Set(watchlist.map(normalise).filter((symbol) => symbol.length > 0));
 
 /**
  * Decides which newly-inserted filings become Telegram messages.
@@ -61,6 +59,13 @@ export class AlertService {
   constructor(
     private readonly telegram: TelegramService,
     private readonly options: AlertOptions,
+    /**
+     * Null means "send the alert without a context line", which is exactly what
+     * this service did before derived context existed. Defaulted rather than
+     * required so every existing construction — and every existing test — keeps
+     * working without a database.
+     */
+    private readonly context: FilingContextProvider | null = null,
   ) {
     this.watchlist = normaliseWatchlist(options.watchlist);
     this.warnIfUnfiltered();
@@ -159,7 +164,9 @@ export class AlertService {
     for (const filing of ordered) {
       try {
         if (!this.shouldAlert(filing)) continue;
-        await this.telegram.send(formatFilingAlert(filing));
+        await this.telegram.send(
+          formatFilingAlert(filing, await this.contextFor(filing, now)),
+        );
         attempted.push(filing);
       } catch (error) {
         // `formatFilingAlert` and `isRoutine` both throw a TypeError on a
@@ -184,10 +191,42 @@ export class AlertService {
    * The two content gates. Reads `category` and, when a watchlist is
    * configured, `symbol` — both of which can throw on a malformed record, so
    * this is only ever called from inside the loop's try.
+   *
+   * The policy itself lives in `libs/filings/src/logic/alert-gate.ts`, shared
+   * with the enrichment worker's follow-up messages. A second copy here would
+   * let an operator set a watchlist, watch this lane fall silent, and keep
+   * receiving the other one.
    */
   private shouldAlert(filing: Filing): boolean {
-    if (isRoutine(filing.category)) return false;
-    if (this.watchlist.size === 0) return true;
-    return this.watchlist.has(normalise(filing.symbol));
+    return passesContentGates(filing, this.watchlist);
+  }
+
+  /**
+   * The derived-context line, or null.
+   *
+   * CONTAINED SEPARATELY FROM THE SEND, and that separation is the point. This
+   * reaches a database on the path whose latency budget is the reason the
+   * project exists, so a slow or failing query must cost the context line and
+   * nothing else. Folding it into the surrounding try would let a Mongo blip
+   * suppress the ALERT, turning a decoration into a single point of failure for
+   * the thing it decorates.
+   *
+   * The error is logged, never swallowed: a context provider that has been
+   * throwing for a week must not look like a system that simply had nothing to
+   * say.
+   */
+  private async contextFor(filing: Filing, now: Date): Promise<string | null> {
+    if (this.context === null) return null;
+
+    try {
+      return await this.context.contextFor(filing, now);
+    } catch (error) {
+      this.logger.error(
+        `Derived context failed for seqId ${safeText(filing.seqId)}; ` +
+          `alerting without it: ${describeError(error)}`,
+        stackOf(error),
+      );
+      return null;
+    }
   }
 }

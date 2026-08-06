@@ -4,6 +4,7 @@ import {
   formatDrainFailureAlert,
   formatSkippedRecordsAlert,
   formatFilingAlert,
+  formatInsightAlert,
   formatWriteFailureAlert,
 } from './alert-formatter';
 import type { Filing } from '@app/filings';
@@ -761,5 +762,154 @@ describe('formatDrainFailureAlert', () => {
 
     expect(output).not.toMatch(/[<>]/);
     expect(output.match(/&(?!amp;|lt;|gt;)/g)).toBeNull();
+  });
+});
+
+describe('the derived-context line on a filing alert', () => {
+  const filing = {
+    seqId: 1,
+    symbol: 'PANACEABIO',
+    isin: 'INE000000001',
+    companyName: 'Panacea Biotec Limited',
+    industry: null,
+    category: 'Bagging/Receiving of orders/contracts',
+    summary: 'Panacea Biotec Limited has informed the Exchange about an order',
+    attachmentUrl: 'https://nsearchives.nseindia.com/corporate/a.pdf',
+    announcedAt: new Date('2026-08-06T04:58:17.000Z'),
+    disseminatedAt: new Date('2026-08-06T04:58:18.000Z'),
+    ingestedAt: new Date('2026-08-06T04:58:19.000Z'),
+  };
+
+  it('is omitted entirely when there is none', () => {
+    // The alert must be byte-identical to what it sent before derived context
+    // existed, or every filing without a context line changes shape on the wire.
+    expect(formatFilingAlert(filing)).toBe(formatFilingAlert(filing, null));
+  });
+
+  it.each([[''], ['   '], ['\n\t ']])(
+    'omits a blank context line "%s" rather than emitting an empty line',
+    (contextLine) => {
+      expect(formatFilingAlert(filing, contextLine)).toBe(
+        formatFilingAlert(filing, null),
+      );
+    },
+  );
+
+  it('places it under the symbol line, above the exchange words', () => {
+    const lines = formatFilingAlert(
+      filing,
+      '3rd order for PANACEABIO in 30 days',
+    ).split('\n');
+
+    expect(lines[0]).toBe('PANACEABIO — BAGGING/RECEIVING OF ORDERS/CONTRACTS');
+    expect(lines[2]).toBe('3rd order for PANACEABIO in 30 days');
+    expect(lines[4]).toBe(filing.summary);
+  });
+
+  it('escapes it, because the symbol is interpolated into it', () => {
+    // Real symbols contain ampersands: M&M, J&KBANK, IL&FSENGG.
+    const message = formatFilingAlert(filing, '2nd order for M&M in 30 days');
+    expect(message).toContain('M&amp;M');
+    expect(message).not.toContain('M&M ');
+  });
+});
+
+describe('formatInsightAlert', () => {
+  const filing = {
+    seqId: 1,
+    symbol: 'RAILTEL',
+    isin: 'INE000000001',
+    companyName: 'RailTel Corporation of India Limited',
+    industry: null,
+    category: 'Bagging/Receiving of orders/contracts',
+    summary: 'RailTel has informed the Exchange about an order',
+    attachmentUrl: 'https://nsearchives.nseindia.com/corporate/a.pdf',
+    announcedAt: new Date('2026-08-06T04:58:17.000Z'),
+    disseminatedAt: new Date('2026-08-06T04:58:18.000Z'),
+    ingestedAt: new Date('2026-08-06T04:58:19.000Z'),
+  };
+
+  it('leads with the headline and carries the source link', () => {
+    const message = formatInsightAlert(
+      filing,
+      'RAILTEL BAGS ORDER ₹18.54 cr from South Western Railway',
+      '3rd order for RAILTEL in 30 days',
+      'Rs. 18,53,66,820',
+    );
+
+    expect(message.split('\n')[0]).toBe(
+      'RAILTEL BAGS ORDER ₹18.54 cr from South Western Railway',
+    );
+    expect(message).toContain('3rd order for RAILTEL in 30 days');
+    expect(message).toContain('Stated as "Rs. 18,53,66,820" in the filing');
+    expect(message).toContain('10:28:18 IST');
+    expect(message).toContain(`Source: ${filing.attachmentUrl}`);
+  });
+
+  it.each([
+    ['no context line', null, 'Rs. 5 crore'],
+    ['no evidence', '3rd order for RAILTEL in 30 days', null],
+    ['neither', null, null],
+    ['a blank context line', '  ', 'Rs. 5 crore'],
+    ['blank evidence', '3rd order', '   '],
+  ])(
+    'omits %s rather than emitting an empty line',
+    (_label, context, evidence) => {
+      const message = formatInsightAlert(
+        filing,
+        'RAILTEL BAGS ORDER ₹5 cr',
+        context,
+        evidence,
+      );
+      expect(message).not.toMatch(/\n\n\n/);
+      expect(message.split('\n')[0]).toBe('RAILTEL BAGS ORDER ₹5 cr');
+    },
+  );
+
+  it('collapses evidence broken across lines by the PDF text layer', () => {
+    // Real extraction: `Rs\n.\n847\nCrore`.
+    const message = formatInsightAlert(
+      filing,
+      'BEL BAGS ORDER ₹847 cr',
+      null,
+      'Rs\n.\n847\nCrore',
+    );
+    expect(message).toContain('Stated as "Rs . 847 Crore" in the filing');
+  });
+
+  it('bounds a pathological evidence string', () => {
+    // Telegram discards a message over 4,096 characters outright rather than
+    // truncating it, so an unbounded quote loses the whole alert.
+    const message = formatInsightAlert(
+      filing,
+      'X BAGS ORDER ₹1 cr',
+      null,
+      'A'.repeat(5000),
+    );
+    expect(message.length).toBeLessThan(1000);
+  });
+
+  it('escapes the headline, the context and the evidence', () => {
+    const message = formatInsightAlert(
+      filing,
+      'M&M BAGS ORDER ₹5 cr from <b>Acme</b> Limited',
+      '2nd order for M&M in 30 days',
+      'Rs. 5 crore <script>',
+    );
+
+    expect(message).toContain('M&amp;M');
+    expect(message).toContain('&lt;b&gt;Acme&lt;/b&gt;');
+    expect(message).toContain('&lt;script&gt;');
+    expect(message).not.toContain('<b>');
+  });
+
+  it('omits the source line for a filing with no attachment', () => {
+    const message = formatInsightAlert(
+      { ...filing, attachmentUrl: null },
+      'RAILTEL BAGS ORDER ₹5 cr',
+      null,
+      null,
+    );
+    expect(message).not.toContain('Source:');
   });
 });

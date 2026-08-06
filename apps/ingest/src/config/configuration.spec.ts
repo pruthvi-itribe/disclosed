@@ -262,7 +262,7 @@ describe('loadConfig: purity', () => {
 describe('describeConfig', () => {
   const config = loadConfig(
     withEnv({
-      MONGO_URI: 'mongodb://alice:hunter2@db:27017/redbox',
+      MONGO_URI: 'mongodb://alice:hunter2@db:27017/turret',
       TELEGRAM_BOT_TOKEN: '123456:AAH-super-secret-token',
       TELEGRAM_CHAT_ID: '-1001234567890',
       WATCHLIST: 'RELIANCE,TCS',
@@ -293,7 +293,7 @@ describe('describeConfig', () => {
   });
 
   it('still shows where mongo is, minus the credentials', () => {
-    expect(describeConfig(config)).toContain('db:27017/redbox');
+    expect(describeConfig(config)).toContain('db:27017/turret');
   });
 
   it('reports whether telegram is configured, without the values', () => {
@@ -321,5 +321,83 @@ describe('describeConfig', () => {
     expect(describeConfig(loadConfig(empty))).toContain(
       CONFIG_DEFAULTS.MONGO_URI,
     );
+  });
+});
+
+describe('the background attachment worker settings', () => {
+  it('ships enabled, because a worker that is off looks like an empty queue', () => {
+    expect(loadConfig(empty).enrichmentEnabled).toBe(true);
+  });
+
+  it.each([
+    ['false', false],
+    ['FALSE', false],
+    ['0', false],
+    ['no', false],
+    ['off', false],
+    [' Off ', false],
+    ['true', true],
+    ['1', true],
+    ['yes', true],
+    ['anything else', true],
+  ])('reads ENRICH_ENABLED=%s as %s', (raw, expected) => {
+    // Permissive towards ON, deliberately: a typo must not silently disable the
+    // worker, because there is no signal that distinguishes a stopped worker
+    // from a queue with nothing in it.
+    expect(loadConfig(withEnv({ ENRICH_ENABLED: raw })).enrichmentEnabled).toBe(
+      expected,
+    );
+  });
+
+  it.each([[''], ['   ']])(
+    'treats a blank ENRICH_ENABLED="%s" as unset',
+    (raw) => {
+      expect(
+        loadConfig(withEnv({ ENRICH_ENABLED: raw })).enrichmentEnabled,
+      ).toBe(true);
+    },
+  );
+
+  it('ships the measured defaults', () => {
+    const config = loadConfig(empty);
+
+    // 800ms is deliberately slower than the ~2.5 req/s that drew no rate
+    // limiting across 60 sampled requests, because the population is 17,000.
+    expect(config.enrichmentRequestDelayMs).toBe(800);
+    expect(config.enrichmentMaxAttempts).toBe(5);
+    expect(config.enrichmentLeaseMs).toBe(120_000);
+    expect(config.contextWindowDays).toBe(30);
+    // Clears the largest attachment observed in the recorded month (22.2 MB).
+    expect(config.enrichmentMaxBytes).toBeGreaterThan(22.2 * 1024 * 1024);
+  });
+
+  it.each([
+    ['ENRICH_REQUEST_DELAY_MS', 'enrichmentRequestDelayMs', '1500', 1500],
+    ['ENRICH_BATCH_SIZE', 'enrichmentBatchSize', '5', 5],
+    ['ENRICH_MAX_ATTEMPTS', 'enrichmentMaxAttempts', '2', 2],
+    ['ENRICH_LEASE_MS', 'enrichmentLeaseMs', '9000', 9000],
+    ['CONTEXT_WINDOW_DAYS', 'contextWindowDays', '7', 7],
+  ] as const)('honours %s', (key, field, raw, expected) => {
+    expect(loadConfig(withEnv({ [key]: raw }))[field]).toBe(expected);
+  });
+
+  it.each([
+    ['ENRICH_REQUEST_DELAY_MS'],
+    ['ENRICH_MAX_ATTEMPTS'],
+    ['ENRICH_MAX_BYTES'],
+    ['CONTEXT_WINDOW_DAYS'],
+  ])('rejects a non-finite %s at load rather than in a consumer', (key) => {
+    expect(() => loadConfig(withEnv({ [key]: 'abc' }))).toThrow(
+      /finite number/,
+    );
+  });
+
+  it('reports the worker in the startup line, both ways', () => {
+    expect(describeConfig(loadConfig(empty))).toContain('enrich=on');
+    expect(
+      describeConfig(loadConfig(withEnv({ ENRICH_ENABLED: 'false' }))),
+    ).toContain('enrich=off');
+    expect(describeConfig(loadConfig(empty))).toContain('context=30d');
+    expect(describeConfig(loadConfig(empty))).toContain('enrichDelay=800ms');
   });
 });

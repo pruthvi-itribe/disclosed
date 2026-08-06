@@ -42,16 +42,30 @@ const escapeHtml = (text: string): string =>
  * before escaping: the other order would emit `&AMP;`, which is not the entity
  * Telegram accepts.
  */
-export function formatFilingAlert(filing: Filing): string {
+export function formatFilingAlert(
+  filing: Filing,
+  contextLine: string | null = null,
+): string {
   const lines = [
     `${escapeHtml(filing.symbol.toUpperCase())} — ${escapeHtml(
       filing.category.toUpperCase(),
     )}`,
+  ];
+
+  // The derived-context line, when one could be computed. It is composed from
+  // counts over stored filings and carries no exchange text, but it is escaped
+  // like everything else: the symbol is interpolated into it, and real symbols
+  // contain ampersands.
+  if (contextLine !== null && contextLine.trim().length > 0) {
+    lines.push('', escapeHtml(contextLine));
+  }
+
+  lines.push(
     '',
     escapeHtml(filing.summary),
     '',
     toIstClock(filing.disseminatedAt),
-  ];
+  );
 
   if (filing.attachmentUrl) {
     lines.push(`Source: ${escapeHtml(filing.attachmentUrl)}`);
@@ -59,6 +73,74 @@ export function formatFilingAlert(filing: Filing): string {
 
   return lines.join('\n');
 }
+
+/**
+ * The follow-up a background read of the source PDF earns.
+ *
+ * A SECOND MESSAGE, NOT A REPLACEMENT, and that is the design rather than a
+ * limitation. The first alert has to leave within the poller's two-second
+ * budget, which rules out fetching a document whose p99 is 3.6 seconds and
+ * which fails outright for one filing in thirty. So the wire says what it knows
+ * immediately, and says more when it knows more — which is exactly how a squawk
+ * desk works.
+ *
+ * IT IS ONLY EVER SENT WHEN AN AMOUNT WAS VERIFIED. A refused filing produces
+ * no second message at all, because there is nothing to add: the first alert
+ * already carried the exchange's own words. That gate is also what keeps the
+ * volume honest — measured on the corpus, roughly one filing in six yields a
+ * figure, so this is a fraction of the traffic the primary alert carries and
+ * never a duplicate of it.
+ *
+ * `headline`, `contextLine` and `evidence` are all escaped. The headline is
+ * composed from a symbol and a counterparty name that both originate outside
+ * this process, and `evidence` is raw text lifted out of a PDF — the single
+ * least trustworthy string in the system, since it is whatever a filer's
+ * template happened to put next to a number.
+ */
+export function formatInsightAlert(
+  filing: Filing,
+  headline: string,
+  contextLine: string | null,
+  evidence: string | null,
+): string {
+  const lines = [escapeHtml(headline)];
+
+  if (contextLine !== null && contextLine.trim().length > 0) {
+    lines.push('', escapeHtml(contextLine));
+  }
+
+  // The document's own words for the figure. This is what makes the number
+  // checkable from inside the message: a reader who doubts "₹18.54 cr" can see
+  // that the filing said "Rs. 18,53,66,820" and open the source to confirm it.
+  // Collapsed to one line because PDF extraction routinely breaks a figure
+  // across three ("Rs\n.\n847\nCrore").
+  if (evidence !== null && evidence.trim().length > 0) {
+    lines.push(
+      '',
+      `Stated as "${escapeHtml(oneLine(evidence))}" in the filing`,
+    );
+  }
+
+  lines.push('', toIstClock(filing.disseminatedAt));
+
+  if (filing.attachmentUrl) {
+    lines.push(`Source: ${escapeHtml(filing.attachmentUrl)}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Collapses whitespace and bounds the length.
+ *
+ * Both halves matter for PDF-derived text: the newlines would break the
+ * one-fact-per-line convention, and the bound stops a pathological extraction
+ * from pushing the message past Telegram's 4,096-character limit, which
+ * discards the whole alert rather than truncating it.
+ */
+const EVIDENCE_MAX_CHARS = 160;
+const oneLine = (text: string): string =>
+  text.replace(/\s+/g, ' ').trim().slice(0, EVIDENCE_MAX_CHARS);
 
 /**
  * The operator alert for a blind poller. `lastError` is an exception message,

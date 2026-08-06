@@ -19,6 +19,21 @@ export interface IngestConfig {
   readonly burstThreshold: number;
   readonly failureThreshold: number;
   readonly watchlist: readonly string[];
+
+  // --- the background attachment worker -------------------------------------
+  /** False stops the worker being started at all. It never touches the poller. */
+  readonly enrichmentEnabled: boolean;
+  readonly enrichmentIdleIntervalMs: number;
+  /** Delay between two consecutive fetches of NSE's archive host. */
+  readonly enrichmentRequestDelayMs: number;
+  readonly enrichmentBatchSize: number;
+  readonly enrichmentMaxAttempts: number;
+  readonly enrichmentRetryBaseMs: number;
+  readonly enrichmentRetryMaxMs: number;
+  readonly enrichmentLeaseMs: number;
+  readonly enrichmentMaxBytes: number;
+  /** IST days the derived-context line asks about, before clamping to coverage. */
+  readonly contextWindowDays: number;
 }
 
 /** The environment keys carrying a number, in the order they are validated. */
@@ -30,6 +45,15 @@ export const NUMERIC_KEYS = [
   'ALERT_WINDOW_MS',
   'BURST_THRESHOLD',
   'FAILURE_THRESHOLD',
+  'ENRICH_IDLE_INTERVAL_MS',
+  'ENRICH_REQUEST_DELAY_MS',
+  'ENRICH_BATCH_SIZE',
+  'ENRICH_MAX_ATTEMPTS',
+  'ENRICH_RETRY_BASE_MS',
+  'ENRICH_RETRY_MAX_MS',
+  'ENRICH_LEASE_MS',
+  'ENRICH_MAX_BYTES',
+  'CONTEXT_WINDOW_DAYS',
 ] as const;
 
 export type NumericKey = (typeof NUMERIC_KEYS)[number];
@@ -39,7 +63,7 @@ export type NumericKey = (typeof NUMERIC_KEYS)[number];
  * documented, shipped defaults — so it is the only case that does not throw.
  */
 export const CONFIG_DEFAULTS = {
-  MONGO_URI: 'mongodb://localhost:27017/redbox',
+  MONGO_URI: 'mongodb://localhost:27117/turret',
   NSE_HOT_INTERVAL_MS: 2_000,
   NSE_IDLE_INTERVAL_MS: 30_000,
   // Five minutes, from the design spec. The corpus supports it: no window
@@ -55,6 +79,30 @@ export const CONFIG_DEFAULTS = {
   ALERT_WINDOW_MS: 600_000,
   BURST_THRESHOLD: 8,
   FAILURE_THRESHOLD: 3,
+
+  // --- the background attachment worker -------------------------------------
+  // Ten seconds between sweeps of an empty queue. The worker is not latency
+  // critical — the filing has already been stored and alerted — so this trades
+  // a few seconds of enrichment delay for a database it barely touches.
+  ENRICH_IDLE_INTERVAL_MS: 10_000,
+  // Between two fetches of NSE's archive host. The measurement behind it: 60
+  // sequential requests at ~2.5 req/s drew no rate limiting, and that is the
+  // ONLY evidence there is. 800ms is deliberately slower than what was proven
+  // safe, because the population is 17,000 documents and the sample was 60.
+  ENRICH_REQUEST_DELAY_MS: 800,
+  // Documents per tick. Bounds how long a single tick holds the loop, which
+  // matters only for how promptly `stop()` takes effect.
+  ENRICH_BATCH_SIZE: 20,
+  ENRICH_MAX_ATTEMPTS: 5,
+  ENRICH_RETRY_BASE_MS: 60_000,
+  ENRICH_RETRY_MAX_MS: 3_600_000,
+  // Twice the fetch timeout plus parse time: long enough that a second worker
+  // cannot take a document still being fetched, short enough that a crashed
+  // worker's claims free up within a couple of minutes.
+  ENRICH_LEASE_MS: 120_000,
+  // Clears the largest attachment observed in the recorded month (22.2 MB).
+  ENRICH_MAX_BYTES: 26_214_400,
+  CONTEXT_WINDOW_DAYS: 30,
 } as const;
 
 /**
@@ -152,6 +200,25 @@ const readString = (
  * quiet market. Case is deliberately preserved: `AlertService` normalises both
  * sides of the comparison, and folding here as well is how the two sides drift.
  */
+/**
+ * Reads a boolean setting.
+ *
+ * Only the words `false`, `0`, `no` and `off` turn a feature off; everything
+ * else that is set turns it on, and an absent or blank value takes the default.
+ * A permissive reading in the OTHER direction would be worse here: a typo in
+ * `ENRICH_ENABLED` must not silently disable the worker, because a worker that
+ * is not running looks exactly like a queue with nothing in it.
+ */
+const readBoolean = (
+  key: string,
+  env: NodeJS.ProcessEnv,
+  fallback: boolean,
+): boolean => {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  return !['false', '0', 'no', 'off'].includes(raw.trim().toLowerCase());
+};
+
 const readList = (key: string, env: NodeJS.ProcessEnv): string[] =>
   (env[key] ?? '')
     .split(',')
@@ -179,6 +246,16 @@ export const loadConfig = (
   burstThreshold: readNumeric('BURST_THRESHOLD', env),
   failureThreshold: readNumeric('FAILURE_THRESHOLD', env),
   watchlist: readList('WATCHLIST', env),
+  enrichmentEnabled: readBoolean('ENRICH_ENABLED', env, true),
+  enrichmentIdleIntervalMs: readNumeric('ENRICH_IDLE_INTERVAL_MS', env),
+  enrichmentRequestDelayMs: readNumeric('ENRICH_REQUEST_DELAY_MS', env),
+  enrichmentBatchSize: readNumeric('ENRICH_BATCH_SIZE', env),
+  enrichmentMaxAttempts: readNumeric('ENRICH_MAX_ATTEMPTS', env),
+  enrichmentRetryBaseMs: readNumeric('ENRICH_RETRY_BASE_MS', env),
+  enrichmentRetryMaxMs: readNumeric('ENRICH_RETRY_MAX_MS', env),
+  enrichmentLeaseMs: readNumeric('ENRICH_LEASE_MS', env),
+  enrichmentMaxBytes: readNumeric('ENRICH_MAX_BYTES', env),
+  contextWindowDays: readNumeric('CONTEXT_WINDOW_DAYS', env),
 });
 
 /**
@@ -209,6 +286,9 @@ export const describeConfig = (config: IngestConfig): string =>
     `burst=${config.burstThreshold}`,
     `failures=${config.failureThreshold}`,
     `watchlist=${config.watchlist.length}`,
+    `enrich=${config.enrichmentEnabled ? 'on' : 'off'}`,
+    `enrichDelay=${config.enrichmentRequestDelayMs}ms`,
+    `context=${config.contextWindowDays}d`,
     // Both halves are required to send anything, so a half-set pair is reported
     // as unconfigured rather than as a channel that will never deliver.
     `telegram=${

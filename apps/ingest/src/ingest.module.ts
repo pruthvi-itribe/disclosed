@@ -3,6 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { getModelToken, MongooseModule } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import {
+  AttachmentFetcher,
+  EnrichmentRepository,
   FilingRepository,
   FilingSchema,
   NseAdapter,
@@ -11,6 +13,8 @@ import {
 import { TelegramService } from '@app/notify';
 import { AlertService } from './alert/alert.service';
 import { loadConfig } from './config/configuration';
+import { EnrichmentWorker } from './enrichment/enrichment.worker';
+import { FilingContextService } from './enrichment/filing-context.service';
 import { CircuitBreaker } from './poller/circuit-breaker';
 import { PollerService } from './poller/poller.service';
 import { SessionService } from './session/session.service';
@@ -68,10 +72,69 @@ export const FILING_MODEL = 'Filing';
         new CircuitBreaker(config.getOrThrow<number>('failureThreshold')),
     },
     {
+      provide: EnrichmentRepository,
+      inject: [getModelToken(FILING_MODEL)],
+      useFactory: (model: Model<FilingDocument>) =>
+        new EnrichmentRepository(model),
+    },
+    {
+      provide: AttachmentFetcher,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        new AttachmentFetcher(config.getOrThrow<number>('enrichmentMaxBytes')),
+    },
+    {
+      provide: FilingContextService,
+      inject: [EnrichmentRepository, ConfigService],
+      useFactory: (repository: EnrichmentRepository, config: ConfigService) =>
+        new FilingContextService(
+          repository,
+          config.getOrThrow<number>('contextWindowDays'),
+        ),
+    },
+    {
       provide: AlertService,
-      inject: [TelegramService, ConfigService],
-      useFactory: (telegram: TelegramService, config: ConfigService) =>
-        new AlertService(telegram, {
+      inject: [TelegramService, ConfigService, FilingContextService],
+      useFactory: (
+        telegram: TelegramService,
+        config: ConfigService,
+        context: FilingContextService,
+      ) =>
+        new AlertService(
+          telegram,
+          {
+            alertWindowMs: config.getOrThrow<number>('alertWindowMs'),
+            watchlist: config.getOrThrow<readonly string[]>('watchlist'),
+          },
+          // The derived-context line. Contained inside AlertService, so a slow
+          // or failing query costs the line and never the alert.
+          context,
+        ),
+    },
+    {
+      provide: EnrichmentWorker,
+      inject: [
+        EnrichmentRepository,
+        AttachmentFetcher,
+        FilingContextService,
+        TelegramService,
+        ConfigService,
+      ],
+      useFactory: (
+        repository: EnrichmentRepository,
+        fetcher: AttachmentFetcher,
+        context: FilingContextService,
+        telegram: TelegramService,
+        config: ConfigService,
+      ) =>
+        new EnrichmentWorker(repository, fetcher, context, telegram, {
+          idleIntervalMs: config.getOrThrow<number>('enrichmentIdleIntervalMs'),
+          requestDelayMs: config.getOrThrow<number>('enrichmentRequestDelayMs'),
+          batchSize: config.getOrThrow<number>('enrichmentBatchSize'),
+          maxAttempts: config.getOrThrow<number>('enrichmentMaxAttempts'),
+          retryBaseMs: config.getOrThrow<number>('enrichmentRetryBaseMs'),
+          retryMaxMs: config.getOrThrow<number>('enrichmentRetryMaxMs'),
+          leaseMs: config.getOrThrow<number>('enrichmentLeaseMs'),
           alertWindowMs: config.getOrThrow<number>('alertWindowMs'),
           watchlist: config.getOrThrow<readonly string[]>('watchlist'),
         }),

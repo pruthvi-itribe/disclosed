@@ -5,6 +5,7 @@ import type { Model } from 'mongoose';
 import { describeError, stackOf } from '@app/common';
 import type { FilingDocument } from '@app/filings';
 import { describeConfig, loadConfig } from './config/configuration';
+import { EnrichmentWorker } from './enrichment/enrichment.worker';
 import { FILING_MODEL, IngestModule } from './ingest.module';
 import { PollerService } from './poller/poller.service';
 
@@ -31,6 +32,8 @@ async function bootstrap(): Promise<void> {
   await app.get<Model<FilingDocument>>(getModelToken(FILING_MODEL)).init();
 
   const poller = app.get(PollerService);
+  const enrichment = app.get(EnrichmentWorker);
+  const config = loadConfig();
 
   let closing = false;
   const shutdown = async (signal: string): Promise<void> => {
@@ -38,10 +41,11 @@ async function bootstrap(): Promise<void> {
     if (closing) return;
     closing = true;
 
-    logger.log(`${signal} received, stopping poller`);
+    logger.log(`${signal} received, stopping poller and enrichment worker`);
     // `stop()` cuts the sleep short, so a shutdown during the 30s idle interval
     // does not present as a hung process to whatever is waiting on the exit.
     poller.stop();
+    enrichment.stop();
 
     try {
       await app.close();
@@ -53,6 +57,25 @@ async function bootstrap(): Promise<void> {
 
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+  // DETACHED, and deliberately so. The attachment worker is a second loop in
+  // the same process, and it must not be able to stop the poller: its failures
+  // cost an amount, the poller's failures cost a filing. It is contained by its
+  // own `tick()` contract, so this catch is the last resort for a rejection
+  // that escapes `start()` itself.
+  if (config.enrichmentEnabled) {
+    void enrichment.start().catch((error: unknown) => {
+      logger.error(
+        `Enrichment worker stopped: ${describeError(error)}`,
+        stackOf(error),
+      );
+    });
+  } else {
+    logger.warn(
+      'ENRICH_ENABLED is off: source PDFs will not be read, so no filing ' +
+        'will carry an amount, a counterparty or a composed headline.',
+    );
+  }
 
   logger.log('Starting ingest poll loop');
   // `start()` runs the startup checks — the unique-index assertion first — and
