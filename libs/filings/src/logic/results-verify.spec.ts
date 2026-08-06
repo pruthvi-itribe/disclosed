@@ -313,6 +313,32 @@ describe('verifyResults — the adversarial cases', () => {
     ).toMatchObject({ outcome: 'refused', reason: 'not-year-on-year' });
   });
 
+  it('REFUSES when the column the value sits in is printed twice', () => {
+    // A March-quarter statement prints `31.03.2026` twice: once for the quarter
+    // and once for the full year. The value's position then says which COLUMN
+    // it came from and not which PERIOD, so nothing can be published.
+    const columns = '31.03.2026 31.03.2025 31.03.2026 31.03.2025';
+    const row = 'Revenue from operations 100.00 90.00 400.00 380.00';
+    const text = [
+      'UNAUDITED CONSOLIDATED FINANCIAL RESULTS',
+      '₹ Million',
+      columns,
+      row,
+    ].join('\n');
+    expect(
+      verifyResults({
+        documentText: text,
+        proposed: {
+          basis: 'consolidated',
+          columnsSpan: columns,
+          figures: [
+            { metric: 'revenue', current: '100.00', prior: '90.00', span: row },
+          ],
+        },
+      }),
+    ).toMatchObject({ outcome: 'refused', reason: 'period-ambiguous' });
+  });
+
   it('REFUSES a column header that is not in the document', () => {
     expect(verify({ columnsSpan: '30.06.202730.06.2026' })).toMatchObject({
       outcome: 'refused',

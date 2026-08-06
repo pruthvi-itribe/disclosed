@@ -231,8 +231,8 @@ echo "=== 1. consolidated against standalone: the wrong-number error ==="
 perl -0pi -e 's/  if \(basis\.basis !== proposed\.basis\) \{/  if (false as boolean) {/' "$V"
 check "the document's heading is no longer required to agree with the extractor"
 
-perl -0pi -e 's/  if \(basis\.outcome === .none.\) \{\n    return refuse\(.basis-not-determinable., basis\.detail\);\n  \}//' "$V"
-check "a table with no statement heading in reach is published anyway"
+perl -0pi -e "s/  if \(reachable\.length === 0\) \{/  if (reachable.length === 0) {\n    return { outcome: 'ok', basis: 'consolidated', evidence: 'assumed' };\n  }\n  if (reachable.length === -1) {/" "$B"
+check "a table with no statement heading in reach is assumed consolidated"
 
 perl -0pi -e 's/export const BASIS_HEADING_REACH = 400;/export const BASIS_HEADING_REACH = 1_000_000;/' "$B"
 check "basis reach unbounded (a note three thousand characters away governs)"
@@ -240,8 +240,8 @@ check "basis reach unbounded (a note three thousand characters away governs)"
 perl -0pi -e 's/export const BASIS_HEADING_REACH = 400;/export const BASIS_HEADING_REACH = 0;/' "$B"
 check "basis reach closed to nothing (every table refuses)"
 
-perl -0pi -e 's/  const opposing = markers\.find\(/  const opposing = [].find(/' "$B"
-check "a heading naming BOTH statements now governs one of them"
+perl -0pi -e 's/      marker\.basis !== nearest\.basis &&/      marker.basis === nearest.basis \&\&/' "$B"
+check "the both-statements test compares the wrong pair of headings"
 
 perl -0pi -e 's/export const BASIS_AMBIGUITY_CHARS = 120;/export const BASIS_AMBIGUITY_CHARS = 1;/' "$B"
 check "the both-statements window narrowed to one character"
@@ -270,7 +270,7 @@ check "the day of the period end no longer has to match"
 perl -0pi -e 's/    occurrences\(dates, currentDate\) > 1 \|\|\n    occurrences\(dates, priorDate\) > 1\n  \) \{/    false as boolean\n  ) {/' "$V"
 check "a repeated column date no longer makes the column unknowable"
 
-perl -0pi -e 's/  if \(disagreeing !== undefined\) \{/  if (false as boolean) {/' "$V"
+perl -0pi -e 's/    \(row\) => row\.currentIndex !== pair\.current \|\| row\.priorIndex !== pair\.prior,/    () => false,/' "$V"
 check "two rows may be read across different pairs of columns"
 
 perl -0pi -e 's/  if \(tokens\.length !== columnCount\) \{/  if (false as boolean) {/' "$V"
@@ -288,8 +288,8 @@ check "a date inside a row counts as a cell and shifts every column"
 echo ""
 echo "=== 3. the scale the table is denominated in ==="
 
-perl -0pi -e 's/  if \(scale\.outcome === .none.\) \{\n    return refuse\(.unit-not-determinable., scale\.detail\);\n  \}//' "$V"
-check "a table that declares no scale is published in an unstated one"
+perl -0pi -e "s/  if \(inReach\.length === 0\) \{/  if (inReach.length === 0) {\n    return { outcome: 'ok', token: 'CR', evidence: 'assumed' };\n  }\n  if (inReach.length === -1) {/" "$U"
+check "a table that declares no scale is assumed to be in crore"
 
 perl -0pi -e "s/  if \(tokens\.length > 1\) \{/  if (false as boolean) {/" "$U"
 check "two disagreeing scale declarations no longer refuse"
@@ -297,7 +297,7 @@ check "two disagreeing scale declarations no longer refuse"
 perl -0pi -e 's/export const SCALE_REACH = 400;/export const SCALE_REACH = 1_000_000;/' "$U"
 check "scale reach unbounded (another table's units govern this one)"
 
-perl -0pi -e 's/  \(\?:₹\|Rs\\\\\.\?\|INR\|rupees\)\\\\s\*\(\?:in\\\\s\+\)\?/  /' "$U"
+perl -0pi -e 's/\(\?:₹\|Rs\\\.\?\|INR\|rupees\)\\s\*\(\?:in\\s\+\)\?/(?:)/' "$U"
 check "the currency marker is no longer required (prose declares the scale)"
 
 perl -0pi -e "s/  if \(!ROW_SCOPED_UNIT_METRICS\.has\(metric\)\) \{/  if (true as boolean) {/" "$V"
@@ -309,13 +309,13 @@ check "an EPS row that declares no unit is published anyway"
 echo ""
 echo "=== 4. which row it is ==="
 
-perl -0pi -e 's/  if \(labelRefusal !== null\) \{/  if (false as boolean) {/' "$V"
+perl -0pi -e 's/    return `the quoted row does not carry a \$\{metric\} label`;/    return null;/' "$M"
 check "the row label is no longer checked (profit before tax becomes net profit)"
 
 perl -0pi -e 's/  if \(rule\.excludes !== undefined && rule\.excludes\.test\(row\)\) \{/  if (false as boolean) {/' "$M"
 check "the disqualifying pattern dropped (a rival row passes on one word)"
 
-perl -0pi -e 's/  if \(!rule\.requires\.test\(row\)\) \{/  if (false as boolean) {/' "$M"
+perl -0pi -e 's/  const rule = RULES\[metric\];/  if (row.length >= 0) return null;\n  const rule = RULES[metric];/' "$M"
 check "the required label dropped (any row carries any metric)"
 
 perl -0pi -e 's/  if \(qualifier !== undefined && !qualifier\.test\(row\)\) \{/  if (false as boolean) {/' "$M"
@@ -336,7 +336,7 @@ check "table reach unbounded (a standalone row under a consolidated header)"
 perl -0pi -e 's/  const end = QUARTER_ENDS\.find\(/  const end = [{ month: 6, day: 30, quarter: 1 as const, nextYear: true }].find(/' "$D"
 check "only the June quarter is derivable (every other period refuses)"
 
-perl -0pi -e 's/    const fiscalYearEnd = end\.nextYear \? date\.year \+ 1 : date\.year;/    const fiscalYearEnd = date.year;/' "$D"
+perl -0pi -e 's/  const fiscalYearEnd = end\.nextYear \? date\.year \+ 1 : date\.year;/  const fiscalYearEnd = date.year;/' "$D"
 check "the fiscal year is the calendar year (Q1 FY27 becomes Q1 FY26)"
 
 perl -0pi -e 's/  if \(conflict !== null\) \{/  if (false as boolean) {/' "$V"

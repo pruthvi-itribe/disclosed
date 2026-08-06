@@ -192,5 +192,9 @@ describe('sameDay and isYearBefore', () => {
   it('compares the day and month without the year', () => {
     expect(sameDay(date(30, 6, 2026), date(30, 6, 2019))).toBe(true);
     expect(sameDay(date(30, 6, 2026), date(31, 3, 2026))).toBe(false);
+    // The DAY on its own, with the month held equal: a 29 June column beside a
+    // 30 June one is a different period end, not the year-ago quarter.
+    expect(sameDay(date(30, 6, 2026), date(29, 6, 2025))).toBe(false);
+    expect(isYearBefore(date(30, 6, 2026), date(29, 6, 2025))).toBe(false);
   });
 });
