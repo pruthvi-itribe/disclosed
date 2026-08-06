@@ -48,8 +48,18 @@ export type UnparseableReason =
   | 'not-a-pdf'
   /** The URL does not point at an NSE archive host. */
   | 'untrusted-host'
-  /** Served complete by NSE's own content-length, and structurally broken. */
+  /**
+   * Served complete by NSE's own content-length, and cut off: no `%%EOF` at
+   * the end, because the bytes that carry it were never sent.
+   */
   | 'truncated-at-origin'
+  /**
+   * Structurally complete — it ends where a PDF should — and the parser still
+   * could not read it. Encryption, or a construct pdf.js does not implement.
+   * Kept apart from truncation because the remedies differ: one is NSE's
+   * storage tier, the other is this pipeline's parser.
+   */
+  | 'unreadable-pdf'
   /** Parsed, but carries no text layer — a raster scan needing OCR. */
   | 'no-text-layer'
   /** Larger than the worker's download cap. */

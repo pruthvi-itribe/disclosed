@@ -78,19 +78,40 @@ export function classifyFetchFailure(status: number | null): FailureVerdict {
 }
 
 /**
- * Whether a PDF that failed to parse can ever parse.
+ * How far from the end of a PDF the `%%EOF` marker may sit.
  *
- * It cannot. Both sampled truncated documents were served with NSE's own
- * `content-length` matching the short body, at exact power-of-two boundaries
- * (65,536 and 524,288 bytes), and re-fetching returns identical bytes. Neither
- * poppler nor `pdf-parse` nor OCR recovers anything, because the bytes that
- * carry the content were never sent.
- *
- * This is stated as a function rather than inlined so the claim has one place
- * to live and one place to be revisited if NSE ever repairs its storage tier.
+ * ISO 32000 requires it in the last 1,024 bytes and every reader scans exactly
+ * that window; 2,048 tolerates a writer that appended a newline or two without
+ * reaching far enough back to find the marker of an EARLIER incremental save,
+ * which would make a genuinely truncated file look complete.
  */
-export const parseFailureReason = (): UnparseableReason =>
-  'truncated-at-origin';
+export const EOF_SCAN_BYTES = 2_048;
+
+const EOF_MARKER = Buffer.from('%%EOF', 'latin1');
+
+/**
+ * Why a PDF that failed to parse failed, MEASURED rather than assumed.
+ *
+ * Both reasons are terminal — the same bytes will fail the same way forever —
+ * so this changes no behaviour. It changes what the record SAYS, and that is
+ * worth the twenty lines: `truncated-at-origin` is a claim about NSE's storage
+ * tier, and filing every parse failure under it would turn an operational
+ * measurement into a guess. The tell is unambiguous and cheap: a PDF that was
+ * cut off mid-transfer has no `%%EOF` at its end, because the bytes carrying it
+ * were never sent.
+ *
+ * Measured on the live collection: six documents failed to parse and all six
+ * end in binary body data with no terminator anywhere near the end — a 2.5 MB
+ * GODREJAGRO board outcome whose last `%%EOF` is at byte 502, from its
+ * linearisation stub. NSE's own `content-length` matches each short body and
+ * re-fetching returns identical bytes.
+ */
+export function parseFailureReason(body: Uint8Array): UnparseableReason {
+  const tail = Buffer.from(
+    body.subarray(Math.max(0, body.length - EOF_SCAN_BYTES)),
+  );
+  return tail.includes(EOF_MARKER) ? 'unreadable-pdf' : 'truncated-at-origin';
+}
 
 /** True when extracted text is substantial enough to be a text layer. */
 export const hasUsableTextLayer = (text: string): boolean =>

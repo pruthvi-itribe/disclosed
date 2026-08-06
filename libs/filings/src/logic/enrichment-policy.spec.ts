@@ -3,6 +3,7 @@ import {
   DEFAULT_MAX_ATTEMPTS,
   DEFAULT_RETRY_BASE_MS,
   DEFAULT_RETRY_MAX_MS,
+  EOF_SCAN_BYTES,
   hasUsableTextLayer,
   MIN_TEXT_LAYER_CHARS,
   nextAttemptDelayMs,
@@ -82,8 +83,63 @@ describe('classifyFetchFailure', () => {
 });
 
 describe('parseFailureReason', () => {
-  it('is always terminal, because the missing bytes were never sent', () => {
-    expect(parseFailureReason()).toBe('truncated-at-origin');
+  const body = (tail: string, size = 4096): Uint8Array =>
+    Buffer.concat([
+      Buffer.from('%PDF-1.7\n'),
+      Buffer.alloc(size, 0x41),
+      Buffer.from(tail, 'latin1'),
+    ]);
+
+  it.each([
+    ['a terminator at the very end', '%%EOF'],
+    ['a terminator with a trailing newline', '%%EOF\n'],
+    ['a terminator with trailing whitespace', '%%EOF\r\n   '],
+    [
+      'a terminator just inside the scan window',
+      `%%EOF${' '.repeat(EOF_SCAN_BYTES - 10)}`,
+    ],
+  ])('reports %s as unreadable rather than truncated', (_label, tail) => {
+    // Structurally complete and still unparseable: encryption, or a construct
+    // pdf.js does not implement. The remedy is this pipeline's parser, not
+    // NSE's storage tier, and the record must not blame the wrong one.
+    expect(parseFailureReason(body(tail))).toBe('unreadable-pdf');
+  });
+
+  it.each([
+    ['a body ending in binary data', ''],
+    ['a body ending mid-stream', 'stream\x00\x01\x02'],
+    ['a terminator only in the linearisation stub', ''],
+  ])('reports %s as truncated at origin', (_label, tail) => {
+    expect(parseFailureReason(body(tail))).toBe('truncated-at-origin');
+  });
+
+  it('does not find a terminator from an earlier incremental save', () => {
+    // A real GODREJAGRO board outcome: 2,545,062 bytes, last `%%EOF` at byte
+    // 502 in its linearisation stub, and nothing after. Scanning the whole file
+    // would call that complete.
+    const truncated = Buffer.concat([
+      Buffer.from('%PDF-1.7\nstartxref\n488\n%%EOF\n'),
+      Buffer.alloc(EOF_SCAN_BYTES * 4, 0x42),
+    ]);
+    expect(parseFailureReason(truncated)).toBe('truncated-at-origin');
+  });
+
+  it('handles a body shorter than the scan window', () => {
+    expect(parseFailureReason(Buffer.from('%PDF-1.4 junk'))).toBe(
+      'truncated-at-origin',
+    );
+    expect(parseFailureReason(Buffer.from('%PDF-1.4 x %%EOF'))).toBe(
+      'unreadable-pdf',
+    );
+  });
+
+  it('is terminal either way, because the same bytes fail the same way', () => {
+    for (const reason of [
+      parseFailureReason(body('')),
+      parseFailureReason(body('%%EOF')),
+    ]) {
+      expect(['truncated-at-origin', 'unreadable-pdf']).toContain(reason);
+    }
   });
 });
 

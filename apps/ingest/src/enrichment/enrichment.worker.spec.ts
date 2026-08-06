@@ -373,26 +373,47 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
     expect((await worker.tick(NOW)).unparseable).toBe(1);
   });
 
-  it('records the parser message on a truncated document', async () => {
-    const repository = new StubRepository([{ filing: filing(), attempts: 1 }]);
-    const worker = new EnrichmentWorker(
-      repository as unknown as EnrichmentRepository,
-      new StubFetcher(okBody()) as unknown as AttachmentFetcher,
-      new StubContext() as unknown as FilingContextService,
-      new StubTelegram() as unknown as TelegramService,
-      OPTIONS,
-      async () => {
-        throw new Error("Couldn't find trailer dictionary");
-      },
-    );
+  it.each([
+    [
+      'a body that ends mid-stream',
+      Buffer.from('%PDF-1.7 body bytes with no terminator'),
+      'truncated-at-origin',
+    ],
+    [
+      'a body that ends where a PDF should',
+      Buffer.from('%PDF-1.7 body bytes\nstartxref\n9\n%%EOF\n'),
+      'unreadable-pdf',
+    ],
+  ])(
+    'reads the reason off %s rather than assuming it',
+    async (_label, body, reason) => {
+      const repository = new StubRepository([
+        { filing: filing(), attempts: 1 },
+      ]);
+      const worker = new EnrichmentWorker(
+        repository as unknown as EnrichmentRepository,
+        new StubFetcher({
+          outcome: 'ok',
+          body,
+          bytes: body.length,
+          contentType: 'application/pdf',
+        }) as unknown as AttachmentFetcher,
+        new StubContext() as unknown as FilingContextService,
+        new StubTelegram() as unknown as TelegramService,
+        OPTIONS,
+        async () => {
+          throw new Error("Couldn't find trailer dictionary");
+        },
+      );
 
-    await worker.tick(NOW);
-    expect(onlyRecorded(repository)).toMatchObject({
-      state: 'unparseable',
-      unparseableReason: 'truncated-at-origin',
-      lastError: "Couldn't find trailer dictionary",
-    });
-  });
+      await worker.tick(NOW);
+      expect(onlyRecorded(repository)).toMatchObject({
+        state: 'unparseable',
+        unparseableReason: reason,
+        lastError: "Couldn't find trailer dictionary",
+      });
+    },
+  );
 
   it('reaches unparseable for a raster scan with no text layer', async () => {
     const { worker, repository } = harness({ text: '   \n \f ' });

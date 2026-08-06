@@ -74,8 +74,8 @@
 #     nouns, no advisory words) rather than its rows.
 #   - `apps/ingest/src/main.ts`. Composition, verified by running the process.
 #
-# Tally, so a report can quote it without recounting: 36 mutations across eight
-# groups, plus 4 independence checks = 40 `check` calls.
+# Tally, so a report can quote it without recounting: 38 mutations across eight
+# groups, plus 4 independence checks = 42 `check` calls.
 
 set -uo pipefail
 
@@ -372,6 +372,12 @@ check "backoff shifted rather than raised (32-bit overflow shortens it)"
 
 perl -0pi -e "s/  text\.replace\(\/\\\\s\+\/g, ''\)\.length >= MIN_TEXT_LAYER_CHARS;/  text.length >= MIN_TEXT_LAYER_CHARS;/" "$P"
 check "whitespace counted as a text layer (a raster scan reads as readable)"
+
+perl -0pi -e "s/  return tail\\.includes\\(EOF_MARKER\\) \\? 'unreadable-pdf' : 'truncated-at-origin';/  return 'truncated-at-origin';/" "$P"
+check "every parse failure blamed on NSE's storage tier without evidence"
+
+perl -0pi -e 's/    body\.subarray\(Math\.max\(0, body\.length - EOF_SCAN_BYTES\)\),/    body,/' "$P"
+check "the whole file scanned for %%EOF (a linearisation stub reads as complete)"
 
 echo ""
 echo "=== the reading order and the follow-up alert's gates ==="

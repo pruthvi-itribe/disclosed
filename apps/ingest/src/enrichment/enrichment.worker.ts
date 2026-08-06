@@ -314,15 +314,16 @@ export class EnrichmentWorker {
 
     const parsed = await extractPdfText(fetched.body, this.pdfParser);
     if (parsed.outcome === 'unreadable') {
-      // NOT retryable, and this is the measurement the whole terminal-state
-      // design rests on: NSE serves 3.3% of its PDFs truncated at origin, with
-      // its own content-length matching the short body. Re-fetching returns
-      // identical bytes forever.
+      // NOT retryable either way, and this is the measurement the whole
+      // terminal-state design rests on: NSE serves a percent or so of its PDFs
+      // truncated at origin, with its own content-length matching the short
+      // body, so re-fetching returns identical bytes forever. The reason is
+      // read off the bytes rather than assumed — see `parseFailureReason`.
       await this.recordUnparseable(
         filing,
         attempts,
         now,
-        parseFailureReason(),
+        parseFailureReason(fetched.body),
         parsed.message,
       );
       return { ...base, unparseable: 1 };
