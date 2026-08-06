@@ -11,7 +11,45 @@ const DOCUMENT =
   'The Company targets 100 billion rupees \nadjusted EBITDA by FY31.\n' +
   'Instamart is expected to turn contribution positive in FY27.\n';
 
+/**
+ * A document the way a real one arrives: a markdown table from Docling, a
+ * typographic apostrophe, a ligature the type-setter emitted, and a word a page
+ * break hyphenated.
+ */
+const TYPESET =
+  '| Revenue | 1,234.00 |\n' +
+  'the Company\u2019s declared \ufb01nancial position \u2014 stable\n' +
+  'the inter-\nnational trade\n';
+
 describe('findVerbatimSpan', () => {
+  describe('what canonicalisation recovers, and it is a paraphrase of PUNCTUATION', () => {
+    it.each([
+      ['a table row quoted without its pipes', 'Revenue 1,234.00'],
+      ['a table row quoted with them', '| Revenue | 1,234.00 |'],
+      ['a straight apostrophe for a typographic one', "the Company's declared"],
+      ['plain letters for a ligature', 'declared financial position'],
+      ['a hyphen for an em dash', 'financial position - stable'],
+      ['a word a line break hyphenated', 'the international trade'],
+    ])('finds %s', (_label, span) => {
+      expect(containsVerbatimSpan(TYPESET, span)).toBe(true);
+    });
+
+    it('still returns the DOCUMENT bytes, not the model\u2019s tidied ones', () => {
+      const match = findVerbatimSpan(TYPESET, "the Company's declared");
+      // What a reviewer reads has to be what the document says, curly
+      // apostrophe and all.
+      expect(match?.evidence).toBe('the Company\u2019s declared');
+    });
+
+    it('reslices the source exactly at the offset it reports', () => {
+      const match = findVerbatimSpan(TYPESET, 'Revenue 1,234.00');
+      if (match === null) throw new Error('expected a match');
+      expect(
+        TYPESET.slice(match.offset, match.offset + match.evidence.length),
+      ).toBe(match.evidence);
+    });
+  });
+
   it('finds a span that spans a line break in the source', () => {
     // The only reason this module exists: the sentence a reader sees on the
     // page arrives from the parser with a newline in the middle of it.
@@ -86,6 +124,22 @@ describe('findVerbatimSpan', () => {
       // Every one of these is a sentence a model could plausibly produce, and
       // every one of them says something the filing does not.
       expect(containsVerbatimSpan(DOCUMENT, span)).toBe(false);
+    });
+
+    it.each([
+      ['a table row with one digit changed', '| Revenue | 1,235.00 |'],
+      ['a table row with one word changed', '| Turnover | 1,234.00 |'],
+      ['a rejoined word with one letter changed', 'the internationol trade'],
+      [
+        'a curly-quoted sentence with one word changed',
+        "the Company's declared board",
+      ],
+    ])('rejects %s even after canonicalisation', (_label, span) => {
+      // THE INVARIANT UNDER THE REPAIRS. `span-canon.ts` widens what counts as
+      // the same CHARACTER and must never widen what counts as the same WORD,
+      // so every one of these — each a single letter or digit away from a
+      // sentence the document really carries — must still be refused.
+      expect(containsVerbatimSpan(TYPESET, span)).toBe(false);
     });
 
     it('rejects a span shorter than the evidence bar', () => {

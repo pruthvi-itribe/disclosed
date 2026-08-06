@@ -19,7 +19,7 @@
  * enough". A span that is not in the document means the claim is discarded.
  *
  * ================================================================
- * THE ONE TRANSFORMATION, AND WHY IT IS SAFE
+ * WHAT "EXACT" IS MEASURED IN, AND WHY IT IS STILL EXACT
  * ================================================================
  *
  * PDF text extraction breaks lines wherever the page did. A sentence that reads
@@ -30,12 +30,23 @@
  * every true claim and keep almost none — a gate that refuses everything is not
  * a safety property, it is a broken feature that happens to be safe.
  *
- * The single transformation applied is therefore: RUNS OF WHITESPACE COLLAPSE TO
- * ONE SPACE, on both sides. Nothing else. Every non-whitespace character must
- * still be present, in order, with no insertion, deletion or substitution —
- * so no word, digit, negation or unit can differ between the claim's span and
- * the document. Case is NOT folded: "no" and "No" are different words in a
- * disclosure, and a model that changed one has changed the document.
+ * So the comparison runs in a CANONICAL PROJECTION of both sides, and
+ * `span-canon.ts` owns it and argues every rule in it. Whitespace runs collapse
+ * to one space; typographic quotes, dashes and ligatures become their plain
+ * equivalents; invisible characters vanish; a markdown cell boundary reads as a
+ * separator; a hyphen a line break interrupted rejoins its word.
+ *
+ * THE PROJECTION PRESERVES THE SEQUENCE OF LETTERS AND DIGITS, EXACTLY, and that
+ * single property is the whole safety argument. A match therefore still means
+ * every letter and digit of the span occurs in the document in that order, with
+ * nothing inserted, deleted or substituted — so no word, digit, negation or unit
+ * can differ between the claim's span and the document. Case is NOT folded:
+ * "no" and "No" are different words in a disclosure, and a model that changed one
+ * has changed the document.
+ *
+ * This is a widening of what counts as the same CHARACTER, never of what counts
+ * as the same WORD. There is no similarity score here and there must never be
+ * one.
  *
  * ================================================================
  * WHY THE OFFSET IS MAPPED BACK
@@ -48,6 +59,13 @@
  * them, and an offset that cannot be resliced is provenance that survives review
  * without meaning anything.
  */
+
+import {
+  ALL_REPAIRS,
+  canonicalise,
+  canonicalSpan,
+  type CanonRepairs,
+} from './span-canon';
 
 /** Where a span was found, and what the source actually says there. */
 export interface SpanMatch {
@@ -73,51 +91,6 @@ export const MIN_SPAN_CHARS = 12;
  */
 export const MAX_SPAN_CHARS = 400;
 
-const WHITESPACE_RUN = /\s+/;
-
-/**
- * The collapsed projection of a string, plus the map back to the original.
- *
- * `origin[i]` is the index in the source of the character that produced
- * `text[i]`. A collapsed run of whitespace maps to the index of the FIRST
- * whitespace character in the run, so a span that begins on a space still
- * reslices to something inside the source rather than past it.
- */
-interface Collapsed {
-  readonly text: string;
-  readonly origin: readonly number[];
-}
-
-function collapse(source: string): Collapsed {
-  const characters: string[] = [];
-  const origin: number[] = [];
-  let inWhitespace = false;
-
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index];
-    if (WHITESPACE_RUN.test(character)) {
-      // Only the first character of a run survives, and it survives as a plain
-      // space — so a newline, a tab and a run of four spaces are all the same
-      // single separator to the matcher.
-      if (!inWhitespace) {
-        characters.push(' ');
-        origin.push(index);
-        inWhitespace = true;
-      }
-      continue;
-    }
-    inWhitespace = false;
-    characters.push(character);
-    origin.push(index);
-  }
-
-  return { text: characters.join(''), origin };
-}
-
-/** The caller's span, collapsed and trimmed of its leading/trailing space. */
-const normaliseSpan = (span: string): string =>
-  span.replace(/\s+/g, ' ').trim();
-
 /**
  * Finds a span in a document, or reports that it is not there.
  *
@@ -128,12 +101,17 @@ const normaliseSpan = (span: string): string =>
  * The FIRST occurrence wins. A repeated sentence is the same sentence, and
  * choosing among duplicates would be this module inventing a preference the
  * document does not express.
+ *
+ * `repairs` exists so the measurement tool can attribute each recovery to the
+ * rule that made it, and for no other reason: every caller in the service takes
+ * the default.
  */
 export function findVerbatimSpan(
   documentText: string,
   span: string,
+  repairs: CanonRepairs = ALL_REPAIRS,
 ): SpanMatch | null {
-  const needle = normaliseSpan(span);
+  const needle = canonicalSpan(span, repairs);
   if (needle.length < MIN_SPAN_CHARS) return null;
   if (needle.length > MAX_SPAN_CHARS) return null;
 
@@ -141,20 +119,24 @@ export function findVerbatimSpan(
   // MIN_SPAN_CHARS long and `''.indexOf(x)` is -1 for every non-empty x, so a
   // guard here would be a branch no input can distinguish from the ordinary
   // miss below — and an unreachable branch is a claim nobody can check.
-  const haystack = collapse(documentText);
+  const haystack = canonicalise(documentText, repairs);
   const at = haystack.text.indexOf(needle);
   if (at === -1) return null;
 
   const start = haystack.origin[at];
   // The character AFTER the last matched one, in original coordinates. Taken
   // from the next entry in the map rather than by adding the needle's length,
-  // because the collapsed and original lengths differ by exactly the whitespace
-  // this module removed.
+  // because the projected and original lengths differ by exactly what the
+  // projection removed.
   const lastIndex = at + needle.length - 1;
-  const end =
+  const after =
     lastIndex + 1 < haystack.origin.length
       ? haystack.origin[lastIndex + 1]
       : documentText.length;
+  // At least one source character, because a ligature expands to two projected
+  // characters that share one source index — so a span ending on the first half
+  // of one would otherwise reslice to nothing.
+  const end = Math.max(after, haystack.origin[lastIndex] + 1);
 
   return { offset: start, evidence: documentText.slice(start, end) };
 }
