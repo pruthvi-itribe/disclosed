@@ -32,7 +32,7 @@
     "claims:compare": "ts-node -r tsconfig-paths/register tools/claims/compare-providers.ts",
     "results:verify": "ts-node -r tsconfig-paths/register tools/results/verify-results.ts",
     "ambiguity:measure": "ts-node -r tsconfig-paths/register tools/extraction/measure-ambiguity-scope.ts",
-    "coverage:measure": "ts-node -r tsconfig-paths/register tools/coverage/measure-coverage.ts",
+    "coverage:measure": "ts-node -r tsconfig-paths/register tools/outcome/measure-coverage.ts",
     "basis:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-basis-reach.ts"
   },
   "keywords": [],
