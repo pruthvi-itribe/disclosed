@@ -24,7 +24,6 @@
 import mongoose from 'mongoose';
 import {
   AttachmentFetcher,
-  CLAIM_BEARING_CATEGORIES,
   claimEligibility,
   extractPdfText,
   figuresIn,
@@ -245,20 +244,17 @@ async function main(): Promise<void> {
 
   // ---- pass 1: the cheap gates, over everything -----------------------------
   let routine = 0;
-  let offCategory = 0;
   let blocked = 0;
   let tooShort = 0;
   const survivors: Row[] = [];
 
   for (const row of rows) {
-    if (isRoutine(row.category)) {
-      routine += 1;
-      continue;
-    }
-    if (!CLAIM_BEARING_CATEGORIES.has(row.category.trim().toLowerCase())) {
-      offCategory += 1;
-      continue;
-    }
+    // COUNTED, NOT SKIPPED. The routine list decides what reaches Telegram and
+    // no longer decides what is read — 98.1% of `Updates` summaries state
+    // something their category does not. It is reported here so the alerting
+    // population and the coverage population can be compared, which is the
+    // whole point of separating them.
+    if (isRoutine(row.category)) routine += 1;
     if (isLegallyBlocked(row)) {
       blocked += 1;
       continue;
@@ -275,14 +271,13 @@ async function main(): Promise<void> {
   process.stdout.write(
     `collection: ${total} filing(s)\n\n` +
       `--- pass 1: the deterministic gates, exact over the whole collection ---\n` +
-      `routine category            ${String(routine).padStart(5)}  ${pct(routine, total)}\n` +
-      `not a claim-bearing category${String(offCategory).padStart(5)}  ${pct(offCategory, total)}\n` +
+      `routine category (NOT a skip, alert-only) ${String(routine).padStart(5)}  ${pct(routine, total)}\n` +
       `legally blocked             ${String(blocked).padStart(5)}  ${pct(blocked, total)}\n` +
       `covering letter (<${MIN_CLAIM_DOCUMENT_CHARS} chars)${String(tooShort).padStart(4)}  ${pct(tooShort, total)}\n` +
       `SURVIVE pass 1              ${String(survivors.length).padStart(5)}  ${pct(survivors.length, total)}\n\n`,
   );
 
-  // ---- pass 2: the vocabulary gate, on a sample -----------------------------
+  // ---- pass 2: the document gates, on a sample -----------------------------
   const fetcher = new AttachmentFetcher(config.enrichmentMaxBytes);
   const sample = survivors.slice(0, sampleSize);
   let eligible = 0;

@@ -120,6 +120,13 @@ describe('the enrichment view on a filing row', () => {
       unparseableReason: null,
       lastError: null,
       documentSource: null,
+      // Null on every filing read before the hybrid parser existed, which reads
+      // as `pdf-parse` because that is what read them. A page that had to test
+      // for absence would render "read by the cheap parser" and "never read" the
+      // same.
+      parseRoute: null,
+      parseFallbackReason: null,
+      coverageSkip: null,
       amountRupees: null,
       amountDisplay: null,
       amountEvidence: null,

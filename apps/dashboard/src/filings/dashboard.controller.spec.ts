@@ -41,6 +41,24 @@ const ENRICHMENT_SUMMARY: EnrichmentSummaryView = {
   withResults: 12,
   byResultsDiscard: [{ key: 'label-mismatch', count: 4 }],
   byResultsRefusal: [{ key: 'no-results', count: 21 }],
+  // Equal to `total`, which is the point: every filing produces an outcome.
+  withOutcome: 1005,
+  byCategoryGroup: [
+    { key: 'routine', count: 290 },
+    { key: 'governance', count: 281 },
+    { key: 'results', count: 89 },
+  ],
+  byConfidenceTier: [
+    { key: 'verified', count: 155 },
+    { key: 'stated or labelled', count: 850 },
+  ],
+  byParseRoute: [
+    { key: 'pdf-parse', count: 720 },
+    { key: 'docling-layout', count: 67 },
+    { key: 'docling-ocr', count: 13 },
+  ],
+  byCoverageSkip: [{ key: 'covering-letter', count: 96 }],
+  parseFallbacks: 4,
   generatedAtIst: '2026-08-05 23:32:54',
 };
 

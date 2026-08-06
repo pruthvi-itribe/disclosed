@@ -105,6 +105,12 @@ const EnrichmentSchema = new Schema<FilingEnrichment>(
     lastError: { type: String, default: null },
     documentChars: { type: Number, default: null },
     documentSource: { type: String, default: null },
+    // Which parser read the document, and why an expensive one did not. Null on
+    // every filing written before the hybrid existed, which reads as
+    // `pdf-parse` because that is what read them.
+    parseRoute: { type: String, default: null },
+    parseFallbackReason: { type: String, default: null },
+    coverageSkip: { type: String, default: null },
     amountRupees: { type: Number, default: null },
     amountEvidence: { type: String, default: null },
     amountAnchor: { type: String, default: null },

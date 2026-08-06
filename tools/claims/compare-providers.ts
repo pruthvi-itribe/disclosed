@@ -40,7 +40,6 @@ import { mkdirSync } from 'node:fs';
 import mongoose from 'mongoose';
 import {
   AttachmentFetcher,
-  CLAIM_BEARING_CATEGORIES,
   CLAIM_PROVIDERS,
   claimEligibility,
   composeClaimLine,
@@ -48,7 +47,6 @@ import {
   extractPdfText,
   FilingSchema,
   isLegallyBlocked,
-  isRoutine,
   MIN_CLAIM_DOCUMENT_CHARS,
   verifyClaims,
   vetSummary,
@@ -193,10 +191,10 @@ async function storedSample(
     for (const row of rows) {
       if (pinned.length === 0 && documents.length >= wanted) break;
       if (seen.has(row.seqId) || row.attachmentUrl === null) continue;
-      if (isRoutine(row.category)) continue;
-      if (!CLAIM_BEARING_CATEGORIES.has(row.category.trim().toLowerCase())) {
-        continue;
-      }
+      // The category allowlist is gone: it is what hid quarterly results for
+      // weeks. Sampling now uses the same two document-shaped tests the
+      // pipeline does, so the comparison corpus is the population the pipeline
+      // actually reads.
       if (isLegallyBlocked(row)) continue;
       if ((row.enrichment?.documentChars ?? 0) < MIN_CLAIM_DOCUMENT_CHARS) {
         continue;

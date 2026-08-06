@@ -1233,17 +1233,28 @@ describe('EnrichmentWorker — notable claims', () => {
     expect(stored.claimsProposed).toBe(2);
   });
 
+  // THE REGRESSION TEST FOR THE RESULTS GAP, inverted from what it used to
+  // assert. These categories were refused before a model was called, by a
+  // 22-name allowlist that `Outcome of Board Meeting` was missing from — and
+  // because a filing that was never read renders exactly like a filing with
+  // nothing in it, that absence stayed invisible for weeks. No category decides
+  // this any more.
   it.each([
-    ['a routine category', 'Trading Window'],
-    ['a category that carries no claims', 'Record Date'],
-  ])('never calls the model for %s', async (_label, category) => {
+    ['a category the allowlist called routine', 'Trading Window'],
+    ['a category the allowlist excluded', 'Record Date'],
+    ['the category the gap was in', 'Outcome of Board Meeting'],
+    ['a category NSE has not invented yet', 'Some Future Category'],
+  ])('now calls the model for %s', async (_label, category) => {
     const extractor = new StubExtractor();
     const { worker, repository } = claimHarness(extractor, { category });
 
     await worker.tick(NOW);
 
-    expect(extractor.requests).toEqual([]);
-    expect(onlyRecorded(repository).claimRefusalReason).toBe('not-eligible');
+    expect(extractor.requests).toHaveLength(1);
+    expect(onlyRecorded(repository).claimRefusalReason).not.toBe(
+      'not-eligible',
+    );
+    expect(onlyRecorded(repository).coverageSkip).toBeNull();
   });
 
   it('never calls the model for a covering letter', async () => {
@@ -1759,8 +1770,11 @@ describe('EnrichmentWorker — the document summary', () => {
   });
 
   it('records no summary when the filing never reached a model', async () => {
+    // A COVERING LETTER rather than a category, because the category no longer
+    // decides. What remains is a structural property of the bytes in hand, and
+    // it is the reason the skip can be counted rather than inferred.
     const { worker, repository } = claimHarness(null, {
-      category: 'Copy of Newspaper Publication',
+      text: 'Please find enclosed the intimation. '.repeat(4),
     });
 
     await worker.tick(NOW);
@@ -1768,6 +1782,7 @@ describe('EnrichmentWorker — the document summary', () => {
       documentSummary: null,
       documentSummaryRefusalReason: null,
       claimRefusalReason: 'not-eligible',
+      coverageSkip: 'covering-letter',
     });
   });
 });

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { describeError, stackOf } from '@app/common';
 import {
+  basisReachFor,
   claimEligibility,
   classifyFetchFailure,
   composeClaimLine,
@@ -19,6 +20,7 @@ import {
   NO_RESULTS,
   passesContentGates,
   readDocument,
+  readWithRouting,
   resultsEligibility,
   verifyClaims,
   verifyResults,
@@ -27,12 +29,15 @@ import {
   type ClaimedFiling,
   type ClaimExtractor,
   type ClaimOutcome,
+  type DoclingConverter,
   type EnrichmentRepository,
   type Filing,
   type FilingEnrichment,
+  type ParseRoute,
   type PdfParser,
   type ResultsExtractor,
   type ResultsOutcome,
+  type RoutedRead,
   type UnparseableReason,
   type ZipReader,
   type ZipTextOk,
@@ -224,6 +229,19 @@ export class EnrichmentWorker {
      * not.
      */
     private readonly resultsExtractor: ResultsExtractor | null = null,
+    /**
+     * Null when no Docling service is wired, which is a FULLY SUPPORTED
+     * deployment and not a degraded one.
+     *
+     * Docling is a Python service holding 2.3-7.7 GB resident, and this pipeline
+     * must keep working on a machine that has no Python on it. With this null
+     * every document is read by `pdf-parse` exactly as it was before the hybrid
+     * existed: scanned filings reach `no-text-layer`, results filings are read
+     * by the flattening parser, and nothing fails. What changes is that the
+     * filing records which parser read it, so the two situations are
+     * distinguishable afterwards.
+     */
+    private readonly docling: DoclingConverter | null = null,
   ) {
     this.watchlist = normaliseWatchlist(options.watchlist);
   }
@@ -481,10 +499,20 @@ export class EnrichmentWorker {
       return noDocument(parseFailureReason(fetched.body), parsed.message);
     }
 
-    if (!hasUsableTextLayer(parsed.text)) {
+    // ROUTING HAPPENS BEFORE THE `no-text-layer` VERDICT, not after it, and the
+    // order is the whole of the scanned-document fix. `pdf-parse` returning 8
+    // characters of page furniture is not a fact about the document, it is a
+    // fact about `pdf-parse`: measured over every scanned PDF in the live
+    // collection, Docling with OCR recovers 20 of 20 with 25 of 25 ground-truth
+    // digits verbatim. So the empty read becomes the ROUTING EVIDENCE, and only
+    // a document that neither parser could read reaches the terminal state.
+    const routed = await this.readRouted(filing, fetched.body, parsed);
+
+    if (!hasUsableTextLayer(routed.text)) {
       return noDocument(
         'no-text-layer',
-        `${parsed.pages} page(s) yielded no text layer`,
+        `${parsed.pages} page(s) yielded no text layer` +
+          (routed.fallbackReason === null ? '' : `; ${routed.fallbackReason}`),
       );
     }
 
@@ -495,9 +523,60 @@ export class EnrichmentWorker {
         attempts,
         parseAttempts,
         now,
-        parsed.text,
+        routed.text,
+        null,
+        routed,
       )),
     };
+  }
+
+  /**
+   * Escalates to Docling where it measurably pays, contained.
+   *
+   * CONTAINED FOR THE SAME REASON THE CONTEXT QUERY IS. The `pdf-parse` reading
+   * is already in hand and is already worth storing; an optional Python service
+   * throwing must cost the escalation and never the filing. `readWithRouting`
+   * is contracted not to throw and returns the cheap text on every failure —
+   * this is the belt to that brace, because the alternative to an unreachable
+   * catch is a filing lost to a dependency the design calls optional.
+   */
+  private async readRouted(
+    filing: Filing,
+    body: Buffer,
+    parsed: { readonly text: string; readonly pages: number },
+  ): Promise<RoutedRead> {
+    try {
+      const routed = await readWithRouting({
+        category: filing.category,
+        data: body,
+        fileName: `${filing.seqId}.pdf`,
+        text: parsed.text,
+        pages: parsed.pages,
+        converter: this.docling,
+      });
+      if (routed.route !== 'pdf-parse') {
+        this.logger.log(
+          `seqId ${filing.seqId} (${filing.symbol}): read by ${routed.route} ` +
+            `(${routed.text.length} chars, was ${parsed.text.length})`,
+        );
+      } else if (routed.fallbackReason !== null) {
+        this.logger.warn(
+          `seqId ${filing.seqId} (${filing.symbol}): ${routed.fallbackReason}`,
+        );
+      }
+      return routed;
+    } catch (error) {
+      this.logger.error(
+        `Parse routing threw for seqId ${filing.seqId}: ${describeError(error)}`,
+        stackOf(error),
+      );
+      return {
+        text: parsed.text,
+        route: 'pdf-parse',
+        routeReason: 'the router threw and the cheap read was kept',
+        fallbackReason: describeError(error),
+      };
+    }
   }
 
   /**
@@ -561,6 +640,17 @@ export class EnrichmentWorker {
     now: Date,
     documentText: string,
     documentSource: string | null = null,
+    /**
+     * How the text was produced. Defaulted for the ZIP path, whose members are
+     * read by `pdf-parse` and concatenated — an archive of several PDFs is not
+     * one document for a layout parser to find a reading order in.
+     */
+    routed: RoutedRead = {
+      text: documentText,
+      route: 'pdf-parse',
+      routeReason: 'archived PDFs are concatenated and read by pdf-parse',
+      fallbackReason: null,
+    },
   ): Promise<Partial<EnrichmentTickResult>> {
     const verdict = readDocument({
       symbol: filing.symbol,
@@ -576,7 +666,7 @@ export class EnrichmentWorker {
     );
 
     const claims = await this.claimsFor(filing, documentText);
-    const results = await this.resultsFor(filing, documentText);
+    const results = await this.resultsFor(filing, documentText, routed.route);
 
     const enrichment: FilingEnrichment = {
       state: 'enriched',
@@ -588,6 +678,9 @@ export class EnrichmentWorker {
       lastError: null,
       documentChars: verdict.documentChars,
       documentSource,
+      parseRoute: routed.route,
+      parseFallbackReason: routed.fallbackReason,
+      coverageSkip: claims.skip,
       amountRupees: verdict.amountRupees,
       amountEvidence: verdict.amountEvidence,
       amountAnchor: verdict.amountAnchor,
@@ -669,6 +762,8 @@ export class EnrichmentWorker {
         ...NO_CLAIMS,
         refusalReason: 'not-eligible',
         refusalDetail: eligibility.reason,
+        // COUNTED, not merely recorded. See `ClaimOutcome.skip`.
+        skip: eligibility.skip,
       };
     }
 
@@ -752,6 +847,8 @@ export class EnrichmentWorker {
       proposed,
       refusalReason: claims.length === 0 ? 'all-discarded' : null,
       refusalDetail: null,
+      // A model WAS called on this path, so nothing was skipped.
+      skip: null,
       summary,
       summaryRefusalReason,
     };
@@ -779,6 +876,17 @@ export class EnrichmentWorker {
   private async resultsFor(
     filing: Filing,
     documentText: string,
+    /**
+     * Which parser produced `documentText`.
+     *
+     * NOT COSMETIC. The bound on how far above a table its statement heading may
+     * sit is a property of the parser's output, measured separately for each:
+     * 400 characters for `pdf-parse` and 2,400 for Docling, whose markdown puts
+     * the same real heading further from the same real table. Reading Docling
+     * output with the `pdf-parse` bound refuses 74 of 77 measured tables — the
+     * hybrid would look like an upgrade and make results coverage worse.
+     */
+    route: ParseRoute,
   ): Promise<ResultsOutcome> {
     const eligibility = resultsEligibility(filing, documentText);
     if (!eligibility.eligible) {
@@ -844,6 +952,7 @@ export class EnrichmentWorker {
     const verified = verifyResults({
       documentText,
       proposed: extraction.results,
+      basisReach: basisReachFor(route),
     });
 
     if (verified.outcome === 'refused') {
@@ -1120,6 +1229,9 @@ const blankVerdict = (
   lastError: null,
   documentChars: null,
   documentSource: null,
+  parseRoute: null,
+  parseFallbackReason: null,
+  coverageSkip: null,
   amountRupees: null,
   amountEvidence: null,
   amountAnchor: null,

@@ -19,6 +19,8 @@ import {
   AMOUNT_FILTERS,
   CLAIM_FILTERS,
   ENRICHMENT_STATES,
+  GROUP_FILTERS,
+  TIER_FILTERS,
   FilingQueryService,
 } from './filing-query.service';
 
@@ -109,6 +111,12 @@ export class DashboardController {
       state: readEnum('state', query, ENRICHMENT_STATES),
       amount: readEnum('amount', query, AMOUNT_FILTERS),
       claim: readEnum('claim', query, CLAIM_FILTERS),
+      // Both are allowlisted rather than length-checked, for the reason
+      // `readEnum` gives: an unrecognised value reaching the filter matches
+      // nothing, and on a page whose job is showing what was found that is
+      // indistinguishable from nothing having been found.
+      group: readEnum('group', query, GROUP_FILTERS),
+      tier: readEnum('tier', query, TIER_FILTERS),
       refusal: readFilter('refusal', query),
     });
 

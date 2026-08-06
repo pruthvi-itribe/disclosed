@@ -33,6 +33,7 @@ import {
   buildClaimExtractor,
   buildResultsExtractor,
 } from '../../apps/ingest/src/enrichment/claim-extractor.factory';
+import { buildDoclingConverter } from '../../apps/ingest/src/enrichment/docling.factory';
 import { EnrichmentWorker } from '../../apps/ingest/src/enrichment/enrichment.worker';
 import { FilingContextService } from '../../apps/ingest/src/enrichment/filing-context.service';
 import { loadConfig } from '../../apps/ingest/src/config/configuration';
@@ -114,6 +115,12 @@ async function main(): Promise<void> {
     // it touched would record `extractor-unavailable` against both lanes.
     yauzlReader(),
     buildResultsExtractor(config),
+    // AND THE SAME PARSER ROUTING. Without this the backfill would read every
+    // document with `pdf-parse` while the service escalated scans and results
+    // filings to Docling, so the two would reach different verdicts about the
+    // same bytes — which is the exact failure this argument was made about the
+    // other two constructor arguments.
+    buildDoclingConverter(config),
   );
 
   const pendingBefore = await repository.pendingCount(new Date());

@@ -94,6 +94,21 @@ export interface IngestConfig {
    * incomparable for no benefit.
    */
   readonly resultsEnabled: boolean;
+
+  // --- the optional Docling parser -------------------------------------------
+  /**
+   * Base URL of a running `docling-serve`, or empty for none.
+   *
+   * EMPTY IS THE SHIPPED DEFAULT AND A FULLY SUPPORTED DEPLOYMENT. Docling is a
+   * Python service holding 2.3-7.7 GB resident; with this unset every document
+   * is read by `pdf-parse` exactly as before, scanned filings reach
+   * `no-text-layer`, and nothing fails. See `docling.factory.ts`.
+   */
+  readonly doclingUrl: string;
+  /** How long one conversion may take. Docling measures 2.5-4 s a PAGE. */
+  readonly doclingTimeoutMs: number;
+  /** How long a transport failure stops further requests being attempted. */
+  readonly doclingCooldownMs: number;
 }
 
 /**
@@ -135,6 +150,8 @@ export const NUMERIC_KEYS = [
   'CONTEXT_WINDOW_DAYS',
   'CLAIM_MAX_CLAIMS',
   'CLAIM_MAX_DOCUMENT_CHARS',
+  'DOCLING_TIMEOUT_MS',
+  'DOCLING_COOLDOWN_MS',
 ] as const;
 
 export type NumericKey = (typeof NUMERIC_KEYS)[number];
@@ -216,6 +233,19 @@ export const CONFIG_DEFAULTS = {
   // presentation off before its guidance slide. See the sweep in
   // `gate-and-attachments-report.md`.
   CLAIM_MAX_DOCUMENT_CHARS: 96_000,
+  // FIVE MINUTES, and deliberately long. Docling measures 2.5-4 seconds a PAGE
+  // with OCR; the 129-page POLICYBZR results filing took 414 seconds in the
+  // parsing spike. A timeout tuned to an ordinary web request would abandon
+  // every large results filing just before it succeeded, open the availability
+  // latch, and present as a service that is down. Affordable because the
+  // enrichment worker is its own OS process, off the poller's two-second path,
+  // holding a ten-minute lease on the one filing it is working on.
+  DOCLING_TIMEOUT_MS: 300_000,
+  // How long a transport failure stops further requests. Without it a service
+  // that is up but hung costs the full timeout on EVERY eligible filing — at
+  // ~85 results filings a day and a 300-second ceiling, seven hours of a worker
+  // waiting on a dependency the design calls optional.
+  DOCLING_COOLDOWN_MS: 300_000,
 } as const;
 
 /**
@@ -470,6 +500,11 @@ export const loadConfig = (
     claimMaxClaims: readNumeric('CLAIM_MAX_CLAIMS', env),
     claimMaxDocumentChars: readNumeric('CLAIM_MAX_DOCUMENT_CHARS', env),
     resultsEnabled: readBoolean('RESULTS_ENABLED', env, true),
+    // Empty by default: the hybrid parser is opt-in and its absence is a
+    // supported deployment rather than a degraded one.
+    doclingUrl: readString('DOCLING_URL', env, ''),
+    doclingTimeoutMs: readNumeric('DOCLING_TIMEOUT_MS', env),
+    doclingCooldownMs: readNumeric('DOCLING_COOLDOWN_MS', env),
   };
 };
 
@@ -537,6 +572,10 @@ export const describeConfig = (config: IngestConfig): string =>
           ? `${config.claimProvider}/${config.claimModel}/${config.claimEffort}`
           : `${config.claimProvider}/unconfigured`
     }`,
+    // Named even when off, because "scanned filings are unreadable" and "scanned
+    // filings are unreadable because nobody started docling-serve" are the same
+    // dashboard and different problems.
+    `docling=${config.doclingUrl.trim() === '' ? 'off' : config.doclingUrl.trim()}`,
     // Both halves are required to send anything, so a half-set pair is reported
     // as unconfigured rather than as a channel that will never deliver.
     `telegram=${

@@ -1,5 +1,7 @@
 import type { AmountAnchor, AmountRefusalReason } from './amount-extraction';
+import type { CoverageSkipReason } from './claim-eligibility';
 import type { CounterpartyRefusalReason } from './counterparty';
+import type { ParseRoute } from '../pdf/parse-route';
 import type {
   ClaimDiscard,
   ClaimRefusalReason,
@@ -137,6 +139,40 @@ export interface FilingEnrichment {
    */
   readonly documentSource: string | null;
 
+  /**
+   * Which parser produced the text this verdict was read from.
+   *
+   * STORED RATHER THAN DERIVED, and it is load-bearing rather than
+   * informational: `results-verify.ts` takes a different heading-reach bound
+   * depending on it — 400 characters for `pdf-parse` output and 2,400 for
+   * Docling's, both measured — so a stored verdict cannot be re-checked without
+   * knowing which parser wrote the text. Null on every filing enriched before
+   * the hybrid existed, which reads as `pdf-parse` because that is what read
+   * them.
+   */
+  readonly parseRoute: ParseRoute | null;
+  /**
+   * Why a chosen Docling route did not run. Null on the ordinary path.
+   *
+   * THE FIELD THAT MAKES AN OPTIONAL DEPENDENCY HONEST. Docling is allowed to be
+   * absent and the pipeline is required to keep working without it — but a
+   * results filing read by `pdf-parse` because a Python service has been down
+   * since Tuesday must not look identical to one `pdf-parse` was the right
+   * answer for. A rising count here is how that is noticed.
+   */
+  readonly parseFallbackReason: string | null;
+
+  /**
+   * Why no model read this document. Null when one did.
+   *
+   * COUNTED, NOT MERELY RECORDED. The results gap existed because a skipped
+   * filing and an empty filing rendered identically; the remedy is that every
+   * skip carries a machine-readable code the dashboard groups by, so "we chose
+   * not to read 400 documents today" is a number somebody can see rather than an
+   * absence.
+   */
+  readonly coverageSkip: CoverageSkipReason | null;
+
   // --- the amount, or why there is none -------------------------------------
   /** Exact rupees. Null when refused or never attempted. */
   readonly amountRupees: number | null;
@@ -229,6 +265,9 @@ export const PENDING_ENRICHMENT: FilingEnrichment = {
   lastError: null,
   documentChars: null,
   documentSource: null,
+  parseRoute: null,
+  parseFallbackReason: null,
+  coverageSkip: null,
   amountRupees: null,
   amountEvidence: null,
   amountAnchor: null,

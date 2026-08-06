@@ -28,6 +28,7 @@ import { EnrichmentWorker } from './enrichment/enrichment.worker';
 // and the read-only dashboard imports the barrel for the mongoose schema alone.
 // The same reasoning as `pdf-text.ts`'s lazy require and the claim adapters'.
 import { yauzlReader } from '@app/filings/pdf/yauzl-reader';
+import { buildDoclingConverter } from './enrichment/docling.factory';
 import { FilingContextService } from './enrichment/filing-context.service';
 import { CircuitBreaker } from './poller/circuit-breaker';
 import { PollerService } from './poller/poller.service';
@@ -239,6 +240,14 @@ export const RESULTS_EXTRACTOR = 'RESULTS_EXTRACTOR';
           // never opens an archive.
           yauzlReader(),
           resultsExtractor,
+          // Null unless DOCLING_URL is set, which is the shipped default and a
+          // fully supported deployment: the pipeline must keep working on a
+          // machine with no Python on it. See `docling.factory.ts`.
+          buildDoclingConverter({
+            doclingUrl: config.getOrThrow<string>('doclingUrl'),
+            doclingTimeoutMs: config.getOrThrow<number>('doclingTimeoutMs'),
+            doclingCooldownMs: config.getOrThrow<number>('doclingCooldownMs'),
+          }),
         ),
     },
     {

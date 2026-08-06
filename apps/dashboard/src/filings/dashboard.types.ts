@@ -99,6 +99,25 @@ export interface EnrichmentView {
   readonly resultsProposed: number | null;
   readonly resultsRefusalReason: string | null;
   readonly resultsRefusalDetail: string | null;
+
+  /**
+   * Which parser produced the text. Null on every filing read before the hybrid.
+   *
+   * Shown because it changes how a stored verdict should be read: Docling's
+   * markdown carries row-aligned table cells and puts a statement heading before
+   * its own table, and `pdf-parse`'s flattening does neither.
+   */
+  readonly parseRoute: string | null;
+  /**
+   * Why an expensive parser was wanted and not used.
+   *
+   * THE FIELD THAT MAKES AN OPTIONAL DEPENDENCY HONEST. A results filing read by
+   * `pdf-parse` because a Python service has been down since Tuesday must not
+   * look identical to one `pdf-parse` was the right answer for.
+   */
+  readonly parseFallbackReason: string | null;
+  /** Why no model read this document. Null when one did. */
+  readonly coverageSkip: string | null;
 }
 
 /** The evidence behind a results line, for review. */
@@ -180,6 +199,41 @@ export interface FilingView {
    * pipeline storing it. The number the whole project exists to keep small.
    */
   readonly pipelineLagMs: number;
+
+  /**
+   * One line saying what happened. NEVER NULL, for any filing.
+   *
+   * ================================================================
+   * THIS IS THE COVERAGE FIX, AND IT IS DERIVED RATHER THAN STORED
+   * ================================================================
+   *
+   * Built here, on read, from `category` and `summary` — two fields the poller
+   * writes on the two-second hot path for every filing it stores. So it is
+   * present for a filing the worker has not reached, for one whose PDF is a
+   * raster scan, for one whose attachment URL is NSE's `"-"` sentinel, and for
+   * one whose model call failed. Every one of those produced a blank row before.
+   *
+   * Deriving rather than storing also means the whole existing collection gained
+   * an outcome the moment this shipped, with no backfill and nothing to migrate,
+   * and that a change to how an outcome reads cannot leave stale text behind.
+   */
+  readonly outcome: string;
+  /** Whether the outcome is the exchange's own sentence or only its category. */
+  readonly outcomeSource: string;
+  /** NSE's 111 categories collapsed to a readable set. Never null. */
+  readonly categoryGroup: string;
+  /** Reader-facing spelling of the group. */
+  readonly categoryGroupLabel: string;
+  /**
+   * How much of this row can be trusted: `verified`, `stated` or `labelled`.
+   *
+   * THE GATE, RELABELLED. It used to decide whether a filing produced anything
+   * at all; now nothing is dropped and everything carries the tier that says how
+   * somebody would check it. Only `verified` is allowed near an alert.
+   */
+  readonly confidenceTier: string;
+  readonly confidenceTierLabel: string;
+
   /**
    * The composed headline and everything behind it. Never absent: a filing the
    * worker has not reached yet reports state `pending` with nulls, which is a
@@ -225,6 +279,32 @@ export interface EnrichmentSummaryView {
   readonly withResults: number;
   readonly byResultsDiscard: readonly EnrichmentCount[];
   readonly byResultsRefusal: readonly EnrichmentCount[];
+
+  /**
+   * Filings carrying an outcome line.
+   *
+   * REPORTED AS A NUMBER RATHER THAN ASSERTED IN A COMMENT, because "every
+   * filing produces an outcome" is the claim this whole change makes and a claim
+   * that is not counted is a claim nobody can falsify. It equals `total` by
+   * construction — the outcome is derived from fields the poller always writes —
+   * and the day it does not, the dashboard says so.
+   */
+  readonly withOutcome: number;
+  /** Filings by category group, largest first. */
+  readonly byCategoryGroup: readonly EnrichmentCount[];
+  /** Filings by confidence tier. The shape of what can be trusted. */
+  readonly byConfidenceTier: readonly EnrichmentCount[];
+  /** Read documents by the parser that read them. */
+  readonly byParseRoute: readonly EnrichmentCount[];
+  /**
+   * Documents no model read, by reason.
+   *
+   * COUNTED, NOT MERELY RECORDED. The results gap existed because a skipped
+   * filing and an empty filing rendered identically.
+   */
+  readonly byCoverageSkip: readonly EnrichmentCount[];
+  /** Reads where an expensive parser was wanted and could not be used. */
+  readonly parseFallbacks: number;
   readonly generatedAtIst: string;
 }
 

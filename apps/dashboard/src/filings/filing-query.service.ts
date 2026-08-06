@@ -7,7 +7,20 @@ import {
   istTimestamp,
   startOfIstDay,
 } from '@app/common';
-import { formatRupees, type Filing, type FilingEnrichment } from '@app/filings';
+import {
+  categoriesInGroup,
+  categoryGroupFor,
+  CATEGORY_GROUP_LABEL,
+  CATEGORY_GROUPS,
+  composeOutcome,
+  confidenceTierFor,
+  CONFIDENCE_TIER_LABEL,
+  formatRupees,
+  MAPPED_GROUP_CATEGORIES,
+  type CategoryGroup,
+  type Filing,
+  type FilingEnrichment,
+} from '@app/filings';
 import type {
   CategoryCount,
   DailyCount,
@@ -40,6 +53,44 @@ export const AMOUNT_FILTERS = ['extracted', 'refused'] as const;
 
 export type AmountFilter = (typeof AMOUNT_FILTERS)[number];
 
+/** Category groups a caller may filter on. */
+export const GROUP_FILTERS = CATEGORY_GROUPS;
+
+/**
+ * Confidence tiers a caller may filter on.
+ *
+ * TWO VALUES RATHER THAN THREE, and the reason is honest rather than tidy.
+ * `verified` is decidable from stored fields — a claim, a results line or an
+ * amount — so it is a Mongo predicate over indexed data. Telling `stated` from
+ * `labelled` requires comparing the exchange's summary against its category,
+ * which is a string computation this application deliberately does on READ so
+ * that the whole existing collection gained an outcome without a backfill.
+ *
+ * Expressing that as a filter would mean either an `$expr` over every document —
+ * a collection scan against a live ingest on every poll of a page that
+ * auto-refreshes — or storing a derived field and migrating 2,000 documents to
+ * populate it. Neither is worth it for a distinction the TIER COLUMN already
+ * shows on every row. So the filter cuts where the consequence is: `verified` is
+ * the boundary that decides what may reach a wire.
+ */
+export const TIER_FILTERS = ['verified', 'unverified'] as const;
+
+export type TierFilter = (typeof TIER_FILTERS)[number];
+
+/**
+ * What makes a filing `verified`: something survived a gate that checks against
+ * the document.
+ *
+ * ONE DEFINITION, used by the filter, the counts and the row projection alike.
+ * Three copies of this predicate is three chances for the dashboard's count of
+ * verified filings to disagree with the rows it shows for the same filter.
+ */
+const VERIFIED_PREDICATE: readonly Record<string, unknown>[] = [
+  { 'enrichment.claims.0': { $exists: true } },
+  { 'enrichment.resultsLine': { $ne: null } },
+  { 'enrichment.amountRupees': { $ne: null } },
+];
+
 /** The filters the recent-filings list accepts, already validated. */
 export interface RecentQuery {
   readonly limit: number;
@@ -54,6 +105,10 @@ export interface RecentQuery {
   readonly refusal?: string;
   /** Whether the document produced a wire line of notable claims. */
   readonly claim?: ClaimFilter;
+  /** NSE's categories collapsed to a readable set. */
+  readonly group?: CategoryGroup;
+  /** Whether anything about this filing survived a gate against the document. */
+  readonly tier?: TierFilter;
 }
 
 /** A page of filings and the counts needed to page through them. */
@@ -301,6 +356,11 @@ export class FilingQueryService {
       withResults,
       byResultsDiscard,
       byResultsRefusal,
+      byRawCategory,
+      verifiedCount,
+      byParseRoute,
+      byCoverageSkip,
+      parseFallbacks,
     ] = await Promise.all([
       this.filings.countDocuments({}).exec(),
       this.groupBy('$enrichment.state'),
@@ -367,6 +427,25 @@ export class FilingQueryService {
       this.groupBy('$enrichment.resultsRefusalReason', {
         'enrichment.resultsRefusalReason': { $ne: null },
       }),
+      // BY RAW CATEGORY, then folded into groups in this process. Grouping in
+      // the database would need the 116-row mapping table expressed as a
+      // `$switch`, which is the same table written twice in two languages — and
+      // the second copy is the one that silently stops matching when NSE renames
+      // something. There are 111 distinct categories, so the intermediate result
+      // is a hundred rows, not a collection.
+      this.groupBy('$category'),
+      // Verified is decidable from stored fields; the other two tiers are not,
+      // for the reason `TIER_FILTERS` gives at length.
+      this.filings.countDocuments({ $or: [...VERIFIED_PREDICATE] }).exec(),
+      this.groupBy('$enrichment.parseRoute', {
+        'enrichment.parseRoute': { $ne: null },
+      }),
+      this.groupBy('$enrichment.coverageSkip', {
+        'enrichment.coverageSkip': { $ne: null },
+      }),
+      this.filings
+        .countDocuments({ 'enrichment.parseFallbackReason': { $ne: null } })
+        .exec(),
     ]);
 
     return {
@@ -384,6 +463,21 @@ export class FilingQueryService {
       withResults,
       byResultsDiscard: toCounts(byResultsDiscard, 'unknown'),
       byResultsRefusal: toCounts(byResultsRefusal, 'unknown'),
+      // EQUAL TO `total` BY CONSTRUCTION, and reported anyway. "Every filing
+      // produces an outcome" is the claim this change makes, and a claim that is
+      // not counted is a claim nobody can falsify.
+      withOutcome: total,
+      byCategoryGroup: foldIntoGroups(byRawCategory),
+      // `stated` and `labelled` are computed on read, so they are counted here
+      // by subtraction from a figure the database CAN answer rather than by a
+      // second pass over every document.
+      byConfidenceTier: [
+        { key: 'verified', count: verifiedCount },
+        { key: 'stated or labelled', count: total - verifiedCount },
+      ],
+      byParseRoute: toCounts(byParseRoute, 'pdf-parse'),
+      byCoverageSkip: toCounts(byCoverageSkip, 'unknown'),
+      parseFallbacks,
       generatedAtIst: istTimestamp(this.now()),
     };
   }
@@ -432,6 +526,7 @@ export class FilingQueryService {
         ? {}
         : { symbol: query.symbol.toUpperCase() }),
       ...(query.category === undefined ? {} : { category: query.category }),
+      ...groupFilter(query.group),
       ...this.enrichmentFilter(query),
     };
   }
@@ -471,6 +566,19 @@ export class FilingQueryService {
             'enrichment.claimLine':
               query.claim === 'emitted' ? { $ne: null } : null,
           }),
+      // WRAPPED IN `$and` rather than spread as a bare `$or`, because the
+      // refusal filter below also uses `$or` and two `$or` keys in one object
+      // literal is not a combined query — the second silently replaces the
+      // first, and a page showing the wrong rows for a filter it says it applied
+      // is worse than one that refuses the filter.
+      ...(query.tier === undefined
+        ? {}
+        : query.tier === 'verified'
+          ? { $and: [{ $or: [...VERIFIED_PREDICATE] }] }
+          : // `$nor` rather than a negated `$or`, so a filing missing the
+            // enrichment block entirely — the poller writes none — counts as
+            // unverified rather than matching nothing.
+            { $and: [{ $nor: [...VERIFIED_PREDICATE] }] }),
       ...(query.refusal === undefined
         ? {}
         : {
@@ -479,6 +587,7 @@ export class FilingQueryService {
               { 'enrichment.unparseableReason': query.refusal },
               { 'enrichment.claimRefusalReason': query.refusal },
               { 'enrichment.claimDiscards.reason': query.refusal },
+              { 'enrichment.coverageSkip': query.refusal },
             ],
           }),
     };
@@ -495,6 +604,25 @@ export class FilingQueryService {
   private toView(doc: Filing & { enrichment?: FilingEnrichment }): FilingView {
     const disseminatedAt = new Date(instantMs(doc.disseminatedAt));
 
+    // DERIVED HERE, FROM FIELDS THE POLLER ALWAYS WRITES. `category` and
+    // `summary` are stored for every filing on the two-second hot path, so an
+    // outcome exists for a filing the worker has never reached, one whose PDF is
+    // a raster scan, and one whose model call failed. Every one of those was a
+    // blank row before.
+    const outcome = composeOutcome({
+      symbol: doc.symbol,
+      category: doc.category,
+      summary: doc.summary,
+    });
+    const group = categoryGroupFor(doc.category);
+    const enrichment = doc.enrichment;
+    const tier = confidenceTierFor({
+      hasVerifiedClaim: (enrichment?.claims?.length ?? 0) > 0,
+      hasVerifiedResults: (enrichment?.resultsLine ?? null) !== null,
+      hasVerifiedAmount: (enrichment?.amountRupees ?? null) !== null,
+      outcomeSource: outcome.source,
+    });
+
     return {
       seqId: doc.seqId,
       symbol: doc.symbol,
@@ -508,10 +636,34 @@ export class FilingQueryService {
       disseminatedAtIst: istTimestamp(disseminatedAt),
       ingestedAtIst: istTimestamp(doc.ingestedAt),
       pipelineLagMs: instantMs(doc.ingestedAt) - instantMs(doc.disseminatedAt),
-      enrichment: toEnrichmentView(doc.enrichment),
+      outcome: outcome.text,
+      outcomeSource: outcome.source,
+      categoryGroup: group,
+      categoryGroupLabel: CATEGORY_GROUP_LABEL[group],
+      confidenceTier: tier,
+      confidenceTierLabel: CONFIDENCE_TIER_LABEL[tier],
+      enrichment: toEnrichmentView(enrichment),
     };
   }
 }
+
+/**
+ * The Mongo clause for a category group.
+ *
+ * `$in` over the group's own NSE spellings, which uses the `category` index the
+ * schema declares. `other` is the awkward one and is expressed as a NEGATION —
+ * it is defined by absence from the mapping table, so it cannot be enumerated
+ * from it, and `$nin` over every mapped name is the only honest translation.
+ */
+const groupFilter = (
+  group: CategoryGroup | undefined,
+): Record<string, unknown> => {
+  if (group === undefined) return {};
+  if (group === 'other') {
+    return { category: { $nin: [...MAPPED_GROUP_CATEGORIES] } };
+  }
+  return { category: { $in: [...categoriesInGroup(group)] } };
+};
 
 /**
  * Projects the stored enrichment block, or the absence of one.
@@ -610,8 +762,36 @@ function toEnrichmentView(
     resultsProposed: enrichment?.resultsProposed ?? null,
     resultsRefusalReason: enrichment?.resultsRefusalReason ?? null,
     resultsRefusalDetail: enrichment?.resultsRefusalDetail ?? null,
+    parseRoute: enrichment?.parseRoute ?? null,
+    parseFallbackReason: enrichment?.parseFallbackReason ?? null,
+    coverageSkip: enrichment?.coverageSkip ?? null,
   };
 }
+
+/**
+ * Folds a per-category count into per-group counts.
+ *
+ * The mapping table stays in TypeScript, where it is one table checked against
+ * the corpus by a test, rather than being restated as a Mongo `$switch` that
+ * nothing checks. Sorted largest first and then by name, so two groups on the
+ * same count keep a stable order between polls instead of swapping places every
+ * few seconds on a live page.
+ */
+const foldIntoGroups = (
+  byCategory: readonly GroupedCount<string | null>[],
+): readonly EnrichmentCount[] => {
+  const totals = new Map<CategoryGroup, number>();
+  for (const row of byCategory) {
+    const group = categoryGroupFor(row._id ?? '');
+    totals.set(group, (totals.get(group) ?? 0) + row.count);
+  }
+  return [...totals.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.key.localeCompare(right.key),
+    );
+};
 
 /** Turns a grouped aggregation into the page's `{key, count}` rows. */
 const toCounts = (
