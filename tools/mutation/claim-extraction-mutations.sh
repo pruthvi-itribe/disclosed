@@ -1,0 +1,435 @@
+#!/usr/bin/env bash
+#
+# Mutation harness for claim extraction: the modules that decide whether a
+# sentence a language model wrote about a named listed company may be published.
+#
+# THIS IS THE HIGHEST-CONSEQUENCE COMPONENT IN THE PROJECT. The amount extractor
+# can publish a wrong number and the headline composer can attribute a
+# commercial relationship that does not exist; both read from the document. This
+# one takes text a MODEL wrote and decides whether the document said it. A model
+# asked to compress a filing will eventually produce a fluent, plausible,
+# entirely invented corporate statement, and nothing downstream can tell one
+# from a real one — so every guarantee below is the only thing standing between
+# the wire and an invented claim about a real company.
+#
+# The guarantees broken one at a time:
+#
+#   1. THE VERBATIM SPAN GATE. A claim must quote a sentence that is in the
+#      document, matched character for character with only whitespace runs
+#      collapsed. Every mutation that loosens the match — folding case,
+#      substring-matching a fragment, skipping the check entirely — publishes a
+#      sentence the filing does not contain.
+#   2. THE OFFSET MAP. What is stored as evidence is the DOCUMENT'S bytes at the
+#      matched position. A wrong offset ships provenance pointing at the wrong
+#      part of the document, which survives human review — worse than none.
+#   3. THE NUMBER RULE, SPAN-SCOPED. A figure in a claim must be in the sentence
+#      it quotes. Widen it to the document and any two-digit number in a
+#      forty-page presentation supports any claim; drop the canonicalisation and
+#      a filer's comma placement refuses true claims; add arithmetic and
+#      "₹10,000 Cr" becomes "100 billion" — the same money, different evidence.
+#   4. THE ADVISORY FILTER. Enforced on the output because a prompt is a request
+#      and a gate is a control. One unhonoured instruction is a message reading
+#      "positive for the stock" over a filing, which is the SEBI
+#      research-analyst line.
+#   5. THE INDIVIDUAL AND LEGAL FILTERS. A wire line about a person is a
+#      defamation claim rather than a correction. Both fail closed.
+#   6. THE CONDITIONAL CHECK. A claim read out of "a letter of intent, subject
+#      to..." publishes an unconfirmed event as fact.
+#   7. THE ELIGIBILITY GATE. Not a correctness control — a cost one — but a
+#      mutation that opens it wide is a bill, and one that closes it is a
+#      product that says nothing.
+#   8. THE PARSE-RETRY WINDOW. The filing this pipeline lost. Terminal too
+#      early loses a document NSE was still uploading; terminal too late is an
+#      unbounded retry loop pointed at the exchange.
+#   9. THE EXTRACTOR'S CONTRACT. It must never throw and must check
+#      `stop_reason` before it reads `content`.
+#
+# Usage:  bash tools/mutation/claim-extraction-mutations.sh
+# Exit:   0 only if every mutation applied AND was caught.
+#
+# Four outcomes per mutation, deliberately distinguished — see
+# tools/mutation/alert-service-mutations.sh for the full rationale, which this
+# script mirrors: CAUGHT, CRASHED, SURVIVED (a real test gap) and NO-OP (the
+# perl pattern matched nothing, i.e. harness staleness, NOT a test gap). A
+# mutation that does not type-check is COMPILE and counts as a failure, because
+# a mutation that never ran proved nothing.
+#
+# Safety: refuses to run on a dirty tree, backs up every file it touches,
+# verifies each restore byte-for-byte, and exits rather than returns on INT/TERM.
+#
+# NOT covered by mutation, and why:
+#
+#   - The CONTENTS of CLAIM_BEARING_CATEGORIES, ADVISORY_PATTERNS and
+#     INDIVIDUAL_PATTERNS. Mutating a table entry mutates the specification
+#     rather than the code; the suites assert the invariants (lower-cased keys,
+#     a stated reason on every pattern, the six real published lines surviving
+#     both filters) and pin the load-bearing rows against literals.
+#   - The prompt TEXT. It is a request, not a control; every rule it states is
+#     also enforced by claim-verify.ts, and those enforcements are mutated here.
+#     What IS mutated is the schema's field order and the reply parser, because
+#     those are code.
+#   - apps/ingest/src/ingest.module.ts and the entrypoints. Composition.
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+LOGIC=$ROOT/libs/filings/src/logic
+FILES=(
+  "$LOGIC/claim-span.ts"
+  "$LOGIC/claim-numbers.ts"
+  "$LOGIC/claim-advisory.ts"
+  "$LOGIC/claim-eligibility.ts"
+  "$LOGIC/claim-verify.ts"
+  "$LOGIC/claim-line.ts"
+  "$LOGIC/claim-prompt.ts"
+  "$LOGIC/parse-retry.ts"
+  "$ROOT/libs/filings/src/llm/claude-claim-extractor.ts"
+  "$ROOT/apps/ingest/src/enrichment/enrichment.worker.ts"
+)
+SUITE='(libs/filings/src/(logic/(claim|parse-retry)|llm/)|apps/ingest/src/enrichment/)'
+
+# --- precondition: refuse to mutate a dirty tree -----------------------------
+for f in "${FILES[@]}"; do
+  if ! git -C "$ROOT" ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    echo "refusing to run: $f is not tracked by git." >&2
+    exit 1
+  fi
+  if ! git -C "$ROOT" diff --quiet -- "$f" ||
+    ! git -C "$ROOT" diff --cached --quiet -- "$f"; then
+    echo "refusing to run: uncommitted changes in a file this script mutates." >&2
+    echo "  commit or stash them first — this script edits them in place." >&2
+    git -C "$ROOT" status --short -- "$f" >&2
+    exit 1
+  fi
+done
+
+BACKUP=$(mktemp -d) || {
+  echo "refusing to run: could not create a backup directory." >&2
+  exit 1
+}
+for f in "${FILES[@]}"; do
+  cp "$f" "$BACKUP/$(basename "$f")" || {
+    echo "refusing to run: could not back up $f." >&2
+    rm -rf "$BACKUP"
+    exit 1
+  }
+done
+
+FAILURES=0
+NOOPS=0
+CRASHES=0
+
+restore_verified() {
+  local f
+  for f in "${FILES[@]}"; do
+    cp "$BACKUP/$(basename "$f")" "$f" || return 1
+    cmp -s "$BACKUP/$(basename "$f")" "$f" || return 1
+  done
+  return 0
+}
+
+on_exit() {
+  if restore_verified; then
+    rm -rf "$BACKUP"
+  else
+    echo "" >&2
+    echo "FATAL: sources could NOT be restored. Backup kept at:" >&2
+    echo "  $BACKUP" >&2
+    echo "Recover with:" >&2
+    echo "  git -C $ROOT checkout -- libs/filings/src apps/ingest/src/enrichment" >&2
+    exit 1
+  fi
+}
+
+trap on_exit EXIT
+trap 'echo ""; echo "INTERRUPTED — restoring sources."; exit 130' INT TERM
+
+dirty() {
+  local f
+  for f in "${FILES[@]}"; do
+    cmp -s "$f" "$BACKUP/$(basename "$f")" || return 0
+  done
+  return 1
+}
+
+# check_in <suite-regex> <label>  run ONLY the named suite
+check_in() {
+  local suite="$1"
+  local label="$2"
+  local out
+
+  if ! dirty; then
+    echo "NO-OP    | $label"
+    echo "           <-- HARNESS STALE: pattern matched nothing; not a test gap"
+    NOOPS=$((NOOPS + 1))
+    restore_verified || on_exit
+    return
+  fi
+
+  out=$(cd "$ROOT" && npx jest "$suite" 2>&1)
+  local rc=$?
+
+  if [ "$rc" -ge 128 ]; then
+    echo "ABORTED  | $label"
+    echo "           test run killed by signal $((rc - 128)); no verdict."
+    echo ""
+    echo "INTERRUPTED — restoring sources and stopping."
+    exit 130
+  fi
+
+  # ts-jest re-emits TypeScript's coloured diagnostics whether or not stdout is
+  # a TTY, so the literal bytes between "error" and "TS####" are escape codes,
+  # not a space. `.*` between them, never a literal space.
+  if grep -qE "error.*TS[0-9]+" <<<"$out"; then
+    echo "COMPILE  | $label"
+    echo "           <-- mutation did not type-check; no assertion was exercised"
+    FAILURES=$((FAILURES + 1))
+    restore_verified || on_exit
+    return
+  fi
+
+  # A non-zero exit with no `Tests:` line is also what a typo'd suite name or a
+  # broken toolchain produces, so a CRASHED verdict requires positive evidence
+  # that jest reached a suite at all. Anything else is a HARNESS ERROR.
+  if ! grep -qE "^Tests:" <<<"$out"; then
+    if [ "$rc" -eq 0 ]; then
+      echo "SURVIVED | $label   <-- TEST GAP"
+      FAILURES=$((FAILURES + 1))
+    elif grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/jest-(circus|runner)|Ran all test suites" <<<"$out"; then
+      echo "CRASHED  | $label"
+      echo "           runner died before reporting (exit $rc); the suite is red"
+      CRASHES=$((CRASHES + 1))
+    else
+      echo "HARNESS ERROR | $label"
+      echo "           jest never reached a suite (exit $rc). No verdict, and NOT"
+      echo "           a kill — check the pattern, the config and the toolchain."
+      FAILURES=$((FAILURES + 1))
+    fi
+    restore_verified || on_exit
+    return
+  fi
+
+  if grep -qE "Tests:.*failed" <<<"$out"; then
+    echo "CAUGHT   | $label"
+    echo "$out" | grep -E "^\s+●\s" | grep -v Console | sed 's/^/           /' |
+      sort -u | head -3
+  else
+    echo "SURVIVED | $label   <-- TEST GAP"
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  restore_verified || on_exit
+}
+
+check() { check_in "$SUITE" "$1"; }
+S=$LOGIC/claim-span.ts
+N=$LOGIC/claim-numbers.ts
+A=$LOGIC/claim-advisory.ts
+E=$LOGIC/claim-eligibility.ts
+V=$LOGIC/claim-verify.ts
+L=$LOGIC/claim-line.ts
+P=$LOGIC/claim-prompt.ts
+R=$LOGIC/parse-retry.ts
+X=$ROOT/libs/filings/src/llm/claude-claim-extractor.ts
+W=$ROOT/apps/ingest/src/enrichment/enrichment.worker.ts
+
+echo "=== the verbatim span gate: the only check that a document said it ==="
+
+perl -0pi -e 's/  const at = haystack\.text\.indexOf\(needle\);/  const at = haystack.text.toLowerCase().indexOf(needle.toLowerCase());/' "$S"
+check "span match folds case ('no' and 'No' become the same disclosure)"
+
+perl -0pi -e 's/  if \(needle\.length < MIN_SPAN_CHARS\) return null;//' "$S"
+check "minimum span dropped (a company name becomes evidence for anything)"
+
+perl -0pi -e 's/export const MIN_SPAN_CHARS = 12;/export const MIN_SPAN_CHARS = 1;/' "$S"
+check "minimum span reduced to one character"
+
+perl -0pi -e 's/export const MAX_SPAN_CHARS = 400;/export const MAX_SPAN_CHARS = 100_000;/' "$S"
+check "span length unbounded (a whole document quoted into a Telegram message)"
+
+perl -0pi -e 's/  if \(documentText\.length === 0\) return null;//' "$S"
+check "empty document accepted as a haystack"
+
+perl -0pi -e 's/const WHITESPACE_RUN = \/\\s\+\/;/const WHITESPACE_RUN = \/[\\s\\w]+\/;/' "$S"
+check "whitespace collapse widened to swallow word characters"
+
+echo ""
+echo "=== the offset map: evidence must be the document's own bytes ==="
+
+perl -0pi -e 's/  const start = haystack\.origin\[at\];/  const start = at;/' "$S"
+check "offset reported in collapsed coordinates (evidence points elsewhere)"
+
+perl -0pi -e 's/      \? haystack\.origin\[lastIndex \+ 1\]/      ? haystack.origin[lastIndex]/' "$S"
+check "span end short by one character (evidence loses its last character)"
+
+perl -0pi -e 's/  return \{ offset: start, evidence: documentText\.slice\(start, end\) \};/  return { offset: start, evidence: needle };/' "$S"
+check "the caller's version stored as evidence, not the document's"
+
+echo ""
+echo "=== the number rule, span-scoped ==="
+
+perl -0pi -e 's/  const supported = new Set\(numbersIn\(span\)\);/  const supported = new Set<string>();\n  numbersIn(span);\n  return [];/' "$N"
+check "number check disabled (a claim states a figure its source does not)"
+
+perl -0pi -e "s/  value\.replace\(\/,\/g, ''\)\.replace\(\/\\\\.\\\$\/, ''\);/  value;/" "$N"
+check "comma canonicalisation dropped (10,000 stops matching 10000)"
+
+perl -0pi -e 's/const NUMBER_TOKEN = .*;/const NUMBER_TOKEN = \/[0-9]\/g;/' "$N"
+check "figures read one digit at a time (any claim supported by any span)"
+
+perl -0pi -e 's/    \(value\) => !supported\.has\(value\),/    () => false,/' "$V" 2>/dev/null
+perl -0pi -e 's/    \(value\) => !supported\.has\(value\),/    () => false,/' "$N"
+check "unsupported figures reported as none"
+
+echo ""
+echo "=== the advisory and individual filters, enforced on the output ==="
+
+perl -0pi -e 's/  const advisory = advisoryHitIn\(text\);/  const advisory = null;/' "$V"
+check "advisory framing published ('positive for the stock' reaches the wire)"
+
+perl -0pi -e 's/  const individual = individualHitIn\(text\) \?\? individualHitIn\(claim\.span\);/  const individual = individualHitIn(text);/' "$V"
+check "a claim read from a sentence naming a person is published"
+
+perl -0pi -e 's/  const legal = LEGAL_BLOCK_PATTERNS\.find\(\n    \(pattern\) => pattern\.test\(text\) \|\| pattern\.test\(claim\.span\),\n  \);/  const legal = undefined;/' "$V"
+check "litigation and enforcement claims published"
+
+perl -0pi -e 's/  if \(hasAmbiguityKeyword\(claim\.span\)\) \{/  if (false) {/' "$V"
+check "a claim read out of a conditional sentence published as fact"
+
+perl -0pi -e 's/  for \(const \{ pattern, why \} of patterns\) \{/  for (const { pattern, why } of patterns.slice(0, 0)) {/' "$A"
+check "every forbidden-phrase pattern skipped"
+
+echo ""
+echo "=== the gate's bookkeeping ==="
+
+perl -0pi -e 's/  const match = findVerbatimSpan\(documentText, claim\.span\);/  const match = { offset: 0, evidence: claim.span };/' "$V"
+check "the span is never looked for in the document at all"
+
+perl -0pi -e 's/    if \(seen\.has\(key\(result\.text\)\)\) \{/    if (false) {/' "$V"
+check "the same claim published twice on one line"
+
+perl -0pi -e 's/    claims: ranked\.slice\(0, limit\),/    claims: ranked,/' "$V"
+check "per-filing claim cap removed"
+
+perl -0pi -e 's/export const MAX_CLAIM_CHARS = 120;/export const MAX_CLAIM_CHARS = 100_000;/' "$V"
+check "claim length unbounded"
+
+perl -0pi -e 's/  if \(text\.length < MIN_CLAIM_CHARS\) \{/  if (false) {/' "$V"
+check "an empty claim accepted"
+
+echo ""
+echo "=== the wire line ==="
+
+perl -0pi -e "s/  return parts\.length === 0 \? null : \`\\\${head} \\\${parts\.join\(CLAIM_SEPARATOR\)}\`;/  return \`\\\${head} \\\${parts.join(CLAIM_SEPARATOR)}\`;/" "$L"
+check "a bare SYMBOL: emitted when there is nothing to say"
+
+perl -0pi -e "s/export const CLAIM_SEPARATOR = ' \|\| ';/export const CLAIM_SEPARATOR = ' ';/" "$L"
+check "claim separator removed (two claims read as one sentence)"
+
+perl -0pi -e 's/    if \(length \+ cost > MAX_CLAIM_LINE_CHARS\) break;//' "$L"
+check "line length unbounded (a message Telegram discards outright)"
+
+echo ""
+echo "=== the eligibility gate: the cost control ==="
+
+perl -0pi -e 's/  if \(!CLAIM_BEARING_CATEGORIES\.has\(category\)\) \{/  if (false) {/' "$E"
+check "every category sent to a model (newspaper scans included)"
+
+perl -0pi -e 's/  if \(isRoutine\(filing\.category\)\) \{/  if (false) {/' "$E"
+check "routine categories sent to a model"
+
+perl -0pi -e 's/  if \(isLegallyBlocked\(filing\)\) \{/  if (false) {/' "$E"
+check "a litigation filing reaches the extractor"
+
+perl -0pi -e 's/  if \(documentText\.length < MIN_CLAIM_DOCUMENT_CHARS\) \{/  if (false) {/' "$E"
+check "covering letters sent to a model"
+
+perl -0pi -e 's/  if \(!CLAIM_SIGNAL_PATTERN\.test\(documentText\)\) \{/  if (false) {/' "$E"
+check "documents with no claim vocabulary sent to a model"
+
+echo ""
+echo "=== the reply parser: the model's output is untrusted input ==="
+
+perl -0pi -e 's/    if \(!isClaimKind\(kind\)\) continue;//' "$P"
+check "an unknown claim kind accepted (the ranker reads undefined)"
+
+perl -0pi -e "s/    if \(typeof span !== 'string' \|\| typeof text !== 'string'\) continue;//" "$P"
+check "a claim with no span accepted"
+
+perl -0pi -e 's/  if \(!Array\.isArray\(claims\)\) return \[\];//' "$P"
+check "a non-array reply iterated"
+
+perl -0pi -e 's/  const document = input\.documentText\.slice\(0, MAX_DOCUMENT_CHARS\);/  const document = input.documentText;/' "$P"
+check "the document cap removed from the request"
+
+echo ""
+echo "=== the extractor's contract ==="
+
+perl -0pi -e "s/      if \(stopReason === 'refusal'\) \{/      if (false) {/" "$X"
+check "a model refusal read as a parse failure instead"
+
+perl -0pi -e 's/      return \{ outcome: .ok., claims: parseClaimResponse\(JSON\.parse\(body\)\) \};/      return { outcome: "ok", claims: parseClaimResponse(JSON.parse(body)) as never };/' "$X"
+check "reply parsing bypassed"
+
+perl -0pi -e "s/    if \(apiKey\.trim\(\)\.length === 0\) return null;//" "$X"
+check "an extractor built with no key (700 failing calls a day)"
+
+echo ""
+echo "=== the parse-retry window: the filing this pipeline lost ==="
+
+perl -0pi -e 's/  if \(!RACEABLE_PARSE_FAILURES\.has\(reason\)\) return terminal;//' "$R"
+check "a ZIP and a 404 retried as if they were an upload race"
+
+perl -0pi -e 's/  if \(parseAttempts >= maxParseAttempts\) return terminal;//' "$R"
+check "parse attempts unbounded (an infinite loop pointed at NSE)"
+
+perl -0pi -e 's/  if \(!Number\.isFinite\(age\) \|\| age >= windowMs\) return terminal;/  if (age >= windowMs) return terminal;/' "$R"
+check "an unreadable timestamp treated as a young filing (NaN >= x is false)"
+
+perl -0pi -e 's/  if \(age \+ delay >= windowMs\) return terminal;//' "$R"
+check "a retry scheduled past the window it will then be refused by"
+
+echo ""
+echo "=== the worker's claim stage ==="
+
+perl -0pi -e 's/    if \(!eligibility\.eligible\) \{/    if (false) {/' "$W"
+check "the eligibility gate bypassed by the worker"
+
+perl -0pi -e 's/    if \(this\.claimExtractor === null\) \{/    if (false) {/' "$W"
+check "an absent extractor called anyway"
+
+perl -0pi -e 's/    const \{ claims, discards \} = verifyClaims\(\{/    const { claims, discards } = ({ claims: extraction.claims, discards: [] } as never) ?? verifyClaims({/' "$W"
+check "the gate skipped entirely: proposed claims published unverified"
+
+echo ""
+echo "=== independence checks ==="
+echo "A guarantee must die to the suite that OWNS it, not merely to the corpus"
+echo "measurement — otherwise deleting the fixture would silently cost coverage"
+echo "that looks covered. And the corpus, which is the three real filings this"
+echo "product failed on, must earn its place by catching regressions the"
+echo "hand-written cases were never written to imagine."
+
+HAND='libs/filings/src/logic/claim-(span|verify)\.spec'
+CORPUS='libs/filings/src/logic/claim-corpus'
+
+perl -0pi -e 's/  const at = haystack\.text\.indexOf\(needle\);/  const at = haystack.text.toLowerCase().indexOf(needle.toLowerCase());/' "$S"
+check_in "$HAND" "case-folded span match, hand-written suites only (no corpus)"
+
+perl -0pi -e 's/  const match = findVerbatimSpan\(documentText, claim\.span\);/  const match = { offset: 0, evidence: claim.span };/' "$V"
+check_in "$CORPUS" "span never looked for, the real-filings corpus only"
+
+perl -0pi -e 's/  const supported = new Set\(numbersIn\(span\)\);/  const supported = new Set<string>();\n  numbersIn(span);\n  return [];/' "$N"
+check_in "$CORPUS" "number check disabled, the real-filings corpus only"
+
+perl -0pi -e 's/  if \(documentText\.length < MIN_CLAIM_DOCUMENT_CHARS\) \{/  if (false) {/' "$E"
+check_in "$CORPUS" "covering-letter bound removed, the real-filings corpus only"
+
+echo ""
+if [ "$FAILURES" -eq 0 ] && [ "$NOOPS" -eq 0 ]; then
+  echo "RESULT: all mutations applied and were caught ($CRASHES by crashing the"
+  echo "        runner rather than by an assertion); no test gaps."
+else
+  echo "RESULT: $FAILURES survived (test gap), $NOOPS no-op (harness stale)."
+fi
+
+cd "$ROOT" && npx jest "$SUITE" 2>&1 | grep -E "^(Tests|Test Suites):"
+exit $((FAILURES + NOOPS))
