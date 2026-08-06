@@ -1236,7 +1236,11 @@ describe('EnrichmentWorker — notable claims', () => {
     // model found nothing" on every eligible filing, which is the one wrong
     // answer here — indistinguishable from a working pipeline in a quiet market.
     const repository = new StubRepository([
-      { filing: filing({ category: 'Press Release' }), attempts: 1, parseAttempts: 0 },
+      {
+        filing: filing({ category: 'Press Release' }),
+        attempts: 1,
+        parseAttempts: 0,
+      },
     ]);
     const worker = new EnrichmentWorker(
       repository as unknown as EnrichmentRepository,

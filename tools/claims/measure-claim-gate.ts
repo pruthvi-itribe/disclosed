@@ -32,7 +32,10 @@ import {
   isRoutine,
   MAX_DOCUMENT_CHARS,
   MIN_CLAIM_DOCUMENT_CHARS,
+  verifyClaims,
+  type ClaimDiscardReason,
   type FilingDocument,
+  type ProposedClaim,
 } from '@app/filings';
 import { loadConfig } from '../../apps/ingest/src/config/configuration';
 
@@ -62,6 +65,37 @@ const readArg = (name: string, fallback: number): number => {
 
 const pct = (part: number, whole: number): string =>
   whole === 0 ? '0.0%' : `${((part / whole) * 100).toFixed(1)}%`;
+
+/**
+ * A sentence from the document long enough to be evidence.
+ *
+ * Split on line breaks rather than full stops, because that is how a PDF text
+ * layer arrives and it keeps the probe honest: the span offered to the gate is
+ * exactly the shape a model would quote.
+ */
+const probeSentence = (text: string): string | null => {
+  const lines = text
+    .split(/\n/)
+    .map((row) => row.trim())
+    .filter(
+      (row) => row.length >= 40 && row.length <= 200 && /[a-z]{4}/.test(row),
+    );
+  // The middle of the document, to skip the address block at the top.
+  return lines.length === 0 ? null : lines[Math.floor(lines.length / 2)];
+};
+
+/** The same sentence with one word replaced. What a paraphrase looks like. */
+const perturbWord = (sentence: string): string =>
+  sentence.replace(/\b([a-z]{5,})\b/, 'notwithstanding');
+
+/**
+ * The same sentence with one digit changed, or one appended when it has none.
+ * The highest-consequence perturbation: a figure that is off by one order.
+ */
+const perturbDigit = (sentence: string): string =>
+  /\d/.test(sentence)
+    ? sentence.replace(/\d/, (d) => String((Number(d) + 1) % 10))
+    : `${sentence} in 2029`;
 
 interface Row {
   readonly symbol: string;
@@ -140,6 +174,18 @@ async function main(): Promise<void> {
   let unreadable = 0;
   let promptChars = 0;
 
+  // Pass 3 runs alongside pass 2, on the documents it has already fetched.
+  const accepted = { real: 0, perturbedWord: 0, perturbedDigit: 0 };
+  const rejected = { real: 0, perturbedWord: 0, perturbedDigit: 0 };
+  const discardReasons = new Map<ClaimDiscardReason, number>();
+  let probed = 0;
+  // Counted and reported apart, because it is a limit of the PROBE and not a
+  // result: a sentence with no five-letter lower-case word comes back from
+  // `perturbWord` unchanged, so the gate is being handed the real sentence and
+  // is right to accept it. Folding those into the accepted column would report
+  // a false-accept rate the gate does not have.
+  let unperturbable = 0;
+
   for (const row of sample) {
     if (row.attachmentUrl === null) continue;
     const fetched = await fetcher.fetch(row.attachmentUrl);
@@ -156,6 +202,40 @@ async function main(): Promise<void> {
     if (verdict.eligible) {
       eligible += 1;
       promptChars += Math.min(parsed.text.length, MAX_DOCUMENT_CHARS);
+
+      const sentence = probeSentence(parsed.text);
+      if (sentence !== null) {
+        probed += 1;
+        const changedWord = perturbWord(sentence);
+        if (changedWord === sentence) unperturbable += 1;
+
+        for (const [bucket, span] of [
+          ['real', sentence] as const,
+          ['perturbedWord', changedWord] as const,
+          ['perturbedDigit', perturbDigit(sentence)] as const,
+        ]) {
+          // Skip the word probe when it did not change anything.
+          if (bucket === 'perturbedWord' && changedWord === sentence) continue;
+          const claim: ProposedClaim = {
+            span,
+            text: 'the company stated something notable here',
+            kind: 'operational',
+          };
+          const result = verifyClaims({
+            documentText: parsed.text,
+            proposed: [claim],
+          });
+          if (result.claims.length === 1) {
+            accepted[bucket] += 1;
+          } else {
+            rejected[bucket] += 1;
+            const reason = result.discards[0]?.reason;
+            if (reason !== undefined) {
+              discardReasons.set(reason, (discardReasons.get(reason) ?? 0) + 1);
+            }
+          }
+        }
+      }
     } else {
       noVocabulary += 1;
       process.stdout.write(`  skipped ${row.symbol}: ${verdict.reason}\n`);
@@ -174,12 +254,35 @@ async function main(): Promise<void> {
       `no claim vocabulary         ${String(noVocabulary).padStart(5)}  ${pct(noVocabulary, read)}\n`,
   );
 
+  // ---- pass 3: does the gate tell a real sentence from a changed one? -------
+  //
+  // The question the whole design turns on, asked at scale on real documents
+  // rather than on a fixture. For each eligible document a real sentence is
+  // lifted out of it and offered as a claim's span, then the same sentence is
+  // offered again with ONE WORD changed and again with ONE DIGIT changed. A
+  // gate that works accepts the first every time and refuses the other two
+  // every time; anything else is the rate at which an invented claim would
+  // reach the wire.
+  process.stdout.write(
+    `\n--- pass 3: the verbatim gate on ${probed} real document(s) ---\n` +
+      `real sentence               accepted ${String(accepted.real).padStart(4)}  refused ${String(rejected.real).padStart(4)}\n` +
+      `one word changed            accepted ${String(accepted.perturbedWord).padStart(4)}  refused ${String(rejected.perturbedWord).padStart(4)}` +
+      `   (${unperturbable} sentence(s) the probe could not change, excluded)\n` +
+      `one digit changed           accepted ${String(accepted.perturbedDigit).padStart(4)}  refused ${String(rejected.perturbedDigit).padStart(4)}\n`,
+  );
+  for (const [reason, count] of [...discardReasons].sort(
+    (a, b) => b[1] - a[1],
+  )) {
+    process.stdout.write(`  ${reason.padEnd(24)} ${count}\n`);
+  }
+
   // ---- the cost --------------------------------------------------------------
   const eligibleRate = (survivors.length / total) * keep;
   const meanPromptChars = eligible === 0 ? 0 : promptChars / eligible;
   const promptTokens = meanPromptChars / CHARS_PER_TOKEN;
   const perCall =
-    (promptTokens / 1e6) * INPUT_PER_MTOK + (OUTPUT_TOKENS / 1e6) * OUTPUT_PER_MTOK;
+    (promptTokens / 1e6) * INPUT_PER_MTOK +
+    (OUTPUT_TOKENS / 1e6) * OUTPUT_PER_MTOK;
 
   for (const perDay of [500, 700, 1000]) {
     const calls = perDay * eligibleRate;

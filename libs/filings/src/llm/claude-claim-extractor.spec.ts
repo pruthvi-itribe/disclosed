@@ -141,7 +141,11 @@ describe('ClaudeClaimExtractor — the reply', () => {
           text: JSON.stringify({
             claims: [
               { span: 'one sentence', text: 'one claim', kind: 'target' },
-              { span: 'another sentence', text: 'another claim', kind: 'guidance' },
+              {
+                span: 'another sentence',
+                text: 'another claim',
+                kind: 'guidance',
+              },
               { span: 'a malformed one', text: 'a claim', kind: 'not-a-kind' },
             ],
           }),
