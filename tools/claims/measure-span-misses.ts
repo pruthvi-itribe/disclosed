@@ -41,7 +41,7 @@
  *       npm run span:measure -- --sample 60 --stored   (re-check stored discards)
  */
 import 'dotenv/config';
-import mongoose from 'mongoose';
+import mongoose, { type Model } from 'mongoose';
 import {
   ALL_REPAIRS,
   AttachmentFetcher,
@@ -55,6 +55,9 @@ import {
   NO_REPAIRS,
   readWithRouting,
   type CanonRepairs,
+  type ClaimDiscard,
+  type ClaimExtractor,
+  type DoclingConverter,
   type FilingDocument,
   type ProposedClaim,
 } from '@app/filings';
@@ -77,10 +80,11 @@ const pct = (part: number, whole: number): string =>
 
 /** The ladder, in order. The first rung that matches is the cause. */
 const RUNGS: readonly (readonly [string, CanonRepairs])[] = [
-  ['whitespace-only', NO_REPAIRS],
+  ['re-read-alone', NO_REPAIRS],
   ['typography', { ...NO_REPAIRS, typography: true }],
   ['table-cells', { ...NO_REPAIRS, typography: true, tableCells: true }],
-  ['line-break-hyphen', ALL_REPAIRS],
+  ['line-break-hyphen', { ...ALL_REPAIRS, wordSpacing: false }],
+  ['word-spacing', ALL_REPAIRS],
 ];
 
 /** Letters and digits alone. The ceiling of any punctuation-class repair. */
@@ -155,6 +159,19 @@ function bestOverlap(documentText: string, span: string): number {
   return best / needle.length;
 }
 
+/** The rungs, in the order a reader wants them. */
+const CAUSE_ORDER: readonly string[] = [
+  're-read-alone',
+  'typography',
+  'word-spacing',
+  'table-cells',
+  'line-break-hyphen',
+  'alnum-only',
+  'case-fold',
+  'paraphrase',
+  'invention',
+];
+
 /** Where a proposed span sits on the ladder. */
 function classify(documentText: string, span: string): string {
   for (const [name, repairs] of RUNGS) {
@@ -173,6 +190,182 @@ interface Row {
   readonly category: string;
   readonly summary: string;
   readonly attachmentUrl: string | null;
+}
+
+/** One refusal the gate already recorded, with the span it refused. */
+interface StoredMiss {
+  readonly seqId: number;
+  readonly symbol: string;
+  readonly attachmentUrl: string | null;
+  readonly category: string;
+  readonly span: string;
+  /** True when `bounded()` cut the span short on its way into the record. */
+  readonly truncated: boolean;
+}
+
+/** The prefix `claim-verify.ts` writes before the span it refused. */
+const DETAIL_LEAD = 'the quoted source is not in the document: "';
+
+/**
+ * The spans the gate has ALREADY refused, read back out of the collection.
+ *
+ * ================================================================
+ * WHY THIS IS THE BETTER MEASUREMENT
+ * ================================================================
+ *
+ * The sampling mode above asks a model for fresh claims and hopes some of them
+ * miss. This reads the REAL failing population — every `span-not-found` the live
+ * pipeline has recorded — and costs not one model call, which is what makes a
+ * sample of every miss affordable rather than a sample of two dozen documents.
+ *
+ * The one caveat is stated rather than hidden: `claim-verify.ts` bounds the
+ * detail it stores at 200 characters, so a span longer than about 157 arrives
+ * here cut short. A prefix that matches still proves the sentence is in the
+ * document, so the classification stays meaningful; the count of truncated ones
+ * is reported so a reader can discount them.
+ */
+async function storedMisses(
+  model: Model<FilingDocument>,
+): Promise<readonly StoredMiss[]> {
+  const rows = (await model
+    .find(
+      { 'enrichment.claimDiscards.reason': 'span-not-found' },
+      {
+        _id: 0,
+        seqId: 1,
+        symbol: 1,
+        category: 1,
+        attachmentUrl: 1,
+        'enrichment.claimDiscards': 1,
+      },
+    )
+    .lean()
+    .exec()) as unknown as readonly (Row & {
+    enrichment?: { claimDiscards?: readonly ClaimDiscard[] };
+  })[];
+
+  return rows.flatMap((row) =>
+    (row.enrichment?.claimDiscards ?? [])
+      .filter((discard) => discard.reason === 'span-not-found')
+      .map((discard) => {
+        const detail = discard.detail;
+        const at = detail.indexOf(DETAIL_LEAD);
+        const rest = at === -1 ? '' : detail.slice(at + DETAIL_LEAD.length);
+        const closed = rest.endsWith('"');
+        return {
+          seqId: row.seqId,
+          symbol: row.symbol,
+          category: row.category,
+          attachmentUrl: row.attachmentUrl,
+          span: closed ? rest.slice(0, -1) : rest,
+          truncated: !closed,
+        };
+      })
+      .filter((miss) => miss.span.length > 0),
+  );
+}
+
+/**
+ * Classifies every already-recorded refusal, re-reading each document once.
+ *
+ * One fetch per FILING rather than per discard, because a filing that proposed
+ * three inventions is one document and three data points.
+ */
+async function measureStored(
+  model: Model<FilingDocument>,
+  fetcher: AttachmentFetcher,
+  converter: DoclingConverter | null,
+  delayMs: number,
+): Promise<void> {
+  const misses = await storedMisses(model);
+  const bySeqId = new Map<number, StoredMiss[]>();
+  for (const miss of misses) {
+    bySeqId.set(miss.seqId, [...(bySeqId.get(miss.seqId) ?? []), miss]);
+  }
+
+  process.stdout.write(
+    `${misses.length} recorded span-not-found refusal(s) across ` +
+      `${bySeqId.size} filing(s); ` +
+      `${misses.filter((miss) => miss.truncated).length} span(s) were stored ` +
+      `truncated\n\n`,
+  );
+
+  const causes = new Map<string, number>();
+  const examples = new Map<string, string[]>();
+  let judged = 0;
+  let unreadable = 0;
+  let recovered = 0;
+
+  for (const [seqId, group] of bySeqId) {
+    const [first] = group;
+    const decision = decideAttachment(first.attachmentUrl);
+    if (decision.outcome === 'skip') {
+      unreadable += group.length;
+      continue;
+    }
+    const fetched = await fetcher.fetch(decision.url);
+    if (fetched.outcome !== 'ok') {
+      unreadable += group.length;
+      continue;
+    }
+    const parsed = await extractPdfText(fetched.body);
+    if (parsed.outcome !== 'ok') {
+      unreadable += group.length;
+      continue;
+    }
+    const routed = await readWithRouting({
+      category: first.category,
+      data: fetched.body,
+      fileName: `${seqId}.pdf`,
+      text: parsed.text,
+      pages: parsed.pages,
+      converter,
+    });
+    if (!hasUsableTextLayer(routed.text)) {
+      unreadable += group.length;
+      continue;
+    }
+
+    for (const miss of group) {
+      judged += 1;
+      if (findVerbatimSpan(routed.text, miss.span, ALL_REPAIRS) !== null) {
+        recovered += 1;
+      }
+      const cause = classify(routed.text, miss.span);
+      causes.set(cause, (causes.get(cause) ?? 0) + 1);
+      const kept = examples.get(cause) ?? [];
+      if (kept.length < 5) {
+        const source = documentTextAt(routed.text, miss.span);
+        kept.push(
+          `${miss.symbol} ${seqId}${miss.truncated ? ' (span stored truncated)' : ''}` +
+            `\n      MODEL:  ${canonicalSpan(miss.span)}` +
+            (source === null ? '' : `\n      SOURCE: ${canonicalSpan(source)}`),
+        );
+        examples.set(cause, kept);
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  process.stdout.write(
+    `\n--- ${judged} recorded refusal(s) re-judged against the document ---\n` +
+      `document could not be re-read  ${unreadable}\n` +
+      `RECOVERED by canonicalisation  ${recovered}  ${pct(recovered, judged)}\n` +
+      `still refused                  ${judged - recovered}  ${pct(judged - recovered, judged)}\n\n` +
+      `--- why each of the ${judged} missed ---\n`,
+  );
+
+  for (const cause of CAUSE_ORDER) {
+    const count = causes.get(cause) ?? 0;
+    if (count === 0) continue;
+    process.stdout.write(
+      `${cause.padEnd(20)} ${String(count).padStart(4)}  ${pct(count, judged)}\n`,
+    );
+    for (const example of examples.get(cause) ?? []) {
+      process.stdout.write(`    ${example}\n`);
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -204,11 +397,17 @@ async function main(): Promise<void> {
     .exec()) as unknown as Row[];
 
   const extractor = buildClaimExtractor(config);
-  if (extractor === null) {
+  if (extractor === null && !process.argv.includes('--stored')) {
     throw new Error('no claim extractor is configured; set CLAIM_API_KEY');
   }
   const converter = buildDoclingConverter(config);
   const fetcher = new AttachmentFetcher(config.enrichmentMaxBytes);
+
+  if (process.argv.includes('--stored')) {
+    await measureStored(model, fetcher, converter, delayMs);
+    await mongoose.disconnect();
+    return;
+  }
 
   process.stdout.write(
     `sampling ${rows.length} filing(s) at ${delayMs}ms apart, ` +
@@ -246,7 +445,7 @@ async function main(): Promise<void> {
     process.stdout.write(
       `  asking about ${row.symbol} ${row.seqId} (${routed.route}, ${routed.text.length} chars)\n`,
     );
-    const extraction = await extractor.extract({
+    const extraction = await (extractor as ClaimExtractor).extract({
       symbol: row.symbol,
       category: row.category,
       summary: row.summary,
@@ -298,16 +497,7 @@ async function main(): Promise<void> {
       `--- why each of the ${missed} miss(es) missed ---\n`,
   );
 
-  const order = [
-    'typography',
-    'table-cells',
-    'line-break-hyphen',
-    'alnum-only',
-    'case-fold',
-    'paraphrase',
-    'invention',
-  ];
-  for (const cause of order) {
+  for (const cause of CAUSE_ORDER) {
     const count = causes.get(cause) ?? 0;
     if (count === 0) continue;
     process.stdout.write(

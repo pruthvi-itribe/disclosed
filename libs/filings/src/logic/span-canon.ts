@@ -76,6 +76,49 @@ export interface CanonRepairs {
    * hyphen with a space on both sides is a dash in a sentence, not a broken word.
    */
   readonly lineBreakHyphens: boolean;
+  /**
+   * Whitespace is dropped entirely rather than collapsed to one space, so a
+   * word the text layer split or welded reads the same either way.
+   *
+   * ================================================================
+   * THE LARGEST MEASURED CAUSE, AND THE ONE THAT IS THE PARSER'S FAULT
+   * ================================================================
+   *
+   * Over every `span-not-found` the live pipeline had recorded, 55.7% differed
+   * from the document by WORD SPACING ALONE. They are not the model being loose:
+   * they are `pdf-parse` reporting the text layer wrong, and the model quoting
+   * the sentence the way the page reads it.
+   *
+   *     SWIGGY    document: "Instamartwill be a Rs 1.5+ Lakh Cr GOV business"
+   *     BUILDPRO  document: "Re venue fr om Operat ions grew 21% YoY t o"
+   *
+   * No amount of punctuation mapping reaches those. A space that the parser
+   * invented inside `Operations` cannot be repaired by anything that treats
+   * spaces as significant.
+   *
+   * ================================================================
+   * WHY IT IS STILL NOT A FUZZY MATCH
+   * ================================================================
+   *
+   * It obeys the same invariant as every other rule: the sequence of letters and
+   * digits is untouched. A word changed, a digit changed, a negation dropped or a
+   * unit altered still cannot match. What is given up is only the model's
+   * agreement about WHERE the word boundaries are, and three separate things
+   * limit what that can cost:
+   *
+   *   1. **The evidence stored is the DOCUMENT's own bytes**, spacing and all, so
+   *      what a reviewer reads is the source's segmentation and never the
+   *      model's.
+   *   2. **`MIN_SPAN_CHARS` still applies**, so no isolated token can be a span —
+   *      the concatenation hazard needs twelve characters of agreement around it.
+   *   3. **`unsupportedNumbers` runs afterwards on the document's slice**, so a
+   *      claim stating a figure welded out of two adjacent table cells is
+   *      refused by the number rule even though the span matched.
+   *
+   * It is measured separately from the others precisely because it is the one
+   * whose cost is an argument rather than an inspection.
+   */
+  readonly wordSpacing: boolean;
 }
 
 /** Everything on. What production uses. */
@@ -83,6 +126,7 @@ export const ALL_REPAIRS: CanonRepairs = {
   typography: true,
   tableCells: true,
   lineBreakHyphens: true,
+  wordSpacing: true,
 };
 
 /** Nothing on: whitespace collapse alone, which is what shipped before. */
@@ -90,6 +134,7 @@ export const NO_REPAIRS: CanonRepairs = {
   typography: false,
   tableCells: false,
   lineBreakHyphens: false,
+  wordSpacing: false,
 };
 
 /**
@@ -250,10 +295,10 @@ export function canonicalise(
 
     const isCell = repairs.tableCells && character === '|';
     if (isCell || WHITESPACE.test(character)) {
-      // Only the first character of a run survives, and it survives as a plain
-      // space — so a newline, a tab, a run of four spaces and a table cell
-      // boundary are all the same single separator to the matcher.
-      if (!inWhitespace) {
+      // Dropped entirely, or collapsed to one space. Either way a newline, a
+      // tab, a run of four spaces and a table cell boundary are the same thing
+      // to the matcher.
+      if (!repairs.wordSpacing && !inWhitespace) {
         emit(' ', index);
         inWhitespace = true;
       }

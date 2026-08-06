@@ -18,6 +18,15 @@ describe('canonicalise', () => {
   /** Letters and digits only, in order. What the projection may never alter. */
   const alnum = (value: string): string => value.replace(/[^0-9A-Za-z]+/g, '');
 
+  /**
+   * Every repair EXCEPT word spacing.
+   *
+   * The punctuation rules are examined with spaces still significant, because
+   * that is the only way to show what each of them does: under `wordSpacing`
+   * every one of these assertions would pass whether the rule fired or not.
+   */
+  const TYPESET_ONLY = { ...ALL_REPAIRS, wordSpacing: false };
+
   describe('the invariant: letters and digits survive exactly', () => {
     it.each([
       ['a plain sentence', 'The Board approved a 40% dividend on 12 Aug 2026.'],
@@ -38,18 +47,21 @@ describe('canonicalise', () => {
       for (const typography of [true, false]) {
         for (const tableCells of [true, false]) {
           for (const lineBreakHyphens of [true, false]) {
-            const projected = canonicalise(source, {
-              typography,
-              tableCells,
-              lineBreakHyphens,
-            });
-            // The ligature is the one entry that changes the COUNT of letters,
-            // and it changes it into the very letters it is a ligature of — so
-            // the comparison is against the expansion rather than the source.
-            const expected = typography
-              ? alnum(source.replace('ﬁ', 'fi'))
-              : alnum(source);
-            expect(alnum(projected.text)).toBe(expected);
+            for (const wordSpacing of [true, false]) {
+              const projected = canonicalise(source, {
+                typography,
+                tableCells,
+                lineBreakHyphens,
+                wordSpacing,
+              });
+              // The ligature is the one entry that changes the COUNT of letters,
+              // and it changes it into the very letters it is a ligature of — so
+              // the comparison is against the expansion rather than the source.
+              const expected = typography
+                ? alnum(source.replace('ﬁ', 'fi'))
+                : alnum(source);
+              expect(alnum(projected.text)).toBe(expected);
+            }
           }
         }
       }
@@ -75,6 +87,17 @@ describe('canonicalise', () => {
   });
 
   describe('what it repairs', () => {
+    it('drops word spacing, which the text layer gets wrong both ways', () => {
+      // The largest measured cause. `pdf-parse` welds `Instamartwill` and splits
+      // `Re venue fr om Operat ions` in the same collection.
+      expect(canonicalSpan('Instamartwill be a business')).toBe(
+        canonicalSpan('Instamart will be a business'),
+      );
+      expect(canonicalSpan('Re venue fr om Operat ions')).toBe(
+        canonicalSpan('Revenue from Operations'),
+      );
+    });
+
     it('reads a typographic apostrophe as a straight one', () => {
       expect(canonicalSpan('the Company’s board')).toBe(
         canonicalSpan("the Company's board"),
@@ -89,26 +112,34 @@ describe('canonicalise', () => {
     });
 
     it('expands a ligature into its own letters', () => {
-      expect(canonicalSpan('ﬁnancial results')).toBe('financial results');
+      expect(canonicalSpan('ﬁnancial results', TYPESET_ONLY)).toBe(
+        'financial results',
+      );
     });
 
     it('drops a soft hyphen and a zero-width space', () => {
-      expect(canonicalSpan('re­ven​ue rose')).toBe('revenue rose');
+      expect(canonicalSpan('re­ven​ue rose', TYPESET_ONLY)).toBe(
+        'revenue rose',
+      );
     });
 
     it('reads a markdown cell boundary as a separator', () => {
-      expect(canonicalSpan('| Revenue | 1,234 |')).toBe('Revenue 1,234');
+      expect(canonicalSpan('| Revenue | 1,234 |', TYPESET_ONLY)).toBe(
+        'Revenue 1,234',
+      );
     });
 
     it('does not weld two cells into one word', () => {
       // A DELETED pipe would produce `growthdecline`, which is an adjacency the
       // document does not have and a string a model could then be believed
       // about.
-      expect(canonicalSpan('|growth|decline|')).toBe('growth decline');
+      expect(canonicalSpan('|growth|decline|', TYPESET_ONLY)).toBe(
+        'growth decline',
+      );
     });
 
     it('rejoins a word a line break hyphenated', () => {
-      expect(canonicalSpan('inter-\nnational trade')).toBe(
+      expect(canonicalSpan('inter-\nnational trade', TYPESET_ONLY)).toBe(
         'international trade',
       );
     });
@@ -116,15 +147,24 @@ describe('canonicalise', () => {
     it('leaves a dash between spaces alone', () => {
       // `revenue - 500` is a sentence, not a broken word, and welding it would
       // invent the token `revenue500`.
-      expect(canonicalSpan('revenue - 500 crore')).toBe('revenue - 500 crore');
+      expect(canonicalSpan('revenue - 500 crore', TYPESET_ONLY)).toBe(
+        'revenue - 500 crore',
+      );
+      // The DASH is what survives, and it is what stops `revenue-500` reading
+      // the same as `revenue 500` once spacing is immaterial.
+      expect(canonicalSpan('revenue - 500 crore')).toBe('revenue-500crore');
     });
 
     it('leaves a hyphen that no line break interrupted alone', () => {
-      expect(canonicalSpan('pre-tax profit')).toBe('pre-tax profit');
+      expect(canonicalSpan('pre-tax profit', TYPESET_ONLY)).toBe(
+        'pre-tax profit',
+      );
     });
 
     it('leaves a hyphen after a non-alphanumeric alone', () => {
-      expect(canonicalSpan(') -\n500 crore')).toBe(') - 500 crore');
+      expect(canonicalSpan(') -\n500 crore', TYPESET_ONLY)).toBe(
+        ') - 500 crore',
+      );
     });
   });
 
@@ -152,7 +192,7 @@ describe('canonicalise', () => {
 
   describe('the origin map', () => {
     it('has one entry per projected character', () => {
-      const projected = canonicalise('| ﬁne  work |');
+      const projected = canonicalise('| ﬁne  work |', TYPESET_ONLY);
       expect(projected.origin).toHaveLength(projected.text.length);
     });
 
@@ -166,7 +206,7 @@ describe('canonicalise', () => {
     });
 
     it('rises monotonically, so a match can be resliced', () => {
-      const projected = canonicalise('a’b | c-\nd  e');
+      const projected = canonicalise('a’b | c-\nd  e', TYPESET_ONLY);
       for (let index = 1; index < projected.origin.length; index += 1) {
         expect(projected.origin[index]).toBeGreaterThanOrEqual(
           projected.origin[index - 1],
@@ -181,9 +221,15 @@ describe('canonicalise', () => {
     });
 
     it('maps a collapsed run to the first character of the run', () => {
-      const projected = canonicalise('a \n\t b');
+      const projected = canonicalise('a \n\t b', TYPESET_ONLY);
       expect(projected.text).toBe('a b');
       expect(projected.origin).toEqual([0, 1, 5]);
+    });
+
+    it('drops the run entirely once word spacing is immaterial', () => {
+      const projected = canonicalise('a \n\t b');
+      expect(projected.text).toBe('ab');
+      expect(projected.origin).toEqual([0, 5]);
     });
   });
 
@@ -197,6 +243,7 @@ describe('canonicalise', () => {
         typography: true,
         tableCells: true,
         lineBreakHyphens: true,
+        wordSpacing: true,
       });
     });
 
@@ -209,19 +256,27 @@ describe('canonicalise', () => {
         'a-\nb',
         'ab',
       ],
+      [
+        'wordSpacing',
+        { ...NO_REPAIRS, wordSpacing: true },
+        'Re venue fr om Operat ions',
+        'RevenuefromOperations',
+      ],
     ])('%s can be turned on alone', (_label, repairs, source, expected) => {
       expect(canonicalSpan(source, repairs)).toBe(expected);
     });
 
     it('a hyphen look-ahead that runs off the end does not dehyphenate', () => {
       // The whitespace run has to CONTAIN a newline. A trailing space does not.
-      expect(canonicalSpan('total-  ')).toBe('total-');
+      expect(canonicalSpan('total-  ', TYPESET_ONLY)).toBe('total-');
     });
 
     it('gives up on a line break buried under a page of blank space', () => {
       // Bounded look-ahead: without it, one hyphen would scan the rest of the
       // document. Beyond the bound the hyphen simply survives.
-      expect(canonicalSpan(`a-${' '.repeat(60)}\nb`)).toBe('a- b');
+      expect(canonicalSpan(`a-${' '.repeat(60)}\nb`, TYPESET_ONLY)).toBe(
+        'a- b',
+      );
     });
   });
 });

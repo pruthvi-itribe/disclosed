@@ -96,6 +96,81 @@ describe('findVerbatimSpan', () => {
     expect(containsVerbatimSpan(source, 'a b c value stated here')).toBe(true);
   });
 
+  /**
+   * The largest measured cause of a refused span, and the one repair whose cost
+   * is an argument rather than an inspection.
+   *
+   * Both documents here are the real shapes `pdf-parse` produces on the live
+   * collection: a welded word and a word broken into pieces, in the same
+   * collection. The pairs matter more than the singles — each recovery is stated
+   * beside the one-character perturbation that must still be refused, because
+   * the whole question about this rule is whether it widens what counts as the
+   * same WORD.
+   */
+  describe('word spacing, which the text layer gets wrong in both directions', () => {
+    const WELDED =
+      'Instamartwill be a Rs 1.5+ Lakh Cr GOV business serving 40 mn users';
+    const SPLIT = 'Re venue fr om Operat ions grew 21% YoY t o Rs 1,890 crore';
+
+    it('finds a sentence the parser welded', () => {
+      expect(
+        containsVerbatimSpan(
+          WELDED,
+          'Instamart will be a Rs 1.5+ Lakh Cr GOV business',
+        ),
+      ).toBe(true);
+    });
+
+    it('finds a sentence the parser broke into pieces', () => {
+      expect(
+        containsVerbatimSpan(SPLIT, 'Revenue from Operations grew 21% YoY'),
+      ).toBe(true);
+    });
+
+    it.each([
+      [
+        'a changed digit in a welded sentence',
+        WELDED,
+        'Instamart will be a Rs 1.6+ Lakh Cr GOV business',
+      ],
+      [
+        'a changed word in a welded sentence',
+        WELDED,
+        'Instamart will be a Rs 1.5+ Lakh Cr NET business',
+      ],
+      [
+        'a changed digit in a broken sentence',
+        SPLIT,
+        'Revenue from Operations grew 22% YoY',
+      ],
+      [
+        'a changed word in a broken sentence',
+        SPLIT,
+        'Revenue from Divisions grew 21% YoY',
+      ],
+      [
+        'an inserted word',
+        SPLIT,
+        'Revenue from Operations nearly grew 21% YoY',
+      ],
+    ])('still refuses %s', (_label, source, span) => {
+      expect(containsVerbatimSpan(source, span)).toBe(false);
+    });
+
+    it('returns the document\u2019s own spacing as the evidence', () => {
+      // What a reviewer reads is the source's segmentation, never the model's —
+      // which is the first of the three things that bound what this rule can
+      // cost. See `span-canon.ts`.
+      const match = findVerbatimSpan(
+        WELDED,
+        'Instamart will be a Rs 1.5+ Lakh Cr GOV business',
+      );
+      expect(match?.evidence).toBe(
+        'Instamartwill be a Rs 1.5+ Lakh Cr GOV business',
+      );
+    });
+  });
+
   describe('what it refuses', () => {
     it.each([
       [

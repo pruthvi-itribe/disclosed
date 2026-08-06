@@ -128,15 +128,14 @@ export function findVerbatimSpan(
   // from the next entry in the map rather than by adding the needle's length,
   // because the projected and original lengths differ by exactly what the
   // projection removed.
+  // The character AFTER the last matched one, in original coordinates. Taken as
+  // one past the SOURCE index of the last projected character rather than from
+  // the next entry in the map, because the projection drops characters — the
+  // whitespace between two words, an invisible joiner — and the next entry
+  // therefore sits past them. Reading it would trail the whole gap into the
+  // evidence, so a span ending a paragraph would carry the blank line after it.
   const lastIndex = at + needle.length - 1;
-  const after =
-    lastIndex + 1 < haystack.origin.length
-      ? haystack.origin[lastIndex + 1]
-      : documentText.length;
-  // At least one source character, because a ligature expands to two projected
-  // characters that share one source index — so a span ending on the first half
-  // of one would otherwise reslice to nothing.
-  const end = Math.max(after, haystack.origin[lastIndex] + 1);
+  const end = haystack.origin[lastIndex] + 1;
 
   return { offset: start, evidence: documentText.slice(start, end) };
 }
