@@ -266,6 +266,18 @@ class BackfillRepository extends EnrichmentRepository {
   }
 }
 
+/**
+ * `deepseek/deepseek-v4-flash-0731` list prices, per million tokens.
+ *
+ * Stated here rather than fetched so the arithmetic below is reproducible from
+ * the file alone, exactly as `measure-claim-gate.ts` states Anthropic's. These
+ * are the only numbers in this tool that are not measured; everything they are
+ * multiplied by comes from the provider's own usage block.
+ */
+const INPUT_PER_MTOK = 0.28;
+const CACHED_INPUT_PER_MTOK = 0.028;
+const OUTPUT_PER_MTOK = 0.42;
+
 /** Adds up what the two lanes actually spent, from the provider's own numbers. */
 class MeteredExtractor implements ClaimExtractor, ResultsExtractor {
   public calls = 0;
@@ -289,6 +301,24 @@ class MeteredExtractor implements ClaimExtractor, ResultsExtractor {
     this.inputTokens += usage.inputTokens + usage.cacheWriteInputTokens;
     this.cachedInputTokens += usage.cachedInputTokens;
     this.outputTokens += usage.outputTokens;
+    // PRINTED PER CALL, not only in the summary. A sweep of this size runs for
+    // hours and can be stopped at any moment, and a spend figure that only
+    // exists when the process exits cleanly is a spend figure nobody has when
+    // they need it — which is while it is still running.
+    process.stdout.write(
+      `  SPEND calls=${this.calls} in=${this.inputTokens} ` +
+        `cached=${this.cachedInputTokens} out=${this.outputTokens} ` +
+        `$${this.spend().toFixed(4)}\n`,
+    );
+  }
+
+  /** What the calls so far have cost, at the list prices stated below. */
+  spend(): number {
+    return (
+      (this.inputTokens / 1e6) * INPUT_PER_MTOK +
+      (this.cachedInputTokens / 1e6) * CACHED_INPUT_PER_MTOK +
+      (this.outputTokens / 1e6) * OUTPUT_PER_MTOK
+    );
   }
 
   async extract(
@@ -316,18 +346,6 @@ class MeteredExtractor implements ClaimExtractor, ResultsExtractor {
     return result;
   }
 }
-
-/**
- * `deepseek/deepseek-v4-flash-0731` list prices, per million tokens.
- *
- * Stated here rather than fetched so the arithmetic below is reproducible from
- * the file alone, exactly as `measure-claim-gate.ts` states Anthropic's. These
- * are the only numbers in this tool that are not measured; everything they are
- * multiplied by comes from the provider's own usage block.
- */
-const INPUT_PER_MTOK = 0.28;
-const CACHED_INPUT_PER_MTOK = 0.028;
-const OUTPUT_PER_MTOK = 0.42;
 
 const readArg = (name: string, fallback: number): number => {
   const index = process.argv.indexOf(`--${name}`);
@@ -552,10 +570,7 @@ async function main(): Promise<void> {
   }
 
   const elapsed = (Date.now() - started) / 1000;
-  const spend =
-    (extractor.inputTokens / 1e6) * INPUT_PER_MTOK +
-    (extractor.cachedInputTokens / 1e6) * CACHED_INPUT_PER_MTOK +
-    (extractor.outputTokens / 1e6) * OUTPUT_PER_MTOK;
+  const spend = extractor.spend();
 
   const after = await coverage(model);
   process.stdout.write(
