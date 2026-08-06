@@ -76,6 +76,8 @@ describe('renderDashboardPage — content', () => {
     'state',
     'amount',
     'refusals',
+    'diagnostics',
+    'diag-count',
     'refusal-chip',
     'limit',
     'clear',
@@ -115,9 +117,11 @@ describe('renderDashboardPage — content', () => {
     expect(html).toContain('<th>Enrichment</th>');
   });
 
-  it('makes the refusal reasons a visible, filterable panel', () => {
-    // A refusal nobody can see is indistinguishable from a bug, and the
-    // extractor's declines are what earn it its trust.
+  it('keeps the refusal reasons a reachable, filterable panel', () => {
+    // A refusal nobody can reach is indistinguishable from a bug, and the
+    // extractor's declines are what earn it its trust. The panel moved under a
+    // disclosure — see the demotion suite below — but it did not lose a reason,
+    // a count or a filter, and the words are still on the page.
     expect(html).toContain('Why amounts were refused');
     expect(html).toContain('id="refusals"');
   });
@@ -319,5 +323,253 @@ describe('renderDashboardPage — outcome, group and confidence', () => {
   it('says on the page what a confidence tier means', () => {
     expect(html).toContain('the only tier allowed near an alert');
     expect(html).toContain('an honest floor, not a failure');
+  });
+});
+
+/**
+ * THE AMOUNT-PATH REFUSALS, DEMOTED FROM LABELS TO DIAGNOSTICS.
+ *
+ * `no-candidate` and `ambiguity-keyword` between them covered 95% of the
+ * collection, and each rendered as a warn-coloured pill on its own row — which
+ * made a diagnostic about the amount lane the loudest thing on a page whose
+ * every row now states an outcome composed from the exchange's own summary,
+ * whatever the amount extractor did with the attachment.
+ *
+ * WHAT THESE ASSERT IS THAT THE DEMOTION IS A DEMOTION. "We removed the noise"
+ * and "we removed the evidence" have to stay distinguishable, because an
+ * extractor whose refusals are invisible is indistinguishable from one that is
+ * not running. So: every reason is still counted, every reason is still a
+ * filter, the quiet two are still on their own row as a control rather than as
+ * a label, and the refusals that mean something actually went wrong did not
+ * move at all.
+ */
+describe('renderDashboardPage — amount refusals demoted to diagnostics', () => {
+  /** The two the requirement names, and the only two. */
+  const QUIET_REFUSALS = ['no-candidate', 'ambiguity-keyword'] as const;
+
+  /**
+   * The rest of `AmountRefusalReason`, restated rather than imported because it
+   * is a union type with no runtime value to import. Every one of these means
+   * the document said something the extractor could not safely reduce to a
+   * figure — two disagreeing numbers, a band, a re-denominating header — which
+   * is a fact about the filing and stays on the row.
+   */
+  const LOUD_REFUSALS = [
+    'multiple-candidates',
+    'range-only',
+    'unit-scaled-header',
+    'verbatim-mismatch',
+  ] as const;
+
+  const script = html.slice(
+    html.indexOf('<script>') + '<script>'.length,
+    html.lastIndexOf('</script>'),
+  );
+
+  describe('the quiet set is closed, and closed in the safe direction', () => {
+    it('names exactly the two reasons the requirement names', () => {
+      // AN ALLOWLIST OF THE QUIET, NOT A DENYLIST OF THE LOUD. Parsed out of the
+      // literal rather than merely searched for, so a third reason quietly added
+      // to it is a red build: demoting a reason is a decision about what an
+      // operator stops seeing, and it must never happen by accident.
+      const literal = script.match(/var QUIET_AMOUNT_REFUSALS = \{([^}]*)\};/);
+      expect(literal).not.toBeNull();
+
+      const keys = (literal?.[1] ?? '').match(/'[^']+'/g) ?? [];
+      expect(keys.map((key) => key.replace(/'/g, ''))).toEqual([
+        ...QUIET_REFUSALS,
+      ]);
+    });
+
+    it.each(LOUD_REFUSALS)('does not put %s on the quiet list', (reason) => {
+      expect(script).not.toContain(`'${reason}': true`);
+    });
+
+    it('looks the list up without walking the prototype chain', () => {
+      // The keys arrive from the database and `constructor` is a key on every
+      // object literal's prototype, so an unguarded lookup would report a
+      // function as a quiet refusal and silence a real one.
+      expect(script).toContain(
+        'Object.prototype.hasOwnProperty.call(QUIET_AMOUNT_REFUSALS, reason)',
+      );
+    });
+  });
+
+  describe('the row', () => {
+    it('no longer renders every refusal as one loud tag', () => {
+      // The line this replaces. It put `amountRefusalReason || unparseableReason`
+      // on EVERY row as a warn pill, which is what made 95% of rows shout.
+      expect(script).not.toContain(
+        'var reason = e.amountRefusalReason || e.unparseableReason;',
+      );
+    });
+
+    it('tags an amount refusal only when it is not on the quiet list', () => {
+      expect(script).toContain(
+        'if (amountRefusal && !isQuietRefusal(amountRefusal)) {',
+      );
+    });
+
+    it('keeps an unreadable document loud and unconditional', () => {
+      // A document nothing could read at all is a real problem and a different
+      // class of fact from "the document was read and stated no figure". It is
+      // no longer suppressed by an amount refusal happening to be present too.
+      expect(script).toContain('var unreadable = e.unparseableReason;');
+      expect(script).toContain(
+        "tag(unreadable, 'refusal' + (state.refusal === unreadable ? ' active' : ''), pickRefusal(unreadable))",
+      );
+    });
+
+    it('gives a quiet refusal a muted control beside the dash instead', () => {
+      // The dash in the Amount column is where the question "why is this blank"
+      // is actually asked, so that is where the answer lives.
+      expect(script).toContain('if (quiet && isQuietRefusal(quiet)) {');
+      expect(script).toContain(
+        'cell.appendChild(whyControl(quiet, e.amountRefusalDetail));',
+      );
+    });
+
+    it('keeps the reason and its detail one hover away', () => {
+      // Demoted, not deleted: the pill's whole payload still reaches the reader,
+      // it just costs an interaction instead of shouting.
+      expect(script).toContain("node.title = 'no amount was read: ' + reason");
+      expect(script).toContain("(detail ? ' - ' + detail : '')");
+    });
+
+    it('keeps the reason one click away from filtering the table', () => {
+      expect(script).toContain(
+        "node.addEventListener('click', pickRefusal(reason));",
+      );
+    });
+
+    it('makes the control keyboard-reachable and gives it an accessible name', () => {
+      // A span with a click handler is not reachable without a mouse. This one
+      // replaces something a reader could previously see at a glance, so it has
+      // to be operable by everyone the pill was operable by.
+      expect(script).toContain("var node = document.createElement('button');");
+      expect(script).toContain("node.type = 'button';");
+      expect(script).toContain("node.setAttribute('aria-label',");
+    });
+
+    it('renders the control muted rather than as a warning', () => {
+      // The point of the change. `.tag.refusal` is warn-coloured; this must not
+      // be, or nothing has been demoted.
+      expect(html).toMatch(/\.why \{[^}]*var\(--muted\)/);
+      expect(html).not.toMatch(/\.why \{[^}]*var\(--warn\)/);
+      expect(html).not.toMatch(/\.why \{[^}]*var\(--bad\)/);
+    });
+  });
+
+  describe('the panel', () => {
+    it('is no longer the first thing in the sidebar', () => {
+      // It was. A collection whose rows all state an outcome does not lead with
+      // the amount extractor's diagnostics.
+      for (const id of ['claims', 'results', 'tiers', 'groups']) {
+        expect(html.indexOf(`id="${id}"`)).toBeLessThan(
+          html.indexOf('id="refusals"'),
+        );
+      }
+    });
+
+    it('sits under a disclosure that starts closed', () => {
+      expect(html).toContain(
+        '<details class="panel diagnostics" id="diagnostics">',
+      );
+      expect(html).not.toMatch(/<details[^>]*\sopen/);
+      expect(html.indexOf('id="diagnostics"')).toBeLessThan(
+        html.indexOf('id="refusals"'),
+      );
+    });
+
+    it('carries the refusal total on the closed summary', () => {
+      // WHAT KEEPS A COLLAPSED PANEL HONEST. The breakdown folds away; the
+      // number does not, so a reader who never opens it still sees that the
+      // extractor declined two thousand documents — and sees it go to zero on
+      // the day the extractor stops running.
+      expect(html).toContain('id="diag-count"');
+      expect(html).toContain(
+        "setText('diag-count', groupInt(total) + ' refusal(s) recorded');",
+      );
+      expect(html).toContain(
+        'var total = sumCounts(d.byRefusal) + sumCounts(d.byUnparseable);',
+      );
+    });
+
+    it('still lists every reason, quiet ones included, each one a filter', () => {
+      // NOTHING WAS DELETED. Three labelled groups, all three drawn from the
+      // same server counts as before, all three clickable.
+      expect(html).toContain(
+        "tagGroup(box, 'amount refused - needs a look', split.loud, pickRefusal)",
+      );
+      expect(html).toContain(
+        "tagGroup(box, 'document unreadable', d.byUnparseable, pickRefusal)",
+      );
+      expect(html).toContain(
+        "tagGroup(box, 'no figure in the document to read', split.quiet, pickRefusal)",
+      );
+    });
+
+    it('splits the panel on the same predicate the row splits on', () => {
+      // One predicate, two call sites. Two copies would be two chances for a
+      // reason to be demoted on the row and still loud in the panel, or the
+      // reverse — and the panel is the only place the quiet ones are named.
+      expect(html).toContain('var split = partitionRefusals(d.byRefusal);');
+      expect(html).toContain('if (isQuietRefusal(all[i].key))');
+    });
+
+    it('opens itself when a refusal filter is applied from outside it', () => {
+      // The filter is applied from three places and only one of them is inside
+      // the disclosure. A filter applied from a row must not leave its own
+      // active tag hidden behind a closed triangle.
+      expect(html).toContain('if (state.refusal) openDiagnostics();');
+      expect(html).toContain('if (box) box.open = true;');
+    });
+  });
+
+  describe('the filter', () => {
+    it('still sends the refusal as a query parameter', () => {
+      expect(html).toContain(
+        "parts.push('refusal=' + encodeURIComponent(state.refusal))",
+      );
+    });
+
+    it('still round-trips a quiet reason end to end', () => {
+      // The whole path for `no-candidate`: a control writes `state.refusal`,
+      // `query()` serialises it, and the chip in the filter bar shows what is
+      // applied and clears it. Demoting the label must not narrow the filter.
+      expect(html).toContain('state.refusal = state.refusal === reason');
+      expect(html).toContain(
+        "chip.appendChild(tag('refusal: ' + state.refusal",
+      );
+      expect(html).toContain('id="refusal-chip"');
+    });
+
+    it('offers a third path to the filter that survives the disclosure', () => {
+      // Row control, panel pill, filter-bar chip. Closing Diagnostics removes
+      // one of the three, which is why there are three.
+      expect(html).toContain('function renderRefusalChip()');
+      expect(html).toContain("state.refusal = '';");
+    });
+  });
+
+  it('says on the page what was demoted and why', () => {
+    // The footer is the page's own account of itself. A change to what a reader
+    // sees that the footer does not mention is a page lying about its own rules.
+    //
+    // Asserted against whitespace-collapsed prose, so that hard-wrapping a
+    // paragraph is a reflow rather than a red build. What is pinned is the
+    // sentence, not where it breaks.
+    const prose = html.replace(/\s+/g, ' ');
+
+    expect(prose).toContain(
+      'Amount-path refusals are diagnostics, not headlines',
+    );
+    expect(prose).toContain('no-candidate and ambiguity-keyword');
+    expect(prose).toContain(
+      'still counted and still filterable under Diagnostics',
+    );
+    expect(prose).toContain(
+      'an extractor whose refusals are invisible is indistinguishable from one that is not running',
+    );
   });
 });

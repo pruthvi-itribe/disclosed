@@ -171,6 +171,38 @@ td.amt .value { font-weight: 600; }
 td.amt .party { display: block; font-size: 11px; color: var(--muted); white-space: normal; text-align: right; max-width: 190px; }
 
 /*
+ * THE QUIET AFFORDANCE, and the whole point of it is that it is quiet.
+ *
+ * It replaces a warn-coloured pill that read 'no-candidate' or
+ * 'ambiguity-keyword' on 95% of the rows in the table — the extractor correctly
+ * reporting that a notice of a board meeting states no rupee figure, rendered at
+ * the same weight as a document nothing could read. So this has no border, no
+ * fill, no warn colour and no reason text: it is a four-letter word at 55%
+ * opacity beside the dash it explains.
+ *
+ * IT IS A CONTROL AND NOT A LABEL, which is what makes the demotion survivable.
+ * Hovering it names the reason and its detail; clicking it filters the table to
+ * every filing refused the same way; and it lights up in the accent colour when
+ * that filter is the one currently applied, so a reader who filtered to
+ * 'no-candidate' can still see which rows they are looking at.
+ *
+ * A button element, so it is reachable by keyboard — it is one interaction away
+ * from a reader with a mouse and must not be infinitely far from one without.
+ * The shared button rule near the top of this file paints a background and a
+ * border; every one of those is unset here rather than left to specificity luck.
+ */
+.why {
+  background: none; border: none; border-radius: 3px; margin: 0; padding: 0 0 0 6px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
+  color: var(--muted); opacity: 0.55; cursor: pointer; vertical-align: baseline;
+}
+.why:hover { opacity: 1; color: var(--accent); text-decoration: underline; }
+/* Keyboard focus is the shared input/select/button outline near the top of this
+   file, deliberately not overridden: this control has no border of its own to
+   carry a focus ring. */
+.why.active { opacity: 1; color: var(--accent); text-decoration: underline; }
+
+/*
  * A refusal is rendered as a first-class value, not as an empty cell. The
  * extractor earns trust by explaining what it declined, and a blank here would
  * be indistinguishable from a filing nobody has looked at.
@@ -202,6 +234,40 @@ td.enr { white-space: nowrap; font-size: 12px; }
 /* A count that should normally be zero. Warn rather than bad: a parser fallback
    is a degraded read, not a lost filing. */
 .reason-group.flagged { color: var(--warn); }
+
+/*
+ * THE DIAGNOSTICS DISCLOSURE, last in the sidebar and closed by default.
+ *
+ * The refusal breakdown used to be the first panel on the page. That was right
+ * when a refused amount meant an empty row and wrong the moment every filing
+ * gained an outcome composed from the exchange's own summary — at which point
+ * the panel was leading with a lane that no longer decides whether a row says
+ * anything, and two of its reasons covered 95% of the collection.
+ *
+ * THE SUMMARY LINE STILL CARRIES THE TOTAL WHILE CLOSED, which is the condition
+ * on folding it away at all: the breakdown is on demand, the fact that there IS
+ * one is not. A reader who never opens this still sees the count, and sees it
+ * fall to zero on the day the extractor stops declining anything.
+ */
+.panel.diagnostics > summary {
+  padding: 10px 14px; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  display: flex; align-items: baseline; gap: 8px;
+  cursor: pointer; list-style: none; user-select: none;
+}
+.panel.diagnostics > summary::-webkit-details-marker { display: none; }
+/* A textual marker rather than the native triangle, which a flex summary drops
+   anyway. No image, for the reason the top of this file gives. */
+.panel.diagnostics > summary::before {
+  content: '+'; font-family: var(--mono); font-weight: 400; width: 8px; opacity: 0.8;
+}
+.panel.diagnostics[open] > summary::before { content: '-'; }
+.panel.diagnostics > summary:hover { color: var(--text); }
+.panel.diagnostics > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.panel.diagnostics .diag-count {
+  margin-left: auto; font-family: var(--mono); font-weight: 400;
+  letter-spacing: 0; text-transform: none;
+}
 
 /* --- the outcome, its group and its tier ---------------------------------- */
 

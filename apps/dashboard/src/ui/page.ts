@@ -30,6 +30,21 @@ import { PAGE_STYLE } from './page-style';
  * state and amount filters above are already written the same way for the same
  * reason — a fixed allowlist belongs in the document, a measured distribution
  * does not.
+ *
+ * THE ORDER OF THE SIDEBAR IS AN ARGUMENT, not a layout. The panels that say
+ * what filings CONTAIN come first — claims, results, confidence, groups — and
+ * the amount extractor's refusal breakdown comes last, behind a `<details>` that
+ * starts closed. It used to lead. That made sense when a refused amount meant an
+ * empty row, and stopped making sense when every filing gained an outcome
+ * composed from the exchange's own summary: two reasons, `no-candidate` and
+ * `ambiguity-keyword`, then accounted for 95% of a collection none of whose rows
+ * were blank any more.
+ *
+ * The disclosure is COLLAPSED, NOT REMOVED, and its summary line carries the
+ * live refusal total precisely so the collapse costs no evidence — an extractor
+ * whose refusals are invisible is indistinguishable from one that is not
+ * running, and a number on a closed panel is the cheapest way to keep those two
+ * apart. Everything inside it is still counted and still clickable to a filter.
  */
 export const renderDashboardPage = (): string => `<!doctype html>
 <html lang="en">
@@ -178,10 +193,6 @@ export const renderDashboardPage = (): string => `<!doctype html>
 
   <div class="side">
     <div class="panel">
-      <h2><span>Why amounts were refused</span><span class="muted">click to filter</span></h2>
-      <div id="refusals"></div>
-    </div>
-    <div class="panel">
       <h2><span>Notable claims</span><span class="muted">click to filter</span></h2>
       <div id="claims"></div>
     </div>
@@ -194,6 +205,14 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <div id="tiers" class="rows"></div>
     </div>
     <div class="panel">
+      <h2><span>Category groups</span><span class="muted">click to filter</span></h2>
+      <div id="groups" class="rows"></div>
+    </div>
+    <div class="panel">
+      <h2><span>Categories</span><span class="muted">click to filter</span></h2>
+      <div id="categories" class="rows scroll"></div>
+    </div>
+    <div class="panel">
       <h2><span>How documents were read</span><span class="muted">no filter accepts a parser</span></h2>
       <div id="reading"></div>
     </div>
@@ -202,14 +221,11 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <div id="days" class="days"></div>
       <div class="dayaxis"><span id="day-from">—</span><span id="day-to">—</span></div>
     </div>
-    <div class="panel">
-      <h2><span>Category groups</span><span class="muted">click to filter</span></h2>
-      <div id="groups" class="rows"></div>
-    </div>
-    <div class="panel">
-      <h2><span>Categories</span><span class="muted">click to filter</span></h2>
-      <div id="categories" class="rows scroll"></div>
-    </div>
+    <details class="panel diagnostics" id="diagnostics">
+      <summary><span>Diagnostics</span><span id="diag-count" class="diag-count">—</span></summary>
+      <h2><span>Why amounts were refused</span><span class="muted">click to filter</span></h2>
+      <div id="refusals"></div>
+    </details>
   </div>
 </main>
 
@@ -225,6 +241,14 @@ export const renderDashboardPage = (): string => `<!doctype html>
   this is. Category only is an honest floor, not a failure — an investor presentation nobody verified is still an investor
   presentation. The confidence filter cuts at verified because that is the boundary with a consequence; the row badge is where all
   three tiers are told apart.
+  Amount-path refusals are diagnostics, not headlines. no-candidate and ambiguity-keyword both say the document was
+  read and stated no figure worth taking — the ordinary case, and true of 95% of this collection — so a row carries
+  them as a muted "why" beside the dash in the Amount column, where hovering names the reason and clicking filters the
+  table to it. A refusal that means something went wrong stays on the row as it always was: a document that could not
+  be read at all, figures that disagreed with each other, a band published instead of a figure. Nothing was deleted.
+  Every refusal, demoted or not, is still counted and still filterable under Diagnostics at the foot of the sidebar,
+  whose summary line carries the running total even while it is closed, because an extractor whose refusals are
+  invisible is indistinguishable from one that is not running.
 </footer>
 
 <script>${PAGE_SCRIPT}</script>

@@ -40,6 +40,39 @@ export const PAGE_SCRIPT = `
   // reading a PDF normally means - and the tag exists to mark the exceptions.
   var DEFAULT_PARSE_ROUTE = 'pdf-parse';
 
+  // THE AMOUNT-PATH REFUSALS THAT ARE NOT A PROBLEM.
+  //
+  // Both of these say the same thing about a filing: the document was read and
+  // it stated no figure worth taking. That is the ORDINARY case - a board
+  // meeting notice, a trading window closure, an investor presentation - and it
+  // was true of 95% of the collection, so rendering each one as a warn-coloured
+  // pill made a diagnostic about one lane the loudest thing on almost every row.
+  // It no longer decides whether the row says anything either: every filing
+  // states an outcome composed from the exchange's own summary, whatever the
+  // amount extractor did with the attachment.
+  //
+  // AN ALLOWLIST OF THE QUIET, NOT A DENYLIST OF THE LOUD, and that direction is
+  // the safety property. A refusal reason this file has never heard of renders
+  // loud, so the failure mode of forgetting to update this list is noise rather
+  // than silence. 'multiple-candidates' (the document stated two different
+  // numbers), 'range-only' (a band, not a figure), 'unit-scaled-header' and
+  // 'verbatim-mismatch' all mean something needs a look and stay where they
+  // were, as does every unparseableReason - a document nothing could read is a
+  // filing nobody has looked inside, not an extractor exercising judgement.
+  //
+  // DEMOTED IS NOT DELETED. The quiet two keep a control on their own row, keep
+  // their count and their filter in the Diagnostics panel, and keep the chip in
+  // the filter bar. An extractor whose refusals are invisible is
+  // indistinguishable from one that is not running.
+  var QUIET_AMOUNT_REFUSALS = { 'no-candidate': true, 'ambiguity-keyword': true };
+
+  // hasOwnProperty rather than a bare lookup, for the reason 'describe' below
+  // gives: these keys arrive from the database and 'constructor' is a key on
+  // every object literal's prototype chain.
+  function isQuietRefusal(reason) {
+    return Object.prototype.hasOwnProperty.call(QUIET_AMOUNT_REFUSALS, reason);
+  }
+
   // What each tier permits, in the words of libs/filings/src/logic/confidence
   // -tier.ts. Carried as tooltips rather than as visible prose because the badge
   // appears on every row and three explanatory sentences per row is a wall.
@@ -203,8 +236,44 @@ export const PAGE_SCRIPT = `
     return function () {
       state.refusal = state.refusal === reason ? '' : reason;
       state.offset = 0;
+      // This filter is applied from three places - a row's 'why' control, a pill
+      // in the Diagnostics panel and the chip in the filter bar - and only one
+      // of the three is inside the disclosure. Opening it on the way in is what
+      // stops a filter applied from a row leaving its own active tag folded away
+      // behind a closed triangle, which would read as the filter not having
+      // been applied. Opened rather than toggled: clearing the filter leaves the
+      // panel as the reader left it.
+      if (state.refusal) openDiagnostics();
       refresh(true);
     };
+  }
+
+  function openDiagnostics() {
+    var box = el('diagnostics');
+    if (box) box.open = true;
+  }
+
+  // THE QUIET AFFORDANCE: a refusal demoted from a label to a control.
+  //
+  // A BUTTON RATHER THAN A SPAN, unlike every other clickable thing on this
+  // page, and deliberately so. This one REPLACES something a reader could
+  // previously see at a glance, so it has to be operable by everyone the pill
+  // was operable by - a span with a click handler is not reachable without a
+  // mouse. The reason and its detail ride in the title and in the accessible
+  // name, so nothing the pill carried is gone: it costs one hover instead of
+  // zero, at a fraction of the visual weight, on 95% of the rows on this page.
+  function whyControl(reason, detail) {
+    var node = document.createElement('button');
+    node.type = 'button';
+    node.className = 'why' + (state.refusal === reason ? ' active' : '');
+    node.textContent = 'why';
+    node.title = 'no amount was read: ' + reason
+      + (detail ? ' - ' + detail : '')
+      + '. Click to filter to this reason.';
+    node.setAttribute('aria-label',
+      'no amount was read: ' + reason + '. Filter the table to this reason.');
+    node.addEventListener('click', pickRefusal(reason));
+    return node;
   }
 
   // The group and tier pickers are the same shape as pickCategory and
@@ -446,6 +515,15 @@ export const PAGE_SCRIPT = `
     row.appendChild(cell);
   }
 
+  // The figure, or the dash - and where the extractor declined quietly, a 'why'
+  // beside the dash.
+  //
+  // THE DASH IS WHERE THE QUESTION IS ASKED. "Why is this blank" is a question
+  // about the amount column, so the answer belongs in the amount column and not
+  // over in the enrichment one among the tags that mean something went wrong.
+  // One rule, no exceptions: this cell shows the figure, or a dash, and the dash
+  // carries a 'why' whenever the extractor declined for a reason that means the
+  // document simply had no figure to read.
   function amountCell(row, e) {
     var cell = document.createElement('td');
     cell.className = 'amt';
@@ -463,14 +541,24 @@ export const PAGE_SCRIPT = `
       }
     } else {
       cell.appendChild(document.createTextNode('—'));
+      var quiet = e.amountRefusalReason;
+      if (quiet && isQuietRefusal(quiet)) {
+        cell.appendChild(whyControl(quiet, e.amountRefusalDetail));
+      }
     }
 
     row.appendChild(cell);
   }
 
-  // A refusal is rendered as a value, never as a blank. The reason is the tag,
-  // the detail is its tooltip, and the tag filters the table - which is how the
-  // extractor's declines become inspectable rather than merely absent.
+  // WHAT WENT WRONG, and only what went wrong.
+  //
+  // This column used to carry 'amountRefusalReason || unparseableReason' on
+  // every row as one warn pill, which meant the two commonest amount refusals -
+  // both of them the extractor correctly reporting that a notice of a board
+  // meeting states no rupee figure - shouted from 95% of the rows in the table.
+  // They now sit in the amount column as a muted control, and this column is
+  // left to the refusals a reader has to act on. The reason is still the tag,
+  // the detail is still its tooltip, and the tag still filters the table.
   function enrichmentCell(row, e) {
     var cell = document.createElement('td');
     cell.className = 'enr';
@@ -479,10 +567,28 @@ export const PAGE_SCRIPT = `
     if (e.attemptedAtIst) stateTag.title = 'attempt ' + e.attempts + ' at ' + e.attemptedAtIst + ' IST';
     cell.appendChild(stateTag);
 
-    var reason = e.amountRefusalReason || e.unparseableReason;
-    if (reason) {
-      var reasonTag = tag(reason, 'refusal' + (state.refusal === reason ? ' active' : ''), pickRefusal(reason));
-      reasonTag.title = e.amountRefusalDetail || e.lastError || reason;
+    // A DOCUMENT NOTHING COULD READ AT ALL IS A REAL PROBLEM, and it is a
+    // different class of fact from "the document was read and stated no figure".
+    // A raster scan, a zip of images, an attachment NSE served as HTML: none of
+    // those is the extractor exercising judgement, they are filings nobody has
+    // looked inside. Rendered unconditionally now rather than losing a coin toss
+    // to whichever amount refusal happened to be stored beside it.
+    var unreadable = e.unparseableReason;
+    if (unreadable) {
+      var unreadableTag = tag(unreadable, 'refusal' + (state.refusal === unreadable ? ' active' : ''), pickRefusal(unreadable));
+      unreadableTag.title = e.lastError || unreadable;
+      cell.appendChild(document.createTextNode(' '));
+      cell.appendChild(unreadableTag);
+    }
+
+    // And the amount refusals that mean something went wrong, which is every one
+    // outside QUIET_AMOUNT_REFUSALS: the document stated two different numbers,
+    // or published a band rather than a figure, or re-denominated its own table.
+    // Those are facts about the FILING and a reader wants them at a glance.
+    var amountRefusal = e.amountRefusalReason;
+    if (amountRefusal && !isQuietRefusal(amountRefusal)) {
+      var reasonTag = tag(amountRefusal, 'refusal' + (state.refusal === amountRefusal ? ' active' : ''), pickRefusal(amountRefusal));
+      reasonTag.title = e.amountRefusalDetail || amountRefusal;
       cell.appendChild(document.createTextNode(' '));
       cell.appendChild(reasonTag);
     }
@@ -755,17 +861,65 @@ export const PAGE_SCRIPT = `
     var box = el('refusals');
     clear(box);
 
-    var drawn = tagGroup(box, 'amount refused', d.byRefusal, pickRefusal)
-      + tagGroup(box, 'document unreadable', d.byUnparseable, pickRefusal);
+    // THE SAME SPLIT THE ROW MAKES, FROM THE SAME PREDICATE. Two copies of it
+    // would be two chances for a reason to be demoted on the row and still loud
+    // in the panel, or the reverse - and this panel is the only place the quiet
+    // ones are named in full. What is refused for a readable reason leads, an
+    // unreadable document follows, and the two that mean "there was no figure in
+    // there to read" come last. Every group is counted and every pill in all
+    // three filters: this is a demotion of prominence, not of information.
+    var split = partitionRefusals(d.byRefusal);
+    var drawn = tagGroup(box, 'amount refused - needs a look', split.loud, pickRefusal)
+      + tagGroup(box, 'document unreadable', d.byUnparseable, pickRefusal)
+      + tagGroup(box, 'no figure in the document to read', split.quiet, pickRefusal);
 
     if (drawn === 0) emptyPanel(box, 'Nothing refused yet.');
 
+    renderDiagnosticsCount(d);
     renderClaims(d);
     renderResults(d);
     renderTiers(d);
     renderReading(d);
     renderGroups(d);
     renderRefusalChip();
+  }
+
+  // Splits the amount refusals into the two that mean "the document stated no
+  // figure" and everything else. Local accumulators; the server's rows are read
+  // and never written, so the panel cannot reorder the counts it was given.
+  function partitionRefusals(rows) {
+    var quiet = [];
+    var loud = [];
+    var all = rows || [];
+    for (var i = 0; i < all.length; i++) {
+      if (isQuietRefusal(all[i].key)) {
+        quiet.push(all[i]);
+      } else {
+        loud.push(all[i]);
+      }
+    }
+    return { quiet: quiet, loud: loud };
+  }
+
+  function sumCounts(rows) {
+    var all = rows || [];
+    var total = 0;
+    for (var i = 0; i < all.length; i++) total += all[i].count;
+    return total;
+  }
+
+  // WHAT KEEPS A COLLAPSED PANEL HONEST.
+  //
+  // The breakdown folds away behind a disclosure, because on this collection it
+  // is a diagnostic and not a headline. The NUMBER does not fold away: it sits
+  // on the summary line, so a reader who never opens Diagnostics still sees that
+  // the extractor declined two thousand-odd documents, and sees that figure go
+  // to zero on the day it stops running. An extractor whose refusals are
+  // invisible is indistinguishable from one that is not running, and a count on
+  // a closed panel is the cheapest way to keep those two apart.
+  function renderDiagnosticsCount(d) {
+    var total = sumCounts(d.byRefusal) + sumCounts(d.byUnparseable);
+    setText('diag-count', groupInt(total) + ' refusal(s) recorded');
   }
 
   // The shape of what can be trusted, and the panel a reader should look at
