@@ -1,8 +1,7 @@
 import { CLAIM_SYSTEM_PROMPT } from '../logic/claim-prompt';
+import { CLAIM_MAX_TOKENS, DEFAULT_CLAIM_MODEL } from './claim-provider';
 import {
-  CLAIM_MAX_TOKENS,
   ClaudeClaimExtractor,
-  DEFAULT_CLAIM_MODEL,
   type ClaudeMessagesApi,
 } from './claude-claim-extractor';
 
@@ -52,7 +51,7 @@ const REQUEST = {
 
 const extractorWith = (messages: ClaudeMessagesApi): ClaudeClaimExtractor =>
   new ClaudeClaimExtractor(messages, {
-    model: DEFAULT_CLAIM_MODEL,
+    model: DEFAULT_CLAIM_MODEL.anthropic,
     effort: 'medium',
   });
 
@@ -60,11 +59,11 @@ describe('ClaudeClaimExtractor — the request', () => {
   it('asks the configured model', async () => {
     const messages = new RecordingMessages();
     await extractorWith(messages).extract(REQUEST);
-    expect(messages.bodies[0].model).toBe(DEFAULT_CLAIM_MODEL);
+    expect(messages.bodies[0].model).toBe(DEFAULT_CLAIM_MODEL.anthropic);
   });
 
   it('defaults to the current Opus', () => {
-    expect(DEFAULT_CLAIM_MODEL).toBe('claude-opus-5');
+    expect(DEFAULT_CLAIM_MODEL.anthropic).toBe('claude-opus-5');
   });
 
   it('puts a cache breakpoint on the stable prompt', async () => {
@@ -178,6 +177,68 @@ describe('ClaudeClaimExtractor — the reply', () => {
     });
   });
 
+  it('reports what the call cost, cache reads kept apart', async () => {
+    // The comparison harness prices a run from these. `input_tokens` on this
+    // API already EXCLUDES cache reads, so they are carried in their own field
+    // rather than folded in — a cache hit billed at full rate would make the
+    // cheaper provider look cheaper than it is.
+    const messages = new RecordingMessages({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify({ claims: [] }) }],
+      usage: {
+        input_tokens: 421,
+        output_tokens: 87,
+        cache_read_input_tokens: 2_190,
+        cache_creation_input_tokens: 0,
+      },
+    });
+
+    const result = await extractorWith(messages).extract(REQUEST);
+    expect(result.outcome).toBe('ok');
+    if (result.outcome !== 'ok') throw new Error('expected ok');
+    expect(result.usage).toEqual({
+      inputTokens: 421,
+      outputTokens: 87,
+      cachedInputTokens: 2_190,
+      cacheWriteInputTokens: 0,
+    });
+  });
+
+  it.each([
+    ['no usage block at all', {}],
+    ['a usage block that is not an object', { usage: 'lots' }],
+    ['a null usage block', { usage: null }],
+  ])('leaves usage absent rather than zeroed for %s', async (_label, extra) => {
+    // Absent and zero are different facts. Zeroes would let an unreported call
+    // be priced as a free one, and a cost report would silently understate.
+    const messages = new RecordingMessages({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify({ claims: [] }) }],
+      ...(extra as Record<string, unknown>),
+    });
+
+    const result = await extractorWith(messages).extract(REQUEST);
+    if (result.outcome !== 'ok') throw new Error('expected ok');
+    expect(result.usage).toBeUndefined();
+  });
+
+  it('reads a partial usage block as zero rather than NaN', async () => {
+    const messages = new RecordingMessages({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify({ claims: [] }) }],
+      usage: { input_tokens: 300 },
+    });
+
+    const result = await extractorWith(messages).extract(REQUEST);
+    if (result.outcome !== 'ok') throw new Error('expected ok');
+    expect(result.usage).toEqual({
+      inputTokens: 300,
+      outputTokens: 0,
+      cachedInputTokens: 0,
+      cacheWriteInputTokens: 0,
+    });
+  });
+
   it('ignores thinking blocks when it reads the body', async () => {
     const messages = new RecordingMessages({
       stop_reason: 'end_turn',
@@ -274,7 +335,7 @@ describe('ClaudeClaimExtractor.fromApiKey', () => {
       // failed".
       expect(
         ClaudeClaimExtractor.fromApiKey(apiKey, {
-          model: DEFAULT_CLAIM_MODEL,
+          model: DEFAULT_CLAIM_MODEL.anthropic,
           effort: 'medium',
         }),
       ).toBeNull();
@@ -284,7 +345,7 @@ describe('ClaudeClaimExtractor.fromApiKey', () => {
   it('builds an extractor when a key is present', () => {
     expect(
       ClaudeClaimExtractor.fromApiKey('sk-ant-not-a-real-key', {
-        model: DEFAULT_CLAIM_MODEL,
+        model: DEFAULT_CLAIM_MODEL.anthropic,
         effort: 'low',
       }),
     ).toBeInstanceOf(ClaudeClaimExtractor);

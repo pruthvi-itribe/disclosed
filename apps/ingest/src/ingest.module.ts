@@ -14,7 +14,11 @@ import {
 import { buildClaimExtractor } from './enrichment/claim-extractor.factory';
 import { TelegramService } from '@app/notify';
 import { AlertService } from './alert/alert.service';
-import { loadConfig, type ClaimEffort } from './config/configuration';
+import {
+  loadConfig,
+  type ClaimEffort,
+  type ClaimProvider,
+} from './config/configuration';
 import { EnrichmentWorker } from './enrichment/enrichment.worker';
 import { FilingContextService } from './enrichment/filing-context.service';
 import { CircuitBreaker } from './poller/circuit-breaker';
@@ -135,7 +139,9 @@ export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
       useFactory: (config: ConfigService): ClaimExtractor | null =>
         buildClaimExtractor({
           claimsEnabled: config.getOrThrow<boolean>('claimsEnabled'),
+          claimProvider: config.getOrThrow<ClaimProvider>('claimProvider'),
           anthropicApiKey: config.getOrThrow<string>('anthropicApiKey'),
+          openrouterApiKey: config.getOrThrow<string>('openrouterApiKey'),
           claimModel: config.getOrThrow<string>('claimModel'),
           claimEffort: config.getOrThrow<ClaimEffort>('claimEffort'),
         }),

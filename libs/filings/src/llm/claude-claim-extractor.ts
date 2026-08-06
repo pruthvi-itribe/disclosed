@@ -3,13 +3,21 @@ import {
   buildClaimRequest,
   CLAIM_OUTPUT_SCHEMA,
   CLAIM_SYSTEM_PROMPT,
-  parseClaimResponse,
 } from '../logic/claim-prompt';
 import type {
   ClaimExtractionRequest,
   ClaimExtractionResult,
   ClaimExtractor,
 } from './claim-extractor';
+import {
+  CLAIM_MAX_TOKENS,
+  CLAIM_TIMEOUT_MS,
+  claimsFromText,
+  countOf,
+  describeProviderFailure,
+  type ClaimProviderOptions,
+  type ClaimUsage,
+} from './claim-provider';
 
 /**
  * The claim extractor, backed by the Claude API.
@@ -24,6 +32,10 @@ import type {
  * an invented span whatever produced it — but a cheaper model that proposes more
  * inventions produces a stream of discards rather than a stream of claims, and a
  * feature that refuses everything is not cheaper, it is absent.
+ *
+ * That is the claim `tools/claims/compare-providers.ts` exists to TEST rather
+ * than assert, by running this adapter and the OpenRouter one over the same
+ * documents and counting `span-not-found` per proposed claim.
  *
  * The model is nonetheless a CONFIGURED VALUE, not a constant, because the
  * cost/quality trade is the operator's to make and it can be made without a
@@ -56,36 +68,6 @@ import type {
  * indistinguishable from a bug in the reading path, and gets treated as one.
  */
 
-/** The model used when the operator names none. */
-export const DEFAULT_CLAIM_MODEL = 'claude-opus-5';
-
-/**
- * Output ceiling.
- *
- * On this model `max_tokens` bounds thinking AND response text together, and
- * thinking is on by default. Three claims of JSON is a few hundred tokens; the
- * rest of this budget is headroom so a reasoning pass cannot truncate the
- * answer mid-object and turn a good extraction into an unparseable one.
- */
-export const CLAIM_MAX_TOKENS = 8_000;
-
-/**
- * Wall-clock ceiling for one call.
- *
- * The worker is not latency-critical — the filing has already been stored and
- * alerted — but it is sequential, so a call that hangs stops the queue behind
- * it. Two minutes is far beyond the observed shape of this request and well
- * inside the claim lease.
- */
-export const CLAIM_TIMEOUT_MS = 120_000;
-
-export interface ClaudeClaimExtractorOptions {
-  readonly model: string;
-  readonly effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-  readonly maxTokens?: number;
-  readonly timeoutMs?: number;
-}
-
 /** The subset of the SDK this adapter uses, so a test can stand in for it. */
 export interface ClaudeMessagesApi {
   create(body: Record<string, unknown>): Promise<unknown>;
@@ -111,10 +93,29 @@ const textOf = (message: unknown): string => {
     .join('');
 };
 
+/**
+ * Reads the usage block into the shared shape, or nothing.
+ *
+ * Undefined rather than zeros when the reply carried no usage at all: a
+ * comparison that treated an unreported call as a free one would under-report
+ * spend, and silently.
+ */
+const usageOf = (message: unknown): ClaimUsage | undefined => {
+  const usage = (message as { usage?: unknown })?.usage;
+  if (typeof usage !== 'object' || usage === null) return undefined;
+  const record = usage as Record<string, unknown>;
+  return {
+    inputTokens: countOf(record.input_tokens),
+    outputTokens: countOf(record.output_tokens),
+    cachedInputTokens: countOf(record.cache_read_input_tokens),
+    cacheWriteInputTokens: countOf(record.cache_creation_input_tokens),
+  };
+};
+
 export class ClaudeClaimExtractor implements ClaimExtractor {
   constructor(
     private readonly messages: ClaudeMessagesApi,
-    private readonly options: ClaudeClaimExtractorOptions,
+    private readonly options: ClaimProviderOptions,
   ) {}
 
   /**
@@ -127,7 +128,7 @@ export class ClaudeClaimExtractor implements ClaimExtractor {
    */
   static fromApiKey(
     apiKey: string,
-    options: ClaudeClaimExtractorOptions,
+    options: ClaimProviderOptions,
   ): ClaudeClaimExtractor | null {
     if (apiKey.trim().length === 0) return null;
     const client = new Anthropic({
@@ -178,17 +179,9 @@ export class ClaudeClaimExtractor implements ClaimExtractor {
         };
       }
 
-      const body = textOf(message);
-      if (body.trim().length === 0) {
-        return { outcome: 'failed', message: 'the model returned no text' };
-      }
-
-      return { outcome: 'ok', claims: parseClaimResponse(JSON.parse(body)) };
+      return claimsFromText(textOf(message), usageOf(message));
     } catch (error) {
-      return {
-        outcome: 'failed',
-        message: error instanceof Error ? error.message : String(error),
-      };
+      return { outcome: 'failed', message: describeProviderFailure(error) };
     }
   }
 }

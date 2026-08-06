@@ -22,6 +22,7 @@ export * from './logic/claim-eligibility';
 export * from './logic/claim-verify';
 export * from './logic/claim-line';
 export * from './logic/claim-prompt';
+export * from './llm/claim-provider';
 export * from './llm/claim-extractor';
 export * from './logic/html-entities';
 export * from './logic/legal-block';

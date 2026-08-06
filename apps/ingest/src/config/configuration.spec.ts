@@ -1,4 +1,5 @@
 import {
+  claimApiKeyOf,
   CONFIG_DEFAULTS,
   describeConfig,
   loadConfig,
@@ -509,7 +510,9 @@ describe('the notable-claim settings', () => {
   it('reports the claim lane in the startup line, all three ways', () => {
     // "Off" is a decision and "unconfigured" is a misconfiguration, and both
     // present as a market with nothing to say unless the line distinguishes them.
-    expect(describeConfig(loadConfig(empty))).toContain('claims=unconfigured');
+    expect(describeConfig(loadConfig(empty))).toContain(
+      'claims=anthropic/unconfigured',
+    );
     expect(
       describeConfig(loadConfig(withEnv({ CLAIM_ENABLED: 'false' }))),
     ).toContain('claims=off');
@@ -519,14 +522,123 @@ describe('the notable-claim settings', () => {
           withEnv({ ANTHROPIC_API_KEY: 'sk-ant-x', CLAIM_EFFORT: 'low' }),
         ),
       ),
-    ).toContain('claims=claude-opus-5/low');
+    ).toContain('claims=anthropic/claude-opus-5/low');
   });
 
-  it('never prints the key itself', () => {
+  it('names the provider even when the lane is unconfigured', () => {
+    // "Which key is missing?" has two answers now, and the startup line is
+    // where an operator looks for it.
     expect(
-      describeConfig(
-        loadConfig(withEnv({ ANTHROPIC_API_KEY: 'sk-ant-secret' })),
-      ),
-    ).not.toContain('sk-ant-secret');
+      describeConfig(loadConfig(withEnv({ CLAIM_PROVIDER: 'openrouter' }))),
+    ).toContain('claims=openrouter/unconfigured');
+  });
+
+  it.each([
+    ['ANTHROPIC_API_KEY', 'sk-ant-secret'],
+    ['OPENROUTER_API_KEY', 'sk-or-v1-secret'],
+  ])('never prints %s itself', (key, value) => {
+    expect(describeConfig(loadConfig(withEnv({ [key]: value })))).not.toContain(
+      value,
+    );
+  });
+});
+
+describe('the claim provider', () => {
+  it('ships pointed at Anthropic, with both keys read', () => {
+    const config = loadConfig(empty);
+    expect(config.claimProvider).toBe('anthropic');
+    expect(config.anthropicApiKey).toBe('');
+    expect(config.openrouterApiKey).toBe('');
+  });
+
+  it.each([['anthropic'], ['openrouter']])('accepts the provider %s', (raw) => {
+    expect(loadConfig(withEnv({ CLAIM_PROVIDER: raw })).claimProvider).toBe(
+      raw,
+    );
+  });
+
+  it('accepts a provider in any case, with padding', () => {
+    expect(
+      loadConfig(withEnv({ CLAIM_PROVIDER: '  OpenRouter  ' })).claimProvider,
+    ).toBe('openrouter');
+  });
+
+  it.each([['openai'], ['claude'], ['1'], ['open-router'], ['anthropic ai']])(
+    'rejects the provider "%s" at load rather than on every call',
+    (raw) => {
+      // An unrecognised provider selects no adapter at all, which presents as
+      // an extractor that has silently stopped working rather than as a typo in
+      // one environment variable.
+      expect(() => loadConfig(withEnv({ CLAIM_PROVIDER: raw }))).toThrow(
+        /CLAIM_PROVIDER must be one of anthropic, openrouter/,
+      );
+    },
+  );
+
+  it.each([[''], ['   ']])(
+    'treats a blank CLAIM_PROVIDER "%s" as unset',
+    (raw) => {
+      expect(loadConfig(withEnv({ CLAIM_PROVIDER: raw })).claimProvider).toBe(
+        'anthropic',
+      );
+    },
+  );
+
+  it.each([
+    ['anthropic', 'claude-opus-5'],
+    ['openrouter', 'deepseek/deepseek-v4-flash-0731'],
+  ])('defaults the model to %s’s own: %s', (provider, model) => {
+    // The failure this pins: an operator sets CLAIM_PROVIDER and nothing else,
+    // and the lane sends OpenRouter a `claude-opus-5` it cannot resolve — a 404
+    // on every eligible filing, which reads as a broken extractor.
+    expect(loadConfig(withEnv({ CLAIM_PROVIDER: provider })).claimModel).toBe(
+      model,
+    );
+  });
+
+  it('still lets an operator name a model explicitly', () => {
+    expect(
+      loadConfig(
+        withEnv({
+          CLAIM_PROVIDER: 'openrouter',
+          CLAIM_MODEL: 'qwen/qwen3-max',
+        }),
+      ).claimModel,
+    ).toBe('qwen/qwen3-max');
+  });
+
+  it.each([
+    ['anthropic', 'ANTHROPIC_API_KEY', 'sk-ant-x'],
+    ['openrouter', 'OPENROUTER_API_KEY', 'sk-or-v1-x'],
+  ])('reports %s configured only by %s', (provider, key, value) => {
+    const withOwnKey = describeConfig(
+      loadConfig(withEnv({ CLAIM_PROVIDER: provider, [key]: value })),
+    );
+    expect(withOwnKey).not.toContain(`claims=${provider}/unconfigured`);
+
+    // The other provider's key does not configure this one. The failure being
+    // pinned: an operator switches provider, keeps the key they already had,
+    // and the startup line reports a working lane that then extracts nothing.
+    const otherKey =
+      key === 'ANTHROPIC_API_KEY' ? 'OPENROUTER_API_KEY' : 'ANTHROPIC_API_KEY';
+    const withWrongKey = describeConfig(
+      loadConfig(withEnv({ CLAIM_PROVIDER: provider, [otherKey]: value })),
+    );
+    expect(withWrongKey).toContain(`claims=${provider}/unconfigured`);
+  });
+});
+
+describe('claimApiKeyOf', () => {
+  it.each([
+    ['anthropic', 'sk-ant-x'],
+    ['openrouter', 'sk-or-v1-x'],
+  ] as const)('returns the %s key', (claimProvider, expected) => {
+    expect(
+      claimApiKeyOf({
+        claimProvider,
+        anthropicApiKey: 'sk-ant-x',
+        openrouterApiKey: 'sk-or-v1-x',
+      }),
+    ).toBe(expected);
   });
 });

@@ -6,6 +6,17 @@
  * they are pure functions taking config on trust. So the validation is here,
  * once, and it stops the process rather than logging a warning nobody reads.
  */
+// NOT from the barrel: this module is loaded before anything else and the
+// barrel drags in mongoose and an HTTP client. `claim-provider.ts` is types and
+// constants only, and it is imported rather than restated so the allowlist the
+// config validates against and the one the adapters implement cannot drift.
+import {
+  CLAIM_EFFORT_LEVELS,
+  CLAIM_PROVIDERS,
+  DEFAULT_CLAIM_MODEL,
+  type ClaimEffortLevel,
+  type ClaimProviderName,
+} from '@app/filings/llm/claim-provider';
 
 export interface IngestConfig {
   readonly mongoUri: string;
@@ -52,18 +63,40 @@ export interface IngestConfig {
   // --- notable-claim extraction ---------------------------------------------
   /** False stops any model being called. Nothing else changes. */
   readonly claimsEnabled: boolean;
+  /**
+   * Which provider is asked for claims.
+   *
+   * The key that is required, and the model that is used when none is named,
+   * both follow from this — so an operator who sets only `CLAIM_PROVIDER` gets
+   * a working configuration rather than a working provider pointed at the other
+   * one's model id.
+   */
+  readonly claimProvider: ClaimProvider;
   /** Empty means no extractor is configured, which is a supported state. */
   readonly anthropicApiKey: string;
+  /** The same, for OpenRouter. Both are read whichever provider is selected. */
+  readonly openrouterApiKey: string;
   readonly claimModel: string;
-  /** Thinking depth and token spend. See `claude-claim-extractor.ts`. */
+  /** Thinking depth and token spend. See `claim-provider.ts`. */
   readonly claimEffort: ClaimEffort;
   readonly claimMaxClaims: number;
 }
 
-/** The effort levels the Messages API accepts. */
-export const CLAIM_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+/**
+ * The effort levels and provider names, re-exported from the one place that
+ * defines them.
+ *
+ * Aliases rather than fresh literals: `libs/filings` owns the vocabulary
+ * because the adapters have to implement it, and a second copy here is how a
+ * config comes to accept a value no adapter can send.
+ */
+export const CLAIM_EFFORTS = CLAIM_EFFORT_LEVELS;
 
-export type ClaimEffort = (typeof CLAIM_EFFORTS)[number];
+export type ClaimEffort = ClaimEffortLevel;
+
+export const CLAIM_PROVIDER_NAMES = CLAIM_PROVIDERS;
+
+export type ClaimProvider = ClaimProviderName;
 
 /** The environment keys carrying a number, in the order they are validated. */
 export const NUMERIC_KEYS = [
@@ -150,15 +183,30 @@ export const CONFIG_DEFAULTS = {
 } as const;
 
 /**
- * The model asked for notable claims.
+ * The provider asked for notable claims when the operator names none.
+ *
+ * Anthropic, because that is the path with a measured gate behind it and the
+ * conservative default for a feature that publishes sentences about named
+ * listed companies. Switching is one variable, and `claims:compare` exists so
+ * the switch can be made on numbers rather than on price alone.
+ */
+export const DEFAULT_CLAIM_PROVIDER: ClaimProvider = 'anthropic';
+
+/**
+ * The model asked for notable claims, per provider.
  *
  * A CONFIGURED VALUE rather than a constant, because the cost/quality trade is
- * the operator's and can be made without a deploy. The default is the current
- * Opus: the failure being defended against is a fluent invention, and while
- * `claim-verify.ts` catches one whatever produced it, a model that proposes more
- * inventions yields a stream of discards rather than a stream of claims.
+ * the operator's and can be made without a deploy. The Anthropic default is the
+ * current Opus: the failure being defended against is a fluent invention, and
+ * while `claim-verify.ts` catches one whatever produced it, a model that
+ * proposes more inventions yields a stream of discards rather than a stream of
+ * claims.
+ *
+ * PER PROVIDER, because one shared default would be a model id that only one of
+ * them can resolve — and a 404 on every call presents as an extractor that has
+ * silently stopped working.
  */
-export const DEFAULT_CLAIM_MODEL_ID = 'claude-opus-5';
+export const DEFAULT_CLAIM_MODEL_ID = DEFAULT_CLAIM_MODEL;
 
 /**
  * Default effort.
@@ -285,23 +333,33 @@ const readBoolean = (
 };
 
 /**
- * Reads the effort level, or stops the process naming the valid ones.
+ * Reads one setting from a fixed set of words, or stops the process naming them.
  *
- * Checked against the allowlist rather than passed through, because an
- * unrecognised value is a 400 from the API on every single call — which
- * presents as an extractor that has silently stopped working rather than as a
- * typo in one environment variable.
+ * The string counterpart of `readNumeric`, and it exists for the same reason: an
+ * unrecognised value is not caught by anything downstream. A bad effort level is
+ * a 400 from the API on every single call and a bad provider name would select
+ * no adapter at all — both of which present as an extractor that has silently
+ * stopped working rather than as a typo in one environment variable.
+ *
+ * Case-folded and trimmed on the way in, because these are words an operator
+ * types, not opaque tokens. The message lists every valid word, so the fix is in
+ * the error rather than in the source.
  */
-const readEffort = (key: string, env: NodeJS.ProcessEnv): ClaimEffort => {
+const readChoice = <T extends string>(
+  key: string,
+  env: NodeJS.ProcessEnv,
+  allowed: readonly T[],
+  fallback: T,
+): T => {
   const raw = env[key];
-  if (raw === undefined || raw.trim() === '') return DEFAULT_CLAIM_EFFORT;
+  if (raw === undefined || raw.trim() === '') return fallback;
   const value = raw.trim().toLowerCase();
-  if (!(CLAIM_EFFORTS as readonly string[]).includes(value)) {
+  if (!(allowed as readonly string[]).includes(value)) {
     throw new Error(
-      `${key} must be one of ${CLAIM_EFFORTS.join(', ')}, but was "${raw}".`,
+      `${key} must be one of ${allowed.join(', ')}, but was "${raw}".`,
     );
   }
-  return value as ClaimEffort;
+  return value as T;
 };
 
 const readList = (key: string, env: NodeJS.ProcessEnv): string[] =>
@@ -319,38 +377,82 @@ const readList = (key: string, env: NodeJS.ProcessEnv): string[] =>
  */
 export const loadConfig = (
   env: NodeJS.ProcessEnv = process.env,
-): IngestConfig => ({
-  mongoUri: readString('MONGO_URI', env, CONFIG_DEFAULTS.MONGO_URI),
-  telegramBotToken: readString('TELEGRAM_BOT_TOKEN', env, ''),
-  telegramChatId: readString('TELEGRAM_CHAT_ID', env, ''),
-  telegramMinSendIntervalMs: readNumeric('TELEGRAM_MIN_SEND_INTERVAL_MS', env),
-  hotIntervalMs: readNumeric('NSE_HOT_INTERVAL_MS', env),
-  idleIntervalMs: readNumeric('NSE_IDLE_INTERVAL_MS', env),
-  drainIntervalMs: readNumeric('NSE_DRAIN_INTERVAL_MS', env),
-  alertWindowMs: readNumeric('ALERT_WINDOW_MS', env),
-  burstThreshold: readNumeric('BURST_THRESHOLD', env),
-  failureThreshold: readNumeric('FAILURE_THRESHOLD', env),
-  watchlist: readList('WATCHLIST', env),
-  enrichmentEnabled: readBoolean('ENRICH_ENABLED', env, true),
-  enrichmentInProcess: readBoolean('ENRICH_IN_PROCESS', env, true),
-  enrichmentIdleIntervalMs: readNumeric('ENRICH_IDLE_INTERVAL_MS', env),
-  enrichmentRequestDelayMs: readNumeric('ENRICH_REQUEST_DELAY_MS', env),
-  enrichmentBatchSize: readNumeric('ENRICH_BATCH_SIZE', env),
-  enrichmentMaxAttempts: readNumeric('ENRICH_MAX_ATTEMPTS', env),
-  enrichmentRetryBaseMs: readNumeric('ENRICH_RETRY_BASE_MS', env),
-  enrichmentRetryMaxMs: readNumeric('ENRICH_RETRY_MAX_MS', env),
-  enrichmentParseWindowMs: readNumeric('ENRICH_PARSE_WINDOW_MS', env),
-  enrichmentMaxParseAttempts: readNumeric('ENRICH_MAX_PARSE_ATTEMPTS', env),
-  enrichmentParseRetryBaseMs: readNumeric('ENRICH_PARSE_RETRY_BASE_MS', env),
-  enrichmentLeaseMs: readNumeric('ENRICH_LEASE_MS', env),
-  enrichmentMaxBytes: readNumeric('ENRICH_MAX_BYTES', env),
-  contextWindowDays: readNumeric('CONTEXT_WINDOW_DAYS', env),
-  claimsEnabled: readBoolean('CLAIM_ENABLED', env, true),
-  anthropicApiKey: readString('ANTHROPIC_API_KEY', env, ''),
-  claimModel: readString('CLAIM_MODEL', env, DEFAULT_CLAIM_MODEL_ID),
-  claimEffort: readEffort('CLAIM_EFFORT', env),
-  claimMaxClaims: readNumeric('CLAIM_MAX_CLAIMS', env),
-});
+): IngestConfig => {
+  // Read first, because the model default depends on it. An operator who names
+  // a provider and nothing else must get that provider's own model.
+  const claimProvider = readChoice(
+    'CLAIM_PROVIDER',
+    env,
+    CLAIM_PROVIDER_NAMES,
+    DEFAULT_CLAIM_PROVIDER,
+  );
+
+  return {
+    mongoUri: readString('MONGO_URI', env, CONFIG_DEFAULTS.MONGO_URI),
+    telegramBotToken: readString('TELEGRAM_BOT_TOKEN', env, ''),
+    telegramChatId: readString('TELEGRAM_CHAT_ID', env, ''),
+    telegramMinSendIntervalMs: readNumeric(
+      'TELEGRAM_MIN_SEND_INTERVAL_MS',
+      env,
+    ),
+    hotIntervalMs: readNumeric('NSE_HOT_INTERVAL_MS', env),
+    idleIntervalMs: readNumeric('NSE_IDLE_INTERVAL_MS', env),
+    drainIntervalMs: readNumeric('NSE_DRAIN_INTERVAL_MS', env),
+    alertWindowMs: readNumeric('ALERT_WINDOW_MS', env),
+    burstThreshold: readNumeric('BURST_THRESHOLD', env),
+    failureThreshold: readNumeric('FAILURE_THRESHOLD', env),
+    watchlist: readList('WATCHLIST', env),
+    enrichmentEnabled: readBoolean('ENRICH_ENABLED', env, true),
+    enrichmentInProcess: readBoolean('ENRICH_IN_PROCESS', env, true),
+    enrichmentIdleIntervalMs: readNumeric('ENRICH_IDLE_INTERVAL_MS', env),
+    enrichmentRequestDelayMs: readNumeric('ENRICH_REQUEST_DELAY_MS', env),
+    enrichmentBatchSize: readNumeric('ENRICH_BATCH_SIZE', env),
+    enrichmentMaxAttempts: readNumeric('ENRICH_MAX_ATTEMPTS', env),
+    enrichmentRetryBaseMs: readNumeric('ENRICH_RETRY_BASE_MS', env),
+    enrichmentRetryMaxMs: readNumeric('ENRICH_RETRY_MAX_MS', env),
+    enrichmentParseWindowMs: readNumeric('ENRICH_PARSE_WINDOW_MS', env),
+    enrichmentMaxParseAttempts: readNumeric('ENRICH_MAX_PARSE_ATTEMPTS', env),
+    enrichmentParseRetryBaseMs: readNumeric('ENRICH_PARSE_RETRY_BASE_MS', env),
+    enrichmentLeaseMs: readNumeric('ENRICH_LEASE_MS', env),
+    enrichmentMaxBytes: readNumeric('ENRICH_MAX_BYTES', env),
+    contextWindowDays: readNumeric('CONTEXT_WINDOW_DAYS', env),
+    claimsEnabled: readBoolean('CLAIM_ENABLED', env, true),
+    claimProvider,
+    anthropicApiKey: readString('ANTHROPIC_API_KEY', env, ''),
+    openrouterApiKey: readString('OPENROUTER_API_KEY', env, ''),
+    claimModel: readString(
+      'CLAIM_MODEL',
+      env,
+      DEFAULT_CLAIM_MODEL_ID[claimProvider],
+    ),
+    claimEffort: readChoice(
+      'CLAIM_EFFORT',
+      env,
+      CLAIM_EFFORTS,
+      DEFAULT_CLAIM_EFFORT,
+    ),
+    claimMaxClaims: readNumeric('CLAIM_MAX_CLAIMS', env),
+  };
+};
+
+/**
+ * The key the selected provider needs, or an empty string.
+ *
+ * ONE PLACE, because three callers ask the same question — the startup line
+ * deciding between `unconfigured` and a model name, the factory deciding
+ * whether to build an extractor at all, and the comparison harness deciding
+ * whether it may run. Answering it separately in each is how they come to
+ * disagree, and the failure that produces is a startup line reporting a
+ * configured lane that then extracts nothing.
+ */
+export const claimApiKeyOf = (config: {
+  readonly claimProvider: ClaimProvider;
+  readonly anthropicApiKey: string;
+  readonly openrouterApiKey: string;
+}): string =>
+  config.claimProvider === 'openrouter'
+    ? config.openrouterApiKey
+    : config.anthropicApiKey;
 
 /**
  * Strips the `user:password@` section of a connection string.
@@ -387,12 +489,15 @@ export const describeConfig = (config: IngestConfig): string =>
     // Both halves matter and they fail differently: the switch being off is a
     // decision, and a missing key with the switch on is a misconfiguration that
     // presents as a market with nothing to say.
+    // The provider is named even when the lane is unconfigured, because
+    // "unconfigured" answers "which key is missing?" differently depending on
+    // it, and that is the first question an operator asks.
     `claims=${
       !config.claimsEnabled
         ? 'off'
-        : config.anthropicApiKey
-          ? `${config.claimModel}/${config.claimEffort}`
-          : 'unconfigured'
+        : claimApiKeyOf(config)
+          ? `${config.claimProvider}/${config.claimModel}/${config.claimEffort}`
+          : `${config.claimProvider}/unconfigured`
     }`,
     // Both halves are required to send anything, so a half-set pair is reported
     // as unconfigured rather than as a channel that will never deliver.

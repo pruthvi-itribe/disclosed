@@ -1,4 +1,5 @@
 import type { ProposedClaim } from '../logic/claim.types';
+import type { ClaimUsage } from './claim-provider';
 
 /**
  * The seam between "read a document" and "call a model".
@@ -7,7 +8,13 @@ import type { ProposedClaim } from '../logic/claim.types';
  * the worker's tests must never make a network request, and `libs/filings`'s
  * barrel is imported by the read-only dashboard, which must never load an SDK
  * it will never use. Both are served by making the extractor an interface the
- * worker holds and `claude-claim-extractor.ts` implements.
+ * worker holds and each provider adapter implements.
+ *
+ * THE SAME CONTRACT WHOEVER ANSWERS. `claude-claim-extractor.ts` and
+ * `openrouter-claim-extractor.ts` both satisfy exactly this, so the verbatim
+ * gate and everything downstream of it never learn which model proposed a
+ * claim — which is what makes two providers comparable rather than merely
+ * swappable.
  */
 
 export interface ClaimExtractionRequest {
@@ -19,7 +26,18 @@ export interface ClaimExtractionRequest {
 
 export type ClaimExtractionResult =
   /** The model answered. `claims` may be empty, which is the usual case. */
-  | { readonly outcome: 'ok'; readonly claims: readonly ProposedClaim[] }
+  | {
+      readonly outcome: 'ok';
+      readonly claims: readonly ProposedClaim[];
+      /**
+       * What the call cost, when the provider said.
+       *
+       * OPTIONAL, and absent rather than zeroed when a reply carried no usage
+       * block. A comparison harness that saw zeros could not tell a free call
+       * from an unreported one, and would quietly under-report spend.
+       */
+      readonly usage?: ClaimUsage;
+    }
   /**
    * The model could not be asked or did not answer usably.
    *
