@@ -1,0 +1,155 @@
+import {
+  findEventPhraseEnds,
+  findLabelWindows,
+  HEADLINE_SCAN_CHARS,
+  isPhraseAnchored,
+  LABEL_WINDOW_CHARS,
+  PHRASE_REACH_CHARS,
+} from './amount-anchors';
+
+describe('findLabelWindows — the SEBI Schedule III anchor', () => {
+  // Every spelling below is how a real filer in the sample wrote the mandated
+  // row label. The variation is the point: filers reproduce the wording, not
+  // the punctuation, and PDF extraction then stretches or removes the spaces.
+  it.each([
+    ['Broad consideration or size of the order(s)/contract(s)', 'order win'],
+    [
+      'Broad consideration or size of order(s)/contract(s) (in INR);',
+      'no "the"',
+    ],
+    [
+      'Broad commercial consideration or size of the order(s)/contract(s);',
+      'commercial',
+    ],
+    [
+      'Broad   consideration   or   size   of   the   order(s)/ contract(s);',
+      'stretched',
+    ],
+    [
+      'Broad  consideration  or  size  of  the \norder(s)/contract(s)',
+      'line broken',
+    ],
+    ['Broadconsiderationorsizeoforder(s)/contract(s)', 'glued'],
+    [
+      'Cost of acquisition or the price at which the shares are acquired',
+      'acquisition',
+    ],
+    [
+      'Cost of acquisition and/or the price at which the shares are acquired;',
+      'and/or',
+    ],
+  ])('recognises %s (%s)', (label) => {
+    expect(findLabelWindows(`${label} Rs. 5 crore`).length).toBe(1);
+  });
+
+  // "Size of Agreement/ Memorandum of Agreement" is a different Schedule III
+  // row on a different disclosure, and its figure is a vessel price in dollars.
+  it.each([
+    'c) Size of Agreement/ Memorandum of Agreement Purchase Price of the Vessel',
+    'Percentage of shareholding / control acquired',
+    'Time period by which the order(s)/contract(s) is to be executed',
+    'Name of the entity awarding the order(s)/contract(s)',
+  ])('does not recognise the unrelated row: %s', (text) => {
+    expect(findLabelWindows(text)).toEqual([]);
+  });
+
+  it('returns the label verbatim, with whitespace squashed', () => {
+    const [window] = findLabelWindows(
+      'g)  Broad   consideration  or  size  of  the\norder(s)/contract(s) Rs. 5 crore',
+    );
+    expect(window.label).toBe('Broad consideration or size of the order');
+  });
+
+  it('scopes the window to the text that follows the label', () => {
+    const text = `Rs. 99 crore appears BEFORE. Broad consideration or size of the order(s) Rs. 5 crore`;
+    const [window] = findLabelWindows(text);
+    expect(window.text).toContain('Rs. 5 crore');
+    expect(window.text).not.toContain('Rs. 99 crore');
+    expect(text.slice(window.start, window.start + window.text.length)).toBe(
+      window.text,
+    );
+  });
+
+  it('stops before the next disclosure row can contribute a figure', () => {
+    const window = findLabelWindows(
+      `Broad consideration or size of the order(s)/contract(s) Rs. 5 crore${'.'.repeat(
+        LABEL_WINDOW_CHARS,
+      )} Rs. 99 crore`,
+    )[0];
+    expect(window.text).not.toContain('Rs. 99 crore');
+  });
+
+  // Both label families are searched separately, so without an explicit sort
+  // an acquisition row would be reported before an order row that precedes it,
+  // and the first candidate would be read from the wrong part of the document.
+  it('returns every occurrence, in document order', () => {
+    const windows = findLabelWindows(
+      'Cost of acquisition or the price at which the shares are acquired FIRST. ' +
+        'Broad consideration or size of the order(s) SECOND.',
+    );
+    expect(windows).toHaveLength(2);
+    expect(windows[0].label).toBe(
+      'Cost of acquisition or the price at which the shares are acquired',
+    );
+    expect(windows[1].label).toBe('Broad consideration or size of the order');
+  });
+
+  // A global regex shared across calls keeps `lastIndex` between them unless
+  // the matcher is careful. If it leaked, the SECOND document scanned would
+  // start halfway through and silently lose its label.
+  it('does not carry regex state between documents', () => {
+    const text =
+      'Broad consideration or size of the order(s)/contract(s) Rs. 5 crore';
+    expect(findLabelWindows(text)).toHaveLength(1);
+    expect(findLabelWindows(text)).toHaveLength(1);
+    expect(findLabelWindows(text)).toHaveLength(1);
+  });
+});
+
+describe('event phrases — the covering-letter anchor', () => {
+  it.each([
+    'Sub: Press Release – New Orders worth Rs. 1,063 Crores',
+    'has secured new orders of Rs. 1,063 crores',
+    'BEL receives order worth Rs . 847 Crore',
+    'Order value of ₹ 1.03 Cr.',
+    'at a contract price of Rs. 82.17 Crores',
+    'The aggregate value of purchase orders is Rs. 13.11 crore',
+    'for a total value of the work amounting to Rs. 16,90,52,450 /-',
+    'for an aggregate consideration of Rs. 34,99,92,034',
+    'has issued Letter of Acceptance of Rs. 0.74 crores',
+  ])('names the figure in: %s', (text) => {
+    expect(findEventPhraseEnds(text).length).toBeGreaterThan(0);
+  });
+
+  // The sentence this list exists to exclude. It sits in the same KEC press
+  // release as "new orders of Rs. 1,063 crores" and is six times larger.
+  it.each([
+    'our YTD order intake stands at over Rs. 6,300 crore',
+    'Net Revenue decreased by 3% to Rs. 798 crores',
+    'total revenues of Rs. 14,916 lakhs',
+    'Turnover: Rs. 52.78 /- Crores (As on 31.03.2026)',
+    'Authorized Share Capital of Rs. 4,00,00,000',
+  ])('does not name the figure in: %s', (text) => {
+    expect(findEventPhraseEnds(text)).toEqual([]);
+  });
+
+  // A covering letter is the first page or two. Past that the document is an
+  // annexure or a slide deck, where a matching phrase proves much less.
+  it('ignores phrases beyond the covering letter', () => {
+    const text = `${'x'.repeat(HEADLINE_SCAN_CHARS)} orders of Rs. 5 crore`;
+    expect(findEventPhraseEnds(text)).toEqual([]);
+  });
+
+  it('anchors a figure that follows the phrase within reach', () => {
+    expect(isPhraseAnchored([10], 10 + PHRASE_REACH_CHARS)).toBe(true);
+    expect(isPhraseAnchored([10], 10 + PHRASE_REACH_CHARS + 1)).toBe(false);
+  });
+
+  it('does not anchor a figure that precedes the phrase', () => {
+    expect(isPhraseAnchored([10], 9)).toBe(false);
+  });
+
+  it('is not anchored when no phrase was found at all', () => {
+    expect(isPhraseAnchored([], 0)).toBe(false);
+  });
+});
