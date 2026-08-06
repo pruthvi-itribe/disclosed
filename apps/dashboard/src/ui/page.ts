@@ -18,6 +18,18 @@ import { PAGE_STYLE } from './page-style';
  * placed by the script from the JSON routes, which is what lets the page poll
  * without a reload and what keeps exchange-supplied text out of a server-side
  * string concatenation where it would have to be escaped by hand.
+ *
+ * THE ONE EXCEPTION IS A TAXONOMY, NOT DATA. The eleven category groups are
+ * written out as `<option>` elements rather than fetched like the categories
+ * below them, for three reasons: the set is closed and owned by this codebase
+ * (`libs/filings/src/logic/category-group.ts`), so it cannot arrive late or
+ * differ per collection; the filter has to work on a page whose first fetch has
+ * not returned; and the enrichment panel reads its group spellings back out of
+ * these very options, so there is exactly ONE list of the eleven on the page and
+ * no way for a panel label and a filter label to drift apart. The enrichment
+ * state and amount filters above are already written the same way for the same
+ * reason — a fixed allowlist belongs in the document, a measured distribution
+ * does not.
  */
 export const renderDashboardPage = (): string => `<!doctype html>
 <html lang="en">
@@ -70,6 +82,11 @@ export const renderDashboardPage = (): string => `<!doctype html>
     <div class="note">max seqId</div>
   </div>
   <div class="stat">
+    <div class="label">Outcome coverage</div>
+    <div id="stat-outcome" class="value">—</div>
+    <div id="stat-outcome-note" class="note">—</div>
+  </div>
+  <div class="stat">
     <div class="label">Amounts read</div>
     <div id="stat-amounts" class="value">—</div>
     <div id="stat-amounts-note" class="note">—</div>
@@ -86,6 +103,21 @@ export const renderDashboardPage = (): string => `<!doctype html>
   <input id="symbol" type="text" placeholder="RELIANCE" autocomplete="off" spellcheck="false" size="14">
   <label for="category">Category</label>
   <select id="category"><option value="">All categories</option></select>
+  <label for="group">Group</label>
+  <select id="group">
+    <option value="">All groups</option>
+    <option value="results">Results</option>
+    <option value="narrative">Narrative</option>
+    <option value="orders">Orders</option>
+    <option value="mna">M&amp;A</option>
+    <option value="ratings">Ratings</option>
+    <option value="capital">Capital</option>
+    <option value="governance">Governance</option>
+    <option value="legal">Legal</option>
+    <option value="verification">Verification</option>
+    <option value="routine">Routine</option>
+    <option value="other">Other</option>
+  </select>
   <label for="state">Enrichment</label>
   <select id="state">
     <option value="">Any state</option>
@@ -99,6 +131,12 @@ export const renderDashboardPage = (): string => `<!doctype html>
     <option value="">Any</option>
     <option value="extracted">extracted</option>
     <option value="refused">refused</option>
+  </select>
+  <label for="tier">Confidence</label>
+  <select id="tier">
+    <option value="">Any confidence</option>
+    <option value="verified">verified</option>
+    <option value="unverified">unverified</option>
   </select>
   <label for="limit">Rows</label>
   <select id="limit">
@@ -124,6 +162,8 @@ export const renderDashboardPage = (): string => `<!doctype html>
           <tr>
             <th>Time (IST)</th>
             <th>Symbol</th>
+            <th>Outcome</th>
+            <th>Group</th>
             <th>Headline</th>
             <th>Amount</th>
             <th>Enrichment</th>
@@ -150,9 +190,21 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <div id="results"></div>
     </div>
     <div class="panel">
+      <h2><span>Confidence</span><span class="muted">click to filter</span></h2>
+      <div id="tiers" class="rows"></div>
+    </div>
+    <div class="panel">
+      <h2><span>How documents were read</span><span class="muted">no filter accepts a parser</span></h2>
+      <div id="reading"></div>
+    </div>
+    <div class="panel">
       <h2><span>Filings per IST day</span></h2>
       <div id="days" class="days"></div>
       <div class="dayaxis"><span id="day-from">—</span><span id="day-to">—</span></div>
+    </div>
+    <div class="panel">
+      <h2><span>Category groups</span><span class="muted">click to filter</span></h2>
+      <div id="groups" class="rows"></div>
     </div>
     <div class="panel">
       <h2><span>Categories</span><span class="muted">click to filter</span></h2>
@@ -167,6 +219,12 @@ export const renderDashboardPage = (): string => `<!doctype html>
   and the amount and counterparty quote the source document. A refused amount degrades the headline to the exchange's own words.
   Every notable claim carries the verbatim sentence it was read from, matched against the source document before publication;
   a claim whose sentence is not in the document is discarded, and the discard is shown here with the rule that refused it.
+  Every filing states an outcome and carries the tier that says how somebody would check it: verified means a span of the source
+  document was matched character for character and is the only tier allowed near an alert; exchange-stated means NSE's own summary
+  said it and nobody has checked it against the attached document; category only means all that is known is what kind of filing
+  this is. Category only is an honest floor, not a failure — an investor presentation nobody verified is still an investor
+  presentation. The confidence filter cuts at verified because that is the boundary with a consequence; the row badge is where all
+  three tiers are told apart.
 </footer>
 
 <script>${PAGE_SCRIPT}</script>

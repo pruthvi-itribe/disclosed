@@ -2,6 +2,7 @@ import {
   buildDoclingForm,
   DEFAULT_DOCLING_COOLDOWN_MS,
   DOCLING_CONVERT_PATH,
+  DoclingHttpError,
   HttpDoclingConverter,
   MAX_DOCLING_MESSAGE_CHARS,
   textFromDoclingReply,
@@ -464,5 +465,51 @@ describe('HttpDoclingConverter — the asymmetry that keeps one bad PDF cheap', 
 
     expect(http.posts).toHaveLength(2);
     expect(converter.isAvailable()).toBe(true);
+  });
+
+  it.each([
+    ['a gateway timeout on one oversized document', 504],
+    ['a rejected upload', 422],
+    ['an internal error on one document', 500],
+  ])('does NOT open the latch for %s', async (_label, status) => {
+    // THE REGRESSION TEST FOR A LIVE RUN THAT RECOVERED ONE FILING OF 21.
+    // docling-serve answers 504 past its own `max_sync_wait` of 120 seconds
+    // while still finishing the conversion; a 15-page scan took 131. Reading
+    // that as an outage opened the cooldown and silently skipped Docling for
+    // the 19 filings behind it, every one of them 1 to 4 pages.
+    //
+    // A status code is proof the service is ALIVE. Only the absence of a
+    // response says anything about the service.
+    const http = stubHttp({
+      post: rejecting(new DoclingHttpError(`Request failed ${status}`, status)),
+    });
+    const converter = new HttpDoclingConverter(http, clock().options);
+
+    const first = await converter.convert(requestFor());
+
+    expect(first.outcome).toBe('unavailable');
+    if (first.outcome !== 'unavailable') throw new Error('expected a verdict');
+    expect(first.message).toContain(String(status));
+    expect(converter.isAvailable()).toBe(true);
+
+    // The load-bearing assertion: the NEXT filing still gets a request.
+    await converter.convert(requestFor());
+    expect(http.posts).toHaveLength(2);
+  });
+
+  it('DOES open the latch when no response arrived at all', async () => {
+    // The other side of the same rule. A null status is a dead socket, and
+    // that is the case the cooldown exists for: without it a hung service
+    // costs the full timeout on every one of ~85 results filings a day.
+    const http = stubHttp({
+      post: rejecting(new DoclingHttpError('socket hang up', null)),
+    });
+    const converter = new HttpDoclingConverter(http, clock().options);
+
+    await converter.convert(requestFor());
+
+    expect(converter.isAvailable()).toBe(false);
+    await converter.convert(requestFor());
+    expect(http.posts).toHaveLength(1);
   });
 });

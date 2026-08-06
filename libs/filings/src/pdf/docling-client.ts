@@ -90,9 +90,47 @@ export interface DoclingConverter {
   isAvailable(): boolean;
 }
 
+/**
+ * A failed request, carrying whether the service ANSWERED.
+ *
+ * ================================================================
+ * THE DISTINCTION THE LATCH TURNS ON, LEARNED FROM A LIVE RUN
+ * ================================================================
+ *
+ * A sweep over the 21 scanned filings recovered exactly one of them. The second
+ * document was a 15-page scan; `docling-serve` has its own `max_sync_wait` of
+ * 120 seconds, the conversion took 131, and the service returned **504 while
+ * still completing the work**. This client read that as the service being
+ * unreachable, opened the availability latch for its five-minute cooldown, and
+ * silently skipped Docling for all 19 remaining filings — which are 1 to 4
+ * pages each and would have converted in seconds.
+ *
+ * A status code is proof the service is alive and answering. Only the ABSENCE
+ * of a response — connection refused, DNS failure, a socket that never came
+ * back — is evidence about the SERVICE rather than about one document. So the
+ * latch opens on `status === null` and on nothing else, and one oversized
+ * document can no longer take the dependency down for everything behind it.
+ */
+export class DoclingHttpError extends Error {
+  constructor(
+    message: string,
+    /** The HTTP status, or null when no response arrived at all. */
+    readonly status: number | null,
+  ) {
+    super(message);
+    this.name = 'DoclingHttpError';
+  }
+}
+
 /** The subset of a transport this client uses, so a suite can stand in for it. */
 export interface DoclingHttp {
-  /** Resolves with the parsed JSON body, or rejects. */
+  /**
+   * Resolves with the parsed JSON body, or rejects.
+   *
+   * A transport that can tell a status from a dead socket should reject with a
+   * `DoclingHttpError`; anything else is treated as no response at all, which
+   * is the cautious direction.
+   */
   post(path: string, form: FormData): Promise<unknown>;
   /** Resolves when the service answers its health endpoint. */
   health(): Promise<void>;
@@ -263,14 +301,20 @@ export class HttpDoclingConverter implements DoclingConverter {
         buildDoclingForm(request),
       );
     } catch (error) {
-      // THE LATCH OPENS HERE, and only here. A transport failure is a statement
-      // about the service; a reply this client cannot read is a statement about
-      // one document, and opening the latch for the second would take the whole
-      // dependency down over one bad PDF.
-      this.openedAt = this.options.now();
+      // THE LATCH OPENS ONLY WHEN NOTHING ANSWERED. A status code — a 504 on an
+      // oversized document, a 422 on a file the service will not take — is
+      // proof the service is up, and treating it as an outage skipped 19
+      // convertible filings behind one slow one in a live run. A reply this
+      // client cannot READ does not open it either: that is a statement about
+      // one document, handled by `textFromDoclingReply` below.
+      const status = error instanceof DoclingHttpError ? error.status : null;
+      if (status === null) this.openedAt = this.options.now();
       return {
         outcome: 'unavailable',
-        message: `the Docling service could not be reached: ${messageOf(error)}`,
+        message:
+          status === null
+            ? `the Docling service could not be reached: ${messageOf(error)}`
+            : `the Docling service answered ${status}: ${messageOf(error)}`,
       };
     }
 

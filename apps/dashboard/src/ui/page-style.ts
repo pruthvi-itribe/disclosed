@@ -199,4 +199,70 @@ td.enr { white-space: nowrap; font-size: 12px; }
 .reasons .tag { font-size: 11px; padding: 2px 8px; }
 .reasons .n { font-family: var(--mono); color: var(--text); margin-left: 5px; }
 .reason-group { padding: 4px 14px 0; color: var(--muted); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+/* A count that should normally be zero. Warn rather than bad: a parser fallback
+   is a degraded read, not a lost filing. */
+.reason-group.flagged { color: var(--warn); }
+
+/* --- the outcome, its group and its tier ---------------------------------- */
+
+/*
+ * THE OUTCOME COLUMN IS NEVER BLANK, and that is the change it exists to show.
+ *
+ * The pipeline used to gate on a category allowlist and 71% of filings produced
+ * nothing at all - a row with a time, a symbol and empty space, which read
+ * exactly like a filing nobody had got to yet. The outcome is derived from two
+ * fields the poller writes for every filing, so this column is full even where
+ * the worker never arrived, and a reader can tell "nothing was found here" from
+ * "nothing has looked here yet" without opening the document.
+ *
+ * It is the widest and the boldest of the row's columns because for most rows it
+ * is the only fact stated: the composed headline beside it degrades to the
+ * exchange's own category whenever nothing was verified.
+ */
+td.out { min-width: 300px; max-width: 520px; }
+.outcome { font-weight: 600; line-height: 1.35; color: var(--text); }
+.outcome-source { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: 7px; }
+
+td.grp { white-space: nowrap; }
+/* The group classifies the row rather than saying anything about it, so it is a
+   pill and not a line: compact enough to scan a column of, wide enough to click. */
+.tag.group { color: var(--text); }
+
+/*
+ * The confidence tier, on every row.
+ *
+ * 'verified' is the ONLY filled badge, because it is the only tier allowed near
+ * an alert and that boundary has to survive being read from across a room - this
+ * is a wall display. 'stated' is outlined in the accent colour: NSE's own words,
+ * strong provenance, nobody checked them against the document.
+ *
+ * 'labelled' IS DELIBERATELY NOT AN ERROR STATE. It gets the same muted grey as
+ * any other neutral fact on this page, and specifically not the red that marks
+ * 'unparseable' and 'failed' above. It is an honest floor - the exchange restated
+ * its own category, so all that is known is what kind of filing this is - and
+ * that is roughly 27% of the collection. Colouring it red would teach a reader to
+ * read a quarter of the day's filings as broken, when what they are is unchecked;
+ * an investor presentation nobody verified is still an investor presentation.
+ */
+.tier {
+  display: inline-block; font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.04em; padding: 1px 6px; border-radius: 10px;
+  border: 1px solid var(--line); color: var(--muted); white-space: nowrap; margin-top: 4px;
+}
+.tier-verified { color: var(--ok); border-color: rgba(63, 185, 80, 0.55); background: rgba(63, 185, 80, 0.12); }
+.tier-stated { color: var(--accent); border-color: rgba(88, 166, 255, 0.4); }
+.tier-labelled { color: var(--muted); border-color: var(--line); }
+
+/* Which parser read the document. A neutral fact and not a refusal, and not
+   clickable - no filter accepts a parser, so it must not look like the pills
+   that do. */
+.tag.route { color: var(--muted); }
+/*
+ * A fallback, on the other hand, IS a warning: an expensive parser was wanted and
+ * a service did not answer. This tag is how somebody finds out the optional
+ * Docling service has been down since Tuesday, because its other symptom is
+ * silence - reads keep succeeding on the cheap parser and results filings just
+ * quietly yield fewer figures.
+ */
+.tag.fallback { color: var(--warn); border-color: rgba(210, 153, 34, 0.35); }
 `;

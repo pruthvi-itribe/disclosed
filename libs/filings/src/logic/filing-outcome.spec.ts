@@ -255,6 +255,21 @@ describe('composeOutcome — the text is never empty', () => {
     expect([...sources].sort()).toEqual(['category', 'exchange-summary']);
   });
 
+  it('survives a stored filing with no summary field at all', () => {
+    // Not reachable through the declared type, which is exactly why it is
+    // worth a test: the rows come out of Mongo, and a document written before
+    // the field existed arrives with `summary` absent rather than empty. The
+    // `?? ''` in composeOutcome is the only thing between that and a throw on
+    // the dashboard's hottest path.
+    const stored = { symbol: 'ORBTEXP', category: 'Record Date' } as Parameters<
+      typeof composeOutcome
+    >[0];
+
+    const outcome = composeOutcome(stored);
+    expect(outcome.source).toBe('category');
+    expect(outcome.text).toBe('ORBTEXP RECORD DATE');
+  });
+
   it('gives an empty summary and an empty category the ticker and nothing invented', () => {
     const outcome = composeOutcome({
       symbol: 'ORBTEXP',

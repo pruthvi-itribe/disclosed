@@ -1,6 +1,7 @@
 import axios from 'axios';
 import {
   DEFAULT_DOCLING_COOLDOWN_MS,
+  DoclingHttpError,
   HttpDoclingConverter,
   type DoclingConverter,
   type DoclingHttp,
@@ -73,7 +74,23 @@ export const axiosDoclingHttp = (
     maxContentLength: Infinity,
   });
   return {
-    post: async (path, form) => (await http.post(path, form)).data,
+    // The STATUS is carried out of axios rather than flattened into a message,
+    // because it is what decides whether the availability latch opens. Only the
+    // total absence of a response is evidence about the service; a 504 on one
+    // oversized document is the service answering. See `DoclingHttpError`.
+    post: async (path, form) => {
+      try {
+        return (await http.post(path, form)).data;
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          throw new DoclingHttpError(
+            error.message,
+            error.response?.status ?? null,
+          );
+        }
+        throw error;
+      }
+    },
     // A SEPARATE, SHORT TIMEOUT. The health probe exists to answer "is anything
     // listening" quickly; giving it the conversion timeout would make a startup
     // check against a dead host hang for five minutes.
