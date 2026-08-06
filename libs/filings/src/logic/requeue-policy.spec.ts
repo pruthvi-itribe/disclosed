@@ -176,8 +176,64 @@ describe('decideRequeue', () => {
     });
   });
 
+  describe('a raster scan, and the OCR parser that changed its answer', () => {
+    it('keeps it when the deployment has no OCR parser', () => {
+      // DOCLING_URL ships unset, and on such a machine re-fetching 21 raster
+      // scans re-measures the same zero characters. The default must be the
+      // refusal, so a sweep run by an operator who has not configured Docling
+      // does not spend 21 archive requests learning nothing.
+      const decision = decideRequeue({
+        reason: 'no-text-layer',
+        attachmentUrl: PDF_URL,
+      });
+      expect(decision.outcome).toBe('keep');
+      expect(decision.explanation).toContain('no OCR parser configured');
+    });
+
+    it('keeps it when OCR is explicitly absent', () => {
+      expect(
+        decideRequeue({
+          reason: 'no-text-layer',
+          attachmentUrl: PDF_URL,
+          ocrAvailable: false,
+        }).outcome,
+      ).toBe('keep');
+    });
+
+    it('re-queues it when the deployment has one', () => {
+      // The one entry on the refusal list whose "nothing has changed" argument
+      // stopped being true. Docling recovered 20 of 20 of exactly this
+      // population, against the 2 to 97 characters pdf-parse returns.
+      const decision = decideRequeue({
+        reason: 'no-text-layer',
+        attachmentUrl: PDF_URL,
+        ocrAvailable: true,
+      });
+      expect(decision.outcome).toBe('requeue');
+      expect(decision.explanation).toContain('OCR parser');
+    });
+
+    it('does not let an OCR parser reopen any OTHER refused reason', () => {
+      // The clause is scoped to one reason on purpose. A machine with Docling
+      // on it has not become able to fetch a "-" sentinel or talk a 404 out of
+      // the exchange, and a blanket reset is what this module exists to refuse.
+      for (const reason of ALL_REASONS) {
+        if (reason === 'no-text-layer' || REHANDLED_REASONS.has(reason)) {
+          continue;
+        }
+        expect(
+          decideRequeue({
+            reason,
+            attachmentUrl: PDF_URL,
+            ocrAvailable: true,
+          }).outcome,
+        ).toBe('keep');
+      }
+    });
+  });
+
   describe('the allowlist itself', () => {
-    it('admits exactly two reasons', () => {
+    it('admits exactly two reasons UNCONDITIONALLY', () => {
       // Pinned against literals, so widening the set is a decision this test
       // reports rather than one it follows.
       expect([...REHANDLED_REASONS].sort()).toEqual(['not-a-pdf', 'oversized']);

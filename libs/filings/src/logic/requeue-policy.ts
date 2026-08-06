@@ -84,8 +84,10 @@ import type { UnparseableReason } from './enrichment.types';
  *   - **`no-text-layer`.** The document parsed. It is a raster scan, the
  *     characters-per-page distribution separating it from a real document is
  *     bimodal with a gap two orders of magnitude wide, and OCR is the only
- *     remedy. There is no OCR in this pipeline. Twenty filings would be
- *     re-fetched to re-measure zero characters.
+ *     remedy. THIS ONE CHANGED: there is now an OCR parser behind `DOCLING_URL`,
+ *     measured recovering 20 of 20 of this exact population. So it is admitted
+ *     when the deployment running the sweep has one, and still refused when it
+ *     does not — see `RequeueInput.ocrAvailable`.
  *
  * ================================================================
  * WHAT THIS POLICY CANNOT SEE, STATED RATHER THAN HIDDEN
@@ -106,11 +108,18 @@ import type { UnparseableReason } from './enrichment.types';
  */
 
 /**
- * Reasons whose handling changed, subject to the per-reason checks below.
+ * Reasons whose handling changed FOR EVERY DEPLOYMENT, subject to the
+ * per-reason checks below.
  *
  * A SET AND NOT A PREDICATE, so `decideRequeue` cannot be the only place the
  * membership is written down and a test can pin the whole allowlist against
  * literals. Widening it must be a decision somebody argues in this file.
+ *
+ * `no-text-layer` is deliberately NOT here even though its handling changed,
+ * because it changed CONDITIONALLY: a deployment with no `DOCLING_URL` has no
+ * OCR parser and must still refuse those filings. Putting it in an
+ * unconditional set would make the sweep re-fetch 21 raster scans on a machine
+ * that cannot read them. `RequeueInput.ocrAvailable` carries that condition.
  */
 export const REHANDLED_REASONS: ReadonlySet<UnparseableReason> = new Set([
   'not-a-pdf',
@@ -143,9 +152,12 @@ const UNCHANGED_HANDLING: Readonly<
   'unreadable-pdf':
     'same budget, same window, same spent allowance as truncated-at-origin — ' +
     'and the parser that could not read the document has not been replaced',
+  // Reached only when this deployment has NO OCR parser configured; with one,
+  // `decideRequeue` answers before it consults this table.
   'no-text-layer':
     'the document parsed and carries no text: it is a raster scan, and this ' +
-    'pipeline still has no OCR, so a re-read measures the same zero characters',
+    'deployment has no OCR parser configured (DOCLING_URL is unset), so a ' +
+    're-read measures the same zero characters',
   'not-found':
     'the exchange answered about the request with a 404 or 410, which is a ' +
     'statement about what it holds and not about what this pipeline can read',
@@ -159,6 +171,19 @@ export interface RequeueInput {
   readonly reason: UnparseableReason;
   /** The filing's `attachmentUrl`, exactly as NSE sent it. */
   readonly attachmentUrl: string | null;
+  /**
+   * Whether this deployment has a parser that can read a raster scan.
+   *
+   * THE ONE THING THAT CHANGES A `no-text-layer` VERDICT, and it is an input
+   * rather than an assumption because it is a property of the DEPLOYMENT rather
+   * than of the filing. `DOCLING_URL` ships unset, so a sweep run against a
+   * pipeline with no Docling service must still refuse these — re-fetching 21
+   * raster scans to re-measure zero characters is exactly the wasted archive
+   * request this module exists to prevent.
+   *
+   * Defaults to false, so every existing caller keeps the answer it had.
+   */
+  readonly ocrAvailable?: boolean;
 }
 
 export type RequeueDecision =
@@ -193,6 +218,19 @@ const keep = (explanation: string): RequeueDecision => ({
  */
 export function decideRequeue(input: RequeueInput): RequeueDecision {
   const { reason, attachmentUrl } = input;
+
+  if (reason === 'no-text-layer' && input.ocrAvailable === true) {
+    // THE ONE CLAUSE THIS WORK ADDED, and it is the only reason on the list
+    // whose "nothing has changed" argument stopped being true. The old text
+    // said "there is no OCR in this pipeline"; there is now, behind
+    // `DOCLING_URL`, and it was measured recovering 20 of 20 of exactly this
+    // population with 25 of 25 ground-truth digits verbatim.
+    return requeue(
+      'the document is a raster scan and this deployment now has an OCR ' +
+        'parser: Docling recovered 20 of 20 of these documents in the parsing ' +
+        'spike, against the 2 to 97 characters pdf-parse returns for them',
+    );
+  }
 
   if (reason === 'oversized') {
     // No URL check. An `oversized` verdict is itself proof that the url passed

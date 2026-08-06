@@ -175,6 +175,9 @@ default.
 | `BURST_THRESHOLD`      | `8`                                  | New records at which the next poll is immediate. |
 | `FAILURE_THRESHOLD`    | `3`                                  | Consecutive failures before `INGEST DEGRADED`.   |
 | `WATCHLIST`            | _(empty)_                            | Comma-separated symbols; empty ⇒ alert on all.   |
+| `DOCLING_URL`          | _(empty)_                            | Optional hybrid parser. Empty ⇒ `pdf-parse` reads everything. |
+| `DOCLING_TIMEOUT_MS`   | `300000`                             | One conversion's ceiling. Docling costs 2.5–4 s a page. |
+| `DOCLING_COOLDOWN_MS`  | `300000`                             | How long an unreachable service is skipped without a request. |
 
 ### The shipped watchlist is a firehose
 
@@ -189,6 +192,99 @@ needs to be heard. The semantics are deliberately unchanged — an operator who
 wants the whole feed should get it — but the poller logs a startup WARNING
 naming these numbers whenever the watchlist is empty. Set one before pointing
 this at a chat you rely on.
+
+## The optional Docling parser
+
+`pdf-parse` reads every document by default and that is the shipped
+configuration. It is fast — 0.19 s for a typical filing against Docling's 59 s —
+and for the ~90% of filings that are neither raster scans nor results tables its
+output is entirely adequate.
+
+It has two measured failures, and `DOCLING_URL` is what fixes them:
+
+- **Raster scans yield nothing.** Every one of the 21 scanned PDFs in the live
+  collection returns between 2 and 97 characters of page furniture, median 8.
+  Docling with OCR recovered 20 of 20 in the parsing spike, with 25 of 25
+  ground-truth digits verbatim.
+- **Results tables come out in the wrong reading order.** In Apollo Tyres'
+  Q1 FY27 filing `pdf-parse` places the standalone statement's rows 2,977
+  characters *before* its own title, so the nearest preceding statement heading
+  is the consolidated one — a well-formed, correctly quoted, wrong number about
+  a named listed company. Docling emits the heading first, keeps table columns
+  as addressable cells, and produces 0.00% malformed numbers on results filings
+  against `pdf-parse`'s 3.98%.
+
+Under 10% of filings reach it: scanned documents and results-bearing ones only.
+Everything else stays on the cheap parser, and large documents never go to
+Docling at all — the 640-page NHPC annual report extrapolates to about forty
+minutes.
+
+### Installing and running it
+
+It is a **Python** service and is deliberately **not** in `package.json`. The
+Node pipeline never imports it and never shells out to it; it speaks HTTP to a
+long-running local service, which is the only shape that works — the spike
+measured 28 seconds of one-time model warmup, which a subprocess per document
+would pay on every single filing.
+
+Needs Python 3.10+. With [`uv`](https://github.com/astral-sh/uv):
+
+```bash
+uv venv --python 3.13 .venv-docling
+uv pip install --python .venv-docling/bin/python docling-serve
+
+# Models (~1 GB) download on the first conversion, not at startup.
+DOCLING_SERVE_MAX_SYNC_WAIT=1800 \
+  .venv-docling/bin/docling-serve run --host 127.0.0.1 --port 5001
+```
+
+Then set `DOCLING_URL=http://127.0.0.1:5001` and restart the enrichment lane.
+
+`DOCLING_SERVE_MAX_SYNC_WAIT` is not optional in practice. It defaults to **120
+seconds**, and past it the service answers **504 while still completing the
+conversion** — a live run lost a 15-page scan that finished in 131 seconds
+exactly that way. Set it above `DOCLING_TIMEOUT_MS`.
+
+Bind it to `127.0.0.1`. `docling-serve run` defaults to `0.0.0.0`, and this is
+an unauthenticated service that converts arbitrary uploaded files.
+
+**Startup is slow.** The port takes ~40 seconds to accept connections, and the
+first conversion after that downloads the models. Until it answers, the
+pipeline simply uses `pdf-parse` and records that it did.
+
+### What happens when it is not there
+
+Nothing fails. Every failure resolves to "keep what `pdf-parse` already gave us
+and write down that we did":
+
+- `enrichment.parseRoute` records which parser actually read the document.
+- `enrichment.parseFallbackReason` records why an expensive parser was wanted
+  and did not run. A results filing read by `pdf-parse` because a Python service
+  has been down since Tuesday must not look identical to one `pdf-parse` was the
+  right answer for, and this is the field that tells them apart. The dashboard
+  counts it.
+
+A failure to *reach* the service opens an availability latch for
+`DOCLING_COOLDOWN_MS`, so a service that is down but reachable does not cost the
+full timeout on every filing. The latch opens only when **no response arrived at
+all** — an HTTP status is proof the service is alive, and treating a 504 on one
+oversized document as an outage skipped 19 convertible filings behind it in a
+live run.
+
+### Re-reading filings already marked unreadable
+
+`unparseable` is terminal by design. After starting Docling for the first time,
+the raster scans already recorded as `no-text-layer` need an explicit sweep:
+
+```bash
+npm run enrich:requeue -- --reason no-text-layer            # dry run
+npm run enrich:requeue -- --reason no-text-layer --write
+```
+
+The sweep reads `DOCLING_URL` itself and refuses these filings when it is unset,
+because on a machine with no OCR parser it would spend archive requests to
+re-measure the same zero characters.
+
 
 ## Tests
 

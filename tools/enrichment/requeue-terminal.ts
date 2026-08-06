@@ -208,6 +208,11 @@ async function main(): Promise<void> {
       const decision: RequeueDecision = decideRequeue({
         reason: candidate.reason,
         attachmentUrl: candidate.attachmentUrl,
+        // READ FROM THIS DEPLOYMENT'S OWN CONFIGURATION, not assumed. A raster
+        // scan is worth re-fetching only on a machine that has a parser able to
+        // read one; on a machine with DOCLING_URL unset the same sweep would
+        // spend 21 archive requests to re-measure zero characters.
+        ocrAvailable: config.doclingUrl.trim().length > 0,
       });
       explanations.set(
         `${key} -> ${decision.outcome}: ${decision.explanation}`,
