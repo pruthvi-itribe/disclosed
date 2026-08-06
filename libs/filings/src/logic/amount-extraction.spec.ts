@@ -287,6 +287,30 @@ describe('extractMaterialAmount — refusals', () => {
 });
 
 describe('extractMaterialAmount — provenance is verifiable', () => {
+  // When the same figure is stated more than once, the earliest statement is
+  // the one quoted. Any other choice makes the offset unpredictable, and an
+  // offset a reviewer cannot anticipate is provenance nobody will check.
+  it('quotes the first occurrence when a figure is repeated', () => {
+    const text =
+      scheduleIII('Rs. 0.74 crores') + '\n' + scheduleIII('Rs. 0.74 crores');
+    const result = extract(text);
+    if (result.outcome !== 'extracted') throw new Error('expected an amount');
+    expect(result.provenance.offset).toBe(text.indexOf('Rs. 0.74 crores'));
+  });
+
+  // The marker-less fallback exists for rows that state nothing marked. While
+  // a marked figure is present it must stay switched off, or a row that quotes
+  // both a price and a quantity reads as a disagreement and is refused.
+  it('prefers the figure that says it is money over a bare quantity', () => {
+    expect(
+      rupeesOf(
+        extract(
+          scheduleIII('₹ 50.50 Crores against 50,00,00,000/- equity shares'),
+        ),
+      ),
+    ).toBe(505_000_000);
+  });
+
   it('points at an exact substring of the source', () => {
     const text = scheduleIII('Rs. 3,56,91,142.50 /- (Rupees Three Crores)');
     const result = extract(text);

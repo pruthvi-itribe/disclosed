@@ -53,11 +53,24 @@ describe('findLabelWindows — the SEBI Schedule III anchor', () => {
     expect(findLabelWindows(text)).toEqual([]);
   });
 
-  it('returns the label verbatim, with whitespace squashed', () => {
-    const [window] = findLabelWindows(
+  // The label travels into the provenance, where it is the thing a human reads
+  // to decide whether the figure was taken from the right row. It must be what
+  // the filer wrote, not a canonical rewrite of it.
+  it.each([
+    [
       'g)  Broad   consideration  or  size  of  the\norder(s)/contract(s) Rs. 5 crore',
-    );
-    expect(window.label).toBe('Broad consideration or size of the order');
+      'Broad consideration or size of the order',
+    ],
+    [
+      '7. Broad commercial consideration or size of the order(s)/contract(s); Rs. 5 crore',
+      'Broad commercial consideration or size of the order',
+    ],
+    [
+      'h) Cost of acquisition and/or the price at which the shares are acquired Rs. 5 crore',
+      'Cost of acquisition and/or the price at which the shares are acquired',
+    ],
+  ])('returns the label verbatim, with whitespace squashed', (text, label) => {
+    expect(findLabelWindows(text)[0].label).toBe(label);
   });
 
   it('scopes the window to the text that follows the label', () => {
@@ -133,16 +146,37 @@ describe('event phrases — the covering-letter anchor', () => {
     expect(findEventPhraseEnds(text)).toEqual([]);
   });
 
+  // The offsets are ENDS, not starts. Measuring reach from where a phrase
+  // begins shortens it by the phrase's own length, which quietly drops the
+  // longer phrases first — the specific ones that carry the most meaning.
+  it('reports where the phrase ends, not where it begins', () => {
+    const text = 'New Orders worth Rs. 1,063 Crores';
+    expect(findEventPhraseEnds(text)).toEqual([text.indexOf(' Rs.')]);
+  });
+
+  // These three are policy limits, measured against the sampled corpus rather
+  // than chosen: the figure sits within ~150 characters of its label, the
+  // covering letter runs to about page two, and a phrase names a figure that
+  // follows it immediately. Widening any of them turns the extractor back into
+  // "largest number nearby", which is what it exists not to be, and no
+  // individual document in the corpus notices — so the bound is pinned here.
+  it('pins the measured windows', () => {
+    expect(LABEL_WINDOW_CHARS).toBe(260);
+    expect(HEADLINE_SCAN_CHARS).toBe(4_000);
+    expect(PHRASE_REACH_CHARS).toBe(60);
+  });
+
   // A covering letter is the first page or two. Past that the document is an
   // annexure or a slide deck, where a matching phrase proves much less.
   it('ignores phrases beyond the covering letter', () => {
-    const text = `${'x'.repeat(HEADLINE_SCAN_CHARS)} orders of Rs. 5 crore`;
-    expect(findEventPhraseEnds(text)).toEqual([]);
+    expect(findEventPhraseEnds(`${'x'.repeat(4_000)} orders of Rs. 5 crore`)).toEqual(
+      [],
+    );
   });
 
   it('anchors a figure that follows the phrase within reach', () => {
-    expect(isPhraseAnchored([10], 10 + PHRASE_REACH_CHARS)).toBe(true);
-    expect(isPhraseAnchored([10], 10 + PHRASE_REACH_CHARS + 1)).toBe(false);
+    expect(isPhraseAnchored([10], 10 + 60)).toBe(true);
+    expect(isPhraseAnchored([10], 10 + 61)).toBe(false);
   });
 
   it('does not anchor a figure that precedes the phrase', () => {
