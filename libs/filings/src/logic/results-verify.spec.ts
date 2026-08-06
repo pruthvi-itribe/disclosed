@@ -528,9 +528,7 @@ describe('verifyResults — the adversarial cases', () => {
       proposed: {
         basis: 'consolidated',
         columnsSpan: columns,
-        figures: [
-          { metric: 'eps', current: '5.52', prior: '0.20', span: row },
-        ],
+        figures: [{ metric: 'eps', current: '5.52', prior: '0.20', span: row }],
       },
     });
     expect(verdict.outcome).toBe('refused');
