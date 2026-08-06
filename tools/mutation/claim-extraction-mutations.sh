@@ -401,6 +401,15 @@ perl -0pi -e 's/      maxClaims: this\.options\.maxClaims,/      maxClaims: Numb
 check "the worker ignores the configured per-filing claim cap"
 
 echo ""
+echo "=== the follow-up alert's claim gate ==="
+
+perl -0pi -e 's/    if \(headline === null \&\& enrichment\.claimLine === null\) return 0;//' "$W"
+check "a follow-up sent for a filing with neither a figure nor a claim"
+
+perl -0pi -e 's/          claimLine: enrichment\.claimLine,/          claimLine: null,/' "$W"
+check "the claim line dropped on its way to the wire"
+
+echo ""
 echo "=== independence checks ==="
 echo "A guarantee must die to the suite that OWNS it, not merely to the corpus"
 echo "measurement — otherwise deleting the fixture would silently cost coverage"

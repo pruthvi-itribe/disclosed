@@ -385,7 +385,7 @@ echo "=== the reading order and the follow-up alert's gates ==="
 perl -0pi -e "s/    amount\.outcome === 'extracted' \? extractCounterparty\(documentText\) : null;/    extractCounterparty(documentText);/" "$V"
 check "counterparty extracted for a filing whose amount was refused"
 
-perl -0pi -e "s/    if \(form !== 'enriched' \|\| enrichment\.headline === null\) return 0;/    if (enrichment.headline === null) return 0;/" "$W"
+perl -0pi -e "s/    const headline = form === 'enriched' \? enrichment\.headline : null;/    const headline = enrichment.headline;/" "$W"
 check "follow-up sent for a degraded headline (a second copy of the first alert)"
 
 perl -0pi -e 's/    if \(!passesContentGates\(filing, this\.watchlist\)\) return 0;//' "$W"
