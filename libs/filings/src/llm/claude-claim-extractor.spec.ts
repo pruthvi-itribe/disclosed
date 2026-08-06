@@ -189,7 +189,11 @@ describe('ClaudeClaimExtractor — the reply', () => {
         input_tokens: 421,
         output_tokens: 87,
         cache_read_input_tokens: 2_190,
-        cache_creation_input_tokens: 0,
+        // Non-zero deliberately. The mutation harness caught a fixture of 0
+        // here: it made "drop the cache-write count" a change with no effect,
+        // and cache writes are the class billed at a PREMIUM — the one whose
+        // loss understates a bill rather than overstating it.
+        cache_creation_input_tokens: 3_120,
       },
     });
 
@@ -200,7 +204,7 @@ describe('ClaudeClaimExtractor — the reply', () => {
       inputTokens: 421,
       outputTokens: 87,
       cachedInputTokens: 2_190,
-      cacheWriteInputTokens: 0,
+      cacheWriteInputTokens: 3_120,
     });
   });
 

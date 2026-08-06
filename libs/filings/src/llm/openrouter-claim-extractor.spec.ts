@@ -94,6 +94,14 @@ describe('OpenRouterClaimExtractor — the request', () => {
     expect(OPENROUTER_BASE_URL).toBe('https://openrouter.ai/api/v1');
   });
 
+  it('names the schema, against a literal rather than against itself', () => {
+    // The mutation harness caught this one: asserting `schema.name` equals
+    // CLAIM_SCHEMA_NAME survives the constant being emptied, and an unnamed
+    // json_schema is a 400 on every call. This is the fourth time this exact
+    // shape has appeared in this project.
+    expect(CLAIM_SCHEMA_NAME).toBe('notable_claims');
+  });
+
   it('identifies Turret in the attribution headers', () => {
     expect(OPENROUTER_TITLE).toContain('Turret');
     expect(OPENROUTER_REFERER).toMatch(/^https:\/\//);
