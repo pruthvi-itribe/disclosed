@@ -64,9 +64,16 @@
 #     every label still quotes text present in the document it describes.
 #   - `category`, which is carried through the input and deliberately unused.
 #     There is no behaviour to break.
+#   - Adding `rupees` to the currency markers. Measured, it is an equivalent
+#     mutation: the words-in-brackets restatement it would attach to carries no
+#     digits, and the one form that does — `Rupees 82,17,40,528/-` — yields the
+#     same value through the marker-less rule. It changes only which substring
+#     is quoted as evidence, and the alternative quote is not worse. Writing a
+#     test to kill it would be fitting the suite to the harness rather than to
+#     a guarantee, which is the failure mode these scripts exist to expose.
 #
-# Tally, so a report can quote it without recounting: 32 mutations across four
-# groups, plus 6 independence checks = 38 `check` calls.
+# Tally, so a report can quote it without recounting: 31 mutations across four
+# groups, plus 6 independence checks = 37 `check` calls.
 
 set -uo pipefail
 
@@ -237,9 +244,6 @@ check "Indian grouping accepts any digits and commas"
 
 perl -0pi -e "s/const GAP = '\[\^\\\\\\\\S\\\\\\\\n\]\*\\\\\\\\n\?\[\^\\\\\\\\S\\\\\\\\n\]\*';/const GAP = '\\\\\\\\s*';/" "$P"
 check "whitespace unbounded (a marker binds across blank lines)"
-
-perl -0pi -e "s/const CURRENCY_MARKER = '\(\?:\\\\\\\\brs\|/const CURRENCY_MARKER = '(?:\\\\\\\\brupees|\\\\\\\\brs|/" "$P"
-check "'rupees' preferred as a marker over 'rs' (changes which text is quoted)"
 
 perl -0pi -e "s/const CURRENCY_MARKER = '\(\?:\\\\\\\\brs\|/const CURRENCY_MARKER = '(?:rs|/" "$P"
 check "leading word boundary dropped (shareholde|rs| 5 crore)"
