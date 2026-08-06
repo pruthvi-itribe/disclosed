@@ -78,10 +78,20 @@ export const DEFAULT_CLAIM_MODEL: Readonly<Record<ClaimProviderName, string>> =
  * rest is headroom so a reasoning pass cannot truncate the answer mid-object and
  * turn a good extraction into an unparseable one.
  *
- * ONE VALUE FOR BOTH, deliberately. A per-provider ceiling would let one model
- * be measured with room to think and the other without.
+ * ONE VALUE FOR BOTH PROVIDERS, deliberately. A per-provider ceiling would let
+ * one model be measured with room to think and the other without.
+ *
+ * RAISED FROM 8,000 BY A MEASUREMENT, not by taste. The previous report named
+ * this as the first thing to raise, and the results lane is what proved it: on
+ * a live sample of twelve results filings, two of them — BRITANNIA and EIHOTEL,
+ * both ordinary thirty-thousand-character statements — came back `the reply was
+ * truncated at 8000 tokens` and produced nothing. A results reply is several
+ * times a claims reply: five figures, each with a quoted table row of up to 400
+ * characters, plus the column header. A CEILING IS NOT A SPEND — only tokens
+ * actually generated are billed — so the cost of raising it is zero and the cost
+ * of leaving it is a filing lost per truncation.
  */
-export const CLAIM_MAX_TOKENS = 8_000;
+export const CLAIM_MAX_TOKENS = 16_000;
 
 /**
  * Wall-clock ceiling for one call, shared.

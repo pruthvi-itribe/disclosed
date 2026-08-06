@@ -39,7 +39,7 @@ describe('the provider vocabulary', () => {
     // Asserted against literals, not against themselves. Two providers measured
     // with different budgets are not being compared, and a per-provider ceiling
     // is exactly how that would happen without anyone noticing.
-    expect(CLAIM_MAX_TOKENS).toBe(8_000);
+    expect(CLAIM_MAX_TOKENS).toBe(16_000);
     expect(CLAIM_TIMEOUT_MS).toBe(120_000);
   });
 });
