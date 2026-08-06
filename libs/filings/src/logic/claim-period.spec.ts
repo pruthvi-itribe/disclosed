@@ -170,14 +170,28 @@ describe('supportPeriods', () => {
   it('REFUSES a period that is in the document but outside the neighbourhood', () => {
     // Document-scope would accept this, which is why it is not document-scope:
     // a deck's appendix names every quarter of the last three years.
-    const far = `Q3 FY24 appendix.${' '.repeat(PERIOD_CONTEXT_CHARS * 2)}${document}`;
+    // The gap is sized from an EXPLICIT reach, never from
+    // `PERIOD_CONTEXT_CHARS`. A fixture built as `PERIOD_CONTEXT_CHARS * 2`
+    // passes for any value of the constant it is supposed to pin — including a
+    // value that makes the neighbourhood the whole document, which is the one
+    // thing this test exists to refuse.
+    const far = `Q3 FY24 appendix.${' '.repeat(4_000)}${document}`;
     const result = supportPeriods({
       claimText: 'Q3 FY24 revenue of ₹125.2 Cr',
       span,
       spanOffset: far.indexOf(span),
       documentText: far,
+      contextChars: 800,
     });
     expect(result.missing).toEqual(['Q3FY24']);
+  });
+
+  it('keeps the neighbourhood a neighbourhood', () => {
+    // Pinned against a LITERAL as well as against the measurement: 800 is the
+    // whole difference between "the region of the filing states this period"
+    // and "the filing mentions it somewhere", and a bound asserted only as
+    // "big enough" can be widened to the document and still pass.
+    expect(PERIOD_CONTEXT_CHARS).toBe(800);
   });
 
   it('names every unsupported period, so a discard can be reviewed', () => {

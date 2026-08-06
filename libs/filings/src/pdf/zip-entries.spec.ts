@@ -122,12 +122,27 @@ describe('planZipEntries — the ordinary archives', () => {
 
 describe('planZipEntries — the hostile archives', () => {
   it('refuses an archive declaring more entries than allowed', () => {
-    const headers = Array.from({ length: MAX_ZIP_ENTRIES + 1 }, (_v, index) =>
+    // The fixture is sized from an EXPLICIT limit, never from
+    // `MAX_ZIP_ENTRIES`. A fixture built as `MAX_ZIP_ENTRIES + 1` passes for
+    // any value of the constant it is supposed to pin, and at a mutated value
+    // of 1e9 it allocates a billion-element array and hangs the run rather
+    // than failing it. This is the fourth time this shape has appeared in this
+    // project; the literal bound is asserted separately below.
+    const headers = Array.from({ length: 9 }, (_v, index) =>
       entry(`f${index}.pdf`),
     );
-    expect(planZipEntries(headers)).toMatchObject({
+    expect(planZipEntries(headers, { maxEntries: 8 })).toMatchObject({
       outcome: 'refused',
       reason: 'too-many-entries',
+    });
+  });
+
+  it('accepts an archive exactly at the entry bound', () => {
+    const headers = Array.from({ length: 8 }, (_v, index) =>
+      entry(`f${index}.pdf`),
+    );
+    expect(planZipEntries(headers, { maxEntries: 8 })).toMatchObject({
+      outcome: 'accepted',
     });
   });
 
@@ -234,6 +249,14 @@ describe('planZipEntries — the bounds themselves', () => {
     // expansion, 6.50x for one entry, 9.4 MB inflated. The bounds are two
     // orders of magnitude away on purpose — a bound set at the observed maximum
     // refuses the next ordinary filing, and a real bomb starts at 1000:1.
+    // Pinned against a LITERAL as well as against the measurement. A bound
+    // asserted only in terms of what it must clear can be widened to a
+    // billion and still pass, which is the third shape of this bug this
+    // project has now found.
+    expect(MAX_ZIP_ENTRIES).toBe(64);
+    expect(MAX_ZIP_UNCOMPRESSED_BYTES).toBe(128 * 1024 * 1024);
+    expect(MAX_ZIP_EXPANSION).toBe(100);
+    expect(MAX_ENTRY_EXPANSION).toBe(200);
     expect(MAX_ZIP_ENTRIES).toBeGreaterThan(3);
     expect(MAX_ZIP_EXPANSION).toBeGreaterThan(1.23);
     expect(MAX_ENTRY_EXPANSION).toBeGreaterThan(6.5);

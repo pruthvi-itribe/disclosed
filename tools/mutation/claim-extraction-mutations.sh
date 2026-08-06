@@ -44,8 +44,8 @@
 #   9. THE EXTRACTOR'S CONTRACT. It must never throw and must check
 #      `stop_reason` before it reads `content`.
 #
-# Tally, so a report can quote it without recounting: 47 mutations across ten
-# groups, plus 4 independence checks = 51 `check` calls.
+# Tally, so a report can quote it without recounting: 66 `check` calls in all,
+# including 4 independence checks.
 #
 # Usage:  bash tools/mutation/claim-extraction-mutations.sh
 # Exit:   0 only if every mutation applied AND was caught.
@@ -79,6 +79,8 @@ LOGIC=$ROOT/libs/filings/src/logic
 FILES=(
   "$LOGIC/claim-span.ts"
   "$LOGIC/claim-numbers.ts"
+  "$LOGIC/claim-period.ts"
+  "$LOGIC/claim-summary.ts"
   "$LOGIC/claim-advisory.ts"
   "$LOGIC/claim-eligibility.ts"
   "$LOGIC/claim-verify.ts"
@@ -225,6 +227,8 @@ check_in() {
 
 check() { check_in "$SUITE" "$1"; }
 S=$LOGIC/claim-span.ts
+D=$LOGIC/claim-period.ts
+M=$LOGIC/claim-summary.ts
 N=$LOGIC/claim-numbers.ts
 A=$LOGIC/claim-advisory.ts
 E=$LOGIC/claim-eligibility.ts
@@ -267,7 +271,7 @@ check "the caller's version stored as evidence, not the document's"
 echo ""
 echo "=== the number rule, span-scoped ==="
 
-perl -0pi -e 's/  const supported = new Set\(numbersIn\(span\)\);/  const supported = new Set<string>();\n  numbersIn(span);\n  return [];/' "$N"
+perl -0pi -e 's/  const supported = new Set\(figuresIn\(span\)\);/  const supported = new Set<string>();\n  figuresIn(span);\n  return [];/' "$N"
 check "number check disabled (a claim states a figure its source does not)"
 
 perl -0pi -e "s/  token\.replace\(\/,\/g, ''\)/  token.replace(\/ZZZ\/g, '')/" "$N"
@@ -358,7 +362,7 @@ check "a null or bare-string entry accepted"
 perl -0pi -e "s/  if \(typeof raw !== 'object' \|\| raw === null\) return \[\];//" "$P"
 check "a null reply dereferenced instead of refused"
 
-perl -0pi -e 's/  const document = input\.documentText\.slice\(0, MAX_DOCUMENT_CHARS\);/  const document = input.documentText;/' "$P"
+perl -0pi -e 's/  const document = input\.documentText\.slice\(0, cap\);/  const document = input.documentText;/' "$P"
 check "the document cap removed from the request"
 
 echo ""
@@ -399,7 +403,7 @@ check "the eligibility gate bypassed by the worker"
 perl -0pi -e "s/    private readonly claimExtractor: ClaimExtractor \| null = null,/    private readonly claimExtractor: ClaimExtractor | null = { extract: async () => ({ outcome: 'ok', claims: [] }) },/" "$W"
 check "an absent extractor silently replaced by one that finds nothing"
 
-perl -0pi -e 's/    const result = checkOne\(proposal, input\.documentText\);/    const result = { text: proposal.text, span: proposal.span, kind: proposal.kind };/' "$V"
+perl -0pi -e 's/    const result = checkOne\(proposal, input\.documentText\);/    const result = { text: proposal.text, span: proposal.span, kind: proposal.kind, periodSpan: null };/' "$V"
 check "the gate skipped entirely: proposed claims published unverified"
 
 perl -0pi -e 's/      maxClaims: this\.options\.maxClaims,/      maxClaims: Number.MAX_SAFE_INTEGER,/' "$W"
@@ -413,6 +417,58 @@ check "a follow-up sent for a filing with neither a figure nor a claim"
 
 perl -0pi -e 's/          claimLine: enrichment\.claimLine,/          claimLine: null,/' "$W"
 check "the claim line dropped on its way to the wire"
+
+
+echo ""
+echo "=== the fiscal period: a label, never its bare digits ==="
+
+perl -0pi -e 's/  const period = supportPeriods\(\{/  const period = { missing: [] as string[], evidence: null }; void supportPeriods({/' "$V"
+check "the period check bypassed entirely"
+
+perl -0pi -e 's/export const PERIOD_CONTEXT_CHARS = 800;/export const PERIOD_CONTEXT_CHARS = 100_000_000;/' "$D"
+check "the period neighbourhood widened to the whole document"
+
+perl -0pi -e 's/  const inSpan = periodsIn\(input\.span\);/  const inSpan = new Set(["Q1FY27", "Q4FY26", "Q3FY24", "Q2FY23"]);/' "$D"
+check "every period treated as if the span had stated it"
+
+perl -0pi -e 's/    const hit = nearby\.find\(\(label\) => label\.canonical === period\);/    const hit = nearby[0];/' "$D"
+check "any nearby period accepting any claimed period"
+
+perl -0pi -e 's/  if \(missing\.length > 0\) return \{ missing, evidence: null \};/  if (missing.length > 1000) return { missing, evidence: null };/' "$D"
+check "an unsupported period reported as supported"
+
+perl -0pi -e 's/\? `\$\{prefix\}\$\{first\.slice\(-2\)\}`/? `${prefix}${first}`/' "$D"
+check "FY2027 and FY27 no longer the same fiscal year"
+
+perl -0pi -e 's/\$\{first\.slice\(-2\)\}-\$\{second\.slice\(-2\)\}/\${second.slice(-2)}/' "$D"
+check "a hyphenated range collapsed into one of its endpoints"
+
+perl -0pi -e 's/    const inPeriod = periods\.some\(\n      \(period\) => start < period\.end && end > period\.start,\n    \);/    const inPeriod = false;/' "$N"
+check "a period's digits counted as figures again, which is the original bug"
+
+perl -0pi -e 's/  const supported = new Set\(figuresIn\(span\)\);/  const supported = new Set(numbersIn(span));/' "$N"
+check "the span side counting a period's digits as figures it can support"
+
+echo ""
+echo "=== the summary, which is NOT a claim and never reaches the wire ==="
+
+perl -0pi -e 's/      documentSummary: claims\.summary,/      documentSummary: null,/' "$W"
+check "the summary dropped on its way to the database"
+
+perl -0pi -e 's/  const advisory = advisoryHitIn\(text\);/  const advisory: string | null = null;\n  void advisoryHitIn(text);/' "$M"
+check "the advisory filter removed from the summary"
+
+perl -0pi -e 's/  const legal = LEGAL_BLOCK_PATTERNS\.find\(\(pattern\) => pattern\.test\(text\)\);/  const legal = undefined;/' "$M"
+check "the legal blocklist removed from the summary"
+
+perl -0pi -e 's/  if \(text\.length > MAX_SUMMARY_CHARS\) \{/  if (text.length > MAX_SUMMARY_CHARS * 1000) \{/' "$M"
+check "the summary length bound widened a thousandfold"
+
+perl -0pi -e 's/  if \(text\.length < MIN_SUMMARY_CHARS\) \{/  if (text.length < 0) \{/' "$M"
+check "a two-word fragment accepted as a summary"
+
+perl -0pi -e 's/    return \{ outcome: .refused., reason: .empty., detail: .no summary. \};/    return { outcome: \x27ok\x27, summary: String(raw) };/' "$M"
+check "a non-string reply coerced into a summary"
 
 echo ""
 echo "=== independence checks ==="
@@ -431,7 +487,7 @@ check_in "$HAND" "case-folded span match, hand-written suites only (no corpus)"
 perl -0pi -e 's/  const match = findVerbatimSpan\(documentText, claim\.span\);/  const match = { offset: 0, evidence: claim.span };/' "$V"
 check_in "$CORPUS" "span never looked for, the real-filings corpus only"
 
-perl -0pi -e 's/  const supported = new Set\(numbersIn\(span\)\);/  const supported = new Set<string>();\n  numbersIn(span);\n  return [];/' "$N"
+perl -0pi -e 's/  const supported = new Set\(figuresIn\(span\)\);/  const supported = new Set<string>();\n  figuresIn(span);\n  return [];/' "$N"
 check_in "$CORPUS" "number check disabled, the real-filings corpus only"
 
 perl -0pi -e 's/  if \(documentText\.length < MIN_CLAIM_DOCUMENT_CHARS\) \{/  if (false) {/' "$E"

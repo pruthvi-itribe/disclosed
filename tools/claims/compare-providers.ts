@@ -51,6 +51,7 @@ import {
   isRoutine,
   MIN_CLAIM_DOCUMENT_CHARS,
   verifyClaims,
+  vetSummary,
   type ClaimExtractor,
   type ClaimProviderName,
   type FilingDocument,
@@ -325,12 +326,18 @@ async function main(): Promise<void> {
           line: null,
           discards: [],
           usage: null,
+          summary: null,
+          summaryRefusal: 'the extractor failed',
           failure: result.message,
         });
         line(`  ${document.symbol} / ${provider}: FAILED — ${result.message}`);
         continue;
       }
 
+      // Vetted exactly as the worker vets it, so what this page prints is
+      // what would be stored — a report that showed the raw reply would be
+      // showing something the pipeline never keeps.
+      const vetted = vetSummary(result.summary);
       const { claims, discards } = verifyClaims({
         documentText: document.text,
         proposed: result.claims,
@@ -347,6 +354,8 @@ async function main(): Promise<void> {
         line: composeClaimLine(document.symbol, claims),
         discards,
         usage: result.usage ?? null,
+        summary: vetted.outcome === 'ok' ? vetted.summary : null,
+        summaryRefusal: vetted.outcome === 'ok' ? null : vetted.detail,
         failure: null,
       });
       line(

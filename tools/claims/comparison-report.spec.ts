@@ -33,6 +33,8 @@ const record = (overrides: Partial<CallRecord> = {}): CallRecord => ({
   accepted: [],
   line: null,
   discards: [],
+  summary: null,
+  summaryRefusal: null,
   usage: null,
   failure: null,
   ...overrides,
@@ -442,5 +444,49 @@ describe('renderComparison', () => {
         filingsPerDay: 128,
       }),
     ).not.toThrow();
+  });
+});
+
+describe('renderComparison — the model summary', () => {
+  const rendered = (overrides: Partial<CallRecord>): string =>
+    renderComparison({
+      generatedAt: '2026-08-06T00:00:00.000Z',
+      effort: 'medium',
+      summaries: [
+        summarise(
+          'openrouter',
+          'a-model',
+          [record(overrides)],
+          CLAIM_PROVIDER_PRICING.openrouter,
+          128,
+        ),
+      ],
+      records: [record(overrides)],
+      ineligible: [],
+      filingsPerDay: 128,
+    });
+
+  it('labels the summary as unverified and never published', () => {
+    // The one line on the page no span stands behind. A report that printed
+    // it beside the accepted claims would be the exact confusion the storage
+    // layer exists to prevent.
+    const page = rendered({
+      accepted: ['a verified claim'],
+      summary: 'what this document is about, in one sentence.',
+    });
+    expect(page).toContain('- accepted: a verified claim');
+    expect(page).toContain(
+      '_model summary (NOT VERIFIED, never published): what this document is about, in one sentence._',
+    );
+  });
+
+  it('says why there is no summary rather than printing a blank', () => {
+    expect(rendered({ summaryRefusal: 'advisory-language' })).toContain(
+      'none — advisory-language',
+    );
+  });
+
+  it('says a summary was never attempted when nothing explained it', () => {
+    expect(rendered({})).toContain('none — not attempted');
   });
 });

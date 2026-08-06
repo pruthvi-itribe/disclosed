@@ -162,10 +162,12 @@ export const canonicalPeriod = (raw: string): string =>
  */
 export function periodLabelsIn(text: string): readonly PeriodLabel[] {
   const labels: PeriodLabel[] = [];
-  // A fresh lastIndex per call: the pattern is module-level and `g`-flagged, so
-  // sharing it across calls without resetting would make the second call on the
-  // same string return nothing.
-  PERIOD_PATTERN.lastIndex = 0;
+  // NO `lastIndex = 0` HERE, deliberately. The pattern is module-level and
+  // `g`-flagged, which usually means state leaks between calls — but this loop
+  // runs until `exec` returns null, and a failed `exec` resets `lastIndex`
+  // itself. A reset would therefore be a line no input can distinguish from
+  // its absence, and an unreachable guard is a claim nobody can check. The
+  // re-entrancy property is pinned by a test rather than by dead code.
   let match = PERIOD_PATTERN.exec(text);
   while (match !== null) {
     labels.push({

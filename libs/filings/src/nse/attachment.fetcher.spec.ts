@@ -291,6 +291,7 @@ describe('AttachmentFetcher — the shipped defaults', () => {
     // A socket left receiving a document nobody will read is the same denial
     // of service the cap exists to prevent, merely quieter.
     let destroyed = false;
+    let yielded = 0;
     const endless = {
       get: async () => ({
         status: 200,
@@ -300,7 +301,14 @@ describe('AttachmentFetcher — the shipped defaults', () => {
             destroyed = true;
           },
           async *[Symbol.asyncIterator]() {
-            for (;;) yield Buffer.alloc(512, 0x41);
+            // BOUNDED, not `for(;;)`. An endless async generator never yields
+            // to the macrotask queue, so jest's per-test timeout timer never
+            // fires and a broken cap hangs the whole run instead of failing
+            // it — which is a test that cannot report the bug it exists for.
+            for (let index = 0; index < 200; index += 1) {
+              yielded += 1;
+              yield Buffer.alloc(512, 0x41);
+            }
           },
         },
       }),
@@ -309,6 +317,8 @@ describe('AttachmentFetcher — the shipped defaults', () => {
     const result = await new AttachmentFetcher(1024, endless).fetch(URL);
     expect(result.outcome).toBe('oversized');
     expect(destroyed).toBe(true);
+    // And it stopped EARLY rather than reading the lot and measuring after.
+    expect(yielded).toBeLessThan(10);
   });
 
   it('reads a Uint8Array chunk as readily as a Buffer', async () => {

@@ -102,6 +102,17 @@ export interface CallRecord {
   readonly line: string | null;
   readonly discards: readonly ClaimDiscard[];
   readonly usage: ClaimUsage | null;
+  /**
+   * The model's own prose summary, vetted but NOT verified.
+   *
+   * Reported BELOW the claims and labelled, never among them: it is the one
+   * thing on this page no span stands behind, and a table that listed it
+   * beside verified claims would be the exact confusion the storage layer is
+   * built to prevent.
+   */
+  readonly summary: string | null;
+  /** Why there is no summary, when there is not one. */
+  readonly summaryRefusal: string | null;
   /** Set when the extractor failed. The call still counts; the claims do not. */
   readonly failure: string | null;
 }
@@ -455,6 +466,13 @@ export const renderComparison = (input: ReportInput): string => {
       for (const discard of record.discards) {
         sections.push(`- DISCARDED \`${discard.reason}\`: ${discard.claim}`);
       }
+      // BELOW the claims and labelled, never among them. This is the one line
+      // on the page no span stands behind.
+      sections.push(
+        record.summary === null
+          ? `- _model summary (NOT VERIFIED, never published): none — ${record.summaryRefusal ?? 'not attempted'}_`
+          : `- _model summary (NOT VERIFIED, never published): ${record.summary}_`,
+      );
       sections.push('');
     }
   }
