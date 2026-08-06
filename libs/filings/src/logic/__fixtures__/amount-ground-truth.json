@@ -1,0 +1,482 @@
+[
+ {
+  "seqId": 106687212,
+  "symbol": "AEGISVOPAK",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Record date intimation. The document states no rupee figure at all."
+ },
+ {
+  "seqId": 106687506,
+  "symbol": "SOUTHWEST",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Agreement intimation with no consideration disclosed; no rupee figure in the text."
+ },
+ {
+  "seqId": 106687987,
+  "symbol": "AXITA",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "SEBI depositories certificate. No rupee figure."
+ },
+ {
+  "seqId": 106688608,
+  "symbol": "RATEGAIN",
+  "verdict": "unreadable",
+  "rupees": null,
+  "evidence": null,
+  "note": "NSE served a PDF truncated at exactly 512 KiB with no trailer. Zero characters recoverable by any parser."
+ },
+ {
+  "seqId": 106689600,
+  "symbol": "INNOVISION",
+  "verdict": "amount",
+  "rupees": 92344635,
+  "evidence": "9,23,44,635/- (Rupees Nine crore twenty-",
+  "note": "Toll-plaza user-fee LoA. The Schedule III row states the figure with NO currency marker at all."
+ },
+ {
+  "seqId": 106690655,
+  "symbol": "TVSMOTOR",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Press release about an LPG distribution tie-up. No figure disclosed."
+ },
+ {
+  "seqId": 106691583,
+  "symbol": "OMPOWER",
+  "verdict": "amount",
+  "rupees": 821740528,
+  "evidence": "Rupees 82,17,40,528/-",
+  "note": "The covering letter rounds to 'Rs. 82.17 Crores'; the Schedule III row gives the exact contract price. The row is authoritative."
+ },
+ {
+  "seqId": 106691666,
+  "symbol": "UNIDT",
+  "verdict": "amount",
+  "rupees": 9307245,
+  "evidence": "INR 93,07,245/-",
+  "note": "The filer's own words-in-brackets restatement says 'Ninety Lakh Seven Thousand Two Hundred Forty Five', which contradicts its digits by 3 lakh. The digits are the disclosed figure."
+ },
+ {
+  "seqId": 106691999,
+  "symbol": "EIFFL",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Preferential issue with two separate aggregates (Rs 51,69,50,000 of shares and Rs 47,28,50,000 of warrants). No single headline value."
+ },
+ {
+  "seqId": 106692996,
+  "symbol": "RAILTEL",
+  "verdict": "amount",
+  "rupees": 185366820,
+  "evidence": "Rs. 18,53,66,820/-",
+  "note": "Text layer has the words glued together and breaks the line between 'Rs.' and the digits."
+ },
+ {
+  "seqId": 106694940,
+  "symbol": "LTM",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "43-page investor presentation of quarterly results, denominated in millions. Dozens of competing figures."
+ },
+ {
+  "seqId": 106696934,
+  "symbol": "AYMSYNTEX",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "SEBI depositories certificate. No rupee figure."
+ },
+ {
+  "seqId": 106697279,
+  "symbol": "ASAHIINDIA",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Scan of a newspaper page. Every figure on it belongs to an unrelated news item, not to the filer."
+ },
+ {
+  "seqId": 106697741,
+  "symbol": "KEC",
+  "verdict": "amount",
+  "rupees": 11800000000,
+  "evidence": "Rs. 1,180 Crores",
+  "note": "Press-release layout. The same document also states 'YTD order intake stands at over Rs. 5,200 crores', which is not the event value."
+ },
+ {
+  "seqId": 106698465,
+  "symbol": "GOACARBON",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Board outcome disclosing a tax dispute. The only figure, Rs 349 lakhs, is a part payment under protest, not the demand."
+ },
+ {
+  "seqId": 106698982,
+  "symbol": "SPANDANA",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Amalgamation intimation with no consideration figure in the text."
+ },
+ {
+  "seqId": 106700026,
+  "symbol": "NEWGEN",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "26-page investor presentation denominated in INR millions. No single material figure."
+ },
+ {
+  "seqId": 106701770,
+  "symbol": "RCF",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Credit rating letters listing several rated facilities under a '(Rs. in crore)' column header."
+ },
+ {
+  "seqId": 106702711,
+  "symbol": "GANGAFORGE",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Board outcome intimation, one page, no rupee figure."
+ },
+ {
+  "seqId": 106704872,
+  "symbol": "REPL",
+  "verdict": "unreadable",
+  "rupees": null,
+  "evidence": null,
+  "note": "Order win scanned on a Canon iR-ADV at 150 dpi with no OCR layer. One character of text in the whole file."
+ },
+ {
+  "seqId": 106705489,
+  "symbol": "SEAMECLTD",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Vessel purchase for USD 70 million. No rupee figure is stated, and reading the dollar figure as rupees would be a 90x error."
+ },
+ {
+  "seqId": 106708368,
+  "symbol": "RPPL",
+  "verdict": "amount",
+  "rupees": 10300000,
+  "evidence": "Order value of ₹ 1.03 Cr. approx.",
+  "note": "Schedule III row, rupee sign, approximate value as disclosed."
+ },
+ {
+  "seqId": 106708508,
+  "symbol": "HINDZINC",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Regulation 30/30A intimation with no rupee figure."
+ },
+ {
+  "seqId": 106708565,
+  "symbol": "ULTRACEMCO",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Credit rating action across four instruments (Rs 2,000 cr, Rs 5,400 cr, Rs 6,850 cr, Rs 5,000 cr). No single material value."
+ },
+ {
+  "seqId": 106708697,
+  "symbol": "RAMCOSYS",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Quarterly results press release; every rupee figure is a dollar figure's conversion."
+ },
+ {
+  "seqId": 106708987,
+  "symbol": "MPHASIS",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Board outcome with full financial statements 'in million' plus five separate acquisition considerations."
+ },
+ {
+  "seqId": 106709289,
+  "symbol": "RMC",
+  "verdict": "amount",
+  "rupees": 50172500,
+  "evidence": "₹ 5,01,72,500 - Five Crores",
+  "note": "Rupee sign, Indian grouping, unit given only in the words that follow the digits."
+ },
+ {
+  "seqId": 106709577,
+  "symbol": "MARINE",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Credit rating with a 'Rated Amount (Rs. crore)' column of bare figures."
+ },
+ {
+  "seqId": 106709643,
+  "symbol": "WENDT",
+  "verdict": "unreadable",
+  "rupees": null,
+  "evidence": null,
+  "note": "NSE served a PDF truncated at exactly 64 KiB with no trailer. Unrecoverable."
+ },
+ {
+  "seqId": 106710492,
+  "symbol": "LEMONTREE",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Extension of the validity of an existing Letter of Award. There is genuinely no monetary value to report; the Schedule III consideration row describes scope, not price."
+ },
+ {
+  "seqId": 106710784,
+  "symbol": "MONTECARLO",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Credit rating; bank-facility amounts under an 'Amount (Rs. in Crore)' header."
+ },
+ {
+  "seqId": 106710921,
+  "symbol": "PRUDENT",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Quarterly results, scanned, denominated in lakhs. No single material figure."
+ },
+ {
+  "seqId": 106711941,
+  "symbol": "TOKYOPLAST",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Quarterly results under an '(Rs. In Lakhs)' header."
+ },
+ {
+  "seqId": 106713513,
+  "symbol": "GROBTEA",
+  "verdict": "amount",
+  "rupees": 721618000,
+  "evidence": "Rs. 72,16,18,000/-",
+  "note": "Cost of acquisition. The same document also states authorised share capital Rs 4,00,00,000 and paid-up capital Rs 1,59,65,000, either of which a document-wide scan can mistake for the deal value."
+ },
+ {
+  "seqId": 106714725,
+  "symbol": "LT",
+  "verdict": "band",
+  "rupees": null,
+  "evidence": null,
+  "note": "L&T publishes an order CLASS, not a figure. 'Major' means Rs 5,000-10,000 crore per the key printed in the same document."
+ },
+ {
+  "seqId": 106715046,
+  "symbol": "NIPPOBATRY",
+  "verdict": "amount",
+  "rupees": 349992034,
+  "evidence": "Rs. 34,99,92,034",
+  "note": "Acquisition consideration. The same document carries a turnover table headed '(Rs. in thousands): Rs.7,15,126' — reading that figure at face value is a 1000x under-report."
+ },
+ {
+  "seqId": 106715712,
+  "symbol": "VEDPOWER",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Quarterly results press release plus investor deck: revenue, EBITDA, cash and segment figures compete."
+ },
+ {
+  "seqId": 106716521,
+  "symbol": "HFCL",
+  "verdict": "amount",
+  "rupees": 4415300000,
+  "evidence": "~INR 441.53 crore",
+  "note": "Export order priced in USD with the rupee equivalent disclosed alongside. The dollar figure must never be read as rupees."
+ },
+ {
+  "seqId": 106716553,
+  "symbol": "LT",
+  "verdict": "band",
+  "rupees": null,
+  "evidence": null,
+  "note": "'Mega' order class, i.e. Rs 10,000-15,000 crore. No point value published."
+ },
+ {
+  "seqId": 106716763,
+  "symbol": "COFORGE",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Press release with no rupee figure."
+ },
+ {
+  "seqId": 106717031,
+  "symbol": "TEXRAIL",
+  "verdict": "amount",
+  "rupees": 7400000,
+  "evidence": "Rs. 0.74 crores (including taxes)",
+  "note": "Letter of Acceptance from South Western Railway. Small order, stated twice consistently."
+ },
+ {
+  "seqId": 106718712,
+  "symbol": "BPCL",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Newspaper publication scan. Its only rupee figure is a court fine in an unrelated article."
+ },
+ {
+  "seqId": 106718889,
+  "symbol": "APTUS",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Results press release whose only 'lakh' is a customer count."
+ },
+ {
+  "seqId": 106718911,
+  "symbol": "AVONMORE",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Quarterly results under '(Rs. In Lakh)' headers."
+ },
+ {
+  "seqId": 106718927,
+  "symbol": "PUNJABCHEM",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "22-page investor presentation: revenue, EBITDA and PAT for the quarter all stated as INR Cr."
+ },
+ {
+  "seqId": 106718979,
+  "symbol": "AVONMORE",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Scheme of arrangement with no consideration; the only figures are the five merging companies' share capitals, one of which is printed with malformed grouping as 'Rs. 30,00,000,00'."
+ },
+ {
+  "seqId": 106719776,
+  "symbol": "BEL",
+  "verdict": "amount",
+  "rupees": 8470000000,
+  "evidence": "Rs . 847 Crore",
+  "note": "Bilingual PSU scan. The inherited OCR layer puts every token on its own line and inserts a space before the period."
+ },
+ {
+  "seqId": 106720104,
+  "symbol": "DATAMATICS",
+  "verdict": "amount",
+  "rupees": 2068000000,
+  "evidence": "Rs. 206.80",
+  "note": "The event is completion of the SECOND tranche (Rs 206.80 crore). The same row also states the first tranche at Rs 348 crore, so the row alone cannot be read without knowing which tranche this filing announces."
+ },
+ {
+  "seqId": 106720708,
+  "symbol": "GHCL",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Quarterly results press release: revenue, EBITDA and net profit for two periods each."
+ },
+ {
+  "seqId": 106721073,
+  "symbol": "3IINFOLTD",
+  "verdict": "amount",
+  "rupees": 131100000,
+  "evidence": "Rs. 13.11 crore",
+  "note": "Aggregate of two purchase orders, stated identically in the covering letter and the Schedule III row."
+ },
+ {
+  "seqId": 106722272,
+  "symbol": "BIRLAMONEY",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "Credit rating. The commercial paper sizes sit under a 'Size of Issue (million)' header, so 'INR 23,500' means Rs 2,350 crore."
+ },
+ {
+  "seqId": 106722434,
+  "symbol": "PATINTLOG",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "31-page investor deck. Its largest figure, INR 2,872.10 billion, is the size of the Indian warehousing MARKET, not anything the company owns."
+ },
+ {
+  "seqId": 106722927,
+  "symbol": "KEC",
+  "verdict": "amount",
+  "rupees": 10630000000,
+  "evidence": "Rs. 1,063 Crores",
+  "note": "Press-release layout; the document also states a YTD order intake of Rs 6,300 crore, six times larger."
+ },
+ {
+  "seqId": 106723925,
+  "symbol": "ZYDUSLIFE",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "USFDA approval press release. No rupee figure."
+ },
+ {
+  "seqId": 106724305,
+  "symbol": "KNRCON",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Credit rating intimation with no amount in the letter."
+ },
+ {
+  "seqId": 106724676,
+  "symbol": "CEINSYS",
+  "verdict": "amount",
+  "rupees": 169052450,
+  "evidence": "Rs. 16,90,52,450/-",
+  "note": "The figure is unambiguous but the instrument is a LETTER OF INTENT, so the win itself is conditional. Correct pipeline behaviour is to refuse on ambiguity, not to publish the number."
+ },
+ {
+  "seqId": 106724960,
+  "symbol": "BSE",
+  "verdict": "amount",
+  "rupees": 505000000,
+  "evidence": "₹ 50.50 Crores",
+  "note": "Acquisition cost inside a 14-page board outcome whose financial results are denominated in lakhs. The same disclosure row also states the share COUNT, 50,00,00,000, in Indian grouping."
+ },
+ {
+  "seqId": 106725145,
+  "symbol": "NAZARA",
+  "verdict": "none",
+  "rupees": null,
+  "evidence": null,
+  "note": "Analyst meet intimation. No rupee figure."
+ },
+ {
+  "seqId": 106725235,
+  "symbol": "SUDEEPPHRM",
+  "verdict": "ambiguous",
+  "rupees": null,
+  "evidence": null,
+  "note": "37-page investor presentation of quarterly results in Rs Cr."
+ },
+ {
+  "seqId": 106725766,
+  "symbol": "CEINSYS",
+  "verdict": "amount",
+  "rupees": 35691142.5,
+  "evidence": "Rs. 3,56,91,142.50 /-",
+  "note": "Purchase order including paise. The words-in-brackets restatement begins 'Rupees Three Crores', which a parser that treats 'Rupees' as a currency marker would read as Rs 3 crore — a 16% under-report."
+ }
+]

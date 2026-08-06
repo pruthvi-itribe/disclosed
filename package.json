@@ -1,5 +1,5 @@
 {
-  "name": "redbox",
+  "name": "turret",
   "version": "1.0.0",
   "description": "Low-latency ingest pipeline for NSE corporate filings",
   "main": "dist/apps/ingest/src/main.js",
@@ -19,7 +19,8 @@
     "test:cov": "jest --coverage",
     "lint": "eslint \"{apps,libs,tools}/**/*.ts\" --fix",
     "corpus:fetch": "ts-node -r tsconfig-paths/register tools/corpus/fetch-corpus.ts",
-    "corpus:analyse": "ts-node -r tsconfig-paths/register tools/corpus/analyse-corpus.ts"
+    "corpus:analyse": "ts-node -r tsconfig-paths/register tools/corpus/analyse-corpus.ts",
+    "amount:measure": "ts-node -r tsconfig-paths/register tools/extraction/measure-amount-precision.ts"
   },
   "keywords": [],
   "author": "",
