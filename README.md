@@ -1,4 +1,4 @@
-# Redbox — NSE filings ingest
+# Turret — NSE filings ingest
 
 Low-latency ingest of NSE corporate announcements with a no-loss guarantee,
 feeding a Telegram alert lane.
@@ -163,7 +163,7 @@ default.
 
 | Variable               | Default                              | Purpose                                       |
 | ---------------------- | ------------------------------------ | --------------------------------------------- |
-| `MONGO_URI`            | `mongodb://localhost:27117/redbox`   | Storage. Read by both apps.                   |
+| `MONGO_URI`            | `mongodb://localhost:27117/turret`   | Storage. Read by both apps.                   |
 | `DASHBOARD_PORT`       | `7717`                               | Dashboard listen port, 1024–65535. Always bound to `127.0.0.1`; the interface is not configurable. |
 | `TELEGRAM_BOT_TOKEN`   | _(empty)_                            | Unset ⇒ alerts are logged, not sent.          |
 | `TELEGRAM_CHAT_ID`     | _(empty)_                            | Unset ⇒ alerts are logged, not sent.          |

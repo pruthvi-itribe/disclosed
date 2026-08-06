@@ -61,7 +61,7 @@ beforeAll(async () => {
   // The module reads MONGO_URI through its own config loader, so pointing it at
   // the in-memory server is the honest way to exercise that path rather than
   // overriding the provider and skipping it.
-  process.env.MONGO_URI = mongo.getUri('redbox');
+  process.env.MONGO_URI = mongo.getUri('turret');
 
   const moduleRef = await Test.createTestingModule({
     imports: [DashboardModule],

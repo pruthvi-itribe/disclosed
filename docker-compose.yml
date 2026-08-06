@@ -6,11 +6,11 @@ services:
     # Host port is 27117 because 27017 is commonly taken by another project's
     # instance; MONGO_URI in .env.example points here.
     ports: ['127.0.0.1:27117:27017']
-    volumes: ['redbox-mongo:/data/db']
+    volumes: ['turret-mongo:/data/db']
   # For the cold-path queues in phase 4. Nothing in the ingest app reads it
   # today, which is why no REDIS_* setting appears in .env.example.
   redis:
     image: redis:7-alpine
     ports: ['127.0.0.1:6479:6379']
 volumes:
-  redbox-mongo:
+  turret-mongo:

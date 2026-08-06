@@ -1,4 +1,4 @@
-# Redbox Ingest Core — Implementation Plan (Phases 1–3)
+# Turret Ingest Core — Implementation Plan (Phases 1–3)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -23,7 +23,7 @@
 ## File Structure
 
 ```
-redbox/
+turret/
   nest-cli.json                              monorepo project registry
   tsconfig.json                              strict, @app/* path aliases
   jest.config.js                             root config, moduleNameMapper
@@ -82,7 +82,7 @@ redbox/
 - [ ] **Step 1: Initialise package.json and install**
 
 ```bash
-cd /Users/pruthvi/workspace/personal/redbox
+cd /Users/pruthvi/workspace/personal/turret
 npm init -y
 npm i --legacy-peer-deps \
   @nestjs/common@^10.0.0 @nestjs/core@^10.0.0 \
@@ -375,7 +375,7 @@ data/corpus/
 
 `.env.example`:
 ```
-MONGO_URI=mongodb://localhost:27017/redbox
+MONGO_URI=mongodb://localhost:27017/turret
 REDIS_HOST=localhost
 REDIS_PORT=6379
 TELEGRAM_BOT_TOKEN=
@@ -391,12 +391,12 @@ services:
   mongo:
     image: mongo:7
     ports: ['27017:27017']
-    volumes: ['redbox-mongo:/data/db']
+    volumes: ['turret-mongo:/data/db']
   redis:
     image: redis:7-alpine
     ports: ['6379:6379']
 volumes:
-  redbox-mongo:
+  turret-mongo:
 ```
 
 - [ ] **Step 14: Commit**
@@ -3090,7 +3090,7 @@ const int = (value: string | undefined, fallback: number): number => {
 };
 
 export const loadConfig = (): IngestConfig => ({
-  mongoUri: process.env.MONGO_URI ?? 'mongodb://localhost:27017/redbox',
+  mongoUri: process.env.MONGO_URI ?? 'mongodb://localhost:27017/turret',
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
   telegramChatId: process.env.TELEGRAM_CHAT_ID ?? '',
   hotIntervalMs: int(process.env.NSE_HOT_INTERVAL_MS, 2000),
@@ -3236,7 +3236,7 @@ Expected within 30 seconds: `Resuming from cursor cold start`, then `Rollover de
 - [ ] **Step 11: Write README.md**
 
 ```markdown
-# Redbox — NSE filings ingest
+# Turret — NSE filings ingest
 
 Low-latency ingest of NSE corporate announcements with a no-loss guarantee,
 feeding a Telegram alert lane.

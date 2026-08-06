@@ -1,4 +1,4 @@
-# Redbox — NSE/BSE Filings Pipeline
+# Turret — NSE/BSE Filings Pipeline
 
 **Date:** 2026-08-05
 **Status:** Design approved. Phases 1–3 implemented; corrected 2026-08-05 against the
@@ -97,7 +97,7 @@ while content logic changes daily, and a shared deploy unit would restart the po
 mid-session to ship a caption tweak.
 
 ```
-redbox/
+turret/
   apps/
     ingest/     hot path  — session, poller, cursor, normalize, alert
     studio/     cold path — pdf, gates, scorer, render, approval, publish

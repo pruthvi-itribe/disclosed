@@ -55,7 +55,7 @@ export const DASHBOARD_HOST = '127.0.0.1';
  * for the same reason.
  */
 export const DASHBOARD_DEFAULTS = {
-  MONGO_URI: 'mongodb://localhost:27117/redbox',
+  MONGO_URI: 'mongodb://localhost:27117/turret',
   DASHBOARD_PORT: 7717,
 } as const;
 

@@ -161,11 +161,11 @@ describe('describeDashboardConfig', () => {
     // log file outlives the process that wrote it.
     const line = describeDashboardConfig(
       loadDashboardConfig(
-        env({ MONGO_URI: 'mongodb://user:s3cret@host:27017/redbox' }),
+        env({ MONGO_URI: 'mongodb://user:s3cret@host:27017/turret' }),
       ),
     );
 
-    expect(line).toContain('mongodb://***@host:27017/redbox');
+    expect(line).toContain('mongodb://***@host:27017/turret');
     expect(line).not.toContain('s3cret');
   });
 });
