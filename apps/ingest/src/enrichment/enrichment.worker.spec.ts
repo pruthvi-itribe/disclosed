@@ -1230,6 +1230,30 @@ describe('EnrichmentWorker — notable claims', () => {
     expect(stored.claimRefusalDetail).toContain('covering letter');
   });
 
+  it('invents no extractor when it is constructed without one', async () => {
+    // The constructor's default is `null`, and it has to stay null: a worker
+    // built without an extractor that quietly acquired one would record "the
+    // model found nothing" on every eligible filing, which is the one wrong
+    // answer here — indistinguishable from a working pipeline in a quiet market.
+    const repository = new StubRepository([
+      { filing: filing({ category: 'Press Release' }), attempts: 1, parseAttempts: 0 },
+    ]);
+    const worker = new EnrichmentWorker(
+      repository as unknown as EnrichmentRepository,
+      new StubFetcher(okBody()) as unknown as AttachmentFetcher,
+      new StubContext() as unknown as FilingContextService,
+      new StubTelegram() as unknown as TelegramService,
+      OPTIONS,
+      parserOf(PRESS_RELEASE),
+    );
+
+    await worker.tick(NOW);
+
+    expect(onlyRecorded(repository).claimRefusalReason).toBe(
+      'extractor-unavailable',
+    );
+  });
+
   it('records that nothing is configured rather than silently finding nothing', async () => {
     // "No extractor" and "the extractor found nothing" are different facts, and
     // a dashboard that rendered them the same would make an unconfigured
