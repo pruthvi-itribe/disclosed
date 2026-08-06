@@ -322,7 +322,12 @@ describe('extractCounterparty — the bounds, pinned against literals', () => {
     // of the document. Blank lines are dropped when the row is rendered, so
     // without the bound this whitespace gap closes and the disclosure below is
     // published as the awarding entity.
-    const gap = '\n'.repeat(PARTY_WINDOW_CHARS + 100);
+    // A LITERAL gap, not one derived from the constant. Sizing the fixture
+    // from PARTY_WINDOW_CHARS makes the test move with the bound it exists to
+    // pin, so widening the window to twenty thousand characters would widen
+    // the gap with it and stay green.
+    expect(PARTY_WINDOW_CHARS).toBeLessThanOrEqual(400);
+    const gap = '\n'.repeat(500);
     const text =
       'Name of the entity awarding the order(s)/contract(s);' +
       `${gap}Acme Industries Limited\nSignificant terms and conditions`;
