@@ -1,5 +1,6 @@
 import { findVerbatimSpan } from './claim-span';
-import { governingBasis } from './results-basis';
+import { malformedGroupingIn } from './grouped-number';
+import { BASIS_HEADING_REACH, governingBasis } from './results-basis';
 import { metricLabelRefusal } from './results-metric';
 import {
   conflictingQuarter,
@@ -109,6 +110,18 @@ export interface ResultsVerificationInput {
   readonly documentText: string;
   readonly proposed: ProposedResults;
   readonly maxFigures?: number;
+  /**
+   * How far above its column header a statement heading may sit.
+   *
+   * A PARAMETER BECAUSE IT IS A PROPERTY OF THE PARSER, not of filings. 400 is
+   * measured against `pdf-parse`'s output and 2,400 against Docling's, which
+   * emits markdown and so puts the same real heading physically further from
+   * the same real table. Defaulted to the `pdf-parse` value so every existing
+   * caller keeps the bound it was measured with; the worker passes the one that
+   * matches the route that actually produced the text. See
+   * `basisReachFor` in `pdf/parse-route.ts`.
+   */
+  readonly basisReach?: number;
 }
 
 export type ResultsVerification =
@@ -240,6 +253,23 @@ function resolveRow(
     return discard('label-mismatch', figure.metric, figure.span, labelRefusal);
   }
 
+  // BEFORE the value is placed in a column, because a figure whose grouping
+  // cannot be read has no value to place. `1,48,388,57` is what OCR makes of
+  // `1,48,388.57`; every digit is right, the separator is wrong, and a reader
+  // that strips commas gets a hundredfold error in the silent direction.
+  // Checked against the PROPOSED tokens, which is where such a figure enters —
+  // the extractor is reading the same damaged text.
+  const malformed = malformedGroupingIn([figure.current, figure.prior]);
+  if (malformed !== null) {
+    return discard(
+      'malformed-grouping',
+      figure.metric,
+      figure.span,
+      `"${malformed}" is not grouped the way either Indian or international ` +
+        'convention writes a number, so its value is not determinable',
+    );
+  }
+
   const tokens = valueTokensIn(match.evidence);
   if (tokens.length !== columnCount) {
     return discard(
@@ -351,7 +381,11 @@ export function verifyResults(
     );
   }
 
-  const basis = governingBasis(documentText, header.offset);
+  const basis = governingBasis(
+    documentText,
+    header.offset,
+    input.basisReach ?? BASIS_HEADING_REACH,
+  );
   if (basis.outcome === 'none') {
     return refuse('basis-not-determinable', basis.detail);
   }
@@ -469,6 +503,29 @@ export function verifyResults(
   const accepted: VerifiedResultsFigure[] = [];
   const seen = new Set<ResultsMetric>();
   for (const row of resolved) {
+    // THE SECOND HALF OF THE GROUPING GUARD, and it is not redundant with the
+    // one in `resolveRow`. What gets published is the DOCUMENT'S token, not the
+    // proposed one, and the two only have to agree once commas are stripped —
+    // so a model proposing a well-formed `14,838,857` matches a document
+    // printing the OCR-damaged `1,48,388,57`, and without this the damaged form
+    // is what reaches the wire.
+    const published = malformedGroupingIn([
+      row.tokens[pair.current].raw,
+      row.tokens[pair.prior].raw,
+    ]);
+    if (published !== null) {
+      discards.push(
+        discard(
+          'malformed-grouping',
+          row.figure.metric,
+          row.figure.span,
+          `the document prints "${published}", which is not grouped the way ` +
+            'either convention writes a number',
+        ),
+      );
+      continue;
+    }
+
     const unit = unitFor(row.figure.metric, row.evidence, scale.token);
     if (unit.outcome === 'none') {
       discards.push(

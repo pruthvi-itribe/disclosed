@@ -203,6 +203,19 @@ export type ResultsFigureDiscardReason =
   | 'row-outside-table'
   /** A per-share or percentage figure whose row declares no unit. */
   | 'unit-not-in-row'
+  /**
+   * The figure's grouping separators do not spell a number either convention
+   * writes, so its value is not determinable.
+   *
+   * THE OCR HAZARD, AND THE INCUMBENT'S TOO. OCR reads a decimal point as a
+   * comma — `1,48,388.57` arrives as `1,48,388,57`, every digit correct and the
+   * separator wrong — and anything that strips commas then reads 14,838,857
+   * instead of 148,388.57. `pdf-parse`'s column flattening produces the same
+   * shape by welding cells together, at a measured 8.40% of comma-bearing
+   * numbers. Both are refused here rather than published. See
+   * `grouped-number.ts`.
+   */
+  | 'malformed-grouping'
   /** The same metric was already accepted. */
   | 'duplicate'
   /** Good, but the line was already full. */

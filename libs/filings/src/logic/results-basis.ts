@@ -80,8 +80,56 @@ export const BASIS_HEADING_CONTEXT = 40;
  * characters above it — while a DIFFERENT header line in the same document sits
  * 117 characters below a real title. A missed table is a line nobody sees. A
  * mislabelled one is the harm.
+ *
+ * THIS NUMBER IS A PROPERTY OF `pdf-parse`'s OUTPUT, NOT OF FILINGS. See
+ * `DOCLING_BASIS_HEADING_REACH` below for why that matters now.
  */
 export const BASIS_HEADING_REACH = 400;
+
+/**
+ * The same bound, for text Docling produced.
+ *
+ * ================================================================
+ * WHY THE BOUND HAD TO BE RETUNED RATHER THAN REUSED OR DELETED
+ * ================================================================
+ *
+ * 400 was measured against `pdf-parse` output, where the distances are bimodal —
+ * real pairings at 54-164, everything else at 936 and beyond, nothing between.
+ * Docling emits markdown: pipes, cell padding, and repeated column headers, so
+ * the SAME real pairing is physically further from its heading. Measured over 14
+ * live results filings converted by `docling-serve` with `do_ocr=false`, 77
+ * column-header table rows paired with the nearest statement heading above them:
+ *
+ *     385, 397, 399, 405, 413, 446, 478, 484, 487, 488, 498, 506, 511, 520,
+ *     533, 533, 536, 549, 549, 582, 598, 598, 636, 642, 642, 650, 693, 768,
+ *     795, 905, 919, 919, 925, 985, 1000, 1063, 1063, 1226, 1290, 1478, 1699,
+ *     1719, 1815, 1983, 2046, 2174, 2262, 2370, | 2948, 2974, 3237, ...
+ *
+ * **At 400 exactly three of those 77 are reachable.** Apollo Tyres' consolidated
+ * header sits 478 characters below its title and its standalone header 598 —
+ * so keeping the `pdf-parse` number would refuse the very tables this routing
+ * exists to read correctly, and the hybrid would make results coverage WORSE
+ * while looking like an upgrade.
+ *
+ * 2,400 sits in the widest gap available below 3,000: the distribution above
+ * runs continuously to 2,370 and then jumps 578 characters to 2,948. It clears
+ * the furthest genuine primary-statement pairing measured — COFFEEDAY's
+ * standalone header at 1,478 — by 1.6x, and it still excludes the annexures
+ * that no statement heading governs at all: Apollo's debt-service-coverage
+ * tables at 26,994 and 30,321, Edelweiss's public-issue table at 25,115,
+ * Cohance's at 26,605.
+ *
+ * WHAT THE BOUND IS FOR HAS CHANGED, AND IT IS KEPT ANYWAY. Under `pdf-parse`
+ * it was what stood between the pipeline and a mislabelled statement, because
+ * the nearest preceding heading was often the wrong one. Under Docling the
+ * nearest preceding heading is the right one — that is the entire reason to pay
+ * fifty times the parse cost. So this is now a cheap assertion that the document
+ * still looks the way results filings look, and it earns its place on the
+ * annexure cases above, where a table sits under no heading and would otherwise
+ * inherit one from tens of thousands of characters away. Removing it costs a
+ * wrong number about a named listed company; keeping it costs a missed line.
+ */
+export const DOCLING_BASIS_HEADING_REACH = 2_400;
 
 /**
  * How close an opposing basis word makes the heading ambiguous.
