@@ -18,6 +18,7 @@
  * judgement needs the document's structure and lives in amount-extraction.ts.
  */
 
+import { isWellGroupedInteger } from './grouped-number';
 import { matchesOf } from './regex-matches';
 
 /**
@@ -88,17 +89,6 @@ const AMOUNT_PATTERN = new RegExp(
 const BARE_PATTERN = new RegExp(`${FIGURE}${GAP}(\\/[-–—])`, 'g');
 
 /**
- * Indian grouping (`18,53,66,820`) and international grouping (`50,172,500`)
- * are both in daily use, often in the same document. Anything else is a
- * malformed figure — one real filing prints `Rs. 30,00,000,00`, which reads as
- * ₹30 crore only by accident of where the commas fell. A figure whose grouping
- * cannot be recognised has no determinable value, so it is dropped rather than
- * guessed.
- */
-const INDIAN_GROUPING = /^\d{1,2}(?:,\d{2})*,\d{3}$/;
-const INTERNATIONAL_GROUPING = /^\d{1,3}(?:,\d{3})*$/;
-
-/**
  * Below one lakh a unit-less figure is far more likely to be a face value, a
  * share price, a premium or a fee than the material consideration, and those
  * are exactly the numbers that sit next to the real one in a SEBI annexure.
@@ -138,17 +128,16 @@ export function resolveUnitMultiplier(
     : null;
 }
 
-/** null when the digits cannot be read with certainty. */
+/**
+ * null when the digits cannot be read with certainty.
+ *
+ * The grouping rule lives in `grouped-number.ts` rather than here, because the
+ * results lane needs the SAME judgement about a table cell and two copies of it
+ * are two chances to disagree about `Rs. 30,00,000,00`.
+ */
 function readFigure(figure: string): number | null {
   const [integerPart] = figure.split('.');
-  if (integerPart.includes(',')) {
-    if (
-      !INDIAN_GROUPING.test(integerPart) &&
-      !INTERNATIONAL_GROUPING.test(integerPart)
-    ) {
-      return null;
-    }
-  }
+  if (!isWellGroupedInteger(integerPart)) return null;
   const value = Number(figure.replace(/,/g, ''));
   return Number.isFinite(value) ? value : null;
 }
