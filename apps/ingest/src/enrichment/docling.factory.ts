@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import {
   DEFAULT_DOCLING_COOLDOWN_MS,
   DoclingHttpError,
@@ -52,53 +52,65 @@ export interface DoclingConfig {
 }
 
 /**
- * Wraps axios in the tiny port the converter holds.
+ * Wraps an axios-shaped client in the tiny port the converter holds.
  *
- * Exported so the one line that names each endpoint is reachable by a test, and
- * so `libs/filings` never learns what transport carries it — the same separation
- * `httpChat` keeps for the model providers.
+ * TAKES THE CLIENT rather than building one, the same way `httpChat` does for
+ * the model providers, so the one place that maps a transport failure onto the
+ * availability latch is reachable by a test without a socket. That mapping is
+ * the whole reason this function exists: `libs/filings` must not learn what
+ * carries its requests, and the latch must not learn about axios.
+ */
+export const doclingHttp = (
+  http: Pick<AxiosInstance, 'post' | 'get'>,
+): DoclingHttp => ({
+  // The STATUS is carried out of axios rather than flattened into a message,
+  // because it is what decides whether the availability latch opens. Only the
+  // total absence of a response is evidence about the service; a 504 on one
+  // oversized document is the service answering. See `DoclingHttpError`.
+  post: async (path, form) => {
+    try {
+      return (await http.post(path, form)).data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new DoclingHttpError(
+          error.message,
+          error.response?.status ?? null,
+        );
+      }
+      throw error;
+    }
+  },
+  // A SEPARATE, SHORT TIMEOUT. The health probe exists to answer "is anything
+  // listening" quickly; giving it the conversion timeout would make a startup
+  // check against a dead host hang for five minutes.
+  health: async () => {
+    await http.get('/health', { timeout: HEALTH_TIMEOUT_MS });
+  },
+});
+
+/** How long a health probe waits. Answering "is anything listening", not "is it fast". */
+export const HEALTH_TIMEOUT_MS = 5_000;
+
+/**
+ * The transport, pointed at a running service.
  *
- * `maxBodyLength`/`maxContentLength` are lifted because a 640-page conversion
+ * `maxBodyLength`/`maxContentLength` are lifted because a large conversion
  * returns megabytes of markdown and axios's default 10 MB ceiling would reject
- * the largest documents as a transport error, which the latch would then read as
- * the service being down.
+ * the biggest documents as a transport error — which the latch would then read
+ * as the service being down.
  */
 export const axiosDoclingHttp = (
   baseURL: string,
   timeoutMs: number,
-): DoclingHttp => {
-  const http = axios.create({
-    baseURL,
-    timeout: timeoutMs,
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity,
-  });
-  return {
-    // The STATUS is carried out of axios rather than flattened into a message,
-    // because it is what decides whether the availability latch opens. Only the
-    // total absence of a response is evidence about the service; a 504 on one
-    // oversized document is the service answering. See `DoclingHttpError`.
-    post: async (path, form) => {
-      try {
-        return (await http.post(path, form)).data;
-      } catch (error) {
-        if (axios.isAxiosError(error)) {
-          throw new DoclingHttpError(
-            error.message,
-            error.response?.status ?? null,
-          );
-        }
-        throw error;
-      }
-    },
-    // A SEPARATE, SHORT TIMEOUT. The health probe exists to answer "is anything
-    // listening" quickly; giving it the conversion timeout would make a startup
-    // check against a dead host hang for five minutes.
-    health: async () => {
-      await http.get('/health', { timeout: 5_000 });
-    },
-  };
-};
+): DoclingHttp =>
+  doclingHttp(
+    axios.create({
+      baseURL,
+      timeout: timeoutMs,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    }),
+  );
 
 /**
  * The converter, or null when the operator configured none.
