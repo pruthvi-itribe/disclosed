@@ -225,6 +225,55 @@ describe('mergeEnrichment', () => {
   });
 });
 
+/**
+ * What the collection actually holds, which is not what the type says.
+ *
+ * A `lean()` read of a document written before a lane existed returns the field
+ * ABSENT rather than at its schema default. The first sweep to reach one of
+ * those threw inside the worker's containment, cost the filing its lease and
+ * left it unswept — a failure that only a record older than the code can
+ * produce, and therefore only the live collection can find.
+ */
+describe('a record written by a build that had fewer lanes', () => {
+  /** Every optional lane field missing, as a pre-claims record reads back. */
+  const legacy = {
+    state: 'enriched',
+    attempts: 1,
+    parseAttempts: 0,
+    attemptedAt: null,
+    nextAttemptAt: null,
+    unparseableReason: null,
+    lastError: null,
+    documentChars: 40_000,
+    amountRupees: 5_000_000,
+  } as unknown as FilingEnrichment;
+
+  it('scores its absent lanes at zero rather than throwing', () => {
+    expect(() => laneScore(legacy, 'claims')).not.toThrow();
+    expect(laneScore(legacy, 'claims')).toBe(0);
+    expect(laneScore(legacy, 'results')).toBe(0);
+    expect(laneScore(legacy, 'amount')).toBe(2);
+  });
+
+  it('keeps the amount it does carry and takes the new claims', () => {
+    const merged = mergeEnrichment(
+      legacy,
+      enriched({ claims: [claim('a')], amountRupees: null }),
+    );
+    expect(merged.enrichment.amountRupees).toBe(5_000_000);
+    expect(merged.enrichment.claims).toHaveLength(1);
+    expect(merged.regressions).toEqual(['amount']);
+  });
+
+  it('does not read an absent summary as a summary', () => {
+    // `documentSummary === null` is false for `undefined`, so a strict check
+    // scores an absent summary as one that exists — and the claims lane of a
+    // record that has no claims field then outranks a re-read that found one.
+    const merged = mergeEnrichment(legacy, enriched({ claims: [claim('a')] }));
+    expect(merged.enrichment.claims).toHaveLength(1);
+  });
+});
+
 describe('laneScore', () => {
   it('ranks a verified figure above a counterparty', () => {
     expect(laneScore(enriched({ amountRupees: 1 }), 'amount')).toBeGreaterThan(

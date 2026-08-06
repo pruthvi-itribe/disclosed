@@ -129,21 +129,27 @@ export function laneScore(
   enrichment: FilingEnrichment,
   lane: EnrichmentLane,
 ): number {
+  // EVERY READ HERE IS DEFENSIVE, and the type says it need not be. The type is
+  // what this codebase WRITES; what it READS is a document some previous build
+  // wrote, and the live collection holds records from before the claims lane,
+  // the results lane and the summary existed. A `lean()` read of one of those
+  // returns `undefined` for the field rather than the schema default, so a
+  // strict `=== null` scores an absent summary as present and `claims.length`
+  // throws outright — which is exactly what it did, inside the worker's
+  // per-document containment, on the first sweep that reached an old record.
+  const claims = enrichment.claims ?? [];
   if (lane === 'amount') {
     return (
-      (enrichment.amountRupees === null ? 0 : 2) +
-      (enrichment.counterparty === null ? 0 : 1)
+      (enrichment.amountRupees == null ? 0 : 2) +
+      (enrichment.counterparty == null ? 0 : 1)
     );
   }
   if (lane === 'claims') {
-    return (
-      enrichment.claims.length * 2 +
-      (enrichment.documentSummary === null ? 0 : 1)
-    );
+    return claims.length * 2 + (enrichment.documentSummary == null ? 0 : 1);
   }
   return (
-    (enrichment.resultsLine === null ? 0 : 100) +
-    (enrichment.results?.figures.length ?? 0)
+    (enrichment.resultsLine == null ? 0 : 100) +
+    (enrichment.results?.figures?.length ?? 0)
   );
 }
 
