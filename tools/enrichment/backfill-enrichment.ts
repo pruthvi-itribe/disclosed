@@ -121,8 +121,14 @@ class BackfillRepository extends EnrichmentRepository {
   public claimedCount = 0;
   public readonly regressions = new Map<EnrichmentLane, number>();
   public readFailures = 0;
+  /** Filings left unmarked because the provider, not the document, failed. */
+  public unasked = 0;
 
-  constructor(private readonly filings: Model<FilingDocument>) {
+  constructor(
+    private readonly filings: Model<FilingDocument>,
+    /** How long an extractor failure holds a filing off the sweep's queue. */
+    private readonly retryAfterMs: number,
+  ) {
     super(filings);
   }
 
@@ -205,6 +211,37 @@ class BackfillRepository extends EnrichmentRepository {
       );
     }
 
+    // A FILING WHOSE MODEL CALL NEVER HAPPENED IS NOT DONE. The extractor
+    // returning a 429, a truncated body or an unparseable reply is a fact about
+    // the provider rather than about the document, and marking the filing swept
+    // would make that transient failure permanent — the sweep would never offer
+    // it again. Left unmarked, it is simply picked up by the next run, which is
+    // what makes it safe to raise the number of lanes until the provider starts
+    // refusing.
+    const unasked = merge.enrichment.claimRefusalReason === 'extractor-error';
+    if (unasked) {
+      this.unasked += 1;
+      process.stdout.write(
+        `  NOT MARKED seqId ${seqId}: the extractor failed, so the sweep will ` +
+          `offer this filing again after ${this.retryAfterMs}ms\n`,
+      );
+    }
+
+    // A BACKOFF, NOT MERELY AN ABSENT MARKER. Without the future
+    // `nextAttemptAt`, an unmarked filing is claimable again the instant it is
+    // written — `recordEnrichment` nulls the lease on the way out — so a document
+    // the provider refuses every time becomes a tight loop pointed at the
+    // exchange. `notLeased` already excludes a filing whose next attempt is in
+    // the future, so this is the same mechanism the ordinary retry backoff uses
+    // rather than a second one. An `enriched` filing carrying a future attempt
+    // time is invisible to the live worker, which claims only `pending`.
+    const held: FilingEnrichment = unasked
+      ? {
+          ...merge.enrichment,
+          nextAttemptAt: new Date(Date.now() + this.retryAfterMs),
+        }
+      : merge.enrichment;
+
     // The verdict and the marker in ONE update. Two writes would leave a window
     // in which a crash marks a filing done that was never written, or writes one
     // that a re-run then does again — and the second of those costs an NSE
@@ -212,7 +249,11 @@ class BackfillRepository extends EnrichmentRepository {
     const result = await this.filings
       .updateOne(
         { seqId },
-        { $set: { enrichment: merge.enrichment, backfilledAt: new Date() } },
+        {
+          $set: unasked
+            ? { enrichment: held }
+            : { enrichment: held, backfilledAt: new Date() },
+        },
       )
       .exec();
 
@@ -442,7 +483,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const repository = new BackfillRepository(model);
+  const repository = new BackfillRepository(model, config.enrichmentLeaseMs);
   const telegram = new SilentTelegram();
   const extractor = new MeteredExtractor(
     buildClaimExtractor(config),
@@ -533,7 +574,8 @@ async function main(): Promise<void> {
               .map(([lane, count]) => `${lane.padEnd(18)} ${count}`)
               .join('\n') + '\n'
       }` +
-      `reads that reached no verdict at all  ${repository.readFailures}\n\n` +
+      `reads that reached no verdict at all  ${repository.readFailures}\n` +
+      `left for another run (extractor failed) ${repository.unasked}\n\n` +
       `--- spend, from the provider's own usage blocks ---\n` +
       `model calls         ${extractor.calls} (${extractor.reported} reported usage)\n` +
       `input tokens        ${extractor.inputTokens}\n` +
