@@ -56,13 +56,30 @@ export const BASIS_HEADING_CONTEXT = 40;
 /**
  * How far above a table's column header its statement title may sit.
  *
- * 400 characters, measured rather than chosen. Across the real filings this was
- * built against, the distance from the statement title to the column-date line
- * of its own table is 67 to 78 characters — the title, the "for the quarter
- * ended" line, and the units declaration, and nothing else. 400 clears that by
- * five times while staying far short of the 3,260 characters that separate the
- * Apollo standalone table's column header from the nearest marker `pdf-parse`
- * left above it, which is the case that must refuse.
+ * 400 characters, and the number sits in a MEASURED GAP rather than at a round
+ * one. Across 16 live results filings, all 34 column-date lines were paired with
+ * the nearest basis marker above them, and the distances are bimodal:
+ *
+ *     a title that really governs the table   54, 64, 75, 78, 108, 115, 117,
+ *                                             119, 143, 164
+ *     anything else `pdf-parse` left above    936, 1054, 1156, 1303, 1320,
+ *                                             1616, 1935, 1953, 2101, 2258,
+ *                                             2747, 2824, 3474, 6247, 11655,
+ *                                             12291, 16117, 17058, 19521
+ *
+ * There is nothing at all between 164 and 936. A real statement title is separated from
+ * its own column header by the "for the quarter ended" line and the units
+ * declaration and nothing else; everything past a thousand characters is a
+ * covering letter, a note, or another statement's title that the flattening
+ * moved. 400 clears the real pairings by 2.4x and excludes the nearest false one
+ * by 2.3x, which is the widest a bound can be and still answer the question this
+ * module exists to answer.
+ *
+ * The failure it accepts is a coverage one: BRITANNIA's Q1 FY27 statement was
+ * refused because the header the extractor quoted has its nearest marker 936
+ * characters above it — while a DIFFERENT header line in the same document sits
+ * 117 characters below a real title. A missed table is a line nobody sees. A
+ * mislabelled one is the harm.
  */
 export const BASIS_HEADING_REACH = 400;
 
