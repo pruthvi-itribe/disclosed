@@ -2,6 +2,7 @@ import { Controller, Get, Header, Query } from '@nestjs/common';
 import { ok, okWith, type ApiEnvelope } from '../http/envelope';
 import {
   readBoundedInteger,
+  readEnum,
   readFilter,
   type RawQuery,
 } from '../http/query-params';
@@ -9,11 +10,16 @@ import { renderDashboardPage } from '../ui/page';
 import type {
   CategoryCount,
   DailyCount,
+  EnrichmentSummaryView,
   FilingView,
   PageMeta,
   SummaryView,
 } from './dashboard.types';
-import { FilingQueryService } from './filing-query.service';
+import {
+  AMOUNT_FILTERS,
+  ENRICHMENT_STATES,
+  FilingQueryService,
+} from './filing-query.service';
 
 /** Rows returned when `limit` is absent: one screenful without scrolling on a laptop. */
 export const DEFAULT_LIMIT = 25;
@@ -75,9 +81,11 @@ export class DashboardController {
   /**
    * Recent filings, newest first, paginated and filterable.
    *
-   * Query: `limit`, `offset`, `symbol`, `category`. Anything unparseable is a
-   * 400 rather than a silently applied default — a filter that quietly did
-   * nothing is indistinguishable from one that matched everything.
+   * Query: `limit`, `offset`, `symbol`, `category`, `state`, `amount`,
+   * `refusal`. Anything unparseable is a 400 rather than a silently applied
+   * default — a filter that quietly did nothing is indistinguishable from one
+   * that matched everything, and on the refusal filters that difference is the
+   * whole point of the view.
    */
   @Get('api/filings')
   @Header('Cache-Control', 'no-store')
@@ -97,9 +105,25 @@ export class DashboardController {
       }),
       symbol: readFilter('symbol', query),
       category: readFilter('category', query),
+      state: readEnum('state', query, ENRICHMENT_STATES),
+      amount: readEnum('amount', query, AMOUNT_FILTERS),
+      refusal: readFilter('refusal', query),
     });
 
     return okWith(page.items, page.meta);
+  }
+
+  /**
+   * How the attachment worker is doing, and every reason it refused something.
+   *
+   * A separate route from `api/summary` rather than more fields on it: this one
+   * runs seven grouped aggregations and the page fetches it on the slow cycle,
+   * while the summary is on every four-second poll.
+   */
+  @Get('api/enrichment')
+  @Header('Cache-Control', 'no-store')
+  async getEnrichment(): Promise<ApiEnvelope<EnrichmentSummaryView>> {
+    return ok(await this.filings.getEnrichmentSummary());
   }
 
   /** Category breakdown across the whole collection, largest first. */

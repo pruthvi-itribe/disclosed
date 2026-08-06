@@ -7,15 +7,33 @@ import {
   istTimestamp,
   startOfIstDay,
 } from '@app/common';
-import type { Filing } from '@app/filings';
+import { formatRupees, type Filing, type FilingEnrichment } from '@app/filings';
 import type {
   CategoryCount,
   DailyCount,
+  EnrichmentCount,
+  EnrichmentSummaryView,
+  EnrichmentView,
   FilingView,
   PageMeta,
   SummaryView,
 } from './dashboard.types';
 import type { FilingReadModel } from './filing-read.model';
+
+/** Enrichment states a caller may filter on. */
+export const ENRICHMENT_STATES = [
+  'pending',
+  'enriched',
+  'unparseable',
+  'failed',
+] as const;
+
+export type EnrichmentStateFilter = (typeof ENRICHMENT_STATES)[number];
+
+/** Amount outcomes a caller may filter on. */
+export const AMOUNT_FILTERS = ['extracted', 'refused'] as const;
+
+export type AmountFilter = (typeof AMOUNT_FILTERS)[number];
 
 /** The filters the recent-filings list accepts, already validated. */
 export interface RecentQuery {
@@ -23,6 +41,12 @@ export interface RecentQuery {
   readonly offset: number;
   readonly symbol?: string;
   readonly category?: string;
+  /** Enrichment state. `pending` also matches filings never attempted. */
+  readonly state?: EnrichmentStateFilter;
+  /** Whether the extractor emitted a figure or declined to. */
+  readonly amount?: AmountFilter;
+  /** A specific machine-readable refusal reason. */
+  readonly refusal?: string;
 }
 
 /** A page of filings and the counts needed to page through them. */
@@ -51,6 +75,7 @@ const DISPLAY_PROJECTION = {
   announcedAt: 1,
   disseminatedAt: 1,
   ingestedAt: 1,
+  enrichment: 1,
 } as const;
 
 /** The shape a grouped count comes back as, whatever the group key is. */
@@ -243,6 +268,85 @@ export class FilingQueryService {
   }
 
   /**
+   * How the attachment worker is doing, and every reason it refused something.
+   *
+   * THE REFUSAL BREAKDOWN IS THE POINT. An extractor that declines to guess is
+   * only trustworthy if its declines are inspectable, so this returns the
+   * machine-readable reason for every refused document, grouped and counted,
+   * and the page makes each one a filter.
+   *
+   * Seven grouped reads, issued together. They run on a page that polls, so
+   * serialising them would make the dashboard's own latency the thing you
+   * notice — the same reason `getSummary` batches its four.
+   */
+  async getEnrichmentSummary(): Promise<EnrichmentSummaryView> {
+    const [
+      total,
+      byState,
+      withAmount,
+      byRefusal,
+      byUnparseable,
+      withCounterparty,
+      withEnrichedHeadline,
+    ] = await Promise.all([
+      this.filings.countDocuments({}).exec(),
+      this.groupBy('$enrichment.state'),
+      this.filings
+        .countDocuments({ 'enrichment.amountRupees': { $ne: null } })
+        .exec(),
+      this.groupBy('$enrichment.amountRefusalReason', {
+        'enrichment.amountRefusalReason': { $ne: null },
+      }),
+      this.groupBy('$enrichment.unparseableReason', {
+        'enrichment.unparseableReason': { $ne: null },
+      }),
+      this.filings
+        .countDocuments({ 'enrichment.counterparty': { $ne: null } })
+        .exec(),
+      // A headline that states a figure rather than the category. Counted from
+      // the amount rather than by re-parsing the stored line, because the line
+      // is text and the amount is the fact that decided its form.
+      this.filings
+        .countDocuments({
+          'enrichment.amountRupees': { $ne: null },
+          'enrichment.headline': { $ne: null },
+        })
+        .exec(),
+    ]);
+
+    return {
+      total,
+      // A missing block is `pending`; see `toEnrichmentView`.
+      byState: toCounts(byState, 'pending'),
+      withAmount,
+      byRefusal: toCounts(byRefusal, 'unknown'),
+      byUnparseable: toCounts(byUnparseable, 'unknown'),
+      withCounterparty,
+      withEnrichedHeadline,
+      generatedAtIst: istTimestamp(this.now()),
+    };
+  }
+
+  /**
+   * One grouped count. The pipeline is written literally at this call site and
+   * the `field` argument is a compile-time constant at every one of them — a
+   * caller-supplied group key would be the one way an aggregation in this
+   * read-only application could be shaped from outside.
+   */
+  private async groupBy(
+    field: string,
+    match?: Record<string, unknown>,
+  ): Promise<readonly GroupedCount<string | null>[]> {
+    return this.filings
+      .aggregate<GroupedCount<string | null>>([
+        ...(match === undefined ? [] : [{ $match: match }]),
+        { $group: { _id: field, count: { $sum: 1 } } },
+        { $sort: { count: -1, _id: 1 } },
+      ])
+      .exec();
+  }
+
+  /**
    * Turns the validated filters into a Mongo filter document.
    *
    * Built by spreading rather than by assigning into an object, so no partially
@@ -267,6 +371,47 @@ export class FilingQueryService {
         ? {}
         : { symbol: query.symbol.toUpperCase() }),
       ...(query.category === undefined ? {} : { category: query.category }),
+      ...this.enrichmentFilter(query),
+    };
+  }
+
+  /**
+   * The enrichment filters, which are what make refusals inspectable.
+   *
+   * `pending` deliberately matches a MISSING `enrichment` block as well as an
+   * explicit `'pending'`. A filing the worker has never reached carries no
+   * block at all — the schema declares no default so the poller's hot path
+   * writes nothing extra — and in Mongo `{field: {$in: [null, 'pending']}}`
+   * matches both. Filtering on the string alone would show an empty queue while
+   * a thousand filings waited in it.
+   *
+   * Every value here has already been checked against a fixed allowlist by
+   * `readEnum`, so none of them is caller-chosen text reaching a filter.
+   */
+  private enrichmentFilter(query: RecentQuery): Record<string, unknown> {
+    return {
+      ...(query.state === undefined
+        ? {}
+        : {
+            'enrichment.state':
+              query.state === 'pending'
+                ? { $in: [null, 'pending'] }
+                : query.state,
+          }),
+      ...(query.amount === undefined
+        ? {}
+        : {
+            'enrichment.amountRupees':
+              query.amount === 'extracted' ? { $ne: null } : null,
+          }),
+      ...(query.refusal === undefined
+        ? {}
+        : {
+            $or: [
+              { 'enrichment.amountRefusalReason': query.refusal },
+              { 'enrichment.unparseableReason': query.refusal },
+            ],
+          }),
     };
   }
 
@@ -278,7 +423,7 @@ export class FilingQueryService {
    * that formatted these itself would show every filing five and a half hours
    * early and look completely normal doing it.
    */
-  private toView(doc: Filing): FilingView {
+  private toView(doc: Filing & { enrichment?: FilingEnrichment }): FilingView {
     const disseminatedAt = new Date(instantMs(doc.disseminatedAt));
 
     return {
@@ -294,6 +439,57 @@ export class FilingQueryService {
       disseminatedAtIst: istTimestamp(disseminatedAt),
       ingestedAtIst: istTimestamp(doc.ingestedAt),
       pipelineLagMs: instantMs(doc.ingestedAt) - instantMs(doc.disseminatedAt),
+      enrichment: toEnrichmentView(doc.enrichment),
     };
   }
 }
+
+/**
+ * Projects the stored enrichment block, or the absence of one.
+ *
+ * A MISSING BLOCK IS `pending`, not an error and not an empty object. The
+ * poller writes no enrichment at all — that is what keeps the two-second hot
+ * path free of eighteen null fields — so "the worker has not reached this yet"
+ * is expressed by absence, and this is where that absence becomes a state a
+ * page can render.
+ *
+ * `amountDisplay` is formatted HERE, on the server, from the same
+ * `formatRupees` the headline uses. The browser must not do it: a second
+ * implementation of Indian crore/lakh grouping would be a second thing to keep
+ * in step with the message that actually goes out.
+ */
+function toEnrichmentView(
+  enrichment: FilingEnrichment | undefined,
+): EnrichmentView {
+  const amountRupees = enrichment?.amountRupees ?? null;
+
+  return {
+    state: enrichment?.state ?? 'pending',
+    attempts: enrichment?.attempts ?? 0,
+    attemptedAtIst:
+      enrichment?.attemptedAt == null
+        ? null
+        : istTimestamp(enrichment.attemptedAt),
+    unparseableReason: enrichment?.unparseableReason ?? null,
+    lastError: enrichment?.lastError ?? null,
+    amountRupees,
+    amountDisplay: amountRupees === null ? null : formatRupees(amountRupees),
+    amountEvidence: enrichment?.amountEvidence ?? null,
+    amountAnchor: enrichment?.amountAnchor ?? null,
+    amountRefusalReason: enrichment?.amountRefusalReason ?? null,
+    amountRefusalDetail: enrichment?.amountRefusalDetail ?? null,
+    counterparty: enrichment?.counterparty ?? null,
+    counterpartyRefusalReason: enrichment?.counterpartyRefusalReason ?? null,
+    headline: enrichment?.headline ?? null,
+    contextLine: enrichment?.contextLine ?? null,
+  };
+}
+
+/** Turns a grouped aggregation into the page's `{key, count}` rows. */
+const toCounts = (
+  grouped: readonly GroupedCount<string | null>[],
+  fallbackKey: string,
+): readonly EnrichmentCount[] =>
+  grouped.map((row) => ({ key: row._id ?? fallbackKey, count: row.count }));
+
+export { toEnrichmentView, toCounts };

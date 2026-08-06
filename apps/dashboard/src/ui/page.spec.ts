@@ -53,8 +53,15 @@ describe('renderDashboardPage — content', () => {
     'stat-lag',
     'stat-newest',
     'stat-cursor',
+    'stat-amounts',
+    'stat-amounts-note',
+    'stat-pending',
     'symbol',
     'category',
+    'state',
+    'amount',
+    'refusals',
+    'refusal-chip',
     'limit',
     'clear',
     'prev',
@@ -80,6 +87,32 @@ describe('renderDashboardPage — content', () => {
 
   it('states that the view is read-only', () => {
     expect(html).toContain('never writes');
+  });
+
+  it('leads the filings table with the composed headline', () => {
+    // The change this page exists to show: the exchange's boilerplate is no
+    // longer the first thing in the row.
+    expect(html).toContain('<th>Headline</th>');
+    expect(html).toContain('<th>Amount</th>');
+    expect(html).toContain('<th>Enrichment</th>');
+  });
+
+  it('makes the refusal reasons a visible, filterable panel', () => {
+    // A refusal nobody can see is indistinguishable from a bug, and the
+    // extractor's declines are what earn it its trust.
+    expect(html).toContain('Why amounts were refused');
+    expect(html).toContain('id="refusals"');
+  });
+
+  it('offers every enrichment state as a filter', () => {
+    for (const state of ['enriched', 'pending', 'unparseable', 'failed']) {
+      expect(html).toContain(`<option value="${state}">`);
+    }
+  });
+
+  it('says on the page what makes a headline traceable', () => {
+    expect(html).toContain('traceable');
+    expect(html).toContain("degrades the headline to the exchange's own words");
   });
 
   it('contains no emoji', () => {

@@ -108,3 +108,30 @@ export const readFilter = (
 
   return value;
 };
+
+/**
+ * Reads a value that must be one of a fixed set, or throws listing the set.
+ *
+ * An ALLOWLIST rather than a length check, because these values reach the Mongo
+ * filter as field values on `enrichment.state` and `enrichment.*RefusalReason`.
+ * A free string there is not an injection — `readSingle` already refuses
+ * anything that is not a plain string — but it is a filter that silently
+ * matches nothing, which on a page whose whole job is showing WHY the extractor
+ * refused is indistinguishable from "nothing was refused".
+ */
+export const readEnum = <T extends string>(
+  name: string,
+  query: RawQuery,
+  allowed: readonly T[],
+): T | undefined => {
+  const value = readSingle(name, query);
+  if (value === undefined) return undefined;
+
+  if (!allowed.includes(value as T)) {
+    throw new BadRequestException(
+      `${name} must be one of ${allowed.join(', ')}, but was "${value}".`,
+    );
+  }
+
+  return value as T;
+};

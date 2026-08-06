@@ -25,13 +25,13 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>redbox — NSE filings ingest</title>
+<title>Turret — NSE filings ingest</title>
 <style>${PAGE_STYLE}</style>
 </head>
 <body>
 <header class="bar">
   <div class="brand">
-    <span class="mark">red<span class="dotmark">box</span></span>
+    <span class="mark">tur<span class="dotmark">ret</span></span>
     <span class="sub">NSE corporate filings ingest — read-only view</span>
   </div>
   <div class="status">
@@ -69,6 +69,16 @@ export const renderDashboardPage = (): string => `<!doctype html>
     <div id="stat-cursor" class="value" style="font-size:19px">—</div>
     <div class="note">max seqId</div>
   </div>
+  <div class="stat">
+    <div class="label">Amounts read</div>
+    <div id="stat-amounts" class="value">—</div>
+    <div id="stat-amounts-note" class="note">—</div>
+  </div>
+  <div class="stat">
+    <div class="label">Awaiting read</div>
+    <div id="stat-pending" class="value">—</div>
+    <div id="stat-pending-note" class="note">source PDFs</div>
+  </div>
 </section>
 
 <section class="filters">
@@ -76,6 +86,20 @@ export const renderDashboardPage = (): string => `<!doctype html>
   <input id="symbol" type="text" placeholder="RELIANCE" autocomplete="off" spellcheck="false" size="14">
   <label for="category">Category</label>
   <select id="category"><option value="">All categories</option></select>
+  <label for="state">Enrichment</label>
+  <select id="state">
+    <option value="">Any state</option>
+    <option value="enriched">enriched</option>
+    <option value="pending">pending</option>
+    <option value="unparseable">unparseable</option>
+    <option value="failed">failed</option>
+  </select>
+  <label for="amount">Amount</label>
+  <select id="amount">
+    <option value="">Any</option>
+    <option value="extracted">extracted</option>
+    <option value="refused">refused</option>
+  </select>
   <label for="limit">Rows</label>
   <select id="limit">
     <option value="25" selected>25</option>
@@ -84,6 +108,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
     <option value="200">200</option>
   </select>
   <button id="clear" type="button">Clear</button>
+  <span id="refusal-chip"></span>
   <span style="flex:1 1 auto"></span>
   <span id="page-info" class="muted mono">—</span>
   <button id="prev" type="button" disabled>Prev</button>
@@ -99,8 +124,9 @@ export const renderDashboardPage = (): string => `<!doctype html>
           <tr>
             <th>Time (IST)</th>
             <th>Symbol</th>
-            <th>Category</th>
-            <th>Summary</th>
+            <th>Headline</th>
+            <th>Amount</th>
+            <th>Enrichment</th>
             <th>Source</th>
             <th>Seq</th>
           </tr>
@@ -111,6 +137,10 @@ export const renderDashboardPage = (): string => `<!doctype html>
   </div>
 
   <div class="side">
+    <div class="panel">
+      <h2><span>Why amounts were refused</span><span class="muted">click to filter</span></h2>
+      <div id="refusals"></div>
+    </div>
     <div class="panel">
       <h2><span>Filings per IST day</span></h2>
       <div id="days" class="days"></div>
@@ -125,6 +155,8 @@ export const renderDashboardPage = (): string => `<!doctype html>
 
 <footer>
   Read-only. This view never writes to the filings collection. All times are IST (UTC+05:30), rendered server-side.
+  Every headline component is traceable: the symbol and category are stored verbatim, the action phrase is a fixed lookup,
+  and the amount and counterparty quote the source document. A refused amount degrades the headline to the exchange's own words.
 </footer>
 
 <script>${PAGE_SCRIPT}</script>

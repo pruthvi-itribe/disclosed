@@ -36,6 +36,9 @@ export const PAGE_SCRIPT = `
     offset: 0,
     symbol: '',
     category: '',
+    enrichState: '',
+    amount: '',
+    refusal: '',
     highestSeen: null,
     ticks: 0,
     failures: 0
@@ -148,6 +151,111 @@ export const PAGE_SCRIPT = `
     setText('generated', 'updated ' + d.generatedAtIst + ' IST');
   }
 
+  // Every one of these builds its nodes with createElement and textContent.
+  // The headline is composed from a symbol and a counterparty name that both
+  // originate outside this process, and the evidence string is raw text lifted
+  // out of a PDF - the single least trustworthy value on the page.
+  function tag(text, className, onClick) {
+    var node = document.createElement('span');
+    node.className = 'tag ' + className + (onClick ? ' clickable' : '');
+    node.textContent = text;
+    if (onClick) node.addEventListener('click', onClick);
+    return node;
+  }
+
+  function pickRefusal(reason) {
+    return function () {
+      state.refusal = state.refusal === reason ? '' : reason;
+      state.offset = 0;
+      refresh(true);
+    };
+  }
+
+  // The headline cell: the composed line, the derived-context line beneath it,
+  // and the exchange's own summary demoted to third. That order is the change -
+  // the boilerplate used to lead.
+  function headlineCell(row, f) {
+    var cell = document.createElement('td');
+    cell.className = 'sum';
+    var e = f.enrichment || {};
+
+    var head = document.createElement('div');
+    head.className = 'headline ' + (e.amountRupees !== null && e.amountRupees !== undefined ? 'enriched' : 'verbatim');
+    head.textContent = e.headline || (String(f.symbol).toUpperCase() + ' — ' + String(f.category).toUpperCase());
+    cell.appendChild(head);
+
+    if (e.contextLine) {
+      var ctx = document.createElement('div');
+      ctx.className = 'context';
+      ctx.textContent = e.contextLine;
+      cell.appendChild(ctx);
+    }
+
+    var summary = document.createElement('div');
+    summary.className = 'summary-line';
+    summary.textContent = f.summary;
+    cell.appendChild(summary);
+
+    var lag = document.createElement('div');
+    lag.className = 'lag';
+    lag.textContent = f.category + ' · ingested +' + duration(f.pipelineLagMs);
+    cell.appendChild(lag);
+
+    row.appendChild(cell);
+  }
+
+  function amountCell(row, e) {
+    var cell = document.createElement('td');
+    cell.className = 'amt';
+
+    if (e.amountDisplay) {
+      var value = document.createElement('span');
+      value.className = 'value';
+      value.textContent = e.amountDisplay;
+      cell.appendChild(value);
+      if (e.counterparty) {
+        var party = document.createElement('span');
+        party.className = 'party';
+        party.textContent = e.counterparty;
+        cell.appendChild(party);
+      }
+    } else {
+      cell.appendChild(document.createTextNode('—'));
+    }
+
+    row.appendChild(cell);
+  }
+
+  // A refusal is rendered as a value, never as a blank. The reason is the tag,
+  // the detail is its tooltip, and the tag filters the table - which is how the
+  // extractor's declines become inspectable rather than merely absent.
+  function enrichmentCell(row, e) {
+    var cell = document.createElement('td');
+    cell.className = 'enr';
+
+    var stateTag = tag(e.state, 'state-' + e.state, null);
+    if (e.attemptedAtIst) stateTag.title = 'attempt ' + e.attempts + ' at ' + e.attemptedAtIst + ' IST';
+    cell.appendChild(stateTag);
+
+    var reason = e.amountRefusalReason || e.unparseableReason;
+    if (reason) {
+      var reasonTag = tag(reason, 'refusal' + (state.refusal === reason ? ' active' : ''), pickRefusal(reason));
+      reasonTag.title = e.amountRefusalDetail || e.lastError || reason;
+      cell.appendChild(document.createTextNode(' '));
+      cell.appendChild(reasonTag);
+    }
+
+    if (e.amountEvidence) {
+      var evidence = document.createElement('span');
+      evidence.className = 'evidence';
+      evidence.textContent = '"' + e.amountEvidence.replace(/\\s+/g, ' ').trim() + '"';
+      if (e.amountAnchor) evidence.title = 'read from: ' + e.amountAnchor;
+      cell.appendChild(evidence);
+    }
+
+    row.appendChild(cell);
+  }
+
   function renderFilings(items, meta) {
     var body = el('rows');
     clear(body);
@@ -155,7 +263,7 @@ export const PAGE_SCRIPT = `
     if (items.length === 0) {
       var tr = document.createElement('tr');
       var td = document.createElement('td');
-      td.colSpan = 6;
+      td.colSpan = 7;
       td.className = 'empty-state';
       td.textContent = 'No filings match this view.';
       tr.appendChild(td);
@@ -178,13 +286,11 @@ export const PAGE_SCRIPT = `
 
       cell(row, 'time', f.disseminatedAtIst);
       cell(row, 'sym', f.symbol).title = f.companyName;
-      cell(row, 'cat', f.category);
 
-      var summary = cell(row, 'sum', f.summary);
-      var lag = document.createElement('div');
-      lag.className = 'lag';
-      lag.textContent = 'ingested +' + duration(f.pipelineLagMs);
-      summary.appendChild(lag);
+      var enrichment = f.enrichment || { state: 'pending', attempts: 0 };
+      headlineCell(row, f);
+      amountCell(row, enrichment);
+      enrichmentCell(row, enrichment);
 
       var src = cell(row, 'src', null);
       var href = safeHref(f.attachmentUrl);
@@ -274,6 +380,74 @@ export const PAGE_SCRIPT = `
     };
   }
 
+  function pct(part, whole) {
+    if (!whole) return '0%';
+    return (Math.round((part / whole) * 1000) / 10) + '%';
+  }
+
+  // The refusal breakdown, which is what makes the extractor auditable: every
+  // document it declined, grouped by the machine-readable reason, each one a
+  // filter. A pipeline that only reported its successes would be asking to be
+  // taken on trust.
+  function renderEnrichment(d) {
+    setText('stat-amounts', groupInt(d.withAmount));
+    setText('stat-amounts-note', pct(d.withAmount, d.total) + ' of ' + groupInt(d.total) + ' filings');
+
+    var pending = 0;
+    for (var s = 0; s < d.byState.length; s++) {
+      if (d.byState[s].key === 'pending') pending = d.byState[s].count;
+    }
+    setText('stat-pending', groupInt(pending));
+
+    var box = el('refusals');
+    clear(box);
+
+    var groups = [
+      { label: 'amount refused', rows: d.byRefusal },
+      { label: 'document unreadable', rows: d.byUnparseable }
+    ];
+
+    var drawn = 0;
+    for (var g = 0; g < groups.length; g++) {
+      if (groups[g].rows.length === 0) continue;
+      drawn += groups[g].rows.length;
+
+      var heading = document.createElement('div');
+      heading.className = 'reason-group';
+      heading.textContent = groups[g].label;
+      box.appendChild(heading);
+
+      var wrap = document.createElement('div');
+      wrap.className = 'reasons';
+      for (var i = 0; i < groups[g].rows.length; i++) {
+        var r = groups[g].rows[i];
+        var node = tag(r.key, 'refusal' + (state.refusal === r.key ? ' active' : ''), pickRefusal(r.key));
+        var n = document.createElement('span');
+        n.className = 'n';
+        n.textContent = groupInt(r.count);
+        node.appendChild(n);
+        wrap.appendChild(node);
+      }
+      box.appendChild(wrap);
+    }
+
+    if (drawn === 0) {
+      var none = document.createElement('div');
+      none.className = 'empty-state';
+      none.textContent = 'Nothing refused yet.';
+      box.appendChild(none);
+    }
+
+    renderRefusalChip();
+  }
+
+  function renderRefusalChip() {
+    var chip = el('refusal-chip');
+    clear(chip);
+    if (!state.refusal) return;
+    chip.appendChild(tag('refusal: ' + state.refusal + '  (clear)', 'refusal active', pickRefusal(state.refusal)));
+  }
+
   function renderDaily(rows) {
     var box = el('days');
     clear(box);
@@ -299,6 +473,9 @@ export const PAGE_SCRIPT = `
     var parts = ['limit=' + state.limit, 'offset=' + state.offset];
     if (state.symbol) parts.push('symbol=' + encodeURIComponent(state.symbol));
     if (state.category) parts.push('category=' + encodeURIComponent(state.category));
+    if (state.enrichState) parts.push('state=' + encodeURIComponent(state.enrichState));
+    if (state.amount) parts.push('amount=' + encodeURIComponent(state.amount));
+    if (state.refusal) parts.push('refusal=' + encodeURIComponent(state.refusal));
     return 'api/filings?' + parts.join('&');
   }
 
@@ -311,6 +488,9 @@ export const PAGE_SCRIPT = `
     if (slow) {
       jobs.push(getJson('api/categories').then(function (b) { renderCategories(b.data); }));
       jobs.push(getJson('api/daily').then(function (b) { renderDaily(b.data); }));
+      // Seven grouped aggregations, so it rides the slow cycle rather than the
+      // four-second one. It is a shape, not a live number.
+      jobs.push(getJson('api/enrichment').then(function (b) { renderEnrichment(b.data); }));
     }
 
     return Promise.all(jobs).then(function () {
@@ -340,6 +520,8 @@ export const PAGE_SCRIPT = `
   function applyFilters() {
     state.symbol = el('symbol').value.trim();
     state.category = el('category').value;
+    state.enrichState = el('state').value;
+    state.amount = el('amount').value;
     state.limit = Number(el('limit').value) || DEFAULT_LIMIT;
     state.offset = 0;
     refresh(true);
@@ -350,10 +532,16 @@ export const PAGE_SCRIPT = `
     if (e.key === 'Enter') applyFilters();
   });
   el('category').addEventListener('change', applyFilters);
+  el('state').addEventListener('change', applyFilters);
+  el('amount').addEventListener('change', applyFilters);
   el('limit').addEventListener('change', applyFilters);
   el('clear').addEventListener('click', function () {
     el('symbol').value = '';
     el('category').value = '';
+    el('state').value = '';
+    el('amount').value = '';
+    state.refusal = '';
+    renderRefusalChip();
     applyFilters();
   });
   el('prev').addEventListener('click', function () {

@@ -139,4 +139,52 @@ tr.fresh td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 
 .empty-state { padding: 24px 14px; color: var(--muted); text-align: center; font-size: 13px; }
 footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
+
+/* --- the composed headline and everything behind it ----------------------- */
+
+/*
+ * The headline is the row's first line and the summary is demoted beneath it.
+ * That inversion is the whole change: the exchange's boilerplate is what the
+ * row used to lead with, and it is the thing that carries no information.
+ */
+.headline { font-weight: 600; line-height: 1.35; }
+.headline.enriched { color: var(--text); }
+/* A degraded headline is the exchange's own words, and it reads as such. */
+.headline.verbatim { color: var(--muted); font-weight: 500; }
+.context { font-size: 12px; color: var(--accent); margin-top: 2px; }
+.summary-line { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+td.amt { font-family: var(--mono); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+td.amt .value { font-weight: 600; }
+td.amt .party { display: block; font-size: 11px; color: var(--muted); white-space: normal; text-align: right; max-width: 190px; }
+
+/*
+ * A refusal is rendered as a first-class value, not as an empty cell. The
+ * extractor earns trust by explaining what it declined, and a blank here would
+ * be indistinguishable from a filing nobody has looked at.
+ */
+.tag {
+  display: inline-block; font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.04em; padding: 1px 6px; border-radius: 10px;
+  border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+}
+.tag.clickable { cursor: pointer; }
+.tag.clickable:hover { border-color: var(--accent); color: var(--accent); }
+.tag.state-enriched { color: var(--ok); border-color: rgba(63, 185, 80, 0.45); }
+.tag.state-pending { color: var(--warn); border-color: rgba(210, 153, 34, 0.45); }
+.tag.state-unparseable { color: var(--bad); border-color: rgba(248, 81, 73, 0.45); }
+.tag.state-failed { color: var(--bad); border-color: rgba(248, 81, 73, 0.45); }
+.tag.refusal { color: var(--warn); border-color: rgba(210, 153, 34, 0.35); }
+.tag.active { background: rgba(88, 166, 255, 0.18); border-color: var(--accent); color: var(--accent); }
+
+td.enr { white-space: nowrap; font-size: 12px; }
+.evidence {
+  display: block; font-family: var(--mono); font-size: 11px; color: var(--muted);
+  margin-top: 3px; white-space: normal; max-width: 210px; word-break: break-word;
+}
+
+.reasons { padding: 8px 14px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.reasons .tag { font-size: 11px; padding: 2px 8px; }
+.reasons .n { font-family: var(--mono); color: var(--text); margin-left: 5px; }
+.reason-group { padding: 4px 14px 0; color: var(--muted); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
 `;

@@ -9,7 +9,7 @@ import {
   MAX_LIMIT,
 } from './dashboard.controller';
 import type { FilingQueryService, RecentQuery } from './filing-query.service';
-import type { SummaryView } from './dashboard.types';
+import type { EnrichmentSummaryView, SummaryView } from './dashboard.types';
 
 const SUMMARY: SummaryView = {
   totalFilings: 1005,
@@ -20,6 +20,21 @@ const SUMMARY: SummaryView = {
   maxSeqId: 106_727_715,
   feedLagMs: 41_000,
   generatedAt: '2026-08-05T18:02:54.000Z',
+  generatedAtIst: '2026-08-05 23:32:54',
+};
+
+const ENRICHMENT_SUMMARY: EnrichmentSummaryView = {
+  total: 1005,
+  byState: [
+    { key: 'enriched', count: 800 },
+    { key: 'pending', count: 150 },
+    { key: 'unparseable', count: 55 },
+  ],
+  withAmount: 121,
+  byRefusal: [{ key: 'no-candidate', count: 500 }],
+  byUnparseable: [{ key: 'not-a-pdf', count: 40 }],
+  withCounterparty: 9,
+  withEnrichedHeadline: 121,
   generatedAtIst: '2026-08-05 23:32:54',
 };
 
@@ -64,6 +79,7 @@ beforeEach(() => {
       calls.days.push(days);
       return [];
     },
+    getEnrichmentSummary: async () => ENRICHMENT_SUMMARY,
   } as unknown as FilingQueryService;
 
   controller = new DashboardController(service);
@@ -76,6 +92,7 @@ describe('DashboardController — routes', () => {
     'getFilings',
     'getCategories',
     'getDaily',
+    'getEnrichment',
   ] as const;
 
   it.each(HANDLERS)('exposes %s as a GET, never a write verb', (name) => {
@@ -99,6 +116,7 @@ describe('DashboardController — routes', () => {
     expect(pathOf('getFilings')).toBe('api/filings');
     expect(pathOf('getCategories')).toBe('api/categories');
     expect(pathOf('getDaily')).toBe('api/daily');
+    expect(pathOf('getEnrichment')).toBe('api/enrichment');
   });
 });
 
@@ -220,5 +238,93 @@ describe('DashboardController — daily', () => {
     await expect(controller.getDaily({ days: 'NaN' })).rejects.toThrow(
       /finite number/,
     );
+  });
+});
+
+describe('DashboardController — enrichment filters', () => {
+  it.each([
+    ['state', 'enriched'],
+    ['state', 'pending'],
+    ['state', 'unparseable'],
+    ['state', 'failed'],
+    ['amount', 'extracted'],
+    ['amount', 'refused'],
+  ])('passes %s=%s through to the query layer', async (key, value) => {
+    await controller.getFilings({ [key]: value });
+
+    expect(calls.recent[0]).toMatchObject({ [key]: value });
+  });
+
+  it('passes a refusal reason through', async () => {
+    await controller.getFilings({ refusal: 'unit-scaled-header' });
+
+    expect(calls.recent[0].refusal).toBe('unit-scaled-header');
+  });
+
+  it.each([
+    ['state', 'ENRICHED'],
+    ['state', 'done'],
+    ['state', 'enrich'],
+    ['amount', 'yes'],
+    ['amount', 'extracted!'],
+  ])(
+    'rejects an unknown %s value "%s" rather than matching nothing',
+    async (key, value) => {
+      // A filter that silently matched nothing would be indistinguishable from
+      // "nothing was refused", on the one page whose job is showing refusals.
+      await expect(controller.getFilings({ [key]: value })).rejects.toThrow(
+        BadRequestException,
+      );
+    },
+  );
+
+  it('trims surrounding whitespace before checking the allowlist', async () => {
+    await controller.getFilings({ state: ' enriched ' });
+
+    expect(calls.recent[0].state).toBe('enriched');
+  });
+
+  it('names the accepted values when it rejects one', async () => {
+    await expect(controller.getFilings({ state: 'done' })).rejects.toThrow(
+      /enriched/,
+    );
+  });
+
+  it('rejects a repeated enrichment filter', async () => {
+    // Express parses `?state=a&state=b` into an array, which must never reach
+    // a Mongo filter as a value the caller chose.
+    await expect(
+      controller.getFilings({ state: ['enriched', 'pending'] }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a bracketed operator smuggled into a filter', async () => {
+    await expect(
+      controller.getFilings({ refusal: { $ne: null } }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('leaves every enrichment filter undefined when none is given', async () => {
+    await controller.getFilings({});
+
+    expect(calls.recent[0].state).toBeUndefined();
+    expect(calls.recent[0].amount).toBeUndefined();
+    expect(calls.recent[0].refusal).toBeUndefined();
+  });
+});
+
+describe('DashboardController — enrichment summary', () => {
+  it('returns the tally in a success envelope', async () => {
+    const body = await controller.getEnrichment();
+
+    expect(body.success).toBe(true);
+    expect(body.data).toBe(ENRICHMENT_SUMMARY);
+  });
+
+  it('carries the refusal breakdown, which is what makes refusals auditable', async () => {
+    const body = await controller.getEnrichment();
+
+    expect(body.data.byRefusal).toEqual([{ key: 'no-candidate', count: 500 }]);
+    expect(body.data.byUnparseable).toEqual([{ key: 'not-a-pdf', count: 40 }]);
   });
 });
