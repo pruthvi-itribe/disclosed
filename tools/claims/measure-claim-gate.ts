@@ -172,7 +172,12 @@ function probesFor(sentence: string, documentText: string): Probe[] {
       expect: 'accept',
     });
     const bumped = bumpFigure(figure);
-    if (bumped !== figure) {
+    // The bumped figure must not itself occur in the sentence, or the probe is
+    // asking the gate to refuse a number the document really states — which the
+    // gate is right to accept and which the probe would then score as a false
+    // accept. A single-digit figure in a sentence carrying its successor is the
+    // case that provokes it, and it was scoring 1 WRONG on every run.
+    if (bumped !== figure && !sentence.includes(bumped)) {
       probes.push({
         name: 'figure-digit-changed',
         claim: base(sentence, `the company reported a figure of ${bumped}`),
