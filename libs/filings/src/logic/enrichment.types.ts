@@ -1,5 +1,7 @@
 import type { AmountAnchor, AmountRefusalReason } from './amount-extraction';
+import type { CategoryGroup } from './category-group';
 import type { CoverageSkipReason } from './claim-eligibility';
+import type { OutcomeSource } from './filing-outcome';
 import type { CounterpartyRefusalReason } from './counterparty';
 import type { ParseRoute } from '../pdf/parse-route';
 import type {
@@ -173,6 +175,44 @@ export interface FilingEnrichment {
    */
   readonly coverageSkip: CoverageSkipReason | null;
 
+  // --- what the filing SAYS, which never depends on a model call -------------
+  /**
+   * One line saying what happened, composed from the exchange's own summary and
+   * category by `composeOutcome`. Never null on a record this build wrote.
+   *
+   * ================================================================
+   * MATERIALISED, AND THE DASHBOARD STILL DERIVES ITS OWN
+   * ================================================================
+   *
+   * `filing-query.service.ts` computes this on READ and will keep doing so —
+   * that is what let the whole existing collection gain an outcome the moment the
+   * viewer restarted, with no migration, and it is what keeps a filing the worker
+   * has never reached from rendering as a blank row.
+   *
+   * This copy exists for the question the derived one cannot answer: **how many
+   * filings have an outcome?** A field computed in the render path is invisible to
+   * `countDocuments`, so "every filing states an outcome" was a claim nobody could
+   * check against the database, and the coverage gap this whole change set exists
+   * to close was one that hid for weeks precisely because it was uncountable.
+   *
+   * The two cannot disagree. Both are `composeOutcome` over `symbol`, `category`
+   * and `summary` — three fields the poller writes once on the hot path and
+   * nothing ever updates — so the stored copy is a cache of a pure function over
+   * immutable input rather than a second source of truth.
+   *
+   * It is ALSO the backfill's resume marker: a record carrying an outcome was
+   * written by this build, and one that is not was not. See
+   * `tools/enrichment/backfill-enrichment.ts`.
+   */
+  readonly outcome: string | null;
+  /** Whether the outcome is the exchange's own sentence or merely its category. */
+  readonly outcomeSource: OutcomeSource | null;
+  /**
+   * NSE's 111 categories folded to the readable set, stored for the same reason
+   * the outcome is: so the distribution is a query rather than a render.
+   */
+  readonly categoryGroup: CategoryGroup | null;
+
   // --- the amount, or why there is none -------------------------------------
   /** Exact rupees. Null when refused or never attempted. */
   readonly amountRupees: number | null;
@@ -268,6 +308,9 @@ export const PENDING_ENRICHMENT: FilingEnrichment = {
   parseRoute: null,
   parseFallbackReason: null,
   coverageSkip: null,
+  outcome: null,
+  outcomeSource: null,
+  categoryGroup: null,
   amountRupees: null,
   amountEvidence: null,
   amountAnchor: null,

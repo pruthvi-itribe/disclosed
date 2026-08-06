@@ -3,7 +3,11 @@ import type { Filing } from '../filing.types';
 import type { FilingEnrichment } from '../logic/enrichment.types';
 
 export type FilingDocument = Filing &
-  Document & { enrichment?: FilingEnrichment };
+  Document & {
+    enrichment?: FilingEnrichment;
+    /** When a backfill sweep last re-read this filing. See below. */
+    backfilledAt?: Date | null;
+  };
 
 /**
  * What the background worker learned from a filing's attachment.
@@ -111,6 +115,12 @@ const EnrichmentSchema = new Schema<FilingEnrichment>(
     parseRoute: { type: String, default: null },
     parseFallbackReason: { type: String, default: null },
     coverageSkip: { type: String, default: null },
+    // What the filing SAYS, materialised from the exchange's own words so that
+    // "every filing states an outcome" is a `countDocuments` rather than a claim
+    // only the render path could support. See `enrichment.types.ts`.
+    outcome: { type: String, default: null },
+    outcomeSource: { type: String, default: null },
+    categoryGroup: { type: String, default: null },
     amountRupees: { type: Number, default: null },
     amountEvidence: { type: String, default: null },
     amountAnchor: { type: String, default: null },
@@ -168,6 +178,24 @@ export const FilingSchema = new Schema<FilingDocument>(
      * block to the same pending view. The worker is the only writer.
      */
     enrichment: { type: EnrichmentSchema, required: false },
+    /**
+     * When a backfill sweep last re-read this filing's document. Null on the
+     * ordinary path, which is every filing the poller has ever stored.
+     *
+     * OUTSIDE THE ENRICHMENT BLOCK, deliberately, and that is the whole reason
+     * it is a separate field rather than one more nullable column in there.
+     * `recordEnrichment` `$set`s the enrichment block WHOLE — that is what stops
+     * a filing carrying an amount from one attempt and a refusal from another —
+     * so a marker living inside it would be erased by the very write it is
+     * supposed to mark, and the sweep would restart from the beginning after
+     * every interruption.
+     *
+     * It is what makes `enrich:backfill` resumable and idempotent: the sweep
+     * claims filings this is null on, sets it in the same atomic write as the
+     * verdict, and therefore finds nothing on a second run. See
+     * `tools/enrichment/backfill-enrichment.ts`.
+     */
+    backfilledAt: { type: Date, default: null },
   },
   { collection: 'filings', versionKey: false },
 );

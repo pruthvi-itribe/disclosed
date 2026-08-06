@@ -2,9 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { describeError, stackOf } from '@app/common';
 import {
   basisReachFor,
+  categoryGroupFor,
   claimEligibility,
   classifyFetchFailure,
   composeClaimLine,
+  composeOutcome,
   composeResultsLine,
   decideAttachment,
   decideParseFailure,
@@ -681,6 +683,7 @@ export class EnrichmentWorker {
       parseRoute: routed.route,
       parseFallbackReason: routed.fallbackReason,
       coverageSkip: claims.skip,
+      ...outcomeFieldsFor(filing),
       amountRupees: verdict.amountRupees,
       amountEvidence: verdict.amountEvidence,
       amountAnchor: verdict.amountAnchor,
@@ -1101,7 +1104,7 @@ export class EnrichmentWorker {
           `next at ${disposition.nextAttemptAt.toISOString()}`,
       );
       await this.repository.recordEnrichment(filing.seqId, {
-        ...blankVerdict(attempts, parseAttempts, now),
+        ...blankVerdict(filing, attempts, parseAttempts, now),
         state: 'pending',
         nextAttemptAt: disposition.nextAttemptAt,
         lastError: describeParseRetry(reason, lastError),
@@ -1113,7 +1116,7 @@ export class EnrichmentWorker {
       `seqId ${filing.seqId} (${filing.symbol}) is unparseable: ${reason}`,
     );
     await this.repository.recordEnrichment(filing.seqId, {
-      ...blankVerdict(attempts, parseAttempts, now),
+      ...blankVerdict(filing, attempts, parseAttempts, now),
       state: 'unparseable',
       // `nextAttemptAt` stays null from `blankVerdict`: a terminal filing must
       // not carry a future attempt time, or a later reader will believe it is
@@ -1152,7 +1155,7 @@ export class EnrichmentWorker {
       // failure to read bytes, and spending the upload-race allowance on one
       // would put a filing back in exactly the hole `parse-retry.ts` exists to
       // fill.
-      ...blankVerdict(attempts, parseAttempts, now),
+      ...blankVerdict(filing, attempts, parseAttempts, now),
       state: exhausted ? 'failed' : 'pending',
       nextAttemptAt: exhausted ? null : new Date(now.getTime() + delayMs),
       lastError: message,
@@ -1207,6 +1210,31 @@ export class EnrichmentWorker {
  * nobody can check.
  */
 /**
+ * What the filing SAYS, on every write path without exception.
+ *
+ * DERIVED FROM FIELDS THE POLLER ALWAYS WROTE — `symbol`, `category` and
+ * `summary` — so it costs no fetch, no model call and no branch, and it is
+ * therefore present on a filing whose PDF is a raster scan, whose attachment URL
+ * is NSE's `"-"` sentinel and whose extractor returned a 429. Those three
+ * populations produced a completely blank row before the coverage work, and a
+ * blank row is what hid quarterly results for weeks.
+ *
+ * Spread into `blankVerdict` as well as into the enriched record, which is the
+ * whole point: the states that mean "this document could not be read" are
+ * exactly the ones that most need to still say what the filing was.
+ */
+const outcomeFieldsFor = (
+  filing: Filing,
+): Pick<FilingEnrichment, 'outcome' | 'outcomeSource' | 'categoryGroup'> => {
+  const outcome = composeOutcome(filing);
+  return {
+    outcome: outcome.text,
+    outcomeSource: outcome.source,
+    categoryGroup: categoryGroupFor(filing.category),
+  };
+};
+
+/**
  * An enrichment carrying no verdict: the counters, the clock, and eighteen
  * nulls.
  *
@@ -1217,6 +1245,7 @@ export class EnrichmentWorker {
  * one of them to forget a field and silently carry a stale value forward.
  */
 const blankVerdict = (
+  filing: Filing,
   attempts: number,
   parseAttempts: number,
   now: Date,
@@ -1232,6 +1261,7 @@ const blankVerdict = (
   parseRoute: null,
   parseFallbackReason: null,
   coverageSkip: null,
+  ...outcomeFieldsFor(filing),
   amountRupees: null,
   amountEvidence: null,
   amountAnchor: null,

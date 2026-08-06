@@ -1,3 +1,4 @@
+import { categoryGroupFor, composeOutcome } from '@app/filings';
 import type {
   AttachmentFetcher,
   AttachmentResult,
@@ -249,6 +250,79 @@ describe('EnrichmentWorker — the happy path', () => {
     const { worker } = harness({ queue, options: { batchSize: 4 } });
 
     expect((await worker.tick(NOW)).claimed).toBe(4);
+  });
+});
+
+/**
+ * The half of coverage that does not depend on a model, a network or a parser.
+ *
+ * `composeOutcome` runs off `symbol`, `category` and `summary`, which the poller
+ * writes for every filing on the two-second hot path — so the assertion that
+ * matters is not that an enriched filing carries an outcome, it is that a filing
+ * NOTHING could be read from carries one too. That population is 3.2% of the
+ * live collection and rendered as a completely blank row before this existed.
+ */
+describe('EnrichmentWorker — what the filing SAYS, on every write path', () => {
+  it('stores the outcome and the group beside a successful verdict', async () => {
+    const { worker, repository } = harness({});
+    await worker.tick(NOW);
+
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'enriched',
+      outcome: composeOutcome(filing()).text,
+      outcomeSource: composeOutcome(filing()).source,
+      categoryGroup: categoryGroupFor(filing().category),
+    });
+  });
+
+  it.each([
+    ['a URL that is not there', null],
+    ['a URL off the archive host', 'https://example.com/a.pdf'],
+  ])('stores them for an unparseable filing with %s', async (_l, url) => {
+    const { worker, repository } = harness({
+      queue: [
+        {
+          filing: filing({ attachmentUrl: url }),
+          attempts: 1,
+          parseAttempts: 0,
+        },
+      ],
+    });
+    await worker.tick(NOW);
+
+    const recorded = onlyRecorded(repository);
+    expect(recorded.state).toBe('unparseable');
+    expect(recorded.outcome).toBe(composeOutcome(filing()).text);
+    expect(recorded.categoryGroup).toBe(categoryGroupFor(filing().category));
+  });
+
+  it('stores them when a transient failure puts the filing back', async () => {
+    const { worker, repository } = harness({
+      fetch: { outcome: 'failed', status: 503, message: 'service unavailable' },
+    });
+    await worker.tick(NOW);
+
+    const recorded = onlyRecorded(repository);
+    expect(recorded.state).toBe('pending');
+    expect(recorded.outcome).toBe(composeOutcome(filing()).text);
+  });
+
+  it('agrees with what the dashboard derives on read', async () => {
+    // The stored copy is a cache of a pure function over immutable input. If the
+    // two can disagree, one of them is wrong and nobody can tell which.
+    const one = filing({
+      symbol: 'ACME',
+      category: 'Credit Rating',
+      summary: 'Acme Ltd has informed the Exchange about Credit Rating',
+    });
+    const { worker, repository } = harness({
+      queue: [{ filing: one, attempts: 1, parseAttempts: 0 }],
+    });
+    await worker.tick(NOW);
+
+    const derived = composeOutcome(one);
+    expect(onlyRecorded(repository).outcome).toBe(derived.text);
+    expect(onlyRecorded(repository).outcomeSource).toBe('category');
   });
 });
 
