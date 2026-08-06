@@ -49,7 +49,6 @@ import {
   FilingSchema,
   isLegallyBlocked,
   isRoutine,
-  MAX_DOCUMENT_CHARS,
   MIN_CLAIM_DOCUMENT_CHARS,
   verifyClaims,
   type ClaimExtractor,
@@ -128,7 +127,11 @@ const extractorsFor = (
       (config.claimProvider === provider
         ? config.claimModel
         : DEFAULT_CLAIM_MODEL[provider]);
-    const options = { model, effort: config.claimEffort };
+    const options = {
+      model,
+      effort: config.claimEffort,
+      maxDocumentChars: readCount('doc-chars', config.claimMaxDocumentChars),
+    };
     const extractor =
       provider === 'openrouter'
         ? OpenRouterClaimExtractor.fromApiKey(apiKey, options)
@@ -143,30 +146,35 @@ const extractorsFor = (
  * first, then the document itself. Fetches are paced at the configured delay
  * against NSE's archive host, which is the reason this is the slow part of a run
  * and not the model calls.
+ *
+ * WITH `--seq-ids` THE SAMPLE IS PINNED, and that is what makes two runs
+ * comparable. Without it the sample is "the newest eligible filings", which is a
+ * different set every time the poller finds something — so a before/after would
+ * be measuring the news rather than the change. The stored-field gates still run
+ * on a pinned filing, because a run that quietly re-admitted a filing production
+ * would never send is not measuring production.
  */
 async function storedSample(
   config: ReturnType<typeof loadConfig>,
   wanted: number,
+  pinned: readonly number[],
 ): Promise<Document[]> {
-  if (wanted === 0) return [];
+  if (wanted === 0 && pinned.length === 0) return [];
 
   const documents: Document[] = [];
   await mongoose.connect(config.mongoUri);
   try {
     const model = mongoose.model<FilingDocument>('Filing', FilingSchema);
     const rows = (await model
-      .find(
-        {},
-        {
-          _id: 0,
-          seqId: 1,
-          symbol: 1,
-          category: 1,
-          summary: 1,
-          attachmentUrl: 1,
-          'enrichment.documentChars': 1,
-        },
-      )
+      .find(pinned.length > 0 ? { seqId: { $in: [...pinned] } } : {}, {
+        _id: 0,
+        seqId: 1,
+        symbol: 1,
+        category: 1,
+        summary: 1,
+        attachmentUrl: 1,
+        'enrichment.documentChars': 1,
+      })
       .sort({ seqId: -1 })
       .lean()
       .exec()) as unknown as {
@@ -182,7 +190,7 @@ async function storedSample(
     const seen = new Set(CORPUS.map((filing) => filing.seqId));
 
     for (const row of rows) {
-      if (documents.length >= wanted) break;
+      if (pinned.length === 0 && documents.length >= wanted) break;
       if (seen.has(row.seqId) || row.attachmentUrl === null) continue;
       if (isRoutine(row.category)) continue;
       if (!CLAIM_BEARING_CATEGORIES.has(row.category.trim().toLowerCase())) {
@@ -219,9 +227,23 @@ async function storedSample(
   return documents;
 }
 
+/** `--seq-ids 1,2,3`, or an empty list when the flag is absent. */
+const readSeqIds = (): readonly number[] => {
+  const raw = readFlag('seq-ids');
+  if (raw === null) return [];
+  return raw.split(',').map((part) => {
+    const value = Number(part.trim());
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`--seq-ids must be whole numbers, but had "${part}".`);
+    }
+    return value;
+  });
+};
+
 async function main(): Promise<void> {
   const config = loadConfig();
   const sampleSize = readCount('sample', 8);
+  const pinned = readSeqIds();
   const outPath = resolve(readFlag('out') ?? DEFAULT_OUT);
 
   const providers = extractorsFor(config);
@@ -250,7 +272,10 @@ async function main(): Promise<void> {
 
   line('');
   line('Collecting documents...');
-  const documents = [...CORPUS, ...(await storedSample(config, sampleSize))];
+  const documents = [
+    ...CORPUS,
+    ...(await storedSample(config, sampleSize, pinned)),
+  ];
 
   // Eligibility runs ONCE, before any provider is called, exactly as it does in
   // the worker — so both providers see the identical set and neither is charged
@@ -263,8 +288,9 @@ async function main(): Promise<void> {
     else ineligible.push({ symbol: document.symbol, reason: verdict.reason });
   }
 
+  const documentCap = readCount('doc-chars', config.claimMaxDocumentChars);
   const promptChars = eligible.reduce(
-    (sum, document) => sum + Math.min(document.text.length, MAX_DOCUMENT_CHARS),
+    (sum, document) => sum + Math.min(document.text.length, documentCap),
     0,
   );
   line('');

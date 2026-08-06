@@ -74,22 +74,73 @@ describe('AttachmentFetcher — the size cap', () => {
       });
 
     const result = await new AttachmentFetcher(cap).fetch(URL);
-    expect(result.outcome).toBe('oversized');
-    if (result.outcome !== 'oversized') return;
-    // Null is the honest answer: axios aborts the stream, so there is no
-    // response left to read a length from. What matters is that the verdict is
-    // `oversized` and therefore terminal, not `failed` and therefore retried.
-    expect(result.bytes === null || result.bytes === cap * 4).toBe(true);
+    // THE SIZE IS NEVER UNKNOWN ANY MORE. All 8 filings the old 25 MB cap
+    // refused recorded `bytes: null`, because aborting an `arraybuffer`
+    // request destroys the response the length would have come from — so the
+    // collection could not say whether a refusal had missed by a kilobyte or
+    // by a gigabyte. It had missed by 4%.
+    expect(result).toEqual({
+      outcome: 'oversized',
+      bytes: cap * 4,
+      advertised: true,
+    });
   });
 
   it('refuses a body that outgrows the cap without advertising a length', async () => {
+    // A transport rather than nock, because nock computes a `content-length`
+    // for every fixture and there is then no way to exercise the case NSE's
+    // chunked responses actually present.
+    const cap = 64;
+    const unannounced = {
+      get: async () => ({
+        status: 200,
+        headers: {},
+        data: {
+          async *[Symbol.asyncIterator]() {
+            for (let index = 0; index < 8; index += 1) {
+              yield Buffer.alloc(cap, 0x41);
+            }
+          },
+        },
+      }),
+    } as unknown as import('axios').AxiosInstance;
+
+    const result = await new AttachmentFetcher(cap, unannounced).fetch(URL);
+    expect(result.outcome).toBe('oversized');
+    if (result.outcome !== 'oversized') return;
+    // Counted rather than advertised, and flagged as such: what is known is
+    // how much arrived before the transfer was cut, which is a lower bound.
+    expect(result.advertised).toBe(false);
+    expect(result.bytes).toBeGreaterThan(cap);
+  });
+
+  it('refuses a lying content-length by counting what actually arrives', async () => {
+    // A header is a claim by somebody else's server. The counter is the
+    // authority, and it is the reason a response that under-reports its own
+    // size cannot walk past the cap.
     const cap = 64;
     nock(HOST)
       .get(PATH)
-      .reply(200, Buffer.alloc(cap * 4, 0x41));
+      .reply(200, Buffer.alloc(cap * 4, 0x41), { 'content-length': '10' });
 
     const result = await new AttachmentFetcher(cap).fetch(URL);
     expect(result.outcome).toBe('oversized');
+  });
+
+  it('reads the whole of a body that fits, in order', async () => {
+    // The chunks are concatenated once rather than appended, and a bug there
+    // would be invisible to a single-chunk fixture.
+    const body = Buffer.concat([
+      Buffer.alloc(2048, 0x41),
+      Buffer.alloc(2048, 0x42),
+    ]);
+    nock(HOST).get(PATH).reply(200, body);
+
+    const result = await new AttachmentFetcher(1 << 20).fetch(URL);
+    expect(result.outcome).toBe('ok');
+    if (result.outcome !== 'ok') return;
+    expect(result.bytes).toBe(4096);
+    expect(result.body.equals(body)).toBe(true);
   });
 
   it('accepts a body exactly at the cap', async () => {
@@ -100,10 +151,15 @@ describe('AttachmentFetcher — the size cap', () => {
     expect(result.outcome).toBe('ok');
   });
 
-  it('caps above the largest attachment NSE has been observed to publish', () => {
-    // 22.2 MB was the largest in the sampled month. The cap must clear it, or
-    // the worker refuses real documents.
-    expect(MAX_ATTACHMENT_BYTES).toBeGreaterThan(22.2 * 1024 * 1024);
+  it('clears every attachment NSE has been observed to publish', () => {
+    // 41.52 MB is the largest measured on the live collection — SALSTEEL's
+    // newspaper scan, one of the 8 the old 25 MB cap refused. A cap under it
+    // refuses a real document; this one is a denial-of-service bound and is
+    // meant to sit well clear of the distribution rather than inside it.
+    expect(MAX_ATTACHMENT_BYTES).toBeGreaterThan(41.52 * 1024 * 1024);
+    // And it is still a bound. An unbounded download is a denial of service on
+    // this pipeline's own worker.
+    expect(MAX_ATTACHMENT_BYTES).toBeLessThanOrEqual(128 * 1024 * 1024);
   });
 });
 
@@ -179,20 +235,100 @@ describe('AttachmentFetcher — the shipped defaults', () => {
     });
   });
 
-  it('measures the buffer as well as the header', async () => {
-    // Belt and braces: a transport that hands back more bytes than it
-    // advertised must still be refused rather than parsed.
-    const oversizedTransport = {
+  it('refuses a body it cannot read as a stream rather than guessing', async () => {
+    // A transport that answers with something this cannot iterate has changed
+    // contract underneath us. Reading it as bytes anyway is how an empty
+    // document becomes a filing recorded unreadable rather than a bug.
+    const notAStream = {
       get: async () => ({
+        status: 200,
         data: Buffer.alloc(4096, 0x41),
         headers: { 'content-type': 'application/pdf' },
       }),
     } as unknown as import('axios').AxiosInstance;
 
-    const result = await new AttachmentFetcher(64, oversizedTransport).fetch(
-      URL,
-    );
-    expect(result).toEqual({ outcome: 'oversized', bytes: 4096 });
+    const result = await new AttachmentFetcher(1 << 20, notAStream).fetch(URL);
+    expect(result).toEqual({
+      outcome: 'failed',
+      status: 200,
+      message: 'the response body was not a readable stream',
+    });
+  });
+
+  it('refuses on the advertised length without reading the body', async () => {
+    // The cheap refusal: a truthful header means the whole document goes
+    // unread, which is the difference between refusing a 400 MB response and
+    // downloading one to find out how big it is.
+    let destroyed = false;
+    let read = false;
+    const huge = {
+      get: async () => ({
+        status: 200,
+        headers: { 'content-length': String(1 << 30) },
+        data: {
+          destroy: () => {
+            destroyed = true;
+          },
+          async *[Symbol.asyncIterator]() {
+            read = true;
+            yield Buffer.alloc(1);
+          },
+        },
+      }),
+    } as unknown as import('axios').AxiosInstance;
+
+    const result = await new AttachmentFetcher(1 << 20, huge).fetch(URL);
+    expect(result).toEqual({
+      outcome: 'oversized',
+      bytes: 1 << 30,
+      advertised: true,
+    });
+    expect(read).toBe(false);
+    expect(destroyed).toBe(true);
+  });
+
+  it('destroys the stream it cuts off rather than draining it', async () => {
+    // A socket left receiving a document nobody will read is the same denial
+    // of service the cap exists to prevent, merely quieter.
+    let destroyed = false;
+    const endless = {
+      get: async () => ({
+        status: 200,
+        headers: {},
+        data: {
+          destroy: () => {
+            destroyed = true;
+          },
+          async *[Symbol.asyncIterator]() {
+            for (;;) yield Buffer.alloc(512, 0x41);
+          },
+        },
+      }),
+    } as unknown as import('axios').AxiosInstance;
+
+    const result = await new AttachmentFetcher(1024, endless).fetch(URL);
+    expect(result.outcome).toBe('oversized');
+    expect(destroyed).toBe(true);
+  });
+
+  it('reads a Uint8Array chunk as readily as a Buffer', async () => {
+    const chunky = {
+      get: async () => ({
+        status: 200,
+        headers: {},
+        data: {
+          async *[Symbol.asyncIterator]() {
+            yield new Uint8Array([0x25, 0x50]);
+            yield new Uint8Array([0x44, 0x46]);
+          },
+        },
+      }),
+    } as unknown as import('axios').AxiosInstance;
+
+    const result = await new AttachmentFetcher(1024, chunky).fetch(URL);
+    expect(result.outcome).toBe('ok');
+    if (result.outcome !== 'ok') return;
+    expect(result.body.toString('latin1')).toBe('%PDF');
   });
 });
 
@@ -220,7 +356,11 @@ describe('AttachmentFetcher — how axios reports an oversized body', () => {
       }),
     ).fetch(URL);
 
-    expect(result).toEqual({ outcome: 'oversized', bytes: 30_000_000 });
+    expect(result).toEqual({
+      outcome: 'oversized',
+      bytes: 30_000_000,
+      advertised: true,
+    });
   });
 
   it('recognises the current generic code by its message', async () => {
@@ -232,7 +372,11 @@ describe('AttachmentFetcher — how axios reports an oversized body', () => {
       }),
     ).fetch(URL);
 
-    expect(result).toEqual({ outcome: 'oversized', bytes: null });
+    expect(result).toEqual({
+      outcome: 'oversized',
+      bytes: null,
+      advertised: false,
+    });
   });
 
   it('reports a null size when the advertised length is not a number', async () => {
@@ -245,7 +389,11 @@ describe('AttachmentFetcher — how axios reports an oversized body', () => {
       }),
     ).fetch(URL);
 
-    expect(result).toEqual({ outcome: 'oversized', bytes: null });
+    expect(result).toEqual({
+      outcome: 'oversized',
+      bytes: null,
+      advertised: false,
+    });
   });
 
   it('does not mistake an ordinary failure for an oversized one', async () => {

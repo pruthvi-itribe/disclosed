@@ -16,15 +16,51 @@
  *      and must not pay for that.
  */
 
+/**
+ * Pages beyond which a document is read no further.
+ *
+ * THE BUDGET THE BYTE CAP WAS PRETENDING TO BE. `attachment.fetcher.ts` used to
+ * justify a 25 MB download cap as a throughput control; measured against eleven
+ * real documents, that was false. The four documents the cap refused — 26.1,
+ * 27.7, 27.9 and 41.5 MB — parsed in 0.304, 1.400, 0.195 and 0.185 seconds,
+ * because they are image scans and image scans carry almost no text to extract.
+ * The document that actually cost 39.690 seconds and 501 MB of resident memory
+ * was NHPC's 640-page annual report at 19.6 MB, which passed the byte cap
+ * comfortably. Bytes do not predict parse cost; pages of extractable text do.
+ *
+ * 400 is a BOUND on the pathological case rather than a trim on the ordinary
+ * one. The largest page count among the ten non-pathological documents measured
+ * was 143 (Swiggy's Capital Markets Day deck, 0.195 s), so 400 leaves every one
+ * of them untouched with 2.8x of headroom, and caps the 640-page case at about
+ * five eighths of a cost that blocks this process for forty seconds.
+ *
+ * FORTY SECONDS IS NOT A FIGURE OF SPEECH. `pdf-parse` is CPU work inside
+ * pdf.js with no `await` for the event loop to escape through: an interval timer
+ * armed at 100 ms recorded ZERO ticks across the whole of that parse. There is
+ * no timeout that can interrupt it, which is why the bound has to be applied
+ * before the work starts.
+ */
+export const MAX_PDF_PAGES = 400;
+
 /** The one call this module makes into the parser. */
 export type PdfParser = (
   data: Buffer,
+  options?: { readonly max?: number },
 ) => Promise<{ readonly text: string; readonly numpages: number }>;
 
 export interface PdfTextOk {
   readonly outcome: 'ok';
   readonly text: string;
+  /** Pages the document has, whether or not all of them were read. */
   readonly pages: number;
+  /**
+   * True when the page budget stopped the read before the last page.
+   *
+   * Reported rather than silent: a truncated read is a document this pipeline
+   * holds only part of, and a downstream refusal to find an amount in it means
+   * something different from the same refusal on a complete one.
+   */
+  readonly truncated: boolean;
 }
 
 export interface PdfTextUnreadable {
@@ -73,13 +109,14 @@ export function defaultPdfParser(): PdfParser {
 export async function extractPdfText(
   data: Buffer,
   parser: PdfParser = defaultPdfParser(),
+  maxPages: number = MAX_PDF_PAGES,
 ): Promise<PdfTextResult> {
   if (data.length === 0) {
     return { outcome: 'unreadable', message: 'the response body was empty' };
   }
 
   try {
-    const parsed = await parser(data);
+    const parsed = await parser(data, { max: maxPages });
     // A parser that resolves with a non-string `text` has changed contract
     // underneath us; treating that as readable would push `undefined` into the
     // extractor and refuse every filing with `no-candidate` while looking
@@ -90,10 +127,17 @@ export async function extractPdfText(
         message: 'the parser resolved without text',
       };
     }
+    // `numpages` is the document's OWN page count, not the number read, so it
+    // is what says whether the budget bit. A parser that reports a non-integer
+    // has changed contract; 0 pages then reports `truncated: false`, which is
+    // the safe direction — claiming a complete read we did not make would be
+    // worse than under-reporting a truncation.
+    const pages = Number.isInteger(parsed.numpages) ? parsed.numpages : 0;
     return {
       outcome: 'ok',
       text: parsed.text,
-      pages: Number.isInteger(parsed.numpages) ? parsed.numpages : 0,
+      pages,
+      truncated: maxPages > 0 && pages > maxPages,
     };
   } catch (error) {
     return {

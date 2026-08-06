@@ -40,6 +40,7 @@ export interface ClaimExtractorConfig {
   readonly openrouterApiKey: string;
   readonly claimModel: string;
   readonly claimEffort: ClaimEffort;
+  readonly claimMaxDocumentChars: number;
 }
 
 export function buildClaimExtractor(
@@ -47,7 +48,11 @@ export function buildClaimExtractor(
 ): ClaimExtractor | null {
   if (!config.claimsEnabled) return null;
 
-  const options = { model: config.claimModel, effort: config.claimEffort };
+  const options = {
+    model: config.claimModel,
+    effort: config.claimEffort,
+    maxDocumentChars: config.claimMaxDocumentChars,
+  };
   const apiKey = claimApiKeyOf(config);
 
   // An exhaustive switch rather than a lookup, so adding a provider without

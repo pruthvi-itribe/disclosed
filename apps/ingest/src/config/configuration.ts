@@ -80,6 +80,8 @@ export interface IngestConfig {
   /** Thinking depth and token spend. See `claim-provider.ts`. */
   readonly claimEffort: ClaimEffort;
   readonly claimMaxClaims: number;
+  /** How much of a document reaches the model. See `MAX_DOCUMENT_CHARS`. */
+  readonly claimMaxDocumentChars: number;
 }
 
 /**
@@ -120,6 +122,7 @@ export const NUMERIC_KEYS = [
   'ENRICH_MAX_BYTES',
   'CONTEXT_WINDOW_DAYS',
   'CLAIM_MAX_CLAIMS',
+  'CLAIM_MAX_DOCUMENT_CHARS',
 ] as const;
 
 export type NumericKey = (typeof NUMERIC_KEYS)[number];
@@ -174,12 +177,24 @@ export const CONFIG_DEFAULTS = {
   // cannot take a document still being fetched, short enough that a crashed
   // worker's claims free up within a couple of minutes.
   ENRICH_LEASE_MS: 120_000,
-  // Clears the largest attachment observed in the recorded month (22.2 MB).
-  ENRICH_MAX_BYTES: 26_214_400,
+  // A denial-of-service bound, not a throughput one. The previous 26 MB was set
+  // from a corpus whose largest attachment was 22.2 MB and then refused 8 live
+  // filings whose true sizes are 25.05 to 41.52 MB — five of the six distinct
+  // documents by 4-12%, which is a cap sitting inside the distribution rather
+  // than beyond it. Parse cost is bounded separately by `MAX_PDF_PAGES`,
+  // because bytes were measured not to predict it: the 41.5 MB document parses
+  // in 0.185 s and the 39.7-second one is 19.6 MB.
+  ENRICH_MAX_BYTES: 67_108_864,
   CONTEXT_WINDOW_DAYS: 30,
   // Three claims is what the wire format carries before a line stops being
   // readable at a glance, and each extra one is another chance to be wrong.
   CLAIM_MAX_CLAIMS: 3,
+  // Raised from 24,000 after measuring what the extra characters buy. The old
+  // value was set against a model context that no longer binds — the configured
+  // model carries 1,048,576 tokens — and 24,000 characters cut every investor
+  // presentation off before its guidance slide. See the sweep in
+  // `gate-and-attachments-report.md`.
+  CLAIM_MAX_DOCUMENT_CHARS: 96_000,
 } as const;
 
 /**
@@ -432,6 +447,7 @@ export const loadConfig = (
       DEFAULT_CLAIM_EFFORT,
     ),
     claimMaxClaims: readNumeric('CLAIM_MAX_CLAIMS', env),
+    claimMaxDocumentChars: readNumeric('CLAIM_MAX_DOCUMENT_CHARS', env),
   };
 };
 

@@ -125,6 +125,8 @@ export interface ClaimRequestInput {
   readonly category: string;
   readonly summary: string;
   readonly documentText: string;
+  /** Overrides `MAX_DOCUMENT_CHARS`. Zero and negative values are ignored. */
+  readonly maxDocumentChars?: number;
 }
 
 /**
@@ -137,8 +139,15 @@ export interface ClaimRequestInput {
  * so they are labelled as such rather than presented as instructions.
  */
 export function buildClaimRequest(input: ClaimRequestInput): string {
-  const document = input.documentText.slice(0, MAX_DOCUMENT_CHARS);
-  const truncated = input.documentText.length > MAX_DOCUMENT_CHARS;
+  // A zero or negative override is ignored rather than obeyed. Obeying it would
+  // send an empty `<document>` and record "the model found nothing" on every
+  // eligible filing — a misconfiguration that looks exactly like a quiet market.
+  const cap =
+    input.maxDocumentChars !== undefined && input.maxDocumentChars > 0
+      ? input.maxDocumentChars
+      : MAX_DOCUMENT_CHARS;
+  const document = input.documentText.slice(0, cap);
+  const truncated = input.documentText.length > cap;
 
   return [
     `Symbol: ${input.symbol}`,
@@ -146,7 +155,7 @@ export function buildClaimRequest(input: ClaimRequestInput): string {
     `Exchange summary: ${input.summary}`,
     '',
     truncated
-      ? `Document text (first ${MAX_DOCUMENT_CHARS} characters of ${input.documentText.length}):`
+      ? `Document text (first ${cap} characters of ${input.documentText.length}):`
       : 'Document text:',
     '<document>',
     document,

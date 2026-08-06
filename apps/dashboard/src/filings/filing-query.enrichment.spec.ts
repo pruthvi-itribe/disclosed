@@ -108,6 +108,7 @@ describe('the enrichment view on a filing row', () => {
       attemptedAtIst: null,
       unparseableReason: null,
       lastError: null,
+      documentSource: null,
       amountRupees: null,
       amountDisplay: null,
       amountEvidence: null,

@@ -191,7 +191,13 @@ export class OpenRouterClaimExtractor implements ClaimExtractor {
         temperature: 0,
         messages: [
           { role: 'system', content: CLAIM_SYSTEM_PROMPT },
-          { role: 'user', content: buildClaimRequest(request) },
+          {
+            role: 'user',
+            content: buildClaimRequest({
+              ...request,
+              maxDocumentChars: this.options.maxDocumentChars,
+            }),
+          },
         ],
         response_format: {
           type: 'json_schema',

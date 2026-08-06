@@ -28,9 +28,23 @@ export const TRUSTED_ATTACHMENT_HOSTS: readonly string[] = [
 /** NSE's own sentinel for "no attachment". Not null, and not a URL. */
 export const NO_ATTACHMENT_SENTINEL = '-';
 
+/**
+ * What the bytes at the far end are expected to be.
+ *
+ * The URL's extension is the only evidence available before the fetch, and it
+ * decides which reader is used — not whether the bytes are trusted. A `.zip`
+ * that turns out not to be one fails inside `extractZipText` and is recorded
+ * `not-a-pdf`, exactly as a `.pdf` that is really an HTML error page does.
+ */
+export type AttachmentKind = 'pdf' | 'zip';
+
 export type AttachmentDecision =
   /** Safe to fetch. `url` is the parsed, normalised absolute URL. */
-  | { readonly outcome: 'fetch'; readonly url: string }
+  | {
+      readonly outcome: 'fetch';
+      readonly url: string;
+      readonly kind: AttachmentKind;
+    }
   /** Never fetchable. The reason is terminal and machine-readable. */
   | { readonly outcome: 'skip'; readonly reason: UnparseableReason };
 
@@ -89,11 +103,23 @@ export function decideAttachment(
   if (!isTrustedAttachmentHost(parsed.hostname)) return skip('untrusted-host');
 
   const extension = extensionOf(parsed.pathname);
-  if (extension === 'pdf') return { outcome: 'fetch', url: parsed.toString() };
+  if (extension === 'pdf') {
+    return { outcome: 'fetch', url: parsed.toString(), kind: 'pdf' };
+  }
 
-  // Everything else — zip, xlsx, xml, or no extension at all — is terminal.
-  // Fail CLOSED: an unknown extension is refused rather than fetched and handed
-  // to a PDF parser, because the parser's failure mode for a non-PDF is an
+  // ZIP IS NOW FETCHED, and it is the second-largest thing this pipeline was
+  // missing. 249 of 17,442 filings carry one and three whole categories are
+  // 100% ZIP — `Resignation of Director/KMP/SMP` alone is 213 filings a month.
+  // Refusing them was never a judgement about the filings; it was never opening
+  // the envelope. The archive is treated as hostile input throughout: see
+  // `zip-entries.ts` for every bound and the measurements behind them.
+  if (extension === 'zip') {
+    return { outcome: 'fetch', url: parsed.toString(), kind: 'zip' };
+  }
+
+  // Everything else — xlsx, xml, or no extension at all — is terminal. Fail
+  // CLOSED: an unknown extension is refused rather than fetched and handed to a
+  // parser, because a parser's failure mode for the wrong format is an
   // exception that looks exactly like a transient one.
   return skip('not-a-pdf');
 }

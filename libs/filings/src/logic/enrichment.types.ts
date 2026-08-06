@@ -115,6 +115,21 @@ export interface FilingEnrichment {
 
   /** Characters of text the attachment yielded. Null when never parsed. */
   readonly documentChars: number | null;
+  /**
+   * Where the text came from, when it was not simply one PDF.
+   *
+   * Null for the ordinary case. For a ZIP it names every PDF entry that was
+   * taken, its character count, and the entries that were ignored — because a
+   * filing whose text is the concatenation of three documents is a different
+   * object from one whose text is a document, and a reviewer reading a span
+   * needs to know which file it came out of.
+   *
+   * A BOUNDED STRING rather than a sub-document array, deliberately. It is read
+   * by a person and never queried; a nested schema would buy filtering nobody
+   * has asked for and cost a migration on a collection this project rewrites
+   * whole enrichment blocks into.
+   */
+  readonly documentSource: string | null;
 
   // --- the amount, or why there is none -------------------------------------
   /** Exact rupees. Null when refused or never attempted. */
@@ -169,6 +184,7 @@ export const PENDING_ENRICHMENT: FilingEnrichment = {
   unparseableReason: null,
   lastError: null,
   documentChars: null,
+  documentSource: null,
   amountRupees: null,
   amountEvidence: null,
   amountAnchor: null,

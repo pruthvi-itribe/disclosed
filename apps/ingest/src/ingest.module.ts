@@ -20,6 +20,10 @@ import {
   type ClaimProvider,
 } from './config/configuration';
 import { EnrichmentWorker } from './enrichment/enrichment.worker';
+// NOT from the barrel, deliberately: this module require()s yauzl at first use
+// and the read-only dashboard imports the barrel for the mongoose schema alone.
+// The same reasoning as `pdf-text.ts`'s lazy require and the claim adapters'.
+import { yauzlReader } from '@app/filings/pdf/yauzl-reader';
 import { FilingContextService } from './enrichment/filing-context.service';
 import { CircuitBreaker } from './poller/circuit-breaker';
 import { PollerService } from './poller/poller.service';
@@ -144,6 +148,9 @@ export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
           openrouterApiKey: config.getOrThrow<string>('openrouterApiKey'),
           claimModel: config.getOrThrow<string>('claimModel'),
           claimEffort: config.getOrThrow<ClaimEffort>('claimEffort'),
+          claimMaxDocumentChars: config.getOrThrow<number>(
+            'claimMaxDocumentChars',
+          ),
         }),
     },
     {
@@ -194,6 +201,11 @@ export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
           },
           undefined,
           claimExtractor,
+          // Built here rather than defaulted inside the worker, for the same
+          // reason `pdfParser` is injected: a suite must be able to construct
+          // the worker without pulling a decompressor into a process that
+          // never opens an archive.
+          yauzlReader(),
         ),
     },
     {

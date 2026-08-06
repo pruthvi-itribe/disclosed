@@ -514,6 +514,7 @@ function toEnrichmentView(
         : istTimestamp(enrichment.attemptedAt),
     unparseableReason: enrichment?.unparseableReason ?? null,
     lastError: enrichment?.lastError ?? null,
+    documentSource: enrichment?.documentSource ?? null,
     amountRupees,
     amountDisplay: amountRupees === null ? null : formatRupees(amountRupees),
     amountEvidence: enrichment?.amountEvidence ?? null,

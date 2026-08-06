@@ -157,3 +157,44 @@ describe('parseClaimResponse', () => {
     ).toHaveLength(1);
   });
 });
+
+describe('buildClaimRequest — the document cap is configurable', () => {
+  const input = {
+    symbol: 'ANUP',
+    category: 'Investor Presentation',
+    summary: 'Investor Presentation',
+    documentText: 'x'.repeat(50_000),
+  };
+
+  it('uses MAX_DOCUMENT_CHARS when no override is given', () => {
+    expect(buildClaimRequest(input)).toContain(
+      `first ${MAX_DOCUMENT_CHARS} characters of 50000`,
+    );
+  });
+
+  it('honours a larger override', () => {
+    // The cap was set against a model context that no longer binds, so the
+    // operator can move it without a deploy and measure what it buys.
+    expect(
+      buildClaimRequest({ ...input, maxDocumentChars: 96_000 }),
+    ).not.toContain('first ');
+  });
+
+  it('honours a smaller override', () => {
+    expect(buildClaimRequest({ ...input, maxDocumentChars: 100 })).toContain(
+      'first 100 characters of 50000',
+    );
+  });
+
+  it.each([
+    ['zero', 0],
+    ['a negative', -1],
+  ])('IGNORES %s override rather than obeying it', (_label, cap) => {
+    // Obeying it would send an empty <document> and record "the model found
+    // nothing" on every eligible filing — a misconfiguration that looks
+    // exactly like a quiet market.
+    const built = buildClaimRequest({ ...input, maxDocumentChars: cap });
+    expect(built).toContain(`first ${MAX_DOCUMENT_CHARS} characters`);
+    expect(built).toContain('x'.repeat(1000));
+  });
+});

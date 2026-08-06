@@ -9,13 +9,17 @@ import type {
   Filing,
   FilingEnrichment,
   PdfParser,
+  ZipReader,
+  ZipTextOk,
 } from '@app/filings';
 import type { TelegramService } from '@app/notify';
 import type { FilingContextService } from './filing-context.service';
 import {
   describeTick,
+  describeZipSource,
   EnrichmentWorker,
   HEARTBEAT_MS,
+  MAX_DOCUMENT_SOURCE_CHARS,
   type EnrichmentOptions,
 } from './enrichment.worker';
 
@@ -160,6 +164,7 @@ function harness(overrides: {
   text?: string;
   options?: Partial<EnrichmentOptions>;
   contextLine?: string | null;
+  zipReader?: ZipReader | null;
 }): Harness {
   const repository = new StubRepository(
     overrides.queue ?? [{ filing: filing(), attempts: 1, parseAttempts: 0 }],
@@ -175,6 +180,8 @@ function harness(overrides: {
     telegram as unknown as TelegramService,
     { ...OPTIONS, ...overrides.options },
     parserOf(overrides.text ?? ORDER_DOCUMENT),
+    null,
+    overrides.zipReader ?? null,
   );
 
   return { worker, repository, fetcher, telegram, context };
@@ -367,11 +374,6 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
     ['no attachment at all', null, 'no-attachment'],
     ["NSE's dash sentinel", '-', 'no-attachment'],
     [
-      'a ZIP attachment',
-      'https://nsearchives.nseindia.com/corporate/resignation.zip',
-      'not-a-pdf',
-    ],
-    [
       'a URL off the archive host',
       'https://example.com/a.pdf',
       'untrusted-host',
@@ -471,17 +473,39 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
     expect(onlyRecorded(repository).unparseableReason).toBe('no-text-layer');
   });
 
-  it('reaches unparseable for an oversized attachment', async () => {
-    const { worker, repository } = harness({
-      fetch: { outcome: 'oversized', bytes: 30_000_000 },
-    });
+  it.each([
+    [
+      'an advertised size',
+      { outcome: 'oversized', bytes: 70_000_000, advertised: true } as const,
+      '70000000 bytes)',
+    ],
+    [
+      'a counted size',
+      { outcome: 'oversized', bytes: 67_108_865, advertised: false } as const,
+      'read before the transfer was cut',
+    ],
+    [
+      'no size at all',
+      { outcome: 'oversized', bytes: null, advertised: false } as const,
+      'size not reported',
+    ],
+  ])(
+    'reaches unparseable for an oversized attachment with %s',
+    async (_label, fetch, expected) => {
+      // The stored detail is the whole point of the streaming rewrite: all 8
+      // filings the previous cap refused recorded "unknown bytes", so nobody
+      // could tell whether the cap had missed by a kilobyte or a gigabyte.
+      const { worker, repository } = harness({ fetch });
 
-    expect((await worker.tick(NOW)).unparseable).toBe(1);
-    expect(onlyRecorded(repository)).toMatchObject({
-      state: 'unparseable',
-      unparseableReason: 'oversized',
-    });
-  });
+      expect((await worker.tick(NOW)).unparseable).toBe(1);
+      const recorded = onlyRecorded(repository);
+      expect(recorded).toMatchObject({
+        state: 'unparseable',
+        unparseableReason: 'oversized',
+      });
+      expect(recorded.lastError).toContain(expected);
+    },
+  );
 
   it.each([
     [404, 'not-found'],
@@ -499,7 +523,7 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
 
   it('never leaves a terminal filing carrying a next attempt time', async () => {
     for (const fetch of [
-      { outcome: 'oversized', bytes: null } as const,
+      { outcome: 'oversized', bytes: null, advertised: false } as const,
       { outcome: 'failed', status: 404, message: 'gone' } as const,
     ]) {
       const { worker, repository } = harness({ fetch });
@@ -1369,5 +1393,231 @@ describe('EnrichmentWorker — notable claims', () => {
 
     expect(result).toMatchObject({ enriched: 1, claimed_lines: 0 });
     expect(onlyRecorded(repository).headline).not.toBeNull();
+  });
+});
+
+describe('describeZipSource', () => {
+  const opened = (members: ZipTextOk['members'], ignored: string[] = []) =>
+    ({
+      outcome: 'ok',
+      text: 'x',
+      pages: 1,
+      truncated: false,
+      members,
+      ignored,
+    }) as ZipTextOk;
+
+  it('names each entry with its character count', () => {
+    expect(
+      describeZipSource(
+        opened([{ fileName: 'a.pdf', bytes: 10, chars: 4576, message: null }]),
+      ),
+    ).toBe('zip: a.pdf (4576 chars)');
+  });
+
+  it('names an unreadable entry with the parser’s reason', () => {
+    expect(
+      describeZipSource(
+        opened([
+          {
+            fileName: 'scan.pdf',
+            bytes: 10,
+            chars: null,
+            message: 'no trailer',
+          },
+        ]),
+      ),
+    ).toBe('zip: scan.pdf (unreadable: no trailer)');
+  });
+
+  it('says so when an unreadable entry carried no reason', () => {
+    expect(
+      describeZipSource(
+        opened([{ fileName: 'a.pdf', bytes: 10, chars: null, message: null }]),
+      ),
+    ).toContain('no reason given');
+  });
+
+  it('lists what it ignored, because an MP3 skipped is a fact about the filing', () => {
+    expect(
+      describeZipSource(
+        opened(
+          [{ fileName: 'a.pdf', bytes: 10, chars: 5, message: null }],
+          ['WebXMLFile.xml', 'call.mp3'],
+        ),
+      ),
+    ).toBe('zip: a.pdf (5 chars); ignored WebXMLFile.xml, call.mp3');
+  });
+
+  it('bounds what it stores', () => {
+    const many = Array.from({ length: 60 }, (_v, index) => ({
+      fileName: `entry-with-a-long-name-${index}.pdf`,
+      bytes: 10,
+      chars: 5,
+      message: null,
+    }));
+    expect(describeZipSource(opened(many))).toHaveLength(
+      MAX_DOCUMENT_SOURCE_CHARS,
+    );
+  });
+});
+
+describe('EnrichmentWorker — ZIP attachments', () => {
+  const ZIP_URL =
+    'https://nsearchives.nseindia.com/corporate/RESIGNATION_05082026.zip';
+
+  const zipFiling = (): ClaimedFiling => ({
+    filing: filing({
+      attachmentUrl: ZIP_URL,
+      category: 'Bagging/Receiving of orders/contracts',
+    }),
+    attempts: 1,
+    parseAttempts: 0,
+  });
+
+  /** A reader over a described archive, standing in for yauzl. */
+  const reader = (
+    entries: readonly { name: string; body: Buffer | null }[],
+  ): ZipReader => ({
+    list: async () =>
+      entries.map((entry) => ({
+        fileName: entry.name,
+        compressedSize: 1000,
+        uncompressedSize: 1100,
+      })),
+    read: async (_archive, fileName) =>
+      entries.find((entry) => entry.name === fileName)?.body ?? null,
+  });
+
+  it('reads the PDFs out of an archive and enriches the filing', async () => {
+    // The whole point: `Resignation of Director/KMP/SMP` is 213 filings a month
+    // and 100% ZIP, so this pipeline was blind to the category rather than
+    // refusing it on the merits.
+    const { worker, repository, fetcher } = harness({
+      queue: [zipFiling()],
+      zipReader: reader([
+        { name: 'ORDER.pdf', body: Buffer.from('%PDF-a') },
+        { name: 'WebXMLFile.xml', body: Buffer.from('<x/>') },
+      ]),
+    });
+
+    const result = await worker.tick(NOW);
+    expect(fetcher.urls).toEqual([ZIP_URL]);
+    expect(result).toMatchObject({ enriched: 1, unparseable: 0 });
+    expect(onlyRecorded(repository)).toMatchObject({ state: 'enriched' });
+  });
+
+  it('records which entries the text came from', async () => {
+    const { worker, repository } = harness({
+      queue: [zipFiling()],
+      zipReader: reader([
+        { name: 'ORDER.pdf', body: Buffer.from('%PDF-a') },
+        { name: 'call.mp3', body: Buffer.from('sound') },
+      ]),
+    });
+
+    await worker.tick(NOW);
+    const source = onlyRecorded(repository).documentSource;
+    expect(source).toContain('ORDER.pdf');
+    expect(source).toContain('ignored call.mp3');
+  });
+
+  it('finds the amount inside an archived PDF', async () => {
+    // End to end: the concatenated text goes through the same reader every
+    // other document does, so an archived order intimation yields its figure.
+    const { worker, repository } = harness({
+      queue: [zipFiling()],
+      zipReader: reader([{ name: 'ORDER.pdf', body: Buffer.from('%PDF-a') }]),
+    });
+
+    await worker.tick(NOW);
+    expect(onlyRecorded(repository).amountRupees).toBe(185_366_820);
+  });
+
+  it('reaches unparseable for a zip bomb, and says so', async () => {
+    const bomb: ZipReader = {
+      list: async () => [
+        { fileName: 'bomb.pdf', compressedSize: 1, uncompressedSize: 1e9 },
+      ],
+      read: async () => Buffer.from('x'),
+    };
+    const { worker, repository } = harness({
+      queue: [zipFiling()],
+      zipReader: bomb,
+    });
+
+    expect((await worker.tick(NOW)).unparseable).toBe(1);
+    const recorded = onlyRecorded(repository);
+    expect(recorded).toMatchObject({
+      state: 'unparseable',
+      unparseableReason: 'not-a-pdf',
+      nextAttemptAt: null,
+    });
+    // The state is the one a ZIP already had; the REASON is new and is what
+    // tells a bomb from an archive of spreadsheets on the dashboard.
+    expect(recorded.lastError).toContain('compression-ratio');
+  });
+
+  it('reaches unparseable for an archive with no PDF in it', async () => {
+    const { worker, repository } = harness({
+      queue: [zipFiling()],
+      zipReader: reader([
+        { name: 'WebXMLFile.xml', body: Buffer.from('<x/>') },
+      ]),
+    });
+
+    expect((await worker.tick(NOW)).unparseable).toBe(1);
+    expect(onlyRecorded(repository).lastError).toContain('no-pdf-entries');
+  });
+
+  it('reaches unparseable when no archive reader is wired', async () => {
+    // A supported state: ZIP attachments land exactly where they did before
+    // this feature existed, and say so.
+    const { worker, repository } = harness({
+      queue: [zipFiling()],
+      zipReader: null,
+    });
+
+    expect((await worker.tick(NOW)).unparseable).toBe(1);
+    expect(onlyRecorded(repository)).toMatchObject({
+      unparseableReason: 'not-a-pdf',
+      lastError: 'no archive reader is configured',
+    });
+  });
+
+  it('reaches no-text-layer for an archive of raster scans', async () => {
+    const { worker, repository } = harness({
+      queue: [zipFiling()],
+      text: '   ',
+      zipReader: reader([{ name: 'SCAN.pdf', body: Buffer.from('%PDF-a') }]),
+    });
+
+    expect((await worker.tick(NOW)).unparseable).toBe(1);
+    expect(onlyRecorded(repository).unparseableReason).toBe('no-text-layer');
+  });
+
+  it('records a member the archive could not read, with its reason', async () => {
+    const { worker, repository } = harness({
+      queue: [zipFiling()],
+      zipReader: {
+        list: async () => [
+          { fileName: 'a.pdf', compressedSize: 10, uncompressedSize: 12 },
+          { fileName: 'b.pdf', compressedSize: 10, uncompressedSize: 12 },
+        ],
+        read: async (_archive, fileName) =>
+          fileName === 'a.pdf' ? null : Buffer.from('%PDF-b'),
+      },
+    });
+
+    await worker.tick(NOW);
+    const source = onlyRecorded(repository).documentSource;
+    expect(source).toContain('a.pdf (unreadable:');
+    expect(source).toContain('b.pdf (');
+  });
+
+  it('leaves documentSource null for an ordinary PDF', async () => {
+    const { worker, repository } = harness({});
+    await worker.tick(NOW);
+    expect(onlyRecorded(repository).documentSource).toBeNull();
   });
 });

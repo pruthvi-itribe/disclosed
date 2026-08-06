@@ -14,6 +14,7 @@ const config = (
   openrouterApiKey: 'sk-or-v1-not-a-real-key',
   claimModel: 'claude-opus-5',
   claimEffort: 'medium',
+  claimMaxDocumentChars: 96_000,
   ...overrides,
 });
 
@@ -86,6 +87,7 @@ describe('buildClaimExtractor: which provider', () => {
     ).toEqual({
       model: 'deepseek/deepseek-v4-flash-0731',
       effort: 'high',
+      maxDocumentChars: 96_000,
     });
   });
 });

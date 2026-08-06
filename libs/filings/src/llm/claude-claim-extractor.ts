@@ -165,7 +165,15 @@ export class ClaudeClaimExtractor implements ClaimExtractor {
           effort: this.options.effort,
           format: { type: 'json_schema', schema: CLAIM_OUTPUT_SCHEMA },
         },
-        messages: [{ role: 'user', content: buildClaimRequest(request) }],
+        messages: [
+          {
+            role: 'user',
+            content: buildClaimRequest({
+              ...request,
+              maxDocumentChars: this.options.maxDocumentChars,
+            }),
+          },
+        ],
       });
 
       // CHECKED BEFORE `content` IS READ. A refusal returns HTTP 200 with an

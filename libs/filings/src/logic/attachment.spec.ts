@@ -21,7 +21,30 @@ describe('decideAttachment — what may be fetched', () => {
 
   it('returns the parsed absolute URL, not the raw string', () => {
     const decision = decideAttachment(`  ${ARCHIVE}/a.pdf  `);
-    expect(decision).toEqual({ outcome: 'fetch', url: `${ARCHIVE}/a.pdf` });
+    expect(decision).toEqual({
+      outcome: 'fetch',
+      url: `${ARCHIVE}/a.pdf`,
+      kind: 'pdf',
+    });
+  });
+});
+
+describe('decideAttachment — the ZIP attachments', () => {
+  it.each([
+    ['a ZIP', `${ARCHIVE}/RESIGNATION_05082026.zip`],
+    ['an uppercase ZIP', `${ARCHIVE}/RESIGNATION.ZIP`],
+  ])('fetches %s, labelled as an archive', (_label, url) => {
+    // 249 of 17,442 filings carry one, and three categories are 100% ZIP —
+    // `Resignation of Director/KMP/SMP` alone is 213 filings a month. Refusing
+    // them was never a judgement about the filings; it was never opening the
+    // envelope. Every bound that makes it safe is in `zip-entries.ts`.
+    const decision = decideAttachment(url);
+    expect(decision).toMatchObject({ outcome: 'fetch', kind: 'zip' });
+  });
+
+  it('labels a PDF and an archive differently, because they need different readers', () => {
+    expect(decideAttachment(`${ARCHIVE}/a.pdf`)).toMatchObject({ kind: 'pdf' });
+    expect(decideAttachment(`${ARCHIVE}/a.zip`)).toMatchObject({ kind: 'zip' });
   });
 });
 
@@ -42,8 +65,6 @@ describe('decideAttachment — the terminal verdicts', () => {
   });
 
   it.each([
-    ['a ZIP', `${ARCHIVE}/RESIGNATION_05082026.zip`],
-    ['an uppercase ZIP', `${ARCHIVE}/RESIGNATION.ZIP`],
     ['a spreadsheet', `${ARCHIVE}/shp.xlsx`],
     ['an XML filing', `${ARCHIVE}/filing.xml`],
     ['no extension at all', `${ARCHIVE}/document`],

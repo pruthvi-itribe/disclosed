@@ -113,6 +113,16 @@ export interface ClaimProviderOptions {
   readonly effort: ClaimEffortLevel;
   readonly maxTokens?: number;
   readonly timeoutMs?: number;
+  /**
+   * How much of the document reaches the model. `MAX_DOCUMENT_CHARS` when unset.
+   *
+   * CONFIGURABLE because the right value is a measurement rather than a
+   * constant, and the measurement moved: the cap was set at 24,000 characters
+   * against a model context that no longer binds. It is on the provider options
+   * rather than in the prompt module so a sweep can change it without a deploy
+   * and so the two adapters cannot drift apart on it.
+   */
+  readonly maxDocumentChars?: number;
 }
 
 /**

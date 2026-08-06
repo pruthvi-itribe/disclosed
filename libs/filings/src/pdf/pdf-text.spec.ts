@@ -1,6 +1,11 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { defaultPdfParser, extractPdfText, type PdfParser } from './pdf-text';
+import {
+  defaultPdfParser,
+  extractPdfText,
+  MAX_PDF_PAGES,
+  type PdfParser,
+} from './pdf-text';
 
 const bytes = Buffer.from('%PDF-1.4 not really a pdf');
 
@@ -25,6 +30,7 @@ describe('extractPdfText', () => {
       outcome: 'ok',
       text: 'Rs. 18,53,66,820/-',
       pages: 3,
+      truncated: false,
     });
   });
 
@@ -36,7 +42,12 @@ describe('extractPdfText', () => {
       bytes,
       parserOf({ text: '', numpages: 8 }),
     );
-    expect(result).toEqual({ outcome: 'ok', text: '', pages: 8 });
+    expect(result).toEqual({
+      outcome: 'ok',
+      text: '',
+      pages: 8,
+      truncated: false,
+    });
   });
 
   it.each([
@@ -86,7 +97,86 @@ describe('extractPdfText', () => {
     ['a non-numeric page count', { text: 'x', numpages: 'three' }],
   ])('normalises %s to zero pages', async (_label, resolved) => {
     const result = await extractPdfText(bytes, parserOf(resolved));
-    expect(result).toEqual({ outcome: 'ok', text: 'x', pages: 0 });
+    expect(result).toEqual({
+      outcome: 'ok',
+      text: 'x',
+      pages: 0,
+      truncated: false,
+    });
+  });
+});
+
+describe('extractPdfText — the page budget', () => {
+  /** Records what the parser was asked for, so the budget can be pinned. */
+  const recording = (): { seen: unknown[]; parser: PdfParser } => {
+    const seen: unknown[] = [];
+    return {
+      seen,
+      parser: async (_data, options) => {
+        seen.push(options);
+        return { text: 'x', numpages: 1 };
+      },
+    };
+  };
+
+  it('asks the parser for at most the budget', async () => {
+    // The bound has to be applied BEFORE the work starts. `pdf-parse` is CPU
+    // work inside pdf.js with no `await`: an interval armed at 100 ms recorded
+    // zero ticks across a measured 39.69-second parse, so there is no timeout
+    // that can interrupt one.
+    const { seen, parser } = recording();
+    await extractPdfText(bytes, parser);
+    expect(seen).toEqual([{ max: MAX_PDF_PAGES }]);
+  });
+
+  it('honours a caller-supplied budget', async () => {
+    const { seen, parser } = recording();
+    await extractPdfText(bytes, parser, 5);
+    expect(seen).toEqual([{ max: 5 }]);
+  });
+
+  it('reports a document longer than the budget as truncated', async () => {
+    // NHPC's 640-page annual report: 39.690 seconds and 501 MB of RSS, and it
+    // passed the byte cap at 19.6 MB. A truncated read is a document this
+    // pipeline holds only part of, and saying so is the difference between a
+    // refusal that means "the filing does not say" and one that means
+    // "we did not read that far".
+    const result = await extractPdfText(
+      bytes,
+      parserOf({ text: 'x', numpages: 640 }),
+      400,
+    );
+    expect(result).toMatchObject({
+      outcome: 'ok',
+      pages: 640,
+      truncated: true,
+    });
+  });
+
+  it('reports a document exactly at the budget as complete', async () => {
+    const result = await extractPdfText(
+      bytes,
+      parserOf({ text: 'x', numpages: 400 }),
+      400,
+    );
+    expect(result).toMatchObject({ truncated: false });
+  });
+
+  it('treats a zero budget as no budget, which is pdf-parse’s own meaning', async () => {
+    const result = await extractPdfText(
+      bytes,
+      parserOf({ text: 'x', numpages: 5000 }),
+      0,
+    );
+    expect(result).toMatchObject({ truncated: false });
+  });
+
+  it('clears every page count the live collection has produced', () => {
+    // The largest non-pathological document measured is a 143-page investor
+    // deck that parses in 0.195 s. The budget is a bound on the 640-page case,
+    // not a trim on the ordinary one.
+    expect(MAX_PDF_PAGES).toBeGreaterThan(143);
+    expect(MAX_PDF_PAGES).toBe(400);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   decideParseFailure,
   describeParseRetry,
   extractPdfText,
+  extractZipText,
   hasUsableTextLayer,
   isWithinAlertWindow,
   nextAttemptDelayMs,
@@ -26,6 +27,8 @@ import {
   type FilingEnrichment,
   type PdfParser,
   type UnparseableReason,
+  type ZipReader,
+  type ZipTextOk,
 } from '@app/filings';
 import { formatInsightAlert, type TelegramService } from '@app/notify';
 import type { FilingContextService } from './filing-context.service';
@@ -192,6 +195,13 @@ export class EnrichmentWorker {
      * eligible filing records `extractor-unavailable` instead of a claim.
      */
     private readonly claimExtractor: ClaimExtractor | null = null,
+    /**
+     * Null when no archive reader is wired, which is a supported state: ZIP
+     * attachments then reach `not-a-pdf` exactly as they did before, and
+     * nothing else changes. Injected for the same reason `pdfParser` is — a
+     * suite must be able to hand over a hostile archive without building one.
+     */
+    private readonly zipReader: ZipReader | null = null,
   ) {
     this.watchlist = normaliseWatchlist(options.watchlist);
   }
@@ -394,9 +404,16 @@ export class EnrichmentWorker {
     const fetched = await this.fetcher.fetch(decision.url);
 
     if (fetched.outcome === 'oversized') {
+      // The size is stated, and whether it is the document's or merely what
+      // arrived is stated too. All 8 filings the previous cap refused recorded
+      // "unknown bytes", so the collection could not answer the one question
+      // that decides whether a cap is set correctly: by how much did it miss?
       return noDocument(
         'oversized',
-        `attachment exceeds the download cap (${fetched.bytes ?? 'unknown'} bytes)`,
+        fetched.bytes === null
+          ? 'attachment exceeds the download cap (size not reported)'
+          : `attachment exceeds the download cap (${fetched.bytes} bytes` +
+              `${fetched.advertised ? '' : ' read before the transfer was cut'})`,
       );
     }
 
@@ -413,6 +430,20 @@ export class EnrichmentWorker {
           parseAttempts,
           now,
           fetched.message,
+        )),
+      };
+    }
+
+    if (decision.kind === 'zip') {
+      return {
+        ...base,
+        ...(await this.readArchive(
+          filing,
+          attempts,
+          parseAttempts,
+          now,
+          fetched.body,
+          noDocument,
         )),
       };
     }
@@ -447,12 +478,67 @@ export class EnrichmentWorker {
     };
   }
 
+  /**
+   * Reads a ZIP attachment's PDFs, or records why it could not.
+   *
+   * EVERY REFUSAL BECOMES `not-a-pdf`, which is the state the whole category
+   * already had — so a zip bomb, a traversal name and an archive of nothing but
+   * XML all land where a ZIP landed before this existed, and none of them can
+   * be retried against the exchange. The specific reason goes to `lastError`,
+   * which the dashboard shows, because "we refused this archive" and "we
+   * refused this archive because it claims to expand 4000x" are the same state
+   * and very different facts.
+   */
+  private async readArchive(
+    filing: Filing,
+    attempts: number,
+    parseAttempts: number,
+    now: Date,
+    archive: Buffer,
+    noDocument: (
+      reason: UnparseableReason,
+      detail: string | null,
+    ) => Promise<EnrichmentTickResult>,
+  ): Promise<Partial<EnrichmentTickResult>> {
+    if (this.zipReader === null) {
+      return noDocument('not-a-pdf', 'no archive reader is configured');
+    }
+
+    const opened = await extractZipText(archive, this.zipReader, {
+      parser: this.pdfParser,
+    });
+    if (opened.outcome !== 'ok') {
+      return noDocument('not-a-pdf', `${opened.reason}: ${opened.detail}`);
+    }
+
+    if (!hasUsableTextLayer(opened.text)) {
+      return noDocument(
+        'no-text-layer',
+        `${opened.members.length} archived PDF(s) yielded no text layer`,
+      );
+    }
+
+    this.logger.log(
+      `seqId ${filing.seqId} (${filing.symbol}): read ` +
+        `${opened.members.length} PDF(s) out of a ZIP attachment`,
+    );
+    return this.readAndRecord(
+      filing,
+      attempts,
+      parseAttempts,
+      now,
+      opened.text,
+      describeZipSource(opened),
+    );
+  }
+
   private async readAndRecord(
     filing: Filing,
     attempts: number,
     parseAttempts: number,
     now: Date,
     documentText: string,
+    documentSource: string | null = null,
   ): Promise<Partial<EnrichmentTickResult>> {
     const verdict = readDocument({
       symbol: filing.symbol,
@@ -478,6 +564,7 @@ export class EnrichmentWorker {
       unparseableReason: null,
       lastError: null,
       documentChars: verdict.documentChars,
+      documentSource,
       amountRupees: verdict.amountRupees,
       amountEvidence: verdict.amountEvidence,
       amountAnchor: verdict.amountAnchor,
@@ -861,6 +948,7 @@ const blankVerdict = (
   unparseableReason: null,
   lastError: null,
   documentChars: null,
+  documentSource: null,
   amountRupees: null,
   amountEvidence: null,
   amountAnchor: null,
@@ -879,6 +967,30 @@ const blankVerdict = (
   headline: null,
   contextLine: null,
 });
+
+/**
+ * The one-line provenance a ZIP-sourced document carries.
+ *
+ * Names every PDF entry with its own character count, because the text stored
+ * on the filing is the concatenation of several documents and a reviewer
+ * reading a span needs to know which of them it came out of. The ignored names
+ * are listed too: an archive whose MP3 was skipped and one that contained only
+ * the PDF are different facts about the filing.
+ */
+export const describeZipSource = (opened: ZipTextOk): string => {
+  const members = opened.members
+    .map(
+      (member) =>
+        `${member.fileName} (${member.chars === null ? `unreadable: ${member.message ?? 'no reason given'}` : `${member.chars} chars`})`,
+    )
+    .join(', ');
+  const ignored =
+    opened.ignored.length === 0 ? '' : `; ignored ${opened.ignored.join(', ')}`;
+  return `zip: ${members}${ignored}`.slice(0, MAX_DOCUMENT_SOURCE_CHARS);
+};
+
+/** How much provenance is kept. Long enough for three entries and their names. */
+export const MAX_DOCUMENT_SOURCE_CHARS = 500;
 
 const merge = (
   tally: EnrichmentTickResult,

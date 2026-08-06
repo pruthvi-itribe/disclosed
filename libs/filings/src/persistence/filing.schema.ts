@@ -56,6 +56,7 @@ const EnrichmentSchema = new Schema<FilingEnrichment>(
     unparseableReason: { type: String, default: null },
     lastError: { type: String, default: null },
     documentChars: { type: Number, default: null },
+    documentSource: { type: String, default: null },
     amountRupees: { type: Number, default: null },
     amountEvidence: { type: String, default: null },
     amountAnchor: { type: String, default: null },

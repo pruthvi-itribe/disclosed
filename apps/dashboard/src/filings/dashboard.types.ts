@@ -31,6 +31,14 @@ export interface EnrichmentView {
   /** Set only in state `unparseable`; why the document can never be read. */
   readonly unparseableReason: string | null;
   readonly lastError: string | null;
+  /**
+   * Which archived files the text came from, when it was not simply one PDF.
+   *
+   * Null for the ordinary case. A filing whose text is the concatenation of
+   * three documents is a different object from one whose text is a document,
+   * and a reviewer reading a span needs to know which file it came out of.
+   */
+  readonly documentSource: string | null;
   /** Exact rupees, for anything that needs to compute rather than display. */
   readonly amountRupees: number | null;
   /** The same figure the headline states: `₹78.24 cr`. */

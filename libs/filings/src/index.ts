@@ -39,6 +39,8 @@ export * from './source-adapter.interface';
 export * from './nse/nse.adapter';
 export * from './nse/attachment.fetcher';
 export * from './pdf/pdf-text';
+export * from './pdf/zip-entries';
+export * from './pdf/zip-text';
 export * from './logic/rollover';
 export * from './logic/cadence';
 export * from './logic/drain-schedule';

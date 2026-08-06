@@ -231,6 +231,16 @@ export const PAGE_SCRIPT = `
       cell.appendChild(box);
     }
 
+    // Which archived files the text came from. Shown because a filing whose
+    // text is three concatenated documents is a different object from one
+    // whose text is a document, and a span has to be traceable to a file.
+    if (e.documentSource) {
+      var source = document.createElement('div');
+      source.className = 'claimspan periodspan';
+      source.textContent = e.documentSource;
+      cell.appendChild(source);
+    }
+
     if (e.contextLine) {
       var ctx = document.createElement('div');
       ctx.className = 'context';
