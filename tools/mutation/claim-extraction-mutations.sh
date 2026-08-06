@@ -367,7 +367,9 @@ echo "=== the extractor's contract ==="
 perl -0pi -e "s/      if \(stopReason === 'refusal'\) \{/      if (false) {/" "$X"
 check "a model refusal read as a parse failure instead"
 
-perl -0pi -e 's/claims: parseClaimResponse\(JSON\.parse\(body\)\)/claims: []/' "$X"
+# Retargeted when the adapter moved onto the shared provider boundary: the
+# parse now happens inside `claimsFromText`, which both providers call.
+perl -0pi -e "s/      return claimsFromText\(textOf\(message\), usageOf\(message\)\);/      return { outcome: 'ok', claims: [] };/" "$X"
 check "reply parsing bypassed (every filing records 'the model found nothing')"
 
 perl -0pi -e "s/    if \(apiKey\.trim\(\)\.length === 0\) return null;//" "$X"
