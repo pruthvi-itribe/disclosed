@@ -71,6 +71,125 @@ describe('verifyClaims — what it accepts', () => {
   });
 });
 
+/**
+ * The five claims the live DeepSeek run threw away, and the shape they share.
+ *
+ * Every one of them stated a real figure that WAS in its span and a fiscal
+ * period that was not, because a slide deck states its quarter in the header and
+ * its numbers in the bullet. The document below is the ANUP filing's structure,
+ * reduced to the two lines that matter.
+ */
+describe('verifyClaims — the fiscal period', () => {
+  const DECK = [
+    'INVESTOR PRESENTATION Q1 FY27',
+    'OPERATIONAL HIGHLIGHTS',
+    'HIGHLIGHTS FOR Q1 FY27',
+    '•Anup reached Revenue & EBITDA of ₹125.2 Cr and ₹9.5 Cr respectively.',
+    '•Encouraging Order inquiry pipeline of ₹1,100 Cr.',
+  ].join('\n');
+
+  const onDeck = (proposed: ProposedClaim) =>
+    verifyClaims({ documentText: DECK, proposed: [proposed] });
+
+  const BULLET =
+    '•Anup reached Revenue & EBITDA of ₹125.2 Cr and ₹9.5 Cr respectively.';
+
+  it('ACCEPTS a period stated by the heading above the quoted sentence', () => {
+    const { claims, discards } = onDeck({
+      span: BULLET,
+      text: 'Q1 FY27 revenue of ₹125.2 Cr and EBITDA of ₹9.5 Cr',
+      kind: 'operational',
+    });
+    expect(discards).toEqual([]);
+    expect(claims).toHaveLength(1);
+  });
+
+  it('stores the heading it read the period from', () => {
+    // Without this an accepted "Q1 FY27 revenue" would be evidenced by a
+    // sentence mentioning neither Q1 nor FY27 — provenance that survives
+    // review without meaning anything.
+    const { claims } = onDeck({
+      span: BULLET,
+      text: 'Q1 FY27 revenue of ₹125.2 Cr and EBITDA of ₹9.5 Cr',
+      kind: 'operational',
+    });
+    expect(claims[0].periodSpan).toContain('Q1 FY27');
+  });
+
+  it('stores no period evidence when the span states the period itself', () => {
+    const { claims } = verify([
+      claim({
+        span: 'goal to build a ₹10,000 Cr. Adjusted EBITDA business by FY31',
+        text: 'targets ₹10,000 Cr adjusted EBITDA by FY31',
+        kind: 'target',
+      }),
+    ]);
+    expect(claims[0].periodSpan).toBeNull();
+  });
+
+  it('stores no period evidence for a claim naming no period', () => {
+    expect(verify([claim()]).claims[0].periodSpan).toBeNull();
+  });
+
+  it('REFUSES a period the document does not state near the sentence', () => {
+    // The other half of the rule, and the reason it is not simply "drop the
+    // period digits": moving a real figure into a quarter the filing never
+    // mentions is a wrong number with a true-looking source.
+    const { claims, discards } = onDeck({
+      span: BULLET,
+      text: 'Q4 FY26 revenue of ₹125.2 Cr and EBITDA of ₹9.5 Cr',
+      kind: 'operational',
+    });
+    expect(claims).toEqual([]);
+    expect(discards[0].reason).toBe<ClaimDiscardReason>(
+      'period-not-in-context',
+    );
+    expect(discards[0].detail).toContain('Q4FY26');
+  });
+
+  it('is STRICTER than the digit rule it replaces', () => {
+    // Under the old rule `Q1` was satisfied by any stray `1` in the sentence,
+    // which over 60 real documents was 24.3% of them. Here the span carries a
+    // `1` — in `1,100` — and the claim's quarter is still refused, because the
+    // sentence and its neighbourhood state Q1 and not Q3.
+    const { claims, discards } = onDeck({
+      span: '•Encouraging Order inquiry pipeline of ₹1,100 Cr.',
+      text: 'Q3 order inquiry pipeline of ₹1,100 Cr',
+      kind: 'operational',
+    });
+    expect(claims).toEqual([]);
+    expect(discards[0].reason).toBe<ClaimDiscardReason>(
+      'period-not-in-context',
+    );
+  });
+
+  it('keeps figures span-scoped even when the neighbourhood carries them', () => {
+    // The line that must not move. `1,100` is in the document, one line below
+    // the quoted sentence, and it is still refused — a period may be read from
+    // the neighbourhood and a figure may never be.
+    const { claims, discards } = onDeck({
+      span: BULLET,
+      text: 'Q1 FY27 order inquiry pipeline of ₹1,100 Cr',
+      kind: 'operational',
+    });
+    expect(claims).toEqual([]);
+    expect(discards[0].reason).toBe<ClaimDiscardReason>('number-not-in-span');
+    expect(discards[0].detail).toContain('1100');
+  });
+
+  it('does not let a period label satisfy a figure', () => {
+    // `FY27`'s `27` must not stand in for a claim asserting 27 of something.
+    const { claims, discards } = onDeck({
+      span: BULLET,
+      text: 'booked 27 vessels in the quarter',
+      kind: 'operational',
+    });
+    expect(claims).toEqual([]);
+    expect(discards[0].reason).toBe<ClaimDiscardReason>('number-not-in-span');
+    expect(discards[0].detail).toContain('27');
+  });
+});
+
 describe('verifyClaims — the hallucination catch', () => {
   it.each([
     [

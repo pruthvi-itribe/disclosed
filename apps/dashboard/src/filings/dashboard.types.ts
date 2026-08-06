@@ -70,6 +70,15 @@ export interface ClaimView {
   /** The verbatim source sentence. This is what makes the claim checkable. */
   readonly span: string;
   readonly kind: string;
+  /**
+   * The verbatim heading that stated the claim's fiscal period, when the period
+   * came from outside the sentence. Null otherwise, which is the usual case.
+   *
+   * Shown for the same reason `span` is: a claim reading "Q1 FY27 revenue of
+   * ₹125.2 Cr" whose only evidence mentions neither Q1 nor FY27 cannot be
+   * checked by the person the dashboard exists for.
+   */
+  readonly periodSpan: string | null;
 }
 
 /**

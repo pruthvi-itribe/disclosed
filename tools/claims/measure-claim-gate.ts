@@ -27,11 +27,15 @@ import {
   CLAIM_BEARING_CATEGORIES,
   claimEligibility,
   extractPdfText,
+  figuresIn,
   FilingSchema,
+  findVerbatimSpan,
   isLegallyBlocked,
   isRoutine,
   MAX_DOCUMENT_CHARS,
   MIN_CLAIM_DOCUMENT_CHARS,
+  PERIOD_CONTEXT_CHARS,
+  periodLabelsIn,
   verifyClaims,
   type ClaimDiscardReason,
   type FilingDocument,
@@ -96,6 +100,118 @@ const perturbDigit = (sentence: string): string =>
   /\d/.test(sentence)
     ? sentence.replace(/\d/, (d) => String((Number(d) + 1) % 10))
     : `${sentence} in 2029`;
+
+/**
+ * A quarter no filing in this corpus can be about.
+ *
+ * The corpus is filings from 2026. `Q3 FY09` is seventeen years earlier, so a
+ * document that supports it is a bug in the probe rather than a gate failure —
+ * and that is checked rather than assumed, by skipping the probe when the
+ * document happens to name it.
+ */
+const IMPOSSIBLE_PERIOD = 'Q3 FY09';
+
+/** One digit of the claim's own figure changed. */
+const bumpFigure = (figure: string): string =>
+  figure.replace(/\d/, (d) => String((Number(d) + 1) % 10));
+
+/** What a probe expects the gate to do, and what it actually did. */
+interface Probe {
+  readonly name: string;
+  readonly claim: ProposedClaim;
+  readonly expect: 'accept' | 'refuse';
+}
+
+/**
+ * Builds every probe for one document.
+ *
+ * WHY THE FIGURE AND PERIOD PROBES EXIST. Until they did, every probe here
+ * changed the SPAN, so the only rule under test was `findVerbatimSpan`. The
+ * number rule and the period rule — the two that decide whether a real sentence
+ * can be made to say something it does not — were measured by nothing at all,
+ * which is how a rule that threw away five real claims in a live run survived a
+ * suite reporting 47/47.
+ */
+function probesFor(sentence: string, documentText: string): Probe[] {
+  const base = (span: string, text: string): ProposedClaim => ({
+    span,
+    text,
+    kind: 'operational',
+  });
+
+  const probes: Probe[] = [];
+  const changedWord = perturbWord(sentence);
+
+  probes.push({
+    name: 'real',
+    claim: base(sentence, 'the company stated something notable here'),
+    expect: 'accept',
+  });
+  if (changedWord !== sentence) {
+    probes.push({
+      name: 'word-changed',
+      claim: base(changedWord, 'the company stated something notable here'),
+      expect: 'refuse',
+    });
+  }
+  probes.push({
+    name: 'digit-changed',
+    claim: base(
+      perturbDigit(sentence),
+      'the company stated something notable here',
+    ),
+    expect: 'refuse',
+  });
+
+  // THE FIGURE PROBES. The span is left real and the CLAIM is what changes, so
+  // what is under test is `unsupportedNumbers` rather than the span match.
+  const [figure] = figuresIn(sentence);
+  if (figure !== undefined) {
+    probes.push({
+      name: 'figure-quoted',
+      claim: base(sentence, `the company reported a figure of ${figure}`),
+      expect: 'accept',
+    });
+    const bumped = bumpFigure(figure);
+    if (bumped !== figure) {
+      probes.push({
+        name: 'figure-digit-changed',
+        claim: base(sentence, `the company reported a figure of ${bumped}`),
+        expect: 'refuse',
+      });
+    }
+  }
+
+  // THE PERIOD PROBES. One period the neighbourhood really states, which must
+  // be accepted, and one from seventeen years ago, which must not.
+  const offset = findVerbatimSpan(documentText, sentence)?.offset ?? null;
+  if (offset !== null) {
+    const window = documentText.slice(
+      Math.max(0, offset - PERIOD_CONTEXT_CHARS),
+      offset + sentence.length + PERIOD_CONTEXT_CHARS,
+    );
+    const [nearby] = periodLabelsIn(window);
+    if (nearby !== undefined) {
+      probes.push({
+        name: 'period-in-context',
+        claim: base(sentence, `${nearby.raw} figures were reported as stated`),
+        expect: 'accept',
+      });
+    }
+    if (periodLabelsIn(window).every((row) => row.canonical !== 'Q3FY09')) {
+      probes.push({
+        name: 'period-not-in-context',
+        claim: base(
+          sentence,
+          `${IMPOSSIBLE_PERIOD} figures were reported as stated`,
+        ),
+        expect: 'refuse',
+      });
+    }
+  }
+
+  return probes;
+}
 
 interface Row {
   readonly symbol: string;
@@ -175,8 +291,8 @@ async function main(): Promise<void> {
   let promptChars = 0;
 
   // Pass 3 runs alongside pass 2, on the documents it has already fetched.
-  const accepted = { real: 0, perturbedWord: 0, perturbedDigit: 0 };
-  const rejected = { real: 0, perturbedWord: 0, perturbedDigit: 0 };
+  const accepted = new Map<string, number>();
+  const rejected = new Map<string, number>();
   const discardReasons = new Map<ClaimDiscardReason, number>();
   let probed = 0;
   // Counted and reported apart, because it is a limit of the PROBE and not a
@@ -185,6 +301,9 @@ async function main(): Promise<void> {
   // is right to accept it. Folding those into the accepted column would report
   // a false-accept rate the gate does not have.
   let unperturbable = 0;
+  const bump = (into: Map<string, number>, key: string): void => {
+    into.set(key, (into.get(key) ?? 0) + 1);
+  };
 
   for (const row of sample) {
     if (row.attachmentUrl === null) continue;
@@ -206,29 +325,17 @@ async function main(): Promise<void> {
       const sentence = probeSentence(parsed.text);
       if (sentence !== null) {
         probed += 1;
-        const changedWord = perturbWord(sentence);
-        if (changedWord === sentence) unperturbable += 1;
+        if (perturbWord(sentence) === sentence) unperturbable += 1;
 
-        for (const [bucket, span] of [
-          ['real', sentence] as const,
-          ['perturbedWord', changedWord] as const,
-          ['perturbedDigit', perturbDigit(sentence)] as const,
-        ]) {
-          // Skip the word probe when it did not change anything.
-          if (bucket === 'perturbedWord' && changedWord === sentence) continue;
-          const claim: ProposedClaim = {
-            span,
-            text: 'the company stated something notable here',
-            kind: 'operational',
-          };
+        for (const probe of probesFor(sentence, parsed.text)) {
           const result = verifyClaims({
             documentText: parsed.text,
-            proposed: [claim],
+            proposed: [probe.claim],
           });
           if (result.claims.length === 1) {
-            accepted[bucket] += 1;
+            bump(accepted, probe.name);
           } else {
-            rejected[bucket] += 1;
+            bump(rejected, probe.name);
             const reason = result.discards[0]?.reason;
             if (reason !== undefined) {
               discardReasons.set(reason, (discardReasons.get(reason) ?? 0) + 1);
@@ -263,12 +370,38 @@ async function main(): Promise<void> {
   // gate that works accepts the first every time and refuses the other two
   // every time; anything else is the rate at which an invented claim would
   // reach the wire.
+  const PROBE_LABELS: readonly (readonly [
+    string,
+    string,
+    'accept' | 'refuse',
+  ])[] = [
+    ['real', 'the real sentence', 'accept'],
+    ['word-changed', 'one word changed in the span', 'refuse'],
+    ['digit-changed', 'one digit changed in the span', 'refuse'],
+    ['figure-quoted', 'a figure the span really states', 'accept'],
+    ['figure-digit-changed', 'that figure with one digit changed', 'refuse'],
+    ['period-in-context', 'a period the neighbourhood states', 'accept'],
+    ['period-not-in-context', 'a period from seventeen years ago', 'refuse'],
+  ];
+
   process.stdout.write(
     `\n--- pass 3: the verbatim gate on ${probed} real document(s) ---\n` +
-      `real sentence               accepted ${String(accepted.real).padStart(4)}  refused ${String(rejected.real).padStart(4)}\n` +
-      `one word changed            accepted ${String(accepted.perturbedWord).padStart(4)}  refused ${String(rejected.perturbedWord).padStart(4)}` +
-      `   (${unperturbable} sentence(s) the probe could not change, excluded)\n` +
-      `one digit changed           accepted ${String(accepted.perturbedDigit).padStart(4)}  refused ${String(rejected.perturbedDigit).padStart(4)}\n`,
+      `(${unperturbable} sentence(s) the word probe could not change, excluded)\n`,
+  );
+  let wrong = 0;
+  for (const [key, label, want] of PROBE_LABELS) {
+    const yes = accepted.get(key) ?? 0;
+    const no = rejected.get(key) ?? 0;
+    if (yes + no === 0) continue;
+    const bad = want === 'accept' ? no : yes;
+    wrong += bad;
+    process.stdout.write(
+      `${label.padEnd(36)} must ${want.padEnd(6)}  accepted ${String(yes).padStart(4)}  refused ${String(no).padStart(4)}` +
+        `${bad === 0 ? '' : `   <-- ${bad} WRONG`}\n`,
+    );
+  }
+  process.stdout.write(
+    `\n${wrong === 0 ? 'every probe went the way it must.' : `${wrong} probe(s) went the wrong way.`}\n`,
   );
   for (const [reason, count] of [...discardReasons].sort(
     (a, b) => b[1] - a[1],

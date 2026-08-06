@@ -28,6 +28,10 @@ const ClaimSchema = new Schema(
     text: { type: String, default: '' },
     span: { type: String, default: '' },
     kind: { type: String, default: 'operational' },
+    // Null on every claim stored before the period rule existed, and null on
+    // every claim whose own sentence states its quarter. Defaulted rather than
+    // required so a filing written by the previous build reads back cleanly.
+    periodSpan: { type: String, default: null },
   },
   { _id: false },
 );

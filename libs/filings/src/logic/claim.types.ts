@@ -79,6 +79,15 @@ export interface VerifiedClaim {
    */
   readonly span: string;
   readonly kind: ClaimKind;
+  /**
+   * The document's own bytes around the heading that stated this claim's fiscal
+   * period, when the period came from outside `span`. Null when the span stated
+   * it itself, and null when the claim names no period.
+   *
+   * Present so an accepted "Q1 FY27 revenue of ₹125.2 Cr" can be reviewed
+   * against a quote that actually mentions Q1 FY27. See `claim-period.ts`.
+   */
+  readonly periodSpan: string | null;
 }
 
 /** Why a proposed claim will not be published. */
@@ -89,6 +98,15 @@ export type ClaimDiscardReason =
   | 'span-too-short'
   /** A figure in the claim is not in the sentence it was read from. */
   | 'number-not-in-span'
+  /**
+   * The claim names a fiscal period the sentence and its neighbourhood do not.
+   *
+   * KEPT APART from `number-not-in-span` on purpose: attributing a real figure
+   * to the wrong quarter and inventing a figure outright are different errors
+   * with different remedies, and folding them into one count would hide a model
+   * that had started doing the first.
+   */
+  | 'period-not-in-context'
   /** Predictive, advisory or valuation framing. */
   | 'advisory-language'
   /** The claim is about a person. */

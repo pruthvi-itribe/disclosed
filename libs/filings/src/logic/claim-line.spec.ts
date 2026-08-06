@@ -10,6 +10,7 @@ const claim = (text: string): VerifiedClaim => ({
   text,
   span: 'the source sentence, verbatim',
   kind: 'operational',
+  periodSpan: null,
 });
 
 describe('composeClaimLine', () => {

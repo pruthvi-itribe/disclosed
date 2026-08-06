@@ -153,6 +153,7 @@ footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
 .headline.verbatim { color: var(--muted); font-weight: 500; }
 .claimline{font-weight:600;letter-spacing:.01em;color:var(--claim,#7dd3fc);margin-top:.25rem;line-height:1.35}
 .claimspan{color:var(--muted,#94a3b8);font-size:.78rem;font-style:italic;margin-top:.15rem;line-height:1.3}
+.periodspan{font-style:normal;opacity:.8}
 .discards{margin-top:.25rem}
 .context { font-size: 12px; color: var(--accent); margin-top: 2px; }
 .summary-line { font-size: 12px; color: var(--muted); margin-top: 4px; }

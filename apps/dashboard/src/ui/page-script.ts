@@ -204,6 +204,16 @@ export const PAGE_SCRIPT = `
       quote.textContent = '"' + String(claims[c].span).replace(/\s+/g, ' ').trim() + '"';
       quote.title = claims[c].kind;
       cell.appendChild(quote);
+      // The heading the claim's quarter was read from, when it came from
+      // outside the sentence. Shown BESIDE the sentence rather than merged into
+      // it, because they are two separate quotes from two places in the
+      // document and running them together would forge a sentence.
+      if (claims[c].periodSpan) {
+        var period = document.createElement('div');
+        period.className = 'claimspan periodspan';
+        period.textContent = 'period: "' + String(claims[c].periodSpan).replace(/\s+/g, ' ').trim() + '"';
+        cell.appendChild(period);
+      }
     }
 
     // A refusal is a value, never a blank. This is the row that says a model

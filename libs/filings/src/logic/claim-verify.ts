@@ -1,6 +1,7 @@
 import { hasAmbiguityKeyword } from './ambiguity';
 import { advisoryHitIn, individualHitIn } from './claim-advisory';
 import { unsupportedNumbers } from './claim-numbers';
+import { PERIOD_CONTEXT_CHARS, supportPeriods } from './claim-period';
 import { findVerbatimSpan, MIN_SPAN_CHARS } from './claim-span';
 import {
   CLAIM_KIND_RANK,
@@ -195,7 +196,33 @@ function checkOne(
     );
   }
 
-  return { text, span: match.evidence, kind: claim.kind };
+  // THE PERIOD, neighbourhood-scoped. A figure must be in the sentence; the
+  // quarter that sentence belongs to is stated by the slide header above it, so
+  // demanding it inside the sentence refuses the shape almost every investor
+  // presentation is written in. `claim-period.ts` argues the bound and the
+  // measurements, and the check is on the LABEL rather than on its digits,
+  // which is strictly stronger than the rule it replaces.
+  const period = supportPeriods({
+    claimText: text,
+    span: match.evidence,
+    spanOffset: match.offset,
+    documentText,
+  });
+  if (period.missing.length > 0) {
+    return discard(
+      'period-not-in-context',
+      text,
+      `states ${period.missing.join(', ')}, which the quoted source and its ` +
+        `surrounding ${PERIOD_CONTEXT_CHARS} characters do not`,
+    );
+  }
+
+  return {
+    text,
+    span: match.evidence,
+    kind: claim.kind,
+    periodSpan: period.evidence,
+  };
 }
 
 const isDiscard = (

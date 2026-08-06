@@ -532,6 +532,10 @@ function toEnrichmentView(
       text: claim.text,
       span: claim.span,
       kind: claim.kind,
+      // Nullish-coalesced rather than read directly: every claim stored before
+      // the period rule existed carries no such field, and `undefined` reaching
+      // the page would render as the string "undefined" beside a real quote.
+      periodSpan: claim.periodSpan ?? null,
     })),
     claimDiscards: (enrichment?.claimDiscards ?? []).map((row) => ({
       reason: row.reason,

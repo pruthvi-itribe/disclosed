@@ -375,6 +375,7 @@ describe('the claim lane', () => {
     text: 'targets ₹10,000 Cr adjusted EBITDA by FY31',
     span: 'setting out its goal to build a ₹10,000 Cr.\nAdjusted EBITDA business by FY31',
     kind: 'target',
+    periodSpan: null,
   };
 
   const DISCARD: ClaimDiscard = {
