@@ -81,15 +81,25 @@ export const DEFAULT_CLAIM_MODEL: Readonly<Record<ClaimProviderName, string>> =
  * ONE VALUE FOR BOTH PROVIDERS, deliberately. A per-provider ceiling would let
  * one model be measured with room to think and the other without.
  *
- * RAISED FROM 8,000 BY A MEASUREMENT, not by taste. The previous report named
- * this as the first thing to raise, and the results lane is what proved it: on
- * a live sample of twelve results filings, two of them — BRITANNIA and EIHOTEL,
- * both ordinary thirty-thousand-character statements — came back `the reply was
- * truncated at 8000 tokens` and produced nothing. A results reply is several
- * times a claims reply: five figures, each with a quoted table row of up to 400
- * characters, plus the column header. A CEILING IS NOT A SPEND — only tokens
- * actually generated are billed — so the cost of raising it is zero and the cost
- * of leaving it is a filing lost per truncation.
+ * RAISED FROM 8,000, AND THE RAISE IS NOT A CURE. The previous report named this
+ * as the first thing to raise, and the results lane is what forced it: on a live
+ * sample of twelve results filings, two — BRITANNIA and EIHOTEL, both ordinary
+ * thirty-thousand-character statements — came back `the reply was truncated at
+ * 8000 tokens` and produced nothing. A results reply is several times a claims
+ * reply: five figures, each with a quoted table row of up to 400 characters,
+ * plus the column header.
+ *
+ * At 16,000, BRITANNIA returned a full four-figure proposal — and HITECHGEAR,
+ * which had answered fine at 8,000, came back `truncated at 16000 tokens`. So
+ * the ceiling was genuinely too low AND it is not what dominates: this
+ * provider's reasoning length varies run to run by more than the whole budget.
+ * Raising it removes a floor on the failure rate; it does not remove the
+ * failures, and a report that claimed otherwise would be wrong.
+ *
+ * A CEILING IS NOT A SPEND — only tokens actually generated are billed — so the
+ * cost of the raise is zero. What it does cost is LATENCY: a results call on
+ * this provider now takes 60 to 120 seconds, which is why the enrichment lease
+ * had to be raised with it.
  */
 export const CLAIM_MAX_TOKENS = 16_000;
 
