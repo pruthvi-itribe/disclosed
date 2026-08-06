@@ -31,12 +31,16 @@
 #      measured tables; reading pdf-parse output with the Docling bound admits
 #      statement/heading pairings that module measured as false at 936
 #      characters and up. Both directions are mutated.
-#   3. THE AVAILABILITY LATCH, AND ITS ASYMMETRY. A transport failure is a
-#      statement about the SERVICE and opens the latch; a reply the client
-#      cannot read is a statement about ONE DOCUMENT and must not. Without the
-#      first, ~85 results filings a day against a 300-second ceiling is seven
-#      hours of a worker waiting on a dependency it was told to treat as
-#      optional. With the second, one bad PDF takes the whole dependency down.
+#   3. THE AVAILABILITY LATCH, AND THE TWO THINGS THAT MUST NOT OPEN IT. Only
+#      the ABSENCE of a response is evidence about the SERVICE. A reply the
+#      client cannot read is a statement about ONE DOCUMENT, and so is a status
+#      code: docling-serve answers 504 past its own `max_sync_wait` while still
+#      finishing the conversion, and a live sweep that read that as an outage
+#      recovered 1 filing of 21 — the cooldown silently skipped the 19
+#      one-to-four-page scans queued behind one 15-page one. Both directions are
+#      mutated, because the latch failing OPEN costs ~85 results filings a day
+#      against a 300-second ceiling, which is seven hours of a worker waiting on
+#      a dependency it was told to treat as optional.
 #   4. THE TWO HAZARDS THE SPIKE MEASURED, ENCODED RATHER THAN COMMENTED.
 #      `do_ocr` is the entire cost model, and the page bound goes out as
 #      `page_range` — a 1-indexed inclusive PAIR — because `max_num_pages`
@@ -67,7 +71,7 @@
 #      it, so the pipeline goes dark exactly when it most needs to be heard.
 #      Both the one-word widening and the total one are broken below.
 #
-# Tally, so a report can quote it without recounting: 49 `check` calls, being 46
+# Tally, so a report can quote it without recounting: 50 `check` calls, being 47
 # mutations plus 3 independence checks.
 #
 # Usage:  bash tools/mutation/hybrid-parsing-coverage-mutations.sh
@@ -332,8 +336,15 @@ check "the Docling bound used for pdf-parse output (pairings false at 936)"
 echo ""
 echo "=== the availability latch, and the asymmetry that keeps one bad PDF cheap ==="
 
-perl -0pi -e "s/      this\.openedAt = this\.options\.now\(\);\n      return \{\n        outcome: 'unavailable',/      return {\n        outcome: 'unavailable',/" "$D"
-check "the latch never opens on a transport failure (7 hours of waiting a day)"
+perl -0pi -e 's/      if \(status === null\) this\.openedAt = this\.options\.now\(\);\n//' "$D"
+check "the latch never opens on a dead socket (7 hours of waiting a day)"
+
+# The regression this rule was written from: docling-serve answers 504 past its
+# own `max_sync_wait` while STILL finishing the conversion, and reading that as
+# an outage recovered 1 filing of 21 in a live run. A status code is proof the
+# service is alive; only the absence of a response says anything about it.
+perl -0pi -e 's/      const status = error instanceof DoclingHttpError \? error\.status : null;/      const status: number | null = null;/' "$D"
+check "any error opens the latch, so one 504 skips the 19 filings behind it"
 
 perl -0pi -e "s/    return textFromDoclingReply\(payload\);/    const answer = textFromDoclingReply(payload);\n    if (answer.outcome !== 'ok') this.openedAt = this.options.now();\n    return answer;/" "$D"
 check "the latch opens on an unreadable REPLY too (one bad PDF takes it down)"
