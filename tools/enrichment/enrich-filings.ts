@@ -20,6 +20,7 @@
  *
  * Run:  npx ts-node -r tsconfig-paths/register tools/enrichment/enrich-filings.ts [--limit N] [--delay MS]
  */
+import 'dotenv/config';
 import mongoose from 'mongoose';
 import {
   AttachmentFetcher,
@@ -28,10 +29,16 @@ import {
   type FilingDocument,
 } from '@app/filings';
 import type { TelegramService } from '@app/notify';
-import { buildClaimExtractor } from '../../apps/ingest/src/enrichment/claim-extractor.factory';
+import {
+  buildClaimExtractor,
+  buildResultsExtractor,
+} from '../../apps/ingest/src/enrichment/claim-extractor.factory';
 import { EnrichmentWorker } from '../../apps/ingest/src/enrichment/enrichment.worker';
 import { FilingContextService } from '../../apps/ingest/src/enrichment/filing-context.service';
 import { loadConfig } from '../../apps/ingest/src/config/configuration';
+// NOT from the barrel, deliberately: it require()s yauzl at first use and the
+// read-only dashboard imports that barrel for the mongoose schema alone.
+import { yauzlReader } from '@app/filings/pdf/yauzl-reader';
 
 /** Stands in for Telegram: records what would have been sent, sends nothing. */
 class RecordingTelegram {
@@ -102,6 +109,11 @@ async function main(): Promise<void> {
     },
     undefined,
     buildClaimExtractor(config),
+    // The same reader the service wires. Without these two the backfill would
+    // exercise a different pipeline from the one in production and every filing
+    // it touched would record `extractor-unavailable` against both lanes.
+    yauzlReader(),
+    buildResultsExtractor(config),
   );
 
   const pendingBefore = await repository.pendingCount(new Date());
