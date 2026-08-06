@@ -48,8 +48,8 @@
 #   9. THE REPORT. A table that dropped its zero rows, or its warnings about
 #      partial data, would read as evidence it is not.
 #
-# Tally, so a report can quote it without recounting: 41 mutations across nine
-# groups, plus 3 independence checks = 44 `check` calls.
+# Tally, so a report can quote it without recounting: 47 mutations across nine
+# groups, plus 3 independence checks = 50 `check` calls.
 #
 # Usage:  bash tools/mutation/claim-provider-mutations.sh
 # Exit:   0 only if every mutation applied AND was caught.
