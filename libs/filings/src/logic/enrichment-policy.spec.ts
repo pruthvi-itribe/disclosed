@@ -253,9 +253,10 @@ describe('the enrichment state machine', () => {
     // guard first and eventually one would not.
     expect(PENDING_ENRICHMENT.claims).toEqual([]);
     expect(PENDING_ENRICHMENT.claimDiscards).toEqual([]);
+    expect(PENDING_ENRICHMENT.resultsDiscards).toEqual([]);
 
     const counters = new Set(['state', 'attempts', 'parseAttempts']);
-    const collections = new Set(['claims', 'claimDiscards']);
+    const collections = new Set(['claims', 'claimDiscards', 'resultsDiscards']);
     for (const [key, value] of Object.entries(PENDING_ENRICHMENT)) {
       if (counters.has(key) || collections.has(key)) continue;
       expect(value).toBeNull();

@@ -1,4 +1,8 @@
 import { CLAIM_SYSTEM_PROMPT } from '../logic/claim-prompt';
+import {
+  RESULTS_OUTPUT_SCHEMA,
+  RESULTS_SYSTEM_PROMPT,
+} from '../logic/results-prompt';
 import { CLAIM_MAX_TOKENS, DEFAULT_CLAIM_MODEL } from './claim-provider';
 import {
   ClaudeClaimExtractor,
@@ -354,5 +358,119 @@ describe('ClaudeClaimExtractor.fromApiKey', () => {
         effort: 'low',
       }),
     ).toBeInstanceOf(ClaudeClaimExtractor);
+  });
+});
+
+/** The results lane, over the same client. */
+const RESULTS_REPLY = {
+  stop_reason: 'end_turn',
+  content: [
+    {
+      type: 'text',
+      text: JSON.stringify({
+        results: {
+          basis: 'consolidated',
+          columnsSpan: '30.06.202630.06.2025',
+          figures: [
+            {
+              metric: 'revenue',
+              span: 'Revenue from operations 73,977.90 65,607.59',
+              current: '73,977.90',
+              prior: '65,607.59',
+            },
+          ],
+        },
+      }),
+    },
+  ],
+};
+
+describe('ClaudeClaimExtractor — the results lane', () => {
+  it('sends the results prompt and schema, cached like the claims one', async () => {
+    const messages = new RecordingMessages(RESULTS_REPLY);
+    await extractorWith(messages).extractResults(REQUEST);
+    const body = messages.bodies[0];
+    const system = body.system as { text: string; cache_control: unknown }[];
+    expect(system[0].text).toBe(RESULTS_SYSTEM_PROMPT);
+    expect(system[0].text).not.toBe(CLAIM_SYSTEM_PROMPT);
+    expect(system[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(
+      (body.output_config as { format: { schema: unknown } }).format.schema,
+    ).toBe(RESULTS_OUTPUT_SCHEMA);
+  });
+
+  it('keeps the server-side fallback both lanes need', async () => {
+    const messages = new RecordingMessages(RESULTS_REPLY);
+    await extractorWith(messages).extractResults(REQUEST);
+    expect(messages.bodies[0].betas).toEqual([
+      'server-side-fallback-2026-07-01',
+    ]);
+    expect(messages.bodies[0].max_tokens).toBe(CLAIM_MAX_TOKENS);
+  });
+
+  it('reads a table out of a good reply', async () => {
+    expect(
+      await extractorWith(new RecordingMessages(RESULTS_REPLY)).extractResults(
+        REQUEST,
+      ),
+    ).toMatchObject({ outcome: 'ok', results: { basis: 'consolidated' } });
+  });
+
+  it('reports no table rather than a failure when the document has none', async () => {
+    const reply = {
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify({ results: null }) }],
+    };
+    expect(
+      await extractorWith(new RecordingMessages(reply)).extractResults(REQUEST),
+    ).toMatchObject({ outcome: 'ok', results: null });
+  });
+
+  it('checks the refusal before it reads the content', async () => {
+    const reply = { stop_reason: 'refusal', content: [] };
+    expect(
+      await extractorWith(new RecordingMessages(reply)).extractResults(REQUEST),
+    ).toEqual({
+      outcome: 'failed',
+      message: 'the model declined to answer for this document',
+    });
+  });
+
+  it.each([
+    [
+      'a body that is not JSON',
+      {
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'not json' }],
+      },
+    ],
+    ['an empty body', { stop_reason: 'end_turn', content: [] }],
+    ['no content at all', { stop_reason: 'end_turn' }],
+  ])('fails cleanly on %s', async (_label, reply) => {
+    const result = await extractorWith(
+      new RecordingMessages(reply),
+    ).extractResults(REQUEST);
+    expect(result.outcome).toBe('failed');
+  });
+
+  it('never throws, whatever the SDK does', async () => {
+    const result = await extractorWith(
+      new RecordingMessages(undefined, new Error('sk-ant-leaked')),
+    ).extractResults(REQUEST);
+    expect(result.outcome).toBe('failed');
+    if (result.outcome !== 'failed') return;
+    expect(result.message).not.toContain('sk-ant-leaked');
+  });
+
+  it('honours its own document cap, separate from the claim lane', async () => {
+    const messages = new RecordingMessages(RESULTS_REPLY);
+    await new ClaudeClaimExtractor(messages, {
+      model: DEFAULT_CLAIM_MODEL.anthropic,
+      effort: 'medium',
+      maxDocumentChars: 5,
+      maxResultsDocumentChars: 12,
+    }).extractResults({ ...REQUEST, documentText: 'x'.repeat(100) });
+    const turns = messages.bodies[0].messages as { content: string }[];
+    expect(turns[0].content).toContain('first 12 characters of 100');
   });
 });

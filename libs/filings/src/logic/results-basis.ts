@@ -1,0 +1,199 @@
+import type { ResultsBasis } from './results.types';
+
+/**
+ * Deciding, from the document alone, whether a table is consolidated or
+ * standalone.
+ *
+ * ================================================================
+ * THE ERROR THIS MODULE EXISTS TO MAKE IMPOSSIBLE
+ * ================================================================
+ *
+ * A results filing carries both statements. Apollo Tyres' Q1 FY27 outcome prints
+ * consolidated revenue of ₹73,977.90 million at character 7,900 and standalone
+ * revenue of ₹54,618.69 million at character 21,900 — same row label, same
+ * column header, same units, 35% apart. A model reading either row will state a
+ * basis, and a model that states the wrong one produces a line that is fluent,
+ * well-formed, correctly quoted, and a wrong number about a named listed
+ * company.
+ *
+ * So the extractor's answer is never taken. It is treated as a CLAIM about the
+ * document, and this module produces an independent answer from the document's
+ * own headings; `results-verify.ts` publishes only when the two agree. Two
+ * independent readings that must coincide is the only structure available here
+ * that turns "the model said so" into evidence.
+ *
+ * ================================================================
+ * WHAT COUNTS AS A HEADING, AND WHY IT IS ANCHORED TO THE COLUMNS
+ * ================================================================
+ *
+ * A basis marker is the word `consolidated` or `standalone` written within
+ * `BASIS_HEADING_CONTEXT` characters of the word `result`. That is what a
+ * statement title looks like in every real filing measured — `UNAUDITED
+ * CONSOLIDATED FINANCIAL RESULTS`, `CONSOLIDATED RESULTS`, `Statement of
+ * Unaudited Standalone Financial Results` — and it excludes the word appearing
+ * loose in a note about consolidation policy.
+ *
+ * The marker is then matched against the TABLE'S COLUMN HEADER, not against the
+ * row. This is the load-bearing choice and it was made from a measurement:
+ * `pdf-parse` does not emit a page in reading order, and in the Apollo document
+ * the standalone statement's rows appear BEFORE its own title in the flattened
+ * stream, with a consolidated note sitting between. Nearest-preceding-marker
+ * from the ROW therefore answers "consolidated" for a standalone row — the exact
+ * failure this module exists to prevent.
+ *
+ * Anchoring to the column header instead, with a short reach, asks a different
+ * and answerable question: *does a statement title sit immediately above this
+ * table's own column header?* For the consolidated table the title is 78
+ * characters above it; for the mis-ordered standalone table the nearest marker
+ * is 3,260 characters away and the answer is **nothing is close enough to say**,
+ * which refuses the block. A missed table is a line nobody sees. A mislabelled
+ * one is the harm.
+ */
+
+/** How far from the word `result` a basis word still reads as a heading. */
+export const BASIS_HEADING_CONTEXT = 40;
+
+/**
+ * How far above a table's column header its statement title may sit.
+ *
+ * 400 characters, measured rather than chosen. Across the real filings this was
+ * built against, the distance from the statement title to the column-date line
+ * of its own table is 67 to 78 characters — the title, the "for the quarter
+ * ended" line, and the units declaration, and nothing else. 400 clears that by
+ * five times while staying far short of the 3,260 characters that separate the
+ * Apollo standalone table's column header from the nearest marker `pdf-parse`
+ * left above it, which is the case that must refuse.
+ */
+export const BASIS_HEADING_REACH = 400;
+
+/**
+ * How close an opposing basis word makes the heading ambiguous.
+ *
+ * Real covering letters say `Un-audited Financial Results (Standalone and
+ * Consolidated)` and `results (consolidated & standalone)`. Both words are
+ * genuine markers by the rule above, they are 15 characters apart, and a
+ * nearest-preceding rule would silently pick whichever came second. A heading
+ * that names both statements governs neither, so it refuses.
+ */
+export const BASIS_AMBIGUITY_CHARS = 120;
+
+/** How much of the document is kept as evidence around a heading. */
+export const MAX_BASIS_EVIDENCE_CHARS = 160;
+const BASIS_EVIDENCE_PAD = 30;
+
+/** One statement heading, located in the document. */
+export interface BasisMarker {
+  readonly offset: number;
+  readonly basis: ResultsBasis;
+  /** Exactly as the document writes it. */
+  readonly raw: string;
+}
+
+/**
+ * `consolidated` or `standalone` with `result` in its neighbourhood, either side.
+ *
+ * Two lookarounds rather than one pattern with a gap, because the word can
+ * precede its noun (`consolidated financial results`) or follow it
+ * (`Financial Results (Standalone`), and both spellings appear in the corpus.
+ */
+const BASIS_WORD = /\b(consolidated|standalone)\b/gi;
+const NEAR_RESULT = /result/i;
+
+// A total function over the two words the pattern can match, rather than a
+// lookup with an unreachable fallback: a branch no input can reach is a claim
+// nobody can check, and the compiler still refuses anything outside the union.
+const basisOf = (word: string): ResultsBasis =>
+  word.toLowerCase() === 'standalone' ? 'standalone' : 'consolidated';
+
+/**
+ * Every statement heading in a document, in the order written.
+ *
+ * NEVER THROWS. A document with no results table returns an empty list.
+ */
+export function basisMarkersIn(
+  documentText: string,
+  context: number = BASIS_HEADING_CONTEXT,
+): readonly BasisMarker[] {
+  const markers: BasisMarker[] = [];
+  for (const match of documentText.matchAll(BASIS_WORD)) {
+    const from = Math.max(0, match.index - context);
+    const to = Math.min(
+      documentText.length,
+      match.index + match[0].length + context,
+    );
+    if (!NEAR_RESULT.test(documentText.slice(from, to))) continue;
+    markers.push({
+      offset: match.index,
+      basis: basisOf(match[0]),
+      raw: match[0],
+    });
+  }
+  return markers;
+}
+
+export type GoverningBasis =
+  | {
+      readonly outcome: 'ok';
+      readonly basis: ResultsBasis;
+      readonly evidence: string;
+    }
+  | { readonly outcome: 'none'; readonly detail: string };
+
+/**
+ * The basis of the table whose column header starts at `headerOffset`.
+ *
+ * Returns `none` — never a guess — when no heading is within reach, and when the
+ * nearest one is contradicted by an opposing heading beside it. Both are
+ * refusals of the whole results block, which is the point: a table whose basis
+ * this pipeline cannot establish has nothing publishable in it.
+ */
+export function governingBasis(
+  documentText: string,
+  headerOffset: number,
+  reach: number = BASIS_HEADING_REACH,
+): GoverningBasis {
+  const markers = basisMarkersIn(documentText);
+  const reachable = markers.filter(
+    (marker) =>
+      marker.offset <= headerOffset && headerOffset - marker.offset <= reach,
+  );
+
+  if (reachable.length === 0) {
+    return {
+      outcome: 'none',
+      detail:
+        `no consolidated or standalone statement heading appears in the ` +
+        `${reach} characters above the table's column header`,
+    };
+  }
+
+  const nearest = reachable[reachable.length - 1];
+  const opposing = markers.find(
+    (marker) =>
+      marker.basis !== nearest.basis &&
+      Math.abs(marker.offset - nearest.offset) <= BASIS_AMBIGUITY_CHARS,
+  );
+  if (opposing !== undefined) {
+    return {
+      outcome: 'none',
+      detail:
+        `the nearest heading names both statements ` +
+        `("${nearest.raw}" and "${opposing.raw}" within ` +
+        `${BASIS_AMBIGUITY_CHARS} characters), so it governs neither`,
+    };
+  }
+
+  const evidence = documentText
+    .slice(
+      Math.max(0, nearest.offset - BASIS_EVIDENCE_PAD),
+      Math.min(
+        documentText.length,
+        nearest.offset + nearest.raw.length + BASIS_EVIDENCE_PAD,
+      ),
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_BASIS_EVIDENCE_CHARS);
+
+  return { outcome: 'ok', basis: nearest.basis, evidence };
+}

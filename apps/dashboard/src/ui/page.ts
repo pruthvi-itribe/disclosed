@@ -146,6 +146,10 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <div id="claims"></div>
     </div>
     <div class="panel">
+      <h2><span>Financial results</span><span class="muted">click to filter</span></h2>
+      <div id="results"></div>
+    </div>
+    <div class="panel">
       <h2><span>Filings per IST day</span></h2>
       <div id="days" class="days"></div>
       <div class="dayaxis"><span id="day-from">—</span><span id="day-to">—</span></div>

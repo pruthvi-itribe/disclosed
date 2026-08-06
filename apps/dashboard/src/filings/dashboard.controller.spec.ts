@@ -38,6 +38,9 @@ const ENRICHMENT_SUMMARY: EnrichmentSummaryView = {
   withClaims: 34,
   byClaimDiscard: [{ key: 'span-not-found', count: 7 }],
   byClaimRefusal: [{ key: 'not-eligible', count: 600 }],
+  withResults: 12,
+  byResultsDiscard: [{ key: 'label-mismatch', count: 4 }],
+  byResultsRefusal: [{ key: 'no-results', count: 21 }],
   generatedAtIst: '2026-08-05 23:32:54',
 };
 

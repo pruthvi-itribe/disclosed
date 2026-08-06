@@ -22,13 +22,16 @@
     "corpus:analyse": "ts-node -r tsconfig-paths/register tools/corpus/analyse-corpus.ts",
     "amount:measure": "ts-node -r tsconfig-paths/register tools/extraction/measure-amount-precision.ts",
     "enrich:run": "ts-node -r tsconfig-paths/register tools/enrichment/enrich-filings.ts",
+    "enrich:requeue": "ts-node -r tsconfig-paths/register tools/enrichment/requeue-terminal.ts",
     "build:enrichment": "nest build enrichment",
     "start:enrichment": "nest start enrichment",
     "start:enrichment:dev": "nest start enrichment --watch",
     "start:enrichment:prod": "node dist/apps/ingest/src/enrichment.main",
     "claims:measure": "ts-node -r tsconfig-paths/register tools/claims/measure-claim-gate.ts",
     "claims:verify": "ts-node -r tsconfig-paths/register tools/claims/verify-corpus.ts",
-    "claims:compare": "ts-node -r tsconfig-paths/register tools/claims/compare-providers.ts"
+    "claims:compare": "ts-node -r tsconfig-paths/register tools/claims/compare-providers.ts",
+    "results:verify": "ts-node -r tsconfig-paths/register tools/results/verify-results.ts",
+    "ambiguity:measure": "ts-node -r tsconfig-paths/register tools/extraction/measure-ambiguity-scope.ts"
   },
   "keywords": [],
   "author": "",

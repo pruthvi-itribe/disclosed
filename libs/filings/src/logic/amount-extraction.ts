@@ -1,4 +1,8 @@
-import { hasAmbiguityKeyword } from './ambiguity';
+import {
+  conditionalFramingIn,
+  hasConditionalFraming,
+  hasRumourFraming,
+} from './ambiguity';
 import {
   findEventPhraseEnds,
   findLabelWindows,
@@ -7,6 +11,7 @@ import {
 } from './amount-anchors';
 import { findUnitScaleHeaders, hasValueBand } from './amount-hazards';
 import { RupeeMatch, scanBareAmounts, scanRupeeAmounts } from './rupee-parse';
+import { sentenceAt } from './sentence-scope';
 
 /**
  * The monetary-amount extractor.
@@ -23,7 +28,16 @@ import { RupeeMatch, scanBareAmounts, scanRupeeAmounts } from './rupee-parse';
  */
 
 export type AmountRefusalReason =
-  /** Conditional or rumour language: the event itself is not confirmed. */
+  /**
+   * The event is not confirmed: the filing restates a news report, or the
+   * sentence stating every candidate figure conditions it.
+   *
+   * ONE REASON FOR BOTH, deliberately. They are the same verdict about the
+   * filing — "there is no settled number here" — and a dashboard that split
+   * them would be reporting on which pattern list fired rather than on what a
+   * reviewer has to decide. The `detail` names the scope, the phrase and, for a
+   * conditional refusal, the sentence it fired on.
+   */
   | 'ambiguity-keyword'
   /** A table header re-denominates figures; which ones is not knowable. */
   | 'unit-scaled-header'
@@ -92,10 +106,34 @@ interface Candidate extends RupeeMatch {
   readonly label: string | null;
 }
 
+/** A candidate dropped because its own sentence conditions it, and the proof. */
+interface ConditionedCandidate {
+  /** The phrase that fired, exactly as the document spells it. */
+  readonly phrase: string;
+  /** The sentence it fired in, unbounded — `quote` shortens it at the edge. */
+  readonly sentence: string;
+}
+
 const refuse = (
   reason: AmountRefusalReason,
   detail: string,
 ): RefusedAmount => ({ outcome: 'refused', reason, detail });
+
+/**
+ * How much of a filing's own text a refusal detail may quote.
+ *
+ * The detail is the whole product of a refusal, so it has to carry enough of
+ * the sentence for a reviewer to agree or disagree without opening the PDF —
+ * `safeEcho`'s 32 characters would truncate "extended subject to necessary" to
+ * a fragment that proves nothing. Bounded all the same, because the source is
+ * an exchange-supplied document and the destination is a stored record and a
+ * log line.
+ */
+export const MAX_SENTENCE_QUOTE_CHARS = 160;
+
+/** A stretch of a filing, made safe and short enough to embed in a detail. */
+const quote = (text: string): string =>
+  text.replace(/\s+/g, ' ').trim().slice(0, MAX_SENTENCE_QUOTE_CHARS);
 
 /**
  * Figures inside one labelled disclosure row.
@@ -170,10 +208,29 @@ const describeValues = (values: readonly number[]): string =>
 /**
  * Reads the one figure this filing is about, or explains why it will not.
  *
- * Refusal order is significant. Ambiguity is checked first because a
- * conditional event has no confirmed value to report however clearly the
- * document states a number, and the scale-header guard is checked before the
- * agreement guard because a mis-scaled figure that happens to be the only
+ * ================================================================
+ * REFUSAL ORDER IS PART OF THE DESIGN, AND AMBIGUITY IS NOW IN TWO PLACES
+ * ================================================================
+ *
+ * The document-wide checks run first, because they are verdicts about the
+ * FILING that no figure can rescue: a filing restating a news item has no
+ * company-stated number in it anywhere, and an exchange summary that conditions
+ * the event says so about the only event the filing has.
+ *
+ * CONDITIONAL FRAMING IN THE DOCUMENT RUNS LAST, AFTER THE CANDIDATES ARE
+ * FOUND, and moving it there is the point of this arrangement. Tested against
+ * the whole document it refused 590 live filings, because `subject to` is
+ * boilerplate — "subject to shareholder approval", "subject to applicable
+ * taxes" — and appears in filings whose disclosure row states an entirely
+ * settled consideration. Tested against the sentence a candidate was read from,
+ * 33 of those 590 are still refused and 541 are refused for what was always the
+ * real reason: they carry no candidate figure at all. `ambiguity.ts` argues the
+ * split; `sentence-scope.ts` argues what a sentence is in PDF text, and
+ * `tools/extraction/measure-ambiguity-scope.ts` is where those counts come
+ * from.
+ *
+ * The remaining order is unchanged: the scale-header guard is checked before
+ * the agreement guard because a mis-scaled figure that happens to be the only
  * candidate would otherwise sail through.
  */
 export function extractMaterialAmount(
@@ -185,13 +242,24 @@ export function extractMaterialAmount(
     return refuse('no-candidate', 'the attachment carries no extractable text');
   }
 
-  // Run over the PDF text, not only the summary. The one-line summary is
-  // boilerplate; the document is where "Letter of Intent", "subject to" and
-  // "L1 bidder" actually appear, and they change the answer.
-  if (hasAmbiguityKeyword(documentText) || hasAmbiguityKeyword(summary)) {
+  // Run over the PDF text as well as the summary. Rumour framing is a property
+  // of the whole filing: if the exchange asked for a clarification about a news
+  // item, every figure in the document is a journalist's number.
+  if (hasRumourFraming(documentText) || hasRumourFraming(summary)) {
     return refuse(
       'ambiguity-keyword',
-      'the filing uses conditional or rumour language, so the event is not confirmed',
+      'the filing restates an unverified news report, so no figure in it is the company’s own',
+    );
+  }
+
+  // The summary is one line and it is directly about the event, so there is no
+  // figure to scope conditional framing to and nothing to gain by waiting: a
+  // summary that says "emerged as L1 bidder" has already said the event is not
+  // settled, whatever the attachment goes on to state.
+  if (hasConditionalFraming(summary)) {
+    return refuse(
+      'ambiguity-keyword',
+      `the exchange summary conditions the event: "${quote(summary)}"`,
     );
   }
 
@@ -215,20 +283,47 @@ export function extractMaterialAmount(
         );
   }
 
+  // Each candidate answers for its OWN sentence. A figure the document
+  // conditions is dropped rather than refusing the filing, because a filing can
+  // state a settled consideration in its disclosure row and mention an
+  // unrelated letter of intent three paragraphs later — and under the old
+  // document-wide test the second sentence silently vetoed the first.
+  //
+  // Refusing only when EVERY candidate is dropped keeps the guarantee intact in
+  // the direction that matters: a figure is never emitted from a clause that
+  // conditions it, and a filing whose only figures are conditional is still
+  // refused rather than quietly reported as having none.
+  const admitted: Candidate[] = [];
+  const conditioned: ConditionedCandidate[] = [];
+  for (const candidate of candidates) {
+    const sentence = sentenceAt(documentText, candidate.start).text;
+    const phrase = conditionalFramingIn(sentence);
+    if (phrase === null) admitted.push(candidate);
+    else conditioned.push({ phrase, sentence });
+  }
+
+  if (admitted.length === 0) {
+    const [{ phrase, sentence }] = conditioned;
+    return refuse(
+      'ambiguity-keyword',
+      `the sentence stating the figure conditions it ("${phrase}"): "${quote(sentence)}"`,
+    );
+  }
+
   // A unit-less figure takes its scale entirely from its surroundings, so a
   // document that re-denominates ANY of its tables can silently re-denominate
   // this one. A figure that names its own unit cannot be moved this way and is
   // left alone. Refuse rather than multiply: nothing in the text says which
   // table a given figure belongs to.
   const scaleHeaders = findUnitScaleHeaders(documentText);
-  if (scaleHeaders.length > 0 && candidates.some((c) => !c.carriesUnit)) {
+  if (scaleHeaders.length > 0 && admitted.some((c) => !c.carriesUnit)) {
     return refuse(
       'unit-scaled-header',
       `the document re-denominates figures ("${scaleHeaders[0]}") and the candidate states no unit of its own`,
     );
   }
 
-  const values = distinct(candidates);
+  const values = distinct(admitted);
   if (values.length > 1) {
     return refuse(
       'multiple-candidates',
@@ -243,7 +338,7 @@ export function extractMaterialAmount(
     );
   }
 
-  const chosen = candidates[0];
+  const chosen = admitted[0];
   const provenance: AmountProvenance = {
     anchor: chosen.anchor,
     label: chosen.label,

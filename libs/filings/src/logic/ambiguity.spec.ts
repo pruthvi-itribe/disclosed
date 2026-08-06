@@ -1,4 +1,12 @@
-import { hasAmbiguityKeyword, extractRupeeAmounts } from './ambiguity';
+import {
+  CONDITIONAL_PATTERNS,
+  conditionalFramingIn,
+  extractRupeeAmounts,
+  hasAmbiguityKeyword,
+  hasConditionalFraming,
+  hasRumourFraming,
+  RUMOUR_PATTERNS,
+} from './ambiguity';
 
 describe('hasAmbiguityKeyword', () => {
   it.each([
@@ -46,6 +54,115 @@ describe('hasAmbiguityKeyword', () => {
         'Dabur Q1 Consol Net Profit Surges 15% at Rs 591 Crore',
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * The split into two scopes must not change what `hasAmbiguityKeyword` means.
+ *
+ * `claim-verify.ts` calls it on a claim's own quoted span — already one
+ * sentence, where the union is the right test — and that call site was not
+ * touched. A pattern that fell out of both lists, or landed in neither, would
+ * show up ONLY as a conditional claim reaching the wire, so it is pinned here
+ * rather than left to the amount extractor's suite to notice.
+ */
+describe('the two scopes partition the old list', () => {
+  it.each([
+    ...RUMOUR_PATTERNS.map((pattern): [string, RegExp] => ['rumour', pattern]),
+    ...CONDITIONAL_PATTERNS.map((pattern): [string, RegExp] => [
+      'conditional',
+      pattern,
+    ]),
+  ])(
+    'every %s pattern still trips hasAmbiguityKeyword: %s',
+    (_scope, pattern) => {
+      const sample = pattern.source
+        .replace(/\\b/g, '')
+        .replace(/-\?/g, '-')
+        .replace(/\?/g, '');
+      expect(hasAmbiguityKeyword(sample)).toBe(true);
+    },
+  );
+
+  it('counts the same patterns in the halves as in the union', () => {
+    expect(RUMOUR_PATTERNS.length + CONDITIONAL_PATTERNS.length).toBe(18);
+  });
+
+  it('puts no pattern in both halves', () => {
+    const sources = [
+      ...RUMOUR_PATTERNS.map((pattern) => pattern.source),
+      ...CONDITIONAL_PATTERNS.map((pattern) => pattern.source),
+    ];
+    expect(new Set(sources).size).toBe(sources.length);
+  });
+});
+
+describe('hasRumourFraming', () => {
+  it.each([
+    'The Exchange has sought clarification with respect to recent news item',
+    'Clarification on news item appearing in the media',
+    'Response to media report regarding a possible stake sale',
+    'The Company categorically denies market speculation about a merger',
+  ])('flags rumour framing: %s', (text) => {
+    expect(hasRumourFraming(text)).toBe(true);
+  });
+
+  // THE POINT OF THE SPLIT. These condition a figure in the clause they sit in;
+  // they say nothing about whether the FILING is a restated press claim, so a
+  // document-wide rumour test must not fire on them.
+  it.each([
+    'Received a Letter of Intent from the customer',
+    'Company emerged as L1 bidder for the project',
+    'The order is subject to statutory approvals',
+    'Signed an MoU with the state government',
+  ])('does not treat conditional framing as a rumour: %s', (text) => {
+    expect(hasRumourFraming(text)).toBe(false);
+  });
+});
+
+describe('hasConditionalFraming', () => {
+  it.each([
+    'Company emerged as L1 bidder for the project',
+    'Received a Letter of Intent from the customer',
+    'Signed an MoU with the state government',
+    'Received in-principle approval from the board',
+    'The allotment is subject to shareholder approval',
+    'The transaction is likely to complete in Q3',
+    'Declared the preferred bidder for the concession',
+  ])('flags conditional framing: %s', (text) => {
+    expect(hasConditionalFraming(text)).toBe(true);
+  });
+
+  it.each([
+    'Clarification on news item appearing in the media',
+    'Received a work order worth Rs. 78.24 Crore from UNICEF',
+  ])('does not flag %s', (text) => {
+    expect(hasConditionalFraming(text)).toBe(false);
+  });
+});
+
+describe('conditionalFramingIn', () => {
+  // The phrase is what the refusal detail names, so a reviewer can see which
+  // words fired without re-reading the filing to guess.
+  it.each([
+    ['emerged as L1 bidder for the project', 'L1'],
+    ['Received a Letter of Intent today', 'Letter of Intent'],
+    ['subject to shareholder approval', 'subject to'],
+  ])('returns the phrase as the text spells it: %s', (text, expected) => {
+    expect(conditionalFramingIn(text)).toBe(expected);
+  });
+
+  it('returns null when nothing conditions the text', () => {
+    expect(conditionalFramingIn('Received a work order worth Rs 5 crore')).toBe(
+      null,
+    );
+  });
+
+  // A shared `/g` regex would carry `lastIndex` between calls and answer
+  // differently the second time, which is a bug that only appears in a batch.
+  it('answers identically when called twice', () => {
+    const text = 'The order is subject to approval';
+    expect(conditionalFramingIn(text)).toBe(conditionalFramingIn(text));
   });
 });
 

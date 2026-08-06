@@ -46,6 +46,54 @@ const ClaimDiscardSchema = new Schema(
   { _id: false },
 );
 
+/** One verified results figure: the metric, both values, the unit, the row. */
+const ResultsFigureSchema = new Schema(
+  {
+    metric: { type: String, default: '' },
+    current: { type: String, default: '' },
+    prior: { type: String, default: '' },
+    // The wire token for the scale the document declared: CR, MN, %, or empty
+    // for a per-share figure. Stored as the document's scale abbreviated, never
+    // as a rescaling of the value beside it.
+    unit: { type: String, default: '' },
+    span: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
+/**
+ * The one results table a filing carries.
+ *
+ * `basisSpan` and `columnsSpan` are stored beside the figures rather than
+ * derived on read, because they are the EVIDENCE: the heading that fixed
+ * consolidated against standalone, and the column dates that made the
+ * comparison year-on-year. A reviewer who cannot see those two cannot check the
+ * line, and re-deriving them later would be reading a document that may since
+ * have been re-parsed by different code.
+ */
+const ResultsSchema = new Schema(
+  {
+    basis: { type: String, default: '' },
+    basisSpan: { type: String, default: '' },
+    columnsSpan: { type: String, default: '' },
+    period: { type: String, default: '' },
+    priorPeriod: { type: String, default: '' },
+    figures: { type: [ResultsFigureSchema], default: [] },
+  },
+  { _id: false },
+);
+
+/** One refused figure, kept so a refusal can be read rather than counted. */
+const ResultsDiscardSchema = new Schema(
+  {
+    reason: { type: String, default: '' },
+    metric: { type: String, default: '' },
+    figure: { type: String, default: '' },
+    detail: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
 const EnrichmentSchema = new Schema<FilingEnrichment>(
   {
     state: { type: String, default: 'pending' },
@@ -72,6 +120,14 @@ const EnrichmentSchema = new Schema<FilingEnrichment>(
     claimsProposed: { type: Number, default: null },
     claimRefusalReason: { type: String, default: null },
     claimRefusalDetail: { type: String, default: null },
+    // A SEPARATE FIELD from `claims`, and a separate gate: a claim is a
+    // sentence and a results figure is a cell. See `results.types.ts`.
+    results: { type: ResultsSchema, default: null },
+    resultsLine: { type: String, default: null },
+    resultsDiscards: { type: [ResultsDiscardSchema], default: [] },
+    resultsProposed: { type: Number, default: null },
+    resultsRefusalReason: { type: String, default: null },
+    resultsRefusalDetail: { type: String, default: null },
     // A SEPARATE FIELD from `claims`, and never merged into it: this is model
     // prose that no span verifies. See `claim-summary.ts`.
     documentSummary: { type: String, default: null },

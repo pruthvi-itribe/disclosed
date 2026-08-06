@@ -152,6 +152,9 @@ footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
 /* A degraded headline is the exchange's own words, and it reads as such. */
 .headline.verbatim { color: var(--muted); font-weight: 500; }
 .claimline{font-weight:600;letter-spacing:.01em;color:var(--claim,#7dd3fc);margin-top:.25rem;line-height:1.35}
+/* The results line leads its cell and is deliberately unlike the claim line
+   beside it: the two were admitted by different gates. */
+.resultsline{color:var(--results,#fcd34d);margin-bottom:.3rem}
 .claimspan{color:var(--muted,#94a3b8);font-size:.78rem;font-style:italic;margin-top:.15rem;line-height:1.3}
 .periodspan{font-style:normal;opacity:.8}
 /* The model summary. Visually UNLIKE a verified claim on purpose: a reader

@@ -1,4 +1,5 @@
 import { CLAIM_SYSTEM_PROMPT } from '../logic/claim-prompt';
+import { RESULTS_SYSTEM_PROMPT } from '../logic/results-prompt';
 import { CLAIM_MAX_TOKENS, DEFAULT_CLAIM_MODEL } from './claim-provider';
 import {
   CLAIM_SCHEMA_NAME,
@@ -8,6 +9,7 @@ import {
   OPENROUTER_REFERER,
   OPENROUTER_TITLE,
   OpenRouterClaimExtractor,
+  RESULTS_SCHEMA_NAME,
   type OpenRouterChatApi,
 } from './openrouter-claim-extractor';
 
@@ -520,5 +522,145 @@ describe('OpenRouterClaimExtractor.fromApiKey', () => {
         effort: 'low',
       }),
     ).toBeInstanceOf(OpenRouterClaimExtractor);
+  });
+});
+
+/**
+ * The results lane, over the same transport.
+ *
+ * A SECOND CALL AND A SECOND PROMPT. What must be true is that the two lanes
+ * share every part of the transport that can go wrong — the routing flag, the
+ * error-in-a-200 check, the refusal and truncation handling — and differ only
+ * in the prompt, the schema name and the schema.
+ */
+const RESULTS_REPLY = {
+  choices: [
+    {
+      finish_reason: 'stop',
+      message: {
+        content: JSON.stringify({
+          results: {
+            basis: 'consolidated',
+            columnsSpan: '30.06.202630.06.2025',
+            figures: [
+              {
+                metric: 'revenue',
+                span: 'Revenue from operations 73,977.90 65,607.59',
+                current: '73,977.90',
+                prior: '65,607.59',
+              },
+            ],
+          },
+        }),
+      },
+    },
+  ],
+};
+
+describe('OpenRouterClaimExtractor — the results lane', () => {
+  it('sends the results prompt and the results schema, not the claims ones', async () => {
+    const chat = new RecordingChat(RESULTS_REPLY);
+    await extractorWith(chat).extractResults(REQUEST);
+    const body = chat.bodies[0];
+    const messages = body.messages as { content: string }[];
+    expect(messages[0].content).toBe(RESULTS_SYSTEM_PROMPT);
+    expect(messages[0].content).not.toBe(CLAIM_SYSTEM_PROMPT);
+    expect(body.response_format).toMatchObject({
+      json_schema: { name: RESULTS_SCHEMA_NAME, strict: true },
+    });
+  });
+
+  it('keeps the routing flag that stops a parameter being dropped', async () => {
+    // Without it OpenRouter can route to a host that ignores `response_format`,
+    // which returns fluent prose and records "the extractor failed" on every
+    // filing while looking like a model problem.
+    const chat = new RecordingChat(RESULTS_REPLY);
+    await extractorWith(chat).extractResults(REQUEST);
+    expect(chat.bodies[0].provider).toEqual({ require_parameters: true });
+    expect(chat.bodies[0].temperature).toBe(0);
+    expect(chat.bodies[0].max_tokens).toBe(CLAIM_MAX_TOKENS);
+  });
+
+  it('reads a table out of a good reply', async () => {
+    const result = await extractorWith(
+      new RecordingChat(RESULTS_REPLY),
+    ).extractResults(REQUEST);
+    expect(result).toMatchObject({
+      outcome: 'ok',
+      results: { basis: 'consolidated' },
+    });
+  });
+
+  it('reports no table rather than a failure when the document has none', async () => {
+    const reply = {
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: { content: JSON.stringify({ results: null }) },
+        },
+      ],
+    };
+    expect(
+      await extractorWith(new RecordingChat(reply)).extractResults(REQUEST),
+    ).toMatchObject({ outcome: 'ok', results: null });
+  });
+
+  it.each([
+    [
+      'an upstream error inside a 200',
+      { error: { message: 'upstream is down' } },
+      'the provider returned an error',
+    ],
+    ['no choices', { choices: [] }, 'no choices'],
+    [
+      'a content filter',
+      { choices: [{ finish_reason: 'content_filter', message: {} }] },
+      'declined to answer',
+    ],
+    [
+      'a truncated reply',
+      { choices: [{ finish_reason: 'length', message: { content: '{' } }] },
+      'truncated',
+    ],
+    [
+      'a body that is not JSON',
+      {
+        choices: [{ finish_reason: 'stop', message: { content: 'not json' } }],
+      },
+      'Unexpected token',
+    ],
+    [
+      'an empty body',
+      { choices: [{ finish_reason: 'stop', message: { content: '' } }] },
+      'returned no text',
+    ],
+  ])('fails cleanly on %s', async (_label, reply, expected) => {
+    const result = await extractorWith(new RecordingChat(reply)).extractResults(
+      REQUEST,
+    );
+    expect(result.outcome).toBe('failed');
+    if (result.outcome !== 'failed') return;
+    expect(result.message).toContain(expected);
+  });
+
+  it('never throws, whatever the transport does', async () => {
+    const chat = new RecordingChat(null, new Error('sk-or-v1-leaked-key'));
+    const result = await extractorWith(chat).extractResults(REQUEST);
+    expect(result.outcome).toBe('failed');
+    if (result.outcome !== 'failed') return;
+    // And never echoes a credential back into the database.
+    expect(result.message).not.toContain('sk-or-v1-leaked-key');
+  });
+
+  it('honours its own document cap, separate from the claim lane', async () => {
+    const chat = new RecordingChat(RESULTS_REPLY);
+    await new OpenRouterClaimExtractor(chat, {
+      model: DEFAULT_CLAIM_MODEL.openrouter,
+      effort: 'medium',
+      maxDocumentChars: 5,
+      maxResultsDocumentChars: 12,
+    }).extractResults({ ...REQUEST, documentText: 'x'.repeat(100) });
+    const messages = chat.bodies[0].messages as { content: string }[];
+    expect(messages[1].content).toContain('first 12 characters of 100');
   });
 });

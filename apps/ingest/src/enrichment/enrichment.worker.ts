@@ -4,6 +4,7 @@ import {
   claimEligibility,
   classifyFetchFailure,
   composeClaimLine,
+  composeResultsLine,
   decideAttachment,
   decideParseFailure,
   describeParseRetry,
@@ -15,9 +16,12 @@ import {
   normaliseWatchlist,
   parseFailureReason,
   NO_CLAIMS,
+  NO_RESULTS,
   passesContentGates,
   readDocument,
+  resultsEligibility,
   verifyClaims,
+  verifyResults,
   vetSummary,
   type AttachmentFetcher,
   type ClaimedFiling,
@@ -27,6 +31,8 @@ import {
   type Filing,
   type FilingEnrichment,
   type PdfParser,
+  type ResultsExtractor,
+  type ResultsOutcome,
   type UnparseableReason,
   type ZipReader,
   type ZipTextOk,
@@ -79,6 +85,8 @@ export interface EnrichmentTickResult {
   readonly claimed_lines: number;
   /** Proposed claims the verbatim gate refused. */
   readonly claimsDiscarded: number;
+  /** Documents that produced a verified results line. */
+  readonly resultsLines: number;
   /** Follow-up messages ATTEMPTED. Not proof of delivery. */
   readonly alerted: number;
 }
@@ -98,7 +106,8 @@ export const describeTick = (result: EnrichmentTickResult): string =>
   `(amount refused on ${result.refused}), unparseable ${result.unparseable}, ` +
   `parse-retried ${result.parseRetried}, retried ${result.retried}, ` +
   `failed ${result.failed}, claim-lines ${result.claimed_lines} ` +
-  `(${result.claimsDiscarded} claim(s) discarded), alerted ${result.alerted}`;
+  `(${result.claimsDiscarded} claim(s) discarded), ` +
+  `results-lines ${result.resultsLines}, alerted ${result.alerted}`;
 
 const EMPTY_TICK: EnrichmentTickResult = {
   claimed: 0,
@@ -110,6 +119,7 @@ const EMPTY_TICK: EnrichmentTickResult = {
   failed: 0,
   claimed_lines: 0,
   claimsDiscarded: 0,
+  resultsLines: 0,
   alerted: 0,
 };
 
@@ -203,6 +213,17 @@ export class EnrichmentWorker {
      * suite must be able to hand over a hostile archive without building one.
      */
     private readonly zipReader: ZipReader | null = null,
+    /**
+     * Null when no results extractor is wired, which is a supported state
+     * exactly as a null claim extractor is: every results-eligible filing then
+     * records `extractor-unavailable` rather than a silent nothing.
+     *
+     * SEPARATE FROM `claimExtractor` even though one object usually satisfies
+     * both, so a deployment can run one lane without the other and so a test can
+     * hand over a results extractor that answers and a claim extractor that does
+     * not.
+     */
+    private readonly resultsExtractor: ResultsExtractor | null = null,
   ) {
     this.watchlist = normaliseWatchlist(options.watchlist);
   }
@@ -555,6 +576,7 @@ export class EnrichmentWorker {
     );
 
     const claims = await this.claimsFor(filing, documentText);
+    const results = await this.resultsFor(filing, documentText);
 
     const enrichment: FilingEnrichment = {
       state: 'enriched',
@@ -581,6 +603,12 @@ export class EnrichmentWorker {
       claimsProposed: claims.proposed,
       claimRefusalReason: claims.refusalReason,
       claimRefusalDetail: claims.refusalDetail,
+      results: results.results,
+      resultsLine: results.line,
+      resultsDiscards: results.discards,
+      resultsProposed: results.proposed,
+      resultsRefusalReason: results.refusalReason,
+      resultsRefusalDetail: results.refusalDetail,
       // STORED, NEVER PUBLISHED. `announce` below is handed the claim line and
       // the headline and nothing else, so there is no path from here to
       // Telegram — see `claim-summary.ts` for why that separation is the whole
@@ -606,6 +634,7 @@ export class EnrichmentWorker {
       refused: verdict.amountRupees === null ? 1 : 0,
       claimed_lines: enrichment.claimLine === null ? 0 : 1,
       claimsDiscarded: claims.discards.length,
+      resultsLines: enrichment.resultsLine === null ? 0 : 1,
       alerted,
     };
   }
@@ -729,6 +758,119 @@ export class EnrichmentWorker {
   }
 
   /**
+   * Reads the financial results out of a document, contained.
+   *
+   * ================================================================
+   * A SECOND LANE, NOT A SECOND KIND OF CLAIM
+   * ================================================================
+   *
+   * It runs alongside the claim lane rather than inside it, and the separation
+   * is the same one `claim-summary.ts` insists on for a different reason: the
+   * two have different gates. A claim is admitted by finding its sentence; a
+   * results figure is admitted by the document's own header block agreeing about
+   * the statement, the column and the scale. Nothing downstream may treat one as
+   * the other, so nothing upstream may carry them in one structure.
+   *
+   * Contained exactly as the claim lane is: a failing results extractor costs
+   * the results and never the enrichment, because the amount, the claims and the
+   * headline are already worth storing and re-running the filing would spend
+   * another NSE request to reach them again.
+   */
+  private async resultsFor(
+    filing: Filing,
+    documentText: string,
+  ): Promise<ResultsOutcome> {
+    const eligibility = resultsEligibility(filing, documentText);
+    if (!eligibility.eligible) {
+      return {
+        ...NO_RESULTS,
+        refusalReason: 'not-eligible',
+        refusalDetail: eligibility.reason,
+      };
+    }
+
+    if (this.resultsExtractor === null) {
+      return {
+        ...NO_RESULTS,
+        refusalReason: 'extractor-unavailable',
+        refusalDetail: 'no results extractor is configured',
+      };
+    }
+
+    let extraction;
+    try {
+      extraction = await this.resultsExtractor.extractResults({
+        symbol: filing.symbol,
+        category: filing.category,
+        summary: filing.summary,
+        documentText,
+      });
+    } catch (error) {
+      // The extractor is contracted never to throw. This is the belt to that
+      // brace.
+      this.logger.error(
+        `Results extraction threw for seqId ${filing.seqId}: ${describeError(error)}`,
+        stackOf(error),
+      );
+      return {
+        ...NO_RESULTS,
+        refusalReason: 'extractor-error',
+        refusalDetail: describeError(error),
+      };
+    }
+
+    if (extraction.outcome === 'failed') {
+      this.logger.warn(
+        `Results extraction failed for seqId ${filing.seqId}: ${extraction.message}`,
+      );
+      return {
+        ...NO_RESULTS,
+        refusalReason: 'extractor-error',
+        refusalDetail: extraction.message,
+      };
+    }
+
+    if (extraction.results === null) {
+      // The ordinary answer for most of the eligible categories: a board-meeting
+      // outcome about a dividend carries no statement at all.
+      return {
+        ...NO_RESULTS,
+        proposed: 0,
+        refusalReason: 'no-results',
+      };
+    }
+
+    const proposed = extraction.results.figures.length;
+    const verified = verifyResults({
+      documentText,
+      proposed: extraction.results,
+    });
+
+    if (verified.outcome === 'refused') {
+      this.logger.warn(
+        `seqId ${filing.seqId} (${filing.symbol}): the results table was ` +
+          `refused (${verified.reason}): ${verified.detail}`,
+      );
+      return {
+        ...NO_RESULTS,
+        discards: verified.discards,
+        proposed,
+        refusalReason: verified.reason,
+        refusalDetail: verified.detail,
+      };
+    }
+
+    return {
+      results: verified.results,
+      line: composeResultsLine(filing.symbol, verified.results),
+      discards: verified.discards,
+      proposed,
+      refusalReason: null,
+      refusalDetail: null,
+    };
+  }
+
+  /**
    * Sends the follow-up, when there is one to send.
    *
    * FOUR GATES, and each blocks a different way of being annoying or wrong:
@@ -755,7 +897,13 @@ export class EnrichmentWorker {
     // so a follow-up gated on the amount alone stays silent on exactly the
     // filings this pipeline was built to stop missing.
     const headline = form === 'enriched' ? enrichment.headline : null;
-    if (headline === null && enrichment.claimLine === null) return 0;
+    if (
+      headline === null &&
+      enrichment.claimLine === null &&
+      enrichment.resultsLine === null
+    ) {
+      return 0;
+    }
     if (!passesContentGates(filing, this.watchlist)) return 0;
     if (!isWithinAlertWindow(filing, now, this.options.alertWindowMs)) return 0;
 
@@ -764,6 +912,7 @@ export class EnrichmentWorker {
         formatInsightAlert(filing, {
           headline,
           claimLine: enrichment.claimLine,
+          resultsLine: enrichment.resultsLine,
           contextLine: enrichment.contextLine,
           evidence: enrichment.amountEvidence,
         }),
@@ -986,6 +1135,12 @@ const blankVerdict = (
   claimsProposed: null,
   claimRefusalReason: null,
   claimRefusalDetail: null,
+  results: null,
+  resultsLine: null,
+  resultsDiscards: [],
+  resultsProposed: null,
+  resultsRefusalReason: null,
+  resultsRefusalDetail: null,
   documentSummary: null,
   documentSummaryRefusalReason: null,
   headline: null,
@@ -1029,5 +1184,6 @@ const merge = (
   failed: tally.failed + delta.failed,
   claimed_lines: tally.claimed_lines + delta.claimed_lines,
   claimsDiscarded: tally.claimsDiscarded + delta.claimsDiscarded,
+  resultsLines: tally.resultsLines + delta.resultsLines,
   alerted: tally.alerted + delta.alerted,
 });

@@ -108,6 +108,14 @@ describe('the enrichment view on a filing row', () => {
       // Model prose, kept in its own field and never merged into `claims`.
       documentSummary: null,
       documentSummaryRefusalReason: null,
+      // Read back as nulls and an empty array on every filing stored before the
+      // results lane existed, which is every filing in the live collection.
+      results: null,
+      resultsLine: null,
+      resultsDiscards: [],
+      resultsProposed: null,
+      resultsRefusalReason: null,
+      resultsRefusalDetail: null,
       attemptedAtIst: null,
       unparseableReason: null,
       lastError: null,
@@ -483,5 +491,91 @@ describe('the claim lane', () => {
       { key: 'span-not-found', count: 2 },
     ]);
     expect(summary.byClaimRefusal).toEqual([{ key: 'not-eligible', count: 1 }]);
+  });
+});
+
+describe('the results view on a filing row', () => {
+  it('renders the figures and the two quotes they rest on', async () => {
+    await seed([
+      [
+        1,
+        enrichment({
+          resultsLine:
+            'APOLLOTYRE Q1 FY27 (CONSOLIDATED): REVENUE ₹73,977.90 MN VS ₹65,607.59 MN (YOY)',
+          results: {
+            basis: 'consolidated',
+            basisSpan: 'UNAUDITED CONSOLIDATED FINANCIAL RESULTS',
+            columnsSpan: '30.06.202631.03.202630.06.202531.03.2026',
+            period: 'Q1 FY27',
+            priorPeriod: 'Q1 FY26',
+            figures: [
+              {
+                metric: 'revenue',
+                current: '73,977.90',
+                prior: '65,607.59',
+                unit: 'MN',
+                span: 'Revenue from operations 73,977.90 73,356.74 65,607.59',
+              },
+            ],
+          },
+          resultsProposed: 1,
+          resultsDiscards: [
+            {
+              reason: 'label-mismatch',
+              metric: 'net-profit',
+              figure: 'Profit before tax 4,676.93',
+              detail: 'the quoted row does not carry a net-profit label',
+            },
+          ],
+        }),
+      ],
+    ]);
+    const { items } = await page();
+
+    const view = items[0].enrichment;
+    expect(view.resultsLine).toContain('Q1 FY27 (CONSOLIDATED)');
+    // The two quotes are what makes the line checkable: the heading that fixed
+    // the basis and the column dates that made the comparison year-on-year.
+    expect(view.results?.basisSpan).toContain('CONSOLIDATED');
+    expect(view.results?.columnsSpan).toContain('30.06.2025');
+    expect(view.results?.figures).toEqual([
+      {
+        metric: 'revenue',
+        current: '73,977.90',
+        prior: '65,607.59',
+        unit: 'MN',
+        span: 'Revenue from operations 73,977.90 73,356.74 65,607.59',
+      },
+    ]);
+    expect(view.resultsDiscards).toEqual([
+      {
+        reason: 'label-mismatch',
+        metric: 'net-profit',
+        figure: 'Profit before tax 4,676.93',
+        detail: 'the quoted row does not carry a net-profit label',
+      },
+    ]);
+    expect(view.resultsProposed).toBe(1);
+  });
+
+  it('counts results lines and refusals apart from the claim ones', async () => {
+    await seed([
+      [
+        2,
+        enrichment({
+          resultsLine: 'ACME Q1 FY27 (CONSOLIDATED): EPS ₹5.52 VS ₹0.20 (YOY)',
+          resultsProposed: 1,
+        }),
+      ],
+      [3, enrichment({ resultsRefusalReason: 'basis-not-determinable' })],
+      [4, enrichment({ resultsRefusalReason: 'no-results' })],
+    ]);
+    const summary = await service.getEnrichmentSummary();
+
+    expect(summary.withResults).toBe(1);
+    expect(summary.byResultsRefusal).toEqual([
+      { key: 'basis-not-determinable', count: 1 },
+      { key: 'no-results', count: 1 },
+    ]);
   });
 });

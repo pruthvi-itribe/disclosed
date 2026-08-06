@@ -2,6 +2,7 @@ import { ClaudeClaimExtractor } from '@app/filings/llm/claude-claim-extractor';
 import { OpenRouterClaimExtractor } from '@app/filings/llm/openrouter-claim-extractor';
 import {
   buildClaimExtractor,
+  buildResultsExtractor,
   type ClaimExtractorConfig,
 } from './claim-extractor.factory';
 
@@ -15,6 +16,7 @@ const config = (
   claimModel: 'claude-opus-5',
   claimEffort: 'medium',
   claimMaxDocumentChars: 96_000,
+  resultsEnabled: true,
   ...overrides,
 });
 
@@ -88,6 +90,49 @@ describe('buildClaimExtractor: which provider', () => {
       model: 'deepseek/deepseek-v4-flash-0731',
       effort: 'high',
       maxDocumentChars: 96_000,
+      // The results lane needs more of the document than the claim lane; it is
+      // its own knob so the two cannot silently share one budget.
+      maxResultsDocumentChars: 96_000,
     });
   });
+});
+
+describe('buildResultsExtractor', () => {
+  it('builds one when the lane is on and a key is present', () => {
+    expect(buildResultsExtractor(config())).not.toBeNull();
+  });
+
+  it.each([
+    ['the results lane is switched off', { resultsEnabled: false }],
+    ['no key is configured', { anthropicApiKey: '' }],
+  ] as const)('returns null when %s', (_label, overrides) => {
+    expect(buildResultsExtractor(config(overrides))).toBeNull();
+  });
+
+  it('runs when the CLAIM lane is off, and the reverse', () => {
+    // Two lanes, two switches, one client. A desk that wants quarterly numbers
+    // and no narrative claims is a real configuration, and so is the reverse.
+    expect(
+      buildResultsExtractor(config({ claimsEnabled: false })),
+    ).not.toBeNull();
+    expect(
+      buildClaimExtractor(config({ resultsEnabled: false })),
+    ).not.toBeNull();
+  });
+
+  it.each([
+    ['openrouter', OpenRouterClaimExtractor],
+    ['anthropic', ClaudeClaimExtractor],
+  ] as const)(
+    'builds the %s adapter, which serves both lanes',
+    (claimProvider, expected) => {
+      const built = buildResultsExtractor(config({ claimProvider }));
+      expect(built).toBeInstanceOf(expected);
+      // The same object satisfies the claim seam, which is what keeps the two
+      // lanes comparable rather than merely both present.
+      expect(buildClaimExtractor(config({ claimProvider }))).toBeInstanceOf(
+        expected,
+      );
+    },
+  );
 });

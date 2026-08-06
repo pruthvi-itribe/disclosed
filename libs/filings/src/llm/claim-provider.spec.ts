@@ -4,6 +4,7 @@ import {
   CLAIM_PROVIDERS,
   CLAIM_TIMEOUT_MS,
   claimsFromText,
+  resultsFromText,
   countOf,
   DEFAULT_CLAIM_MODEL,
   describeProviderFailure,
@@ -183,5 +184,71 @@ describe('countOf', () => {
     // and both would poison a cost total silently — NaN makes every subsequent
     // sum NaN, and a report of NaN dollars is a report of nothing.
     expect(countOf(value)).toBe(expected);
+  });
+});
+
+describe('resultsFromText', () => {
+  const body = JSON.stringify({
+    results: {
+      basis: 'consolidated',
+      columnsSpan: '30.06.202630.06.2025',
+      figures: [
+        {
+          metric: 'revenue',
+          span: 'Revenue from operations 73,977.90 65,607.59',
+          current: '73,977.90',
+          prior: '65,607.59',
+        },
+      ],
+    },
+  });
+
+  it('reads a table, and carries the usage through untouched', () => {
+    const usage = {
+      inputTokens: 10,
+      outputTokens: 2,
+      cachedInputTokens: 0,
+      cacheWriteInputTokens: 0,
+    };
+    expect(resultsFromText(body, usage)).toEqual({
+      outcome: 'ok',
+      results: {
+        basis: 'consolidated',
+        columnsSpan: '30.06.202630.06.2025',
+        figures: [
+          {
+            metric: 'revenue',
+            span: 'Revenue from operations 73,977.90 65,607.59',
+            current: '73,977.90',
+            prior: '65,607.59',
+          },
+        ],
+      },
+      usage,
+    });
+  });
+
+  it('reports NO TABLE rather than a failure', () => {
+    // "The document has no statement in it" and "the extractor broke" are
+    // different facts about a filing and must not record the same.
+    expect(resultsFromText(JSON.stringify({ results: null }))).toEqual({
+      outcome: 'ok',
+      results: null,
+      usage: undefined,
+    });
+  });
+
+  it.each([
+    ['an empty body', ''],
+    ['whitespace', '   '],
+  ])('fails on %s rather than reporting no table', (_label, text) => {
+    expect(resultsFromText(text)).toEqual({
+      outcome: 'failed',
+      message: 'the model returned no text',
+    });
+  });
+
+  it('lets a bad body throw, so the adapter can name the provider', () => {
+    expect(() => resultsFromText('not json')).toThrow();
   });
 });

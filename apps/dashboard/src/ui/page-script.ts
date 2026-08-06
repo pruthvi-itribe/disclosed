@@ -179,6 +179,17 @@ export const PAGE_SCRIPT = `
     cell.className = 'sum';
     var e = f.enrichment || {};
 
+    // THE RESULTS LINE LEADS. On the day a company reports, its numbers are the
+    // event and the composed headline degrades to the exchange's own category.
+    // Rendered in its own class rather than as a headline, because it was
+    // admitted by a different gate and a reader has to be able to tell which.
+    if (e.resultsLine) {
+      var res = document.createElement('div');
+      res.className = 'headline enriched resultsline';
+      res.textContent = e.resultsLine;
+      cell.appendChild(res);
+    }
+
     var head = document.createElement('div');
     head.className = 'headline ' + (e.amountRupees !== null && e.amountRupees !== undefined ? 'enriched' : 'verbatim');
     head.textContent = e.headline || (String(f.symbol).toUpperCase() + ' — ' + String(f.category).toUpperCase());
@@ -214,6 +225,43 @@ export const PAGE_SCRIPT = `
         period.textContent = 'period: "' + String(claims[c].periodSpan).replace(/\s+/g, ' ').trim() + '"';
         cell.appendChild(period);
       }
+    }
+
+    // The two quotes a results line rests on: the statement heading that fixed
+    // consolidated against standalone, and the column dates that made the
+    // comparison year-on-year. Shown because a reader who cannot see those two
+    // cannot check the line - the figures themselves are cells, and a cell
+    // means nothing without them.
+    if (e.results) {
+      var basis = document.createElement('div');
+      basis.className = 'claimspan periodspan';
+      basis.textContent = 'basis: "' + String(e.results.basisSpan).replace(/\s+/g, ' ').trim() + '"';
+      cell.appendChild(basis);
+      var cols = document.createElement('div');
+      cols.className = 'claimspan periodspan';
+      cols.textContent = e.results.period + ' vs ' + e.results.priorPeriod + ': "' + String(e.results.columnsSpan).replace(/\s+/g, ' ').trim() + '"';
+      cell.appendChild(cols);
+      var figs = e.results.figures || [];
+      for (var rf = 0; rf < figs.length; rf++) {
+        var frow = document.createElement('div');
+        frow.className = 'claimspan';
+        frow.textContent = '"' + String(figs[rf].span).replace(/\s+/g, ' ').trim() + '"';
+        frow.title = figs[rf].metric;
+        cell.appendChild(frow);
+      }
+    }
+
+    var rdropped = e.resultsDiscards || [];
+    if (rdropped.length > 0) {
+      var rbox = document.createElement('div');
+      rbox.className = 'discards';
+      for (var rd = 0; rd < rdropped.length; rd++) {
+        var rt = tag(rdropped[rd].reason, 'refusal' + (state.refusal === rdropped[rd].reason ? ' active' : ''), pickRefusal(rdropped[rd].reason));
+        rt.title = rdropped[rd].detail + ' - ' + rdropped[rd].metric;
+        rbox.appendChild(rt);
+        rbox.appendChild(document.createTextNode(' '));
+      }
+      cell.appendChild(rbox);
     }
 
     // A refusal is a value, never a blank. This is the row that says a model
@@ -512,6 +560,7 @@ export const PAGE_SCRIPT = `
     }
 
     renderClaims(d);
+    renderResults(d);
     renderRefusalChip();
   }
 
@@ -521,19 +570,35 @@ export const PAGE_SCRIPT = `
   // away" - and the second of those is the number that says whether to trust
   // any of this.
   function renderClaims(d) {
-    var box = el('claims');
+    renderReasonPanel('claims',
+      groupInt(d.withClaims || 0) + ' filing(s) carry a verified claim',
+      [
+        { label: 'claims discarded by the gate', rows: d.byClaimDiscard || [] },
+        { label: 'why a document produced no claim', rows: d.byClaimRefusal || [] }
+      ]);
+  }
+
+  // The results lane's own panel, separate from the claim one for the same
+  // reason that one is separate from the amount panel: the gates are different,
+  // so the refusals mean different things and must be countable apart.
+  function renderResults(d) {
+    renderReasonPanel('results',
+      groupInt(d.withResults || 0) + ' filing(s) carry a verified results line',
+      [
+        { label: 'figures discarded by the gate', rows: d.byResultsDiscard || [] },
+        { label: 'why a document produced no results', rows: d.byResultsRefusal || [] }
+      ]);
+  }
+
+  function renderReasonPanel(id, headline, groups) {
+    var box = el(id);
     if (!box) return;
     clear(box);
 
     var head = document.createElement('div');
     head.className = 'reason-group';
-    head.textContent = groupInt(d.withClaims || 0) + ' filing(s) carry a verified claim';
+    head.textContent = headline;
     box.appendChild(head);
-
-    var groups = [
-      { label: 'claims discarded by the gate', rows: d.byClaimDiscard || [] },
-      { label: 'why a document produced no claim', rows: d.byClaimRefusal || [] }
-    ];
 
     for (var g = 0; g < groups.length; g++) {
       if (groups[g].rows.length === 0) continue;

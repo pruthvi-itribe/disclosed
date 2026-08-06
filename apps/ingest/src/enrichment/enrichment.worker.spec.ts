@@ -5,6 +5,8 @@ import type {
   ClaimExtractionRequest,
   ClaimExtractionResult,
   ClaimExtractor,
+  ResultsExtractionResult,
+  ResultsExtractor,
   EnrichmentRepository,
   Filing,
   FilingEnrichment,
@@ -663,6 +665,7 @@ describe('EnrichmentWorker — containment', () => {
       failed: 0,
       claimed_lines: 0,
       claimsDiscarded: 0,
+      resultsLines: 0,
       alerted: 0,
     });
     expect(repository.claimCalls).toBe(1);
@@ -1071,6 +1074,7 @@ describe('EnrichmentWorker — saying that it is alive', () => {
       failed: 0,
       claimed_lines: 2,
       claimsDiscarded: 5,
+      resultsLines: 3,
       alerted: 2,
     });
 
@@ -1083,6 +1087,7 @@ describe('EnrichmentWorker — saying that it is alive', () => {
     expect(line).toContain('failed 0');
     expect(line).toContain('claim-lines 2');
     expect(line).toContain('5 claim(s) discarded');
+    expect(line).toContain('results-lines 3');
     expect(line).toContain('alerted 2');
   });
 });
@@ -1764,5 +1769,201 @@ describe('EnrichmentWorker — the document summary', () => {
       documentSummaryRefusalReason: null,
       claimRefusalReason: 'not-eligible',
     });
+  });
+});
+
+/**
+ * The results lane.
+ *
+ * NO NETWORK, exactly as the claim lane's tests: a recorder stands in for the
+ * results extractor so every refusal — including the ones that only happen when
+ * a model has read the wrong table — is exercised without a key.
+ */
+class StubResultsExtractor {
+  public readonly requests: ClaimExtractionRequest[] = [];
+
+  constructor(
+    private readonly result: ResultsExtractionResult = {
+      outcome: 'ok',
+      results: null,
+    },
+    private readonly throws: Error | null = null,
+  ) {}
+
+  async extractResults(
+    request: ClaimExtractionRequest,
+  ): Promise<ResultsExtractionResult> {
+    this.requests.push(request);
+    if (this.throws !== null) throw this.throws;
+    return this.result;
+  }
+}
+
+/** A statement built the way `pdf-parse` produces one. */
+const STATEMENT_COLUMNS = '30.06.202631.03.202630.06.202531.03.2025';
+const STATEMENT_ROW =
+  'Revenue from operations 73,977.90 73,356.74 65,607.59 2,84,706.00';
+const STATEMENT_DOCUMENT = [
+  'UNAUDITED CONSOLIDATED FINANCIAL RESULTS',
+  'FOR THE QUARTER ENDED JUNE 30, 2026',
+  '₹ Million',
+  STATEMENT_COLUMNS,
+  STATEMENT_ROW,
+  'Profit for the period (9 - 10) 3,488.72 6,309.73 128.78 13,724.16',
+  'padding '.repeat(300),
+].join('\n');
+
+const PROPOSED_RESULTS = {
+  basis: 'consolidated' as const,
+  columnsSpan: STATEMENT_COLUMNS,
+  figures: [
+    {
+      metric: 'revenue' as const,
+      current: '73,977.90',
+      prior: '65,607.59',
+      span: STATEMENT_ROW,
+    },
+  ],
+};
+
+const resultsHarness = (
+  extractor: StubResultsExtractor | null,
+  overrides: { category?: string; text?: string } = {},
+) => {
+  const repository = new StubRepository([
+    {
+      filing: filing({
+        category: overrides.category ?? 'Outcome of Board Meeting',
+      }),
+      attempts: 1,
+      parseAttempts: 0,
+    },
+  ]);
+  const telegram = new StubTelegram();
+  const worker = new EnrichmentWorker(
+    repository as unknown as EnrichmentRepository,
+    new StubFetcher(okBody()) as unknown as AttachmentFetcher,
+    new StubContext() as unknown as FilingContextService,
+    telegram as unknown as TelegramService,
+    OPTIONS,
+    parserOf(overrides.text ?? STATEMENT_DOCUMENT),
+    null,
+    null,
+    extractor as unknown as ResultsExtractor | null,
+  );
+  return { worker, repository, telegram };
+};
+
+describe('EnrichmentWorker — financial results', () => {
+  it('stores a verified table, its wire line and the rows behind it', async () => {
+    const { worker, repository } = resultsHarness(
+      new StubResultsExtractor({ outcome: 'ok', results: PROPOSED_RESULTS }),
+    );
+
+    const result = await worker.tick(NOW);
+
+    expect(result.resultsLines).toBe(1);
+    const stored = onlyRecorded(repository);
+    expect(stored.resultsLine).toBe(
+      'RAILTEL Q1 FY27 (CONSOLIDATED): REVENUE ₹73,977.90 MN VS ₹65,607.59 MN (YOY)',
+    );
+    expect(stored.results?.basis).toBe('consolidated');
+    expect(stored.results?.period).toBe('Q1 FY27');
+    expect(STATEMENT_DOCUMENT).toContain(stored.results?.figures[0].span);
+    expect(stored.resultsProposed).toBe(1);
+    expect(stored.resultsRefusalReason).toBeNull();
+  });
+
+  it('sends the document, the symbol and the exchange own words', async () => {
+    const extractor = new StubResultsExtractor();
+    const { worker } = resultsHarness(extractor);
+    await worker.tick(NOW);
+    expect(extractor.requests[0]).toEqual({
+      symbol: 'RAILTEL',
+      category: 'Outcome of Board Meeting',
+      summary: expect.any(String),
+      documentText: STATEMENT_DOCUMENT,
+    });
+  });
+
+  it('never calls a model for a category with no statement in it', async () => {
+    const extractor = new StubResultsExtractor();
+    const { worker, repository } = resultsHarness(extractor, {
+      category: 'Record Date',
+    });
+    await worker.tick(NOW);
+    expect(extractor.requests).toHaveLength(0);
+    const stored = onlyRecorded(repository);
+    expect(stored.resultsRefusalReason).toBe('not-eligible');
+    expect(stored.resultsProposed).toBeNull();
+  });
+
+  it('records that nothing is configured rather than a silent nothing', async () => {
+    const { worker, repository } = resultsHarness(null);
+    await worker.tick(NOW);
+    expect(onlyRecorded(repository).resultsRefusalReason).toBe(
+      'extractor-unavailable',
+    );
+  });
+
+  it.each([
+    [
+      'the model found no statement',
+      new StubResultsExtractor({ outcome: 'ok', results: null }),
+      'no-results',
+    ],
+    [
+      'the extractor failed',
+      new StubResultsExtractor({ outcome: 'failed', message: 'a 429' }),
+      'extractor-error',
+    ],
+    [
+      'the extractor threw, which it is contracted never to do',
+      new StubResultsExtractor(undefined, new Error('boom')),
+      'extractor-error',
+    ],
+  ])('records %s', async (_label, extractor, expected) => {
+    const { worker, repository } = resultsHarness(extractor);
+    const result = await worker.tick(NOW);
+    // The enrichment still lands: a failing results lane costs the results and
+    // never the amount, the claims or the headline.
+    expect(result.enriched).toBe(1);
+    const stored = onlyRecorded(repository);
+    expect(stored.resultsRefusalReason).toBe(expected);
+    expect(stored.resultsLine).toBeNull();
+  });
+
+  it('records the gate own refusal, with the reason', async () => {
+    // The dangerous case, end to end: a standalone figure labelled consolidated.
+    const { worker, repository } = resultsHarness(
+      new StubResultsExtractor({
+        outcome: 'ok',
+        results: { ...PROPOSED_RESULTS, basis: 'standalone' },
+      }),
+    );
+    await worker.tick(NOW);
+    const stored = onlyRecorded(repository);
+    expect(stored.resultsRefusalReason).toBe('basis-not-determinable');
+    expect(stored.resultsLine).toBeNull();
+    expect(stored.results).toBeNull();
+  });
+
+  it('puts the results line on the wire, ahead of everything else', async () => {
+    const { worker, telegram } = resultsHarness(
+      new StubResultsExtractor({ outcome: 'ok', results: PROPOSED_RESULTS }),
+    );
+    await worker.tick(NOW);
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0].split('\n')[0]).toContain(
+      'RAILTEL Q1 FY27 (CONSOLIDATED)',
+    );
+  });
+
+  it('sends nothing when the table was refused and nothing else was found', async () => {
+    const { worker, telegram } = resultsHarness(
+      new StubResultsExtractor({ outcome: 'ok', results: null }),
+    );
+    await worker.tick(NOW);
+    expect(telegram.sent).toHaveLength(0);
   });
 });

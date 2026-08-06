@@ -248,6 +248,61 @@ export class EnrichmentRepository {
   }
 
   /**
+   * Puts a filing ruled `unparseable` back on the queue, conditionally.
+   *
+   * WHY THE COUNTERS ARE NOT IN THE `$set`, which is the whole decision here.
+   * `attempts` and `parseAttempts` are left EXACTLY as they stand — neither
+   * reset to zero nor incremented — and both alternatives are worse:
+   *
+   *   - **Reset to zero** loses the only durable record that this pipeline
+   *     already looked at the document and reached a verdict. `attemptedAt` and
+   *     `lastError` are overwritten by the very next attempt, so the counters
+   *     are what remains, and a filing that reads as never-attempted after
+   *     three failures is a filing nobody can triage.
+   *   - **Increment** would be a lie in the other direction. The counters count
+   *     attempts against the exchange; re-queuing makes none.
+   *
+   * And leaving them costs no headroom. `attempts` is 1 on every live candidate
+   * against a budget of 5, so a re-queued filing still has four transient
+   * failures in hand — more than a filing arriving fresh gets before its first
+   * hiccup matters. `parseAttempts` is at most 1 against 3, and for these
+   * filings it is inert anyway: the parse budget is consulted only for
+   * `truncated-at-origin` and `unreadable-pdf`, and only inside an hour of
+   * dissemination, which every re-queued filing is long past.
+   *
+   * `lastError` is left standing too. Once `unparseableReason` is nulled — and
+   * it must be, because the dashboard groups by it and a pending filing
+   * carrying a terminal reason is a contradiction — that string is the only
+   * surviving trace of what the previous build decided. A `pending` filing with
+   * a `lastError` is an established shape here, not a novelty: it is exactly
+   * what `parse-retry.ts` writes for a provisional parse failure.
+   *
+   * CONDITIONAL ON THE STATE, so this cannot clobber a concurrent write. A
+   * terminal filing is unclaimable, so the live worker cannot be holding one —
+   * but a second operator running this same sweep can, and the filter turns
+   * that race into a `false` return rather than into two workers fetching the
+   * same document.
+   *
+   * @returns true when this call is the one that moved the filing.
+   */
+  async requeueUnparseable(seqId: number): Promise<boolean> {
+    const result = await this.model
+      .updateOne(
+        { seqId, 'enrichment.state': 'unparseable' },
+        {
+          $set: {
+            'enrichment.state': 'pending',
+            'enrichment.nextAttemptAt': null,
+            'enrichment.unparseableReason': null,
+          },
+        },
+      )
+      .exec();
+
+    return result.modifiedCount === 1;
+  }
+
+  /**
    * Counts everything the derived-context line is allowed to know.
    *
    * BOUNDED AND INDEXED. This runs on the alert path, so the shape matters:

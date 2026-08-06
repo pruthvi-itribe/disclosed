@@ -80,6 +80,54 @@ export interface EnrichmentView {
   readonly documentSummaryRefusalReason: string | null;
   readonly claimRefusalReason: string | null;
   readonly claimRefusalDetail: string | null;
+
+  /**
+   * The wire line of financial results, or null.
+   *
+   * KEPT APART from `claimLine` all the way to the page, because the two were
+   * admitted by different gates. A claim is published because its sentence is in
+   * the document; a results figure is published because the table's own header
+   * block says which statement it belongs to, which period its column is, and
+   * what scale it is in. Rendering them as one line would make a reader unable
+   * to tell which guarantee is behind which number.
+   */
+  readonly resultsLine: string | null;
+  /** The statement heading and column header the line rests on. */
+  readonly results: ResultsView | null;
+  /** Each refused figure, with the rule that refused it. */
+  readonly resultsDiscards: readonly ResultsDiscardView[];
+  readonly resultsProposed: number | null;
+  readonly resultsRefusalReason: string | null;
+  readonly resultsRefusalDetail: string | null;
+}
+
+/** The evidence behind a results line, for review. */
+export interface ResultsView {
+  readonly basis: string;
+  /** The document's own words at the heading that fixed the basis. */
+  readonly basisSpan: string;
+  /** The document's own column-date line, which made the comparison YoY. */
+  readonly columnsSpan: string;
+  readonly period: string;
+  readonly priorPeriod: string;
+  readonly figures: readonly ResultsFigureView[];
+}
+
+export interface ResultsFigureView {
+  readonly metric: string;
+  readonly current: string;
+  readonly prior: string;
+  readonly unit: string;
+  /** The verbatim table row. This is what makes the figures checkable. */
+  readonly span: string;
+}
+
+/** One refused figure and the rule that refused it. */
+export interface ResultsDiscardView {
+  readonly reason: string;
+  readonly metric: string;
+  readonly figure: string;
+  readonly detail: string;
 }
 
 /** One published claim and the sentence it was read from. */
@@ -173,6 +221,10 @@ export interface EnrichmentSummaryView {
   readonly byClaimDiscard: readonly EnrichmentCount[];
   /** Read documents that produced no claim line, by reason. */
   readonly byClaimRefusal: readonly EnrichmentCount[];
+  /** Filings carrying a verified results line. */
+  readonly withResults: number;
+  readonly byResultsDiscard: readonly EnrichmentCount[];
+  readonly byResultsRefusal: readonly EnrichmentCount[];
   readonly generatedAtIst: string;
 }
 

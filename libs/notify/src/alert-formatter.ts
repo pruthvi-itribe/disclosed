@@ -87,6 +87,15 @@ export interface InsightAlert {
    * filings this pipeline was built to stop missing.
    */
   readonly claimLine: string | null;
+  /**
+   * The wire line of financial results, when the document carried a statement.
+   *
+   * A THIRD INDEPENDENT REASON TO SEND, and on a results day the loudest one.
+   * It leads the message when it exists: a reader who has been sent a filing
+   * titled "Outcome of Board Meeting" wants the numbers first, and everything
+   * else the document said second.
+   */
+  readonly resultsLine: string | null;
   readonly contextLine: string | null;
   /** The document's own words for the figure. */
   readonly evidence: string | null;
@@ -118,13 +127,19 @@ export function formatInsightAlert(
   filing: Filing,
   insight: InsightAlert,
 ): string {
-  const { headline, claimLine, contextLine, evidence } = insight;
+  const { headline, claimLine, resultsLine, contextLine, evidence } = insight;
 
-  // The headline leads when there is one, because it states the size of the
-  // event; the claim line leads when there is not, because then it is the only
-  // thing said. Both appear when both exist, and neither is ever paraphrased.
+  // The results line leads when there is one, because on the day a company
+  // reports, its numbers are the event and everything else in the document is
+  // commentary on them. The headline leads when there is not, because it states
+  // the size of the event; the claim line leads when there is neither, because
+  // then it is the only thing said. None is ever paraphrased.
   const lines: string[] = [];
+  if (resultsLine !== null && resultsLine.trim().length > 0) {
+    lines.push(escapeHtml(resultsLine));
+  }
   if (headline !== null && headline.trim().length > 0) {
+    if (lines.length > 0) lines.push('');
     lines.push(escapeHtml(headline));
   }
   if (claimLine !== null && claimLine.trim().length > 0) {

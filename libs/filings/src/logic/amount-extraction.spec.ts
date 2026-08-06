@@ -2,6 +2,7 @@ import {
   AmountExtraction,
   extractMaterialAmount,
   isTraceableEvidence,
+  MAX_SENTENCE_QUOTE_CHARS,
 } from './amount-extraction';
 
 const ORDER_WIN = 'Bagging/Receiving of orders/contracts';
@@ -283,6 +284,153 @@ describe('extractMaterialAmount — refusals', () => {
     const result = extract(scheduleIII('To be mutually agreed'));
     if (result.outcome !== 'refused') throw new Error('expected a refusal');
     expect(result.detail).toBe('the disclosure row states no figure');
+  });
+});
+
+/**
+ * Conditional framing, scoped to the sentence that states the figure.
+ *
+ * Tested against the whole document this rule refused 566 live filings, because
+ * `subject to` is boilerplate in nearly every Indian filing. The tests below pin
+ * BOTH directions of the narrower rule: the boilerplate no longer refuses, and
+ * a phrase that genuinely qualifies the candidate's own clause still does. The
+ * second half is the one that must never regress — a figure emitted out of
+ * "received a Letter of Intent worth…" is a wrong number with a company's name
+ * attached, which is the error class this whole module exists to prevent.
+ */
+describe('extractMaterialAmount — conditional framing is sentence-scoped', () => {
+  /** Paragraphs of neutral prose, long enough to be out of a sentence's reach. */
+  const filler = (paragraphs: number): string =>
+    Array.from(
+      { length: paragraphs },
+      () => 'This paragraph states nothing about the value of the order.',
+    ).join('\n\n');
+
+  it('extracts when the only conditional language is boilerplate elsewhere', () => {
+    const text = [
+      'Sub: Disclosure under Regulation 30 of SEBI LODR',
+      '',
+      scheduleIII('Rs. 13.11 crore, exclusive of applicable taxes'),
+      '',
+      filler(9),
+      '',
+      'The above is subject to the terms and conditions of the agreement.',
+    ].join('\n');
+    expect(rupeesOf(extract(text))).toBe(131_100_000);
+  });
+
+  it('refuses when the sentence stating the figure conditions it', () => {
+    const result = extract(
+      'Sub: Receipt of an order\n\n' +
+        'The Company has received a Letter of Intent from the customer amounting ' +
+        'to Rs. 16,90,52,450/- for the supply of goods.\n\n' +
+        'Kindly take the same on record.',
+    );
+    expect(reasonOf(result)).toBe('ambiguity-keyword');
+    if (result.outcome !== 'refused') throw new Error('expected a refusal');
+    expect(result.detail).toContain('"Letter of Intent"');
+    expect(result.detail).toContain('amounting to Rs. 16,90,52,450/-');
+  });
+
+  // THE DANGEROUS DIRECTION. A PDF text layer wraps a sentence wherever the
+  // source PDF did, so a rule that ended a sentence at one newline would read
+  // the figure's clause as starting after "Letter of Intent" and emit it.
+  it('refuses when a line wrap separates the phrase from the figure', () => {
+    const result = extract(
+      'Sub: Receipt of an order\n\n' +
+        'The Company has received a Letter of Intent\nfrom the customer\n' +
+        'amounting to Rs. 5 crore.\n\nKindly take the same on record.',
+    );
+    expect(reasonOf(result)).toBe('ambiguity-keyword');
+  });
+
+  it.each([
+    [
+      'an L1 award',
+      'having emerged as the L1 bidder, amounting to Rs. 5 crore',
+    ],
+    ['a letter of intent', 'under a Letter of Intent amounting to Rs. 5 crore'],
+    ['a memorandum', 'under an MoU with the customer amounting to Rs. 5 crore'],
+    [
+      'a preferred bidder',
+      'having been named preferred bidder, amounting to Rs. 5 crore',
+    ],
+    [
+      'an in-principle approval',
+      'with in-principle approval received, amounting to Rs. 5 crore',
+    ],
+    [
+      'a conditional award',
+      'awarded subject to statutory approvals, amounting to Rs. 5 crore',
+    ],
+  ])('still refuses a figure qualified by %s', (_label, sentence) => {
+    expect(
+      reasonOf(extract(`Sub: Update\n\nThe Company reports ${sentence}.\n`)),
+    ).toBe('ambiguity-keyword');
+  });
+
+  it('drops the conditioned figure and reads the settled one', () => {
+    const text = [
+      'Cost of acquisition and/or the price at which the shares are acquired',
+      'Rs. 500 crore, subject to receipt of regulatory approvals',
+      '',
+      filler(9),
+      '',
+      scheduleIII('Rs. 13.11 crore, exclusive of applicable taxes'),
+    ].join('\n');
+    // Both rows are anchored positions, so before the split this document
+    // refused for conditional language and after it would refuse for a
+    // disagreement. Neither is right: one of the two figures is settled.
+    expect(rupeesOf(extract(text))).toBe(131_100_000);
+  });
+
+  // Rumour framing keeps document scope. Whether the filing is restating a
+  // press claim is a fact about the filing, so a spotless disclosure row inside
+  // one is still a journalist's number.
+  it('refuses on rumour framing however clean the figure sentence is', () => {
+    const result = extract(
+      [
+        'The Exchange has sought clarification on a recent news item.',
+        '',
+        filler(9),
+        '',
+        scheduleIII('Rs. 13.11 crore, exclusive of applicable taxes'),
+      ].join('\n'),
+    );
+    expect(reasonOf(result)).toBe('ambiguity-keyword');
+    if (result.outcome !== 'refused') throw new Error('expected a refusal');
+    expect(result.detail).toContain('unverified news report');
+  });
+
+  it('refuses on conditional language in the summary and quotes it', () => {
+    const result = extractMaterialAmount({
+      documentText: scheduleIII('Rs. 5 crore'),
+      category: ORDER_WIN,
+      summary: 'Company emerged as L1 bidder',
+    });
+    expect(reasonOf(result)).toBe('ambiguity-keyword');
+    if (result.outcome !== 'refused') throw new Error('expected a refusal');
+    expect(result.detail).toContain('Company emerged as L1 bidder');
+  });
+
+  it('pins the length of the sentence a refusal may quote', () => {
+    expect(MAX_SENTENCE_QUOTE_CHARS).toBe(160);
+  });
+
+  it('bounds and de-fangs the sentence it quotes', () => {
+    const padding = 'for the supply of assorted goods and related services '
+      .repeat(5)
+      .trim();
+    const result = extract(
+      `Sub: Update\n\nThe Company has received a Letter of Intent ${padding}\n` +
+        `amounting to Rs. 5 crore.\n\nEnd of letter.`,
+    );
+    if (result.outcome !== 'refused') throw new Error('expected a refusal');
+    const quoted = /: "([\s\S]+)"$/.exec(result.detail);
+    if (quoted === null) throw new Error('expected a quoted sentence');
+    expect(quoted[1]).toHaveLength(160);
+    // A newline in a stored detail forges a second log line.
+    expect(result.detail).not.toContain('\n');
   });
 });
 

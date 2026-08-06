@@ -4,11 +4,20 @@ import {
   CLAIM_OUTPUT_SCHEMA,
   CLAIM_SYSTEM_PROMPT,
 } from '../logic/claim-prompt';
+import {
+  buildResultsRequest,
+  RESULTS_OUTPUT_SCHEMA,
+  RESULTS_SYSTEM_PROMPT,
+} from '../logic/results-prompt';
 import type {
   ClaimExtractionRequest,
   ClaimExtractionResult,
   ClaimExtractor,
 } from './claim-extractor';
+import type {
+  ResultsExtractionResult,
+  ResultsExtractor,
+} from './results-extractor';
 import {
   CLAIM_MAX_TOKENS,
   CLAIM_TIMEOUT_MS,
@@ -17,6 +26,7 @@ import {
   describeProviderFailure,
   openAiEffort,
   redactSecrets,
+  resultsFromText,
   type ClaimProviderOptions,
   type ClaimUsage,
 } from './claim-provider';
@@ -89,6 +99,9 @@ export const OPENROUTER_TITLE = 'Turret NSE filings pipeline';
 /** The schema's name in the OpenAI-style envelope. Required by the API. */
 export const CLAIM_SCHEMA_NAME = 'notable_claims';
 
+/** The results schema's name in the same envelope. */
+export const RESULTS_SCHEMA_NAME = 'financial_results';
+
 /** The subset of the API this adapter uses, so a test can stand in for it. */
 export interface OpenRouterChatApi {
   create(body: Record<string, unknown>): Promise<unknown>;
@@ -147,7 +160,18 @@ const usageOf = (payload: unknown): ClaimUsage | undefined => {
   };
 };
 
-export class OpenRouterClaimExtractor implements ClaimExtractor {
+/** What one call produced: the reply's text and what it cost, or why not. */
+type RawReply =
+  | {
+      readonly outcome: 'ok';
+      readonly text: string;
+      readonly usage?: ClaimUsage;
+    }
+  | { readonly outcome: 'failed'; readonly message: string };
+
+export class OpenRouterClaimExtractor
+  implements ClaimExtractor, ResultsExtractor
+{
   constructor(
     private readonly chat: OpenRouterChatApi,
     private readonly options: ClaimProviderOptions,
@@ -181,6 +205,62 @@ export class OpenRouterClaimExtractor implements ClaimExtractor {
   async extract(
     request: ClaimExtractionRequest,
   ): Promise<ClaimExtractionResult> {
+    const reply = await this.ask(
+      CLAIM_SYSTEM_PROMPT,
+      CLAIM_SCHEMA_NAME,
+      CLAIM_OUTPUT_SCHEMA,
+      buildClaimRequest({
+        ...request,
+        maxDocumentChars: this.options.maxDocumentChars,
+      }),
+    );
+    if (reply.outcome === 'failed') return reply;
+    try {
+      return claimsFromText(reply.text, reply.usage);
+    } catch (error) {
+      return { outcome: 'failed', message: describeHttpFailure(error) };
+    }
+  }
+
+  /**
+   * The results table, on its own call and its own prompt.
+   *
+   * `results-prompt.ts` argues why it is a second call rather than a second
+   * field on the claims schema.
+   */
+  async extractResults(
+    request: ClaimExtractionRequest,
+  ): Promise<ResultsExtractionResult> {
+    const reply = await this.ask(
+      RESULTS_SYSTEM_PROMPT,
+      RESULTS_SCHEMA_NAME,
+      RESULTS_OUTPUT_SCHEMA,
+      buildResultsRequest({
+        ...request,
+        maxDocumentChars: this.options.maxResultsDocumentChars,
+      }),
+    );
+    if (reply.outcome === 'failed') return reply;
+    try {
+      return resultsFromText(reply.text, reply.usage);
+    } catch (error) {
+      return { outcome: 'failed', message: describeHttpFailure(error) };
+    }
+  }
+
+  /**
+   * One request, one reply, no interpretation.
+   *
+   * SHARED BY BOTH LANES so the routing flag, the error-in-a-200 check, the
+   * refusal handling and the truncation message cannot drift apart between
+   * them. Only the system prompt, the schema and the user turn differ.
+   */
+  private async ask(
+    system: string,
+    schemaName: string,
+    schema: object,
+    user: string,
+  ): Promise<RawReply> {
     try {
       const payload = await this.chat.create({
         model: this.options.model,
@@ -190,22 +270,12 @@ export class OpenRouterClaimExtractor implements ClaimExtractor {
         // something rather than resampling.
         temperature: 0,
         messages: [
-          { role: 'system', content: CLAIM_SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: buildClaimRequest({
-              ...request,
-              maxDocumentChars: this.options.maxDocumentChars,
-            }),
-          },
+          { role: 'system', content: system },
+          { role: 'user', content: user },
         ],
         response_format: {
           type: 'json_schema',
-          json_schema: {
-            name: CLAIM_SCHEMA_NAME,
-            strict: true,
-            schema: CLAIM_OUTPUT_SCHEMA,
-          },
+          json_schema: { name: schemaName, strict: true, schema },
         },
         reasoning: { effort: openAiEffort(this.options.effort) },
         // THE LOAD-BEARING ROUTING FLAG. OpenRouter silently drops parameters
@@ -256,10 +326,11 @@ export class OpenRouterClaimExtractor implements ClaimExtractor {
       }
 
       const content = choice.message?.content;
-      return claimsFromText(
-        typeof content === 'string' ? content : '',
-        usageOf(payload),
-      );
+      return {
+        outcome: 'ok',
+        text: typeof content === 'string' ? content : '',
+        usage: usageOf(payload),
+      };
     } catch (error) {
       return { outcome: 'failed', message: describeHttpFailure(error) };
     }

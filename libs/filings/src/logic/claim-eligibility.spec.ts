@@ -56,16 +56,29 @@ describe('claimEligibility', () => {
     });
 
     it.each([
-      ['results tables', 'Outcome of Board Meeting'],
       ['a record date', 'Record Date'],
       ['a board change', 'Change in Director(s)'],
       ['a shareholders meeting', 'Shareholders meeting'],
       ['a category NSE has not invented yet', 'Some Future Category'],
+      // The exchange's own discrepancy correspondence, not a company stating
+      // anything about itself. `results-eligibility.ts` argues both at length.
+      ['a clarification request', 'Clarification - Financial Results'],
+      ['a reply to one', 'Reply to Clarification- Financial results'],
     ])('skips %s as not claim-bearing', (_label, category) => {
       const verdict = claimEligibility(filing(category), NARRATIVE);
       expect(verdict.eligible).toBe(false);
       if (verdict.eligible) throw new Error('expected a refusal');
       expect(verdict.reason).toContain('not a claim-bearing category');
+    });
+
+    it('now ADMITS the category it was wrongly excluding', () => {
+      // 200 of 1,699 live filings, 64.4% of them carrying results. The comment
+      // that excluded them said the amount extractor already read the tables;
+      // it does not and cannot, and a third of them are not results at all.
+      // APOLLOTYRE seqId 106729105 is the filing that proved it.
+      expect(
+        claimEligibility(filing('Outcome of Board Meeting'), NARRATIVE),
+      ).toEqual({ eligible: true });
     });
 
     it('skips a filing with legal exposure BEFORE any model sees it', () => {

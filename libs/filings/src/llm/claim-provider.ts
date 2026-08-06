@@ -2,7 +2,9 @@ import {
   parseClaimResponse,
   parseSummaryResponse,
 } from '../logic/claim-prompt';
+import { parseResultsResponse } from '../logic/results-prompt';
 import type { ClaimExtractionResult } from './claim-extractor';
+import type { ResultsExtractionResult } from './results-extractor';
 
 /**
  * Everything two model providers must agree on, and nothing either one owns.
@@ -126,6 +128,17 @@ export interface ClaimProviderOptions {
    * and so the two adapters cannot drift apart on it.
    */
   readonly maxDocumentChars?: number;
+  /**
+   * How much of the document reaches the model in the RESULTS lane.
+   *
+   * A SEPARATE KNOB from `maxDocumentChars`, because the two lanes need
+   * different amounts of the same document. A claim lives in the narrative at
+   * the front; a statutory results statement does not. In the Apollo Tyres
+   * filing the consolidated statement begins at character 7,400 and the
+   * standalone one at 21,900, so a cap that suits a press release would send
+   * the covering letter and none of the table.
+   */
+  readonly maxResultsDocumentChars?: number;
 }
 
 /**
@@ -206,6 +219,29 @@ export const claimsFromText = (
     summary: parseSummaryResponse(payload),
     usage,
   };
+};
+
+/**
+ * Reads a model's JSON body into a proposed results block.
+ *
+ * SHARED BY BOTH ADAPTERS, exactly as `claimsFromText` is, so a results table is
+ * parsed the same way whoever read it. A body that parses to no usable table
+ * yields `results: null` — which is the ordinary answer for a board-meeting
+ * outcome about a dividend — rather than a failure, because "the document has no
+ * statement in it" and "the extractor broke" are different facts about a filing.
+ *
+ * Throws only from `JSON.parse`, which each adapter's own catch turns into a
+ * failure.
+ */
+export const resultsFromText = (
+  text: string,
+  usage?: ClaimUsage,
+): ResultsExtractionResult => {
+  if (text.trim().length === 0) {
+    return { outcome: 'failed', message: 'the model returned no text' };
+  }
+  const payload: unknown = JSON.parse(text);
+  return { outcome: 'ok', results: parseResultsResponse(payload), usage };
 };
 
 /** Reads a number off an untyped payload, or zero. Never NaN. */

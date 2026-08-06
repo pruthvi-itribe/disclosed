@@ -833,6 +833,7 @@ describe('formatInsightAlert', () => {
     const message = formatInsightAlert(filing, {
       headline: 'RAILTEL BAGS ORDER ₹18.54 cr from South Western Railway',
       claimLine: null,
+      resultsLine: null,
       contextLine: '3rd order for RAILTEL in 30 days',
       evidence: 'Rs. 18,53,66,820',
     });
@@ -858,6 +859,7 @@ describe('formatInsightAlert', () => {
       const message = formatInsightAlert(filing, {
         headline: 'RAILTEL BAGS ORDER ₹5 cr',
         claimLine: null,
+        resultsLine: null,
         contextLine: context,
         evidence,
       });
@@ -871,6 +873,7 @@ describe('formatInsightAlert', () => {
     const message = formatInsightAlert(filing, {
       headline: 'BEL BAGS ORDER ₹847 cr',
       claimLine: null,
+      resultsLine: null,
       contextLine: null,
       evidence: 'Rs\n.\n847\nCrore',
     });
@@ -883,6 +886,7 @@ describe('formatInsightAlert', () => {
     const message = formatInsightAlert(filing, {
       headline: 'X BAGS ORDER ₹1 cr',
       claimLine: null,
+      resultsLine: null,
       contextLine: null,
       evidence: 'A'.repeat(5000),
     });
@@ -893,6 +897,7 @@ describe('formatInsightAlert', () => {
     const message = formatInsightAlert(filing, {
       headline: 'M&M BAGS ORDER ₹5 cr from <b>Acme</b> Limited',
       claimLine: null,
+      resultsLine: null,
       contextLine: '2nd order for M&M in 30 days',
       evidence: 'Rs. 5 crore <script>',
     });
@@ -909,6 +914,7 @@ describe('formatInsightAlert', () => {
       {
         headline: 'RAILTEL BAGS ORDER ₹5 cr',
         claimLine: null,
+        resultsLine: null,
         contextLine: null,
         evidence: null,
       },
@@ -926,6 +932,7 @@ describe('formatInsightAlert', () => {
       const message = formatInsightAlert(filing, {
         headline: null,
         claimLine: claims,
+        resultsLine: null,
         contextLine: null,
         evidence: null,
       });
@@ -937,6 +944,7 @@ describe('formatInsightAlert', () => {
       const message = formatInsightAlert(filing, {
         headline: 'RAILTEL BAGS ORDER ₹5 cr',
         claimLine: claims,
+        resultsLine: null,
         contextLine: null,
         evidence: null,
       });
@@ -950,6 +958,7 @@ describe('formatInsightAlert', () => {
       const message = formatInsightAlert(filing, {
         headline: null,
         claimLine: 'M&M: JOINS <b>ACME</b> ALLIANCE',
+        resultsLine: null,
         contextLine: null,
         evidence: null,
       });
@@ -965,6 +974,7 @@ describe('formatInsightAlert', () => {
         const message = formatInsightAlert(filing, {
           headline: 'RAILTEL BAGS ORDER ₹5 cr',
           claimLine,
+          resultsLine: null,
           contextLine: null,
           evidence: null,
         });
@@ -973,4 +983,62 @@ describe('formatInsightAlert', () => {
       },
     );
   });
+});
+
+describe('formatInsightAlert — the results line', () => {
+  it('leads the message, ahead of the headline and the claim line', () => {
+    // On the day a company reports, its numbers ARE the event and the composed
+    // headline degrades to the exchange's own category.
+    const message = formatInsightAlert(filing, {
+      headline: 'RAILTEL — OUTCOME OF BOARD MEETING',
+      claimLine: 'RAILTEL: JOINS THE ASSOCIATION',
+      resultsLine:
+        'RAILTEL Q1 FY27 (CONSOLIDATED): REVENUE ₹73,977.90 MN VS ₹65,607.59 MN (YOY)',
+      contextLine: null,
+      evidence: null,
+    });
+    const lines = message.split('\n').filter((line) => line.length > 0);
+    expect(lines[0]).toContain('Q1 FY27 (CONSOLIDATED)');
+    expect(lines[1]).toContain('OUTCOME OF BOARD MEETING');
+    expect(lines[2]).toContain('JOINS THE ASSOCIATION');
+  });
+
+  it('is an independent reason to send, with nothing else verified', () => {
+    const message = formatInsightAlert(filing, {
+      headline: null,
+      claimLine: null,
+      resultsLine: 'RAILTEL Q1 FY27 (CONSOLIDATED): EPS ₹5.52 VS ₹0.20 (YOY)',
+      contextLine: null,
+      evidence: null,
+    });
+    expect(message).toContain('EPS ₹5.52 VS ₹0.20 (YOY)');
+  });
+
+  it('escapes it like every other string that came out of a PDF', () => {
+    const message = formatInsightAlert(filing, {
+      headline: null,
+      claimLine: null,
+      resultsLine:
+        'A&B Q1 FY27 (CONSOLIDATED): <b>EPS</b> ₹5.52 VS ₹0.20 (YOY)',
+      contextLine: null,
+      evidence: null,
+    });
+    expect(message).toContain('A&amp;B');
+    expect(message).not.toContain('<b>EPS</b>');
+  });
+
+  it.each([[null], ['   ']])(
+    'emits no blank line for a results line of %s',
+    (resultsLine) => {
+      const message = formatInsightAlert(filing, {
+        headline: 'RAILTEL BAGS ORDER ₹5 cr',
+        claimLine: null,
+        resultsLine,
+        contextLine: null,
+        evidence: null,
+      });
+      expect(message).not.toMatch(/\n\n\n/);
+      expect(message.split('\n')[0]).toBe('RAILTEL BAGS ORDER ₹5 cr');
+    },
+  );
 });

@@ -10,8 +10,12 @@ import {
   NseAdapter,
   type ClaimExtractor,
   type FilingDocument,
+  type ResultsExtractor,
 } from '@app/filings';
-import { buildClaimExtractor } from './enrichment/claim-extractor.factory';
+import {
+  buildClaimExtractor,
+  buildResultsExtractor,
+} from './enrichment/claim-extractor.factory';
 import { TelegramService } from '@app/notify';
 import { AlertService } from './alert/alert.service';
 import {
@@ -40,6 +44,9 @@ export const FILING_MODEL = 'Filing';
  * legitimately be absent.
  */
 export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
+
+/** The results extractor's injection token, absent for the same reason. */
+export const RESULTS_EXTRACTOR = 'RESULTS_EXTRACTOR';
 
 /**
  * Wires the ingest application.
@@ -151,6 +158,29 @@ export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
           claimMaxDocumentChars: config.getOrThrow<number>(
             'claimMaxDocumentChars',
           ),
+          resultsEnabled: config.getOrThrow<boolean>('resultsEnabled'),
+        }),
+    },
+    {
+      /**
+       * The results lane's own switch, over the same client. Null when
+       * `RESULTS_ENABLED` is false or no key is configured, and every
+       * results-eligible filing then records `extractor-unavailable`.
+       */
+      provide: RESULTS_EXTRACTOR,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): ResultsExtractor | null =>
+        buildResultsExtractor({
+          claimsEnabled: config.getOrThrow<boolean>('claimsEnabled'),
+          claimProvider: config.getOrThrow<ClaimProvider>('claimProvider'),
+          anthropicApiKey: config.getOrThrow<string>('anthropicApiKey'),
+          openrouterApiKey: config.getOrThrow<string>('openrouterApiKey'),
+          claimModel: config.getOrThrow<string>('claimModel'),
+          claimEffort: config.getOrThrow<ClaimEffort>('claimEffort'),
+          claimMaxDocumentChars: config.getOrThrow<number>(
+            'claimMaxDocumentChars',
+          ),
+          resultsEnabled: config.getOrThrow<boolean>('resultsEnabled'),
         }),
     },
     {
@@ -162,6 +192,7 @@ export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
         TelegramService,
         ConfigService,
         CLAIM_EXTRACTOR,
+        RESULTS_EXTRACTOR,
       ],
       useFactory: (
         repository: EnrichmentRepository,
@@ -170,6 +201,7 @@ export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
         telegram: TelegramService,
         config: ConfigService,
         claimExtractor: ClaimExtractor | null,
+        resultsExtractor: ResultsExtractor | null,
       ) =>
         new EnrichmentWorker(
           repository,
@@ -206,6 +238,7 @@ export const CLAIM_EXTRACTOR = 'CLAIM_EXTRACTOR';
           // the worker without pulling a decompressor into a process that
           // never opens an archive.
           yauzlReader(),
+          resultsExtractor,
         ),
     },
     {

@@ -6,6 +6,11 @@ import type {
   VerifiedClaim,
 } from './claim.types';
 import type { SummaryRefusalReason } from './claim-summary';
+import type {
+  ResultsFigureDiscard,
+  ResultsRefusalReason,
+  VerifiedResults,
+} from './results.types';
 
 /**
  * What the background worker did with a filing's attachment, and what it found.
@@ -169,6 +174,28 @@ export interface FilingEnrichment {
   readonly claimRefusalReason: ClaimRefusalReason | null;
   readonly claimRefusalDetail: string | null;
 
+  // --- the results table, or why there is none -------------------------------
+  /**
+   * The one results table this filing carries, every figure of which is
+   * traceable to a quoted row of a statement whose basis, columns and scale the
+   * document itself states.
+   *
+   * A SEPARATE FIELD FROM `claims`, and the separation is not cosmetic. A claim
+   * is a sentence and is verified by finding that sentence. A results figure is
+   * a cell, and what makes it publishable is that the table's own header block
+   * says which statement it belongs to, which period its column is, and what
+   * scale it is denominated in. Two different gates, two different records.
+   */
+  readonly results: VerifiedResults | null;
+  /** The composed wire line, or null. */
+  readonly resultsLine: string | null;
+  /** Figures the gate refused, with the reason. */
+  readonly resultsDiscards: readonly ResultsFigureDiscard[];
+  /** How many figures the extractor proposed. Null when it was never called. */
+  readonly resultsProposed: number | null;
+  readonly resultsRefusalReason: ResultsRefusalReason | null;
+  readonly resultsRefusalDetail: string | null;
+
   // --- the model's own summary, which is NOT a claim -------------------------
   /**
    * One or two sentences of MODEL PROSE about the document. Unverified.
@@ -217,6 +244,12 @@ export const PENDING_ENRICHMENT: FilingEnrichment = {
   claimsProposed: null,
   claimRefusalReason: null,
   claimRefusalDetail: null,
+  results: null,
+  resultsLine: null,
+  resultsDiscards: [],
+  resultsProposed: null,
+  resultsRefusalReason: null,
+  resultsRefusalDetail: null,
   documentSummary: null,
   documentSummaryRefusalReason: null,
   headline: null,

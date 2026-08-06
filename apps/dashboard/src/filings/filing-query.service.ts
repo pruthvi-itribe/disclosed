@@ -298,6 +298,9 @@ export class FilingQueryService {
       withClaims,
       byClaimDiscard,
       byClaimRefusal,
+      withResults,
+      byResultsDiscard,
+      byResultsRefusal,
     ] = await Promise.all([
       this.filings.countDocuments({}).exec(),
       this.groupBy('$enrichment.state'),
@@ -343,6 +346,27 @@ export class FilingQueryService {
       this.groupBy('$enrichment.claimRefusalReason', {
         'enrichment.claimRefusalReason': { $ne: null },
       }),
+      this.filings
+        .countDocuments({ 'enrichment.resultsLine': { $ne: null } })
+        .exec(),
+      // Per DISCARD rather than per filing, for the same reason the claim
+      // discards are: one table proposing three unplaceable figures is three
+      // data points about the extractor.
+      this.filings
+        .aggregate<GroupedCount<string | null>>([
+          { $unwind: '$enrichment.resultsDiscards' },
+          {
+            $group: {
+              _id: '$enrichment.resultsDiscards.reason',
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { count: -1, _id: 1 } },
+        ])
+        .exec(),
+      this.groupBy('$enrichment.resultsRefusalReason', {
+        'enrichment.resultsRefusalReason': { $ne: null },
+      }),
     ]);
 
     return {
@@ -357,6 +381,9 @@ export class FilingQueryService {
       withClaims,
       byClaimDiscard: toCounts(byClaimDiscard, 'unknown'),
       byClaimRefusal: toCounts(byClaimRefusal, 'unknown'),
+      withResults,
+      byResultsDiscard: toCounts(byResultsDiscard, 'unknown'),
+      byResultsRefusal: toCounts(byResultsRefusal, 'unknown'),
       generatedAtIst: istTimestamp(this.now()),
     };
   }
@@ -549,6 +576,40 @@ function toEnrichmentView(
       enrichment?.documentSummaryRefusalReason ?? null,
     claimRefusalReason: enrichment?.claimRefusalReason ?? null,
     claimRefusalDetail: enrichment?.claimRefusalDetail ?? null,
+    resultsLine: enrichment?.resultsLine ?? null,
+    // Mapped field by field rather than passed through, so a document written
+    // by an older build — which is every document already in the collection —
+    // reads back as nulls and empty arrays rather than as `undefined` reaching
+    // the page and rendering as the string "undefined" beside a real figure.
+    results:
+      enrichment?.results == null
+        ? null
+        : {
+            basis: enrichment.results.basis,
+            basisSpan: enrichment.results.basisSpan,
+            columnsSpan: enrichment.results.columnsSpan,
+            period: enrichment.results.period,
+            priorPeriod: enrichment.results.priorPeriod,
+            // No `?? []` fallback: `results` is null on every filing written
+            // before this lane existed, so a non-null block always came from
+            // the schema, which defaults `figures` to an array.
+            figures: enrichment.results.figures.map((figure) => ({
+              metric: figure.metric,
+              current: figure.current,
+              prior: figure.prior,
+              unit: figure.unit,
+              span: figure.span,
+            })),
+          },
+    resultsDiscards: (enrichment?.resultsDiscards ?? []).map((row) => ({
+      reason: row.reason,
+      metric: row.metric,
+      figure: row.figure,
+      detail: row.detail,
+    })),
+    resultsProposed: enrichment?.resultsProposed ?? null,
+    resultsRefusalReason: enrichment?.resultsRefusalReason ?? null,
+    resultsRefusalDetail: enrichment?.resultsRefusalDetail ?? null,
   };
 }
 

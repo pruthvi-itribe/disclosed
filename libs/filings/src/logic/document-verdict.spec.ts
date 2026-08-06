@@ -55,8 +55,15 @@ describe('readDocument — a filing that states everything', () => {
 });
 
 describe('readDocument — a filing whose amount is refused', () => {
+  // The figure is in a Schedule III row, so the extractor genuinely has a
+  // candidate — and the conditional language is in that row's OWN sentence,
+  // which is what refuses it. A document-wide test would have refused this for
+  // the boilerplate two pages away instead.
   const verdict = run(
-    'RailTel is in discussions and has received a Letter of Intent worth Rs. 18,53,66,820/- subject to conditions.',
+    ORDER_ROW(
+      'Rs. 18,53,66,820/- under a Letter of Intent, subject to conditions',
+      '\nSouth Western Railway \n',
+    ),
   );
 
   it('records the refusal reason and detail', () => {

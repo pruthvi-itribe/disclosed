@@ -547,3 +547,97 @@ describe('parseAttemptsOf', () => {
     expect(claimed?.attempts).toBe(1);
   });
 });
+
+describe('requeueUnparseable', () => {
+  const terminal = (
+    overrides: Partial<FilingEnrichment> = {},
+  ): FilingEnrichment => ({
+    ...PENDING_ENRICHMENT,
+    state: 'unparseable',
+    attempts: 1,
+    parseAttempts: 1,
+    attemptedAt: NOW,
+    unparseableReason: 'oversized',
+    lastError: 'attachment exceeds the download cap (unknown bytes)',
+    ...overrides,
+  });
+
+  it('makes a terminal filing claimable again', async () => {
+    await insert(makeFiling(10));
+    await repo.recordEnrichment(10, terminal());
+
+    expect(await repo.requeueUnparseable(10)).toBe(true);
+
+    const stored = await storedEnrichment(10);
+    expect(stored?.state).toBe('pending');
+    expect(stored?.unparseableReason).toBeNull();
+    expect(stored?.nextAttemptAt).toBeNull();
+    expect((await repo.claimNext(NOW))?.filing.seqId).toBe(10);
+  });
+
+  it('keeps both attempt counters exactly as they stood', async () => {
+    // NOT reset and NOT incremented. Zero would erase the only durable record
+    // that this pipeline already reached a verdict; a bump would count an
+    // attempt against the exchange that was never made.
+    await insert(makeFiling(10));
+    await repo.recordEnrichment(
+      10,
+      terminal({ attempts: 3, parseAttempts: 2 }),
+    );
+
+    await repo.requeueUnparseable(10);
+
+    const stored = await storedEnrichment(10);
+    expect(stored?.attempts).toBe(3);
+    expect(stored?.parseAttempts).toBe(2);
+  });
+
+  it('leaves the previous verdict readable in lastError', async () => {
+    // `unparseableReason` has to go — the dashboard groups by it — so this
+    // string is all that survives of what the old build decided.
+    await insert(makeFiling(10));
+    await repo.recordEnrichment(10, terminal());
+
+    await repo.requeueUnparseable(10);
+
+    expect((await storedEnrichment(10))?.lastError).toBe(
+      'attachment exceeds the download cap (unknown bytes)',
+    );
+  });
+
+  it.each(['pending', 'enriched', 'failed'] as const)(
+    'refuses to touch a filing in state %s',
+    async (state) => {
+      await insert(makeFiling(10));
+      await repo.recordEnrichment(10, { ...terminal(), state });
+
+      expect(await repo.requeueUnparseable(10)).toBe(false);
+      expect((await storedEnrichment(10))?.state).toBe(state);
+    },
+  );
+
+  it('reports false for a filing that is not there', async () => {
+    // Not an error. A sweep reads its candidates and then writes them one at a
+    // time, and a filing can legitimately be gone by the time its turn comes.
+    expect(await repo.requeueUnparseable(999)).toBe(false);
+  });
+
+  it('reports false the second time, so a repeated sweep is a no-op', async () => {
+    await insert(makeFiling(10));
+    await repo.recordEnrichment(10, terminal());
+
+    expect(await repo.requeueUnparseable(10)).toBe(true);
+    expect(await repo.requeueUnparseable(10)).toBe(false);
+  });
+
+  it('moves only the filing it names', async () => {
+    await insert(makeFiling(10), makeFiling(20));
+    await repo.recordEnrichment(10, terminal());
+    await repo.recordEnrichment(20, terminal());
+
+    await repo.requeueUnparseable(10);
+
+    expect((await storedEnrichment(20))?.state).toBe('unparseable');
+    expect((await storedEnrichment(20))?.unparseableReason).toBe('oversized');
+  });
+});

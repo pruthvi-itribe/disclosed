@@ -82,6 +82,18 @@ export interface IngestConfig {
   readonly claimMaxClaims: number;
   /** How much of a document reaches the model. See `MAX_DOCUMENT_CHARS`. */
   readonly claimMaxDocumentChars: number;
+
+  // --- financial-results extraction ------------------------------------------
+  /**
+   * False stops the results table being read. Nothing else changes.
+   *
+   * SEPARATE FROM `claimsEnabled` because the two lanes cost separately and are
+   * useful separately: a desk that wants quarterly numbers and no narrative
+   * claims is a real configuration, and so is the reverse. The provider, key,
+   * model and effort are shared — asking two models would make the two lanes
+   * incomparable for no benefit.
+   */
+  readonly resultsEnabled: boolean;
 }
 
 /**
@@ -448,6 +460,7 @@ export const loadConfig = (
     ),
     claimMaxClaims: readNumeric('CLAIM_MAX_CLAIMS', env),
     claimMaxDocumentChars: readNumeric('CLAIM_MAX_DOCUMENT_CHARS', env),
+    resultsEnabled: readBoolean('RESULTS_ENABLED', env, true),
   };
 };
 

@@ -1,4 +1,4 @@
-import type { ClaimExtractor } from '@app/filings';
+import type { ClaimExtractor, ResultsExtractor } from '@app/filings';
 // NOT from the barrel, deliberately. These modules pull in a provider's client
 // at require time, and `@app/filings` is also imported by the read-only
 // dashboard, which never calls a model. Same reasoning as `pdf-text.ts`'s lazy
@@ -41,17 +41,33 @@ export interface ClaimExtractorConfig {
   readonly claimModel: string;
   readonly claimEffort: ClaimEffort;
   readonly claimMaxDocumentChars: number;
+  readonly resultsEnabled: boolean;
 }
 
-export function buildClaimExtractor(
-  config: ClaimExtractorConfig,
-): ClaimExtractor | null {
-  if (!config.claimsEnabled) return null;
+/**
+ * One object, both lanes.
+ *
+ * Both adapters implement `ClaimExtractor` AND `ResultsExtractor`, so the two
+ * lanes share one client, one key and one set of provider options. What they do
+ * NOT share is a switch: `buildResultsExtractor` reads its own flag, so an
+ * operator can run either lane alone.
+ */
+export type FilingExtractor = ClaimExtractor & ResultsExtractor;
 
+/**
+ * The client, or null when the operator configured none.
+ *
+ * Built once whatever the two lane switches say, because a client is a key and a
+ * timeout and nothing else; the switches decide which lanes are handed it.
+ */
+function buildExtractor(config: ClaimExtractorConfig): FilingExtractor | null {
   const options = {
     model: config.claimModel,
     effort: config.claimEffort,
     maxDocumentChars: config.claimMaxDocumentChars,
+    // The results lane needs more of the document than the claim lane: a
+    // statutory statement is not at the front. See `ClaimProviderOptions`.
+    maxResultsDocumentChars: config.claimMaxDocumentChars,
   };
   const apiKey = claimApiKeyOf(config);
 
@@ -63,4 +79,25 @@ export function buildClaimExtractor(
     case 'anthropic':
       return ClaudeClaimExtractor.fromApiKey(apiKey, options);
   }
+}
+
+export function buildClaimExtractor(
+  config: ClaimExtractorConfig,
+): ClaimExtractor | null {
+  if (!config.claimsEnabled) return null;
+  return buildExtractor(config);
+}
+
+/**
+ * The results extractor, or null.
+ *
+ * A SEPARATE FUNCTION rather than a cast of the claim one, so that
+ * `CLAIM_ENABLED=false RESULTS_ENABLED=true` is a configuration that works
+ * instead of one that silently reads nothing.
+ */
+export function buildResultsExtractor(
+  config: ClaimExtractorConfig,
+): ResultsExtractor | null {
+  if (!config.resultsEnabled) return null;
+  return buildExtractor(config);
 }

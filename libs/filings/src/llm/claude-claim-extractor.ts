@@ -4,17 +4,27 @@ import {
   CLAIM_OUTPUT_SCHEMA,
   CLAIM_SYSTEM_PROMPT,
 } from '../logic/claim-prompt';
+import {
+  buildResultsRequest,
+  RESULTS_OUTPUT_SCHEMA,
+  RESULTS_SYSTEM_PROMPT,
+} from '../logic/results-prompt';
 import type {
   ClaimExtractionRequest,
   ClaimExtractionResult,
   ClaimExtractor,
 } from './claim-extractor';
+import type {
+  ResultsExtractionResult,
+  ResultsExtractor,
+} from './results-extractor';
 import {
   CLAIM_MAX_TOKENS,
   CLAIM_TIMEOUT_MS,
   claimsFromText,
   countOf,
   describeProviderFailure,
+  resultsFromText,
   type ClaimProviderOptions,
   type ClaimUsage,
 } from './claim-provider';
@@ -112,7 +122,16 @@ const usageOf = (message: unknown): ClaimUsage | undefined => {
   };
 };
 
-export class ClaudeClaimExtractor implements ClaimExtractor {
+/** What one call produced: the reply's text and what it cost, or why not. */
+type RawReply =
+  | {
+      readonly outcome: 'ok';
+      readonly text: string;
+      readonly usage?: ClaimUsage;
+    }
+  | { readonly outcome: 'failed'; readonly message: string };
+
+export class ClaudeClaimExtractor implements ClaimExtractor, ResultsExtractor {
   constructor(
     private readonly messages: ClaudeMessagesApi,
     private readonly options: ClaimProviderOptions,
@@ -144,6 +163,62 @@ export class ClaudeClaimExtractor implements ClaimExtractor {
   async extract(
     request: ClaimExtractionRequest,
   ): Promise<ClaimExtractionResult> {
+    const reply = await this.ask(
+      CLAIM_SYSTEM_PROMPT,
+      CLAIM_OUTPUT_SCHEMA,
+      buildClaimRequest({
+        ...request,
+        maxDocumentChars: this.options.maxDocumentChars,
+      }),
+    );
+    if (reply.outcome === 'failed') return reply;
+    try {
+      return claimsFromText(reply.text, reply.usage);
+    } catch (error) {
+      return { outcome: 'failed', message: describeProviderFailure(error) };
+    }
+  }
+
+  /**
+   * The results table, on its own call and its own cached prompt.
+   *
+   * A SECOND CALL RATHER THAN A SECOND FIELD on the claims schema, and
+   * `results-prompt.ts` argues why: the claims system prompt is the cacheable
+   * prefix of every request in that lane, and the two jobs want opposite
+   * instructions about what an empty answer means.
+   */
+  async extractResults(
+    request: ClaimExtractionRequest,
+  ): Promise<ResultsExtractionResult> {
+    const reply = await this.ask(
+      RESULTS_SYSTEM_PROMPT,
+      RESULTS_OUTPUT_SCHEMA,
+      buildResultsRequest({
+        ...request,
+        maxDocumentChars: this.options.maxResultsDocumentChars,
+      }),
+    );
+    if (reply.outcome === 'failed') return reply;
+    try {
+      return resultsFromText(reply.text, reply.usage);
+    } catch (error) {
+      return { outcome: 'failed', message: describeProviderFailure(error) };
+    }
+  }
+
+  /**
+   * One request, one reply, no interpretation.
+   *
+   * SHARED BY BOTH LANES so the transport, the beta flags, the refusal check and
+   * the never-throws contract cannot drift apart between them. What differs is
+   * only the cached system prompt, the schema and the user turn — which is
+   * exactly the difference between the two jobs and nothing else.
+   */
+  private async ask(
+    system: string,
+    schema: object,
+    user: string,
+  ): Promise<RawReply> {
     try {
       const message = await this.messages.create({
         model: this.options.model,
@@ -155,25 +230,13 @@ export class ClaudeClaimExtractor implements ClaimExtractor {
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
         system: [
-          {
-            type: 'text',
-            text: CLAIM_SYSTEM_PROMPT,
-            cache_control: { type: 'ephemeral' },
-          },
+          { type: 'text', text: system, cache_control: { type: 'ephemeral' } },
         ],
         output_config: {
           effort: this.options.effort,
-          format: { type: 'json_schema', schema: CLAIM_OUTPUT_SCHEMA },
+          format: { type: 'json_schema', schema },
         },
-        messages: [
-          {
-            role: 'user',
-            content: buildClaimRequest({
-              ...request,
-              maxDocumentChars: this.options.maxDocumentChars,
-            }),
-          },
-        ],
+        messages: [{ role: 'user', content: user }],
       });
 
       // CHECKED BEFORE `content` IS READ. A refusal returns HTTP 200 with an
@@ -187,7 +250,7 @@ export class ClaudeClaimExtractor implements ClaimExtractor {
         };
       }
 
-      return claimsFromText(textOf(message), usageOf(message));
+      return { outcome: 'ok', text: textOf(message), usage: usageOf(message) };
     } catch (error) {
       return { outcome: 'failed', message: describeProviderFailure(error) };
     }

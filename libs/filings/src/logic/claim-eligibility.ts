@@ -45,11 +45,39 @@ import { isRoutine } from './taxonomy';
  * presentation, a press release and an earnings-call intimation — and the rest
  * are the categories whose documents are narrative rather than tabular.
  *
- * Deliberately NOT here: `Outcome of Board Meeting` (112 live filings, almost
- * entirely results tables the amount extractor already reads), `Copy of
- * Newspaper Publication` (147, raster scans of adverts), `Record Date`,
- * `Shareholders meeting` and the whole board-change family, which name people
- * and are blocked downstream anyway.
+ * ================================================================
+ * `Outcome of Board Meeting` WAS EXCLUDED, AND THAT WAS WRONG
+ * ================================================================
+ *
+ * This list used to carry a comment excluding the category as "almost entirely
+ * results tables the amount extractor already reads". Both halves were false.
+ *
+ * The first half: 200 of the 1,699 live filings are in this category and 64.4%
+ * of the 1,346 in the recorded month say in their own exchange summary that they
+ * carry financial results — so a third of them are NOT results tables at all.
+ * They are dividend declarations, fundraising approvals, plant approvals and
+ * business updates, and every one of them was refused before a model was called.
+ *
+ * The second half: the amount extractor does not read a results table and cannot.
+ * It returns ONE rupee figure — the value of a single disclosed event — and it
+ * refuses a statement of accounts outright, because a statement has no single
+ * material amount in it. What a results filing carries is a SET of figures with
+ * their year-ago comparisons, which is a different shape needing a different
+ * gate: `results-eligibility.ts` and `results-verify.ts`.
+ *
+ * So the category is admitted here for the claims it genuinely carries, and the
+ * results lane reads the table separately. APOLLOTYRE seqId 106729105 is the
+ * filing that proved it: 69,723 characters of consolidated and standalone
+ * statements, `enrichment.state=enriched`, `claims: []`, and the recorded reason
+ * "Outcome of Board Meeting is not a claim-bearing category".
+ *
+ * Still deliberately NOT here: `Copy of Newspaper Publication` (241 live, raster
+ * scans of adverts), `Record Date`, `Shareholders meeting` and the whole
+ * board-change family, which name people and are blocked downstream anyway; and
+ * `Clarification - Financial Results` / `Reply to Clarification- Financial
+ * results`, which are the exchange's discrepancy correspondence rather than a
+ * company stating anything about itself — `results-eligibility.ts` argues those
+ * two at length.
  */
 export const CLAIM_BEARING_CATEGORIES: ReadonlySet<string> = new Set([
   'investor presentation',
@@ -74,6 +102,9 @@ export const CLAIM_BEARING_CATEGORIES: ReadonlySet<string> = new Set([
   'credit rating- revision',
   'disclosure of material issue',
   'integrated filing- financial',
+  // Admitted by this work. See the argument above.
+  'outcome of board meeting',
+  'press release (revised)',
 ]);
 
 /**
