@@ -1115,16 +1115,17 @@ const claimHarness = (
       parseAttempts: 0,
     },
   ]);
+  const telegram = new StubTelegram();
   const worker = new EnrichmentWorker(
     repository as unknown as EnrichmentRepository,
     new StubFetcher(okBody()) as unknown as AttachmentFetcher,
     new StubContext() as unknown as FilingContextService,
-    new StubTelegram() as unknown as TelegramService,
+    telegram as unknown as TelegramService,
     OPTIONS,
     parserOf(overrides.text ?? PRESS_RELEASE),
     extractor as unknown as ClaimExtractor | null,
   );
-  return { worker, repository };
+  return { worker, repository, telegram };
 };
 
 describe('EnrichmentWorker — notable claims', () => {
@@ -1301,6 +1302,29 @@ describe('EnrichmentWorker — notable claims', () => {
     expect(stored.state).toBe('enriched');
     expect(stored.claimRefusalReason).toBe('extractor-error');
     expect(stored.claimRefusalDetail).not.toBeNull();
+  });
+
+  it('puts the claim line on the wire, for a filing with no figure at all', async () => {
+    // The point of the whole feature. This document yields no amount, so the
+    // headline degrades to the exchange's own category and the old gate would
+    // have sent nothing — which is how six competitor lines were missed.
+    const extractor = new StubExtractor({ outcome: 'ok', claims: [TRUE_CLAIM] });
+    const { worker, telegram, repository } = claimHarness(extractor);
+
+    const result = await worker.tick(NOW);
+
+    expect(onlyRecorded(repository).amountRupees).toBeNull();
+    expect(result.alerted).toBe(1);
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0]).toContain(
+      'RAILTEL: JOINS THE MICROSOFT INTELLIGENT SECURITY ASSOCIATION',
+    );
+  });
+
+  it('sends nothing when the document yields neither a figure nor a claim', async () => {
+    const { worker, telegram } = claimHarness(new StubExtractor());
+    await worker.tick(NOW);
+    expect(telegram.sent).toEqual([]);
   });
 
   it('honours the per-filing claim cap', async () => {
