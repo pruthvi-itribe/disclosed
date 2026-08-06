@@ -112,10 +112,26 @@ describe('scanRupeeAmounts — provenance', () => {
   });
 });
 
+describe('scanRupeeAmounts — the currency marker itself', () => {
+  // Without a leading word boundary the "rs" tail of an ordinary word acts as
+  // a currency marker: "issued to shareholde|rs| 5 crore equity shares" parses
+  // as Rs 5 crore. The guard lives here now that the scan does.
+  it.each([
+    'issued to shareholders 5 crore equity shares',
+    'the transfers 25 lakh units',
+  ])('does not treat the tail of a word as a marker: %s', (text) => {
+    expect(values(text)).toEqual([]);
+  });
+
+  it('still reads a marker at the start of a word boundary', () => {
+    expect(values('(Rs 5 crore)')).toEqual([50_000_000]);
+  });
+});
+
 describe('scanRupeeAmounts — the words-in-brackets restatement', () => {
-  // `(Rupees Three Crores Fifty-Six Lakhs…)` restates ₹3,56,91,142.50. Reading
-  // its leading words as a figure would report ₹3 crore — a 16% under-report
-  // presented as an exact number, which is worse than reporting nothing.
+  // `(Rupees Three Crores Fifty-Six Lakhs…)` restates ₹3,56,91,142.50. The
+  // words are never parsed: reading only the leading two would report ₹3 crore,
+  // a 16% under-report presented as an exact number.
   it('does not read "Rupees" as a currency marker', () => {
     expect(
       values('(Rupees Three Crores Fifty-Six Lakhs Ninety-One Thousand)'),

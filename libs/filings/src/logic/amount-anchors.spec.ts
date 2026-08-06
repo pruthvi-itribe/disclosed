@@ -13,6 +13,9 @@ describe('findLabelWindows — the SEBI Schedule III anchor', () => {
   // the punctuation, and PDF extraction then stretches or removes the spaces.
   it.each([
     ['Broad consideration or size of the order(s)/contract(s)', 'order win'],
+    // The row is identified by "consideration or size of the order"; the
+    // leading "Broad" is how SEBI words it but is not what makes it unique.
+    ['Consideration or size of the order(s)/contract(s)', 'no "broad"'],
     [
       'Broad consideration or size of order(s)/contract(s) (in INR);',
       'no "the"',
@@ -169,9 +172,9 @@ describe('event phrases — the covering-letter anchor', () => {
   // A covering letter is the first page or two. Past that the document is an
   // annexure or a slide deck, where a matching phrase proves much less.
   it('ignores phrases beyond the covering letter', () => {
-    expect(findEventPhraseEnds(`${'x'.repeat(4_000)} orders of Rs. 5 crore`)).toEqual(
-      [],
-    );
+    expect(
+      findEventPhraseEnds(`${'x'.repeat(4_000)} orders of Rs. 5 crore`),
+    ).toEqual([]);
   });
 
   it('anchors a figure that follows the phrase within reach', () => {

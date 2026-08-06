@@ -78,7 +78,7 @@ FILES=(
   "$LOGIC/amount-hazards.ts"
   "$LOGIC/amount-extraction.ts"
 )
-SUITE='libs/filings/src/logic/(amount-|rupee-parse|regex-matches)'
+SUITE='libs/filings/src/logic/(amount-|rupee-parse|regex-matches|ambiguity)'
 
 # --- precondition: refuse to mutate a dirty tree -----------------------------
 for f in "${FILES[@]}"; do
@@ -232,14 +232,14 @@ check "unit-less figures accepted unconditionally (Rs. 10 is an amount)"
 perl -0pi -e 's/if \(\n      !INDIAN_GROUPING\.test\(integerPart\) &&\n      !INTERNATIONAL_GROUPING\.test\(integerPart\)\n    \) \{\n      return null;\n    \}//' "$P"
 check "grouping check removed (Rs. 30,00,000,00 read as 30 crore by luck)"
 
-perl -0pi -e "s/const INDIAN_GROUPING = .*;/const INDIAN_GROUPING = \/^[\\\\d,]+\$\/;/" "$P"
+perl -0pi -e 's{const INDIAN_GROUPING = /.*/;}{const INDIAN_GROUPING = /^[0-9,]+\$/;}' "$P"
 check "Indian grouping accepts any digits and commas"
 
 perl -0pi -e "s/const GAP = '\[\^\\\\\\\\S\\\\\\\\n\]\*\\\\\\\\n\?\[\^\\\\\\\\S\\\\\\\\n\]\*';/const GAP = '\\\\\\\\s*';/" "$P"
 check "whitespace unbounded (a marker binds across blank lines)"
 
-perl -0pi -e "s/const CURRENCY_MARKER = '\(\?:\\\\\\\\brs\|\\\\\\\\binr\|₹\|&#8377;\)';/const CURRENCY_MARKER = '(?:\\\\\\\\brs|\\\\\\\\binr|₹|&#8377;|\\\\\\\\brupees)';/" "$P"
-check "'rupees' treated as a marker (Rs 3 crore for a Rs 3.57 crore order)"
+perl -0pi -e "s/const CURRENCY_MARKER = '\(\?:\\\\\\\\brs\|/const CURRENCY_MARKER = '(?:\\\\\\\\brupees|\\\\\\\\brs|/" "$P"
+check "'rupees' preferred as a marker over 'rs' (changes which text is quoted)"
 
 perl -0pi -e "s/const CURRENCY_MARKER = '\(\?:\\\\\\\\brs\|/const CURRENCY_MARKER = '(?:rs|/" "$P"
 check "leading word boundary dropped (shareholde|rs| 5 crore)"
@@ -347,7 +347,7 @@ echo "measurement — otherwise deleting the fixture would silently cost coverag
 echo "that looks covered. And the corpus must earn its place by catching"
 echo "regressions the hand-written cases were never written to imagine."
 
-HAND='libs/filings/src/logic/(amount-anchors|amount-extraction|amount-hazards|rupee-parse|regex-matches)'
+HAND='libs/filings/src/logic/(amount-anchors|amount-extraction|amount-hazards|rupee-parse|regex-matches|ambiguity)'
 CORPUS='libs/filings/src/logic/amount-corpus'
 
 perl -0pi -e 's/export const MIN_UNITLESS_RUPEES = 100_000;/export const MIN_UNITLESS_RUPEES = 1;/' "$P"
@@ -359,8 +359,8 @@ check_in "$HAND" "ambiguity gate, hand-written suites only (no corpus)"
 perl -0pi -e 's/  return found;\n\}/  return [];\n}/' "$H"
 check_in 'libs/filings/src/logic/amount-hazards' "scale detection disabled, hazards suite only"
 
-perl -0pi -e 's/export const MIN_UNITLESS_RUPEES = 100_000;/export const MIN_UNITLESS_RUPEES = 1;/' "$P"
-check_in "$CORPUS" "one-lakh floor, corpus measurement only"
+perl -0pi -e 's/  if \(scaleHeaders\.length > 0 && candidates\.some\(\(c\) => !c\.carriesUnit\)\) \{/  if (false) {/' "$X"
+check_in "$CORPUS" "scale guard neutered, corpus measurement only"
 
 perl -0pi -e 's/export const PHRASE_REACH_CHARS = 60;/export const PHRASE_REACH_CHARS = 4_000;/' "$A"
 check_in "$CORPUS" "phrase reach widened, corpus measurement only"

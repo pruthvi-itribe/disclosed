@@ -37,11 +37,15 @@ const GAP = '[^\\S\\n]*\\n?[^\\S\\n]*';
  * `&#8377;` is the HTML-escaped rupee sign. The mapper decodes entities at
  * ingest, so this is belt-and-braces for filings captured before that fix.
  *
- * `rupees` is NOT a marker. It introduces the words-in-brackets restatement
- * that follows almost every Indian figure — `(Rupees Three Crores Fifty-Six
- * Lakhs Ninety-One Thousand One Hundred Forty-Two…)` — and reading its leading
- * digits-in-words as a figure yields ₹3 crore for a ₹3.57 crore order. A
- * truncated amount is a WRONG amount, so the words are left unparsed.
+ * `rupees` is NOT a marker, and the digits-in-words restatement it introduces
+ * — `(Rupees Three Crores Fifty-Six Lakhs Ninety-One Thousand One Hundred
+ * Forty-Two…)`, which follows almost every Indian figure — is never parsed.
+ * Reading only its leading words would report ₹3 crore for a ₹3,56,91,142.50
+ * order, and a truncated amount is a wrong amount. Admitting `rupees` as a
+ * marker changes nothing on the sampled corpus, because the restatement holds
+ * no digits for a marker to attach to; the one form that does — OMPOWER's
+ * `Rupees 82,17,40,528/-` — is read by the narrower marker-less rule below,
+ * which only applies inside a labelled disclosure row.
  */
 const CURRENCY_MARKER = '(?:\\brs|\\binr|₹|&#8377;)';
 
