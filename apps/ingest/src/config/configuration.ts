@@ -23,6 +23,16 @@ export interface IngestConfig {
   // --- the background attachment worker -------------------------------------
   /** False stops the worker being started at all. It never touches the poller. */
   readonly enrichmentEnabled: boolean;
+  /**
+   * Whether the ingest process runs the worker itself.
+   *
+   * Off means the enrichment lane is expected to be a SEPARATE process
+   * (`npm run start:enrichment`), which is the stronger reading of "off the hot
+   * path": Node runs one thread, and parsing a large PDF is CPU work inside
+   * pdf.js that the poller's timers cannot preempt. On is the default so a
+   * single-process deployment keeps working unchanged.
+   */
+  readonly enrichmentInProcess: boolean;
   readonly enrichmentIdleIntervalMs: number;
   /** Delay between two consecutive fetches of NSE's archive host. */
   readonly enrichmentRequestDelayMs: number;
@@ -262,6 +272,7 @@ export const loadConfig = (
   failureThreshold: readNumeric('FAILURE_THRESHOLD', env),
   watchlist: readList('WATCHLIST', env),
   enrichmentEnabled: readBoolean('ENRICH_ENABLED', env, true),
+  enrichmentInProcess: readBoolean('ENRICH_IN_PROCESS', env, true),
   enrichmentIdleIntervalMs: readNumeric('ENRICH_IDLE_INTERVAL_MS', env),
   enrichmentRequestDelayMs: readNumeric('ENRICH_REQUEST_DELAY_MS', env),
   enrichmentBatchSize: readNumeric('ENRICH_BATCH_SIZE', env),
@@ -305,6 +316,7 @@ export const describeConfig = (config: IngestConfig): string =>
     `failures=${config.failureThreshold}`,
     `watchlist=${config.watchlist.length}`,
     `enrich=${config.enrichmentEnabled ? 'on' : 'off'}`,
+    `enrichWhere=${config.enrichmentInProcess ? 'in-process' : 'separate-process'}`,
     `enrichDelay=${config.enrichmentRequestDelayMs}ms`,
     `context=${config.contextWindowDays}d`,
     // Both halves are required to send anything, so a half-set pair is reported

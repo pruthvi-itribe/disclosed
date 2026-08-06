@@ -9,7 +9,12 @@ import type {
 } from '@app/filings';
 import type { TelegramService } from '@app/notify';
 import type { FilingContextService } from './filing-context.service';
-import { EnrichmentWorker, type EnrichmentOptions } from './enrichment.worker';
+import {
+  describeTick,
+  EnrichmentWorker,
+  HEARTBEAT_MS,
+  type EnrichmentOptions,
+} from './enrichment.worker';
 
 const NOW = new Date('2026-08-06T06:00:00.000Z');
 
@@ -50,8 +55,16 @@ class StubRepository {
   }> = [];
   public claimCalls = 0;
   public claimThrows = false;
+  public pendingCalls = 0;
+  public pendingThrows = false;
 
   constructor(private queue: ClaimedFiling[] = []) {}
+
+  async pendingCount(): Promise<number> {
+    this.pendingCalls += 1;
+    if (this.pendingThrows) throw new Error('mongo is down');
+    return this.queue.length;
+  }
 
   async claimNext(): Promise<ClaimedFiling | null> {
     this.claimCalls += 1;
@@ -959,5 +972,83 @@ describe('EnrichmentWorker — a parse failure while the filing is still young',
       state: 'pending',
       parseAttempts: 2,
     });
+  });
+});
+
+/**
+ * A worker that is not running looks exactly like a queue with nothing in it,
+ * from outside — which is how this lane came to be silently absent from a
+ * running deployment for a day while filings piled up behind it.
+ */
+describe('EnrichmentWorker — saying that it is alive', () => {
+  it('reports the queue depth as soon as it starts', async () => {
+    const { worker, repository } = harness({ queue: [] });
+
+    const running = worker.start();
+    worker.stop();
+    await running;
+
+    expect(repository.pendingCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it('keeps running when the depth cannot be read', async () => {
+    // Instrumentation must never stop the loop that does the work.
+    const { worker, repository } = harness({ queue: [] });
+    repository.pendingThrows = true;
+
+    const running = worker.start();
+    worker.stop();
+
+    await expect(running).resolves.toBeUndefined();
+  });
+
+  it('says so again after a spell of finding nothing', async () => {
+    // A queue that has been empty for a while is the state a dead worker is
+    // indistinguishable from, so the loop keeps saying it is there. Driven by
+    // setting the idle interval to the heartbeat, so exactly one empty cycle
+    // reaches the cadence.
+    const { worker, repository } = harness({
+      queue: [],
+      options: { idleIntervalMs: HEARTBEAT_MS },
+    });
+
+    const running = worker.start();
+    // The startup report is the first; the cadence produces the second.
+    while (repository.pendingCalls < 2) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    worker.stop();
+    await running;
+
+    expect(repository.pendingCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it('beats every five minutes of idling, not on every empty tick', () => {
+    // Pinned against a literal rather than against the constant, so a change to
+    // the cadence is a decision this test reports rather than one it follows.
+    expect(HEARTBEAT_MS).toBe(300_000);
+    expect(HEARTBEAT_MS / OPTIONS.idleIntervalMs).toBeGreaterThan(1);
+  });
+
+  it('names every outcome a tick can have', () => {
+    const line = describeTick({
+      claimed: 7,
+      enriched: 4,
+      refused: 3,
+      unparseable: 1,
+      parseRetried: 1,
+      retried: 1,
+      failed: 0,
+      alerted: 2,
+    });
+
+    expect(line).toContain('claimed 7');
+    expect(line).toContain('enriched 4');
+    expect(line).toContain('refused on 3');
+    expect(line).toContain('unparseable 1');
+    expect(line).toContain('parse-retried 1');
+    expect(line).toContain('retried 1');
+    expect(line).toContain('failed 0');
+    expect(line).toContain('alerted 2');
   });
 });

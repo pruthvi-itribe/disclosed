@@ -53,6 +53,15 @@
       "compilerOptions": {
         "tsConfigPath": "libs/notify/tsconfig.lib.json"
       }
+    },
+    "enrichment": {
+      "type": "application",
+      "root": "apps/ingest",
+      "entryFile": "enrichment.main",
+      "sourceRoot": "apps/ingest/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/ingest/tsconfig.app.json"
+      }
     }
   }
 }

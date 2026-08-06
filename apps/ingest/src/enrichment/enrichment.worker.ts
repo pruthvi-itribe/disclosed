@@ -67,6 +67,22 @@ export interface EnrichmentTickResult {
   readonly alerted: number;
 }
 
+/**
+ * How long the loop may sit idle before it says so.
+ *
+ * Five minutes: frequent enough that a dead lane is visible within one coffee
+ * break, rare enough that a quiet overnight costs a dozen log lines and a dozen
+ * indexed counts.
+ */
+export const HEARTBEAT_MS = 300_000;
+
+/** One tick's outcome, in the order an operator reads it. */
+export const describeTick = (result: EnrichmentTickResult): string =>
+  `Enrichment tick: claimed ${result.claimed}, enriched ${result.enriched} ` +
+  `(amount refused on ${result.refused}), unparseable ${result.unparseable}, ` +
+  `parse-retried ${result.parseRetried}, retried ${result.retried}, ` +
+  `failed ${result.failed}, alerted ${result.alerted}`;
+
 const EMPTY_TICK: EnrichmentTickResult = {
   claimed: 0,
   enriched: 0,
@@ -170,9 +186,31 @@ export class EnrichmentWorker {
         `${this.options.requestDelayMs}ms between fetches`,
     );
 
+    await this.reportQueueDepth();
+
+    let idleMs = 0;
+
     while (this.running) {
       const result = await this.cycle();
       if (!this.running) break;
+
+      // A WORKER THAT IS NOT RUNNING LOOKS EXACTLY LIKE A QUEUE WITH NOTHING IN
+      // IT, from outside. That is how this lane came to be silently absent from
+      // a running deployment for a day, so the loop says what it did: a line
+      // per tick that touched anything, and a queue depth on a cadence when it
+      // did not. Both are cheap — the depth is one `countDocuments` against the
+      // index the claim query already needs.
+      if (result.claimed > 0) {
+        this.logger.log(describeTick(result));
+        idleMs = 0;
+      } else {
+        idleMs += this.options.idleIntervalMs;
+        if (idleMs >= HEARTBEAT_MS) {
+          idleMs = 0;
+          await this.reportQueueDepth();
+        }
+      }
+
       // A tick that filled its batch has more work waiting, so it goes straight
       // round again — the per-document delay inside the tick is what paces the
       // requests. Only an empty queue waits the idle interval.
@@ -181,6 +219,24 @@ export class EnrichmentWorker {
           ? this.options.idleIntervalMs
           : this.options.requestDelayMs;
       if (delay > 0) await this.sleep(delay);
+    }
+  }
+
+  /**
+   * Says how much work is outstanding.
+   *
+   * CONTAINED, because this is instrumentation. A database hiccup while
+   * counting must not stop the loop that does the actual work — the count is
+   * how an operator sees the queue, not how the worker finds it.
+   */
+  private async reportQueueDepth(): Promise<void> {
+    try {
+      const pending = await this.repository.pendingCount(new Date());
+      this.logger.log(`Enrichment queue: ${pending} filing(s) awaiting a read`);
+    } catch (error) {
+      this.logger.warn(
+        `Could not read the enrichment queue depth: ${describeError(error)}`,
+      );
     }
   }
 

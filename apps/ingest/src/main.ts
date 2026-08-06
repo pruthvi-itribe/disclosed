@@ -6,6 +6,7 @@ import { describeError, stackOf } from '@app/common';
 import type { FilingDocument } from '@app/filings';
 import { describeConfig, loadConfig } from './config/configuration';
 import { EnrichmentWorker } from './enrichment/enrichment.worker';
+import { startInProcessLane } from './enrichment/in-process-lane';
 import { FILING_MODEL, IngestModule } from './ingest.module';
 import { PollerService } from './poller/poller.service';
 
@@ -58,24 +59,12 @@ async function bootstrap(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
-  // DETACHED, and deliberately so. The attachment worker is a second loop in
-  // the same process, and it must not be able to stop the poller: its failures
-  // cost an amount, the poller's failures cost a filing. It is contained by its
-  // own `tick()` contract, so this catch is the last resort for a rejection
-  // that escapes `start()` itself.
-  if (config.enrichmentEnabled) {
-    void enrichment.start().catch((error: unknown) => {
-      logger.error(
-        `Enrichment worker stopped: ${describeError(error)}`,
-        stackOf(error),
-      );
-    });
-  } else {
-    logger.warn(
-      'ENRICH_ENABLED is off: source PDFs will not be read, so no filing ' +
-        'will carry an amount, a counterparty or a composed headline.',
-    );
-  }
+  // Three outcomes, each with a different consequence an operator has to be
+  // told about, and the decision lives in `in-process-lane.ts` where a test can
+  // reach it. The short version: detached is not the same as off the hot path,
+  // because Node runs both loops on one thread and parsing a PDF is CPU work
+  // the poller's timers cannot preempt.
+  startInProcessLane(config, enrichment, logger);
 
   logger.log('Starting ingest poll loop');
   // `start()` runs the startup checks — the unique-index assertion first — and

@@ -228,9 +228,9 @@ describe('decideParseFailure', () => {
 
 describe('describeParseRetry', () => {
   it('names the reason and quotes what the parser said', () => {
-    expect(describeParseRetry('truncated-at-origin', 'Invalid PDF structure')).toBe(
-      'truncated-at-origin: Invalid PDF structure',
-    );
+    expect(
+      describeParseRetry('truncated-at-origin', 'Invalid PDF structure'),
+    ).toBe('truncated-at-origin: Invalid PDF structure');
   });
 
   it('states the reason alone when there is no detail to quote', () => {

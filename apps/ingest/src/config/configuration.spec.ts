@@ -400,4 +400,29 @@ describe('the background attachment worker settings', () => {
     expect(describeConfig(loadConfig(empty))).toContain('context=30d');
     expect(describeConfig(loadConfig(empty))).toContain('enrichDelay=800ms');
   });
+
+  it('runs the lane in-process by default and says where it runs', () => {
+    // In-process is the default so a single-process deployment keeps working;
+    // the startup line names it either way, because "the worker is running
+    // somewhere else" and "nothing is running it" produce identical symptoms.
+    expect(loadConfig(empty).enrichmentInProcess).toBe(true);
+    expect(describeConfig(loadConfig(empty))).toContain(
+      'enrichWhere=in-process',
+    );
+    expect(
+      describeConfig(loadConfig(withEnv({ ENRICH_IN_PROCESS: 'false' }))),
+    ).toContain('enrichWhere=separate-process');
+  });
+
+  it.each([
+    ['false', false],
+    ['off', false],
+    ['0', false],
+    ['true', true],
+    ['', true],
+  ])('reads ENRICH_IN_PROCESS=%s as %s', (raw, expected) => {
+    expect(
+      loadConfig(withEnv({ ENRICH_IN_PROCESS: raw })).enrichmentInProcess,
+    ).toBe(expected);
+  });
 });

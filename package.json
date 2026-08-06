@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build ingest && nest build dashboard",
+    "build": "nest build ingest && nest build enrichment && nest build dashboard",
     "build:ingest": "nest build ingest",
     "build:dashboard": "nest build dashboard",
     "start:dev": "nest start ingest --watch",
@@ -21,7 +21,11 @@
     "corpus:fetch": "ts-node -r tsconfig-paths/register tools/corpus/fetch-corpus.ts",
     "corpus:analyse": "ts-node -r tsconfig-paths/register tools/corpus/analyse-corpus.ts",
     "amount:measure": "ts-node -r tsconfig-paths/register tools/extraction/measure-amount-precision.ts",
-    "enrich:run": "ts-node -r tsconfig-paths/register tools/enrichment/enrich-filings.ts"
+    "enrich:run": "ts-node -r tsconfig-paths/register tools/enrichment/enrich-filings.ts",
+    "build:enrichment": "nest build enrichment",
+    "start:enrichment": "nest start enrichment",
+    "start:enrichment:dev": "nest start enrichment --watch",
+    "start:enrichment:prod": "node dist/apps/ingest/src/enrichment.main"
   },
   "keywords": [],
   "author": "",
