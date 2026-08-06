@@ -1308,7 +1308,10 @@ describe('EnrichmentWorker — notable claims', () => {
     // The point of the whole feature. This document yields no amount, so the
     // headline degrades to the exchange's own category and the old gate would
     // have sent nothing — which is how six competitor lines were missed.
-    const extractor = new StubExtractor({ outcome: 'ok', claims: [TRUE_CLAIM] });
+    const extractor = new StubExtractor({
+      outcome: 'ok',
+      claims: [TRUE_CLAIM],
+    });
     const { worker, telegram, repository } = claimHarness(extractor);
 
     const result = await worker.tick(NOW);
