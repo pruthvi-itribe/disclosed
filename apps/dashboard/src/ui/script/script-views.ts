@@ -100,8 +100,18 @@ export const SCRIPT_VIEWS = `
 
   // The feed pages by GROWING rather than replacing, because a feed a reader is
   // part-way down must not jump to the top to show them more.
+  //
+  // GROWS THROUGH THE SELECT'S OWN STEPS, not by +25. The limit is also a
+  // select in Admin holding 25/50/100/200, and assigning a select a value it
+  // has no option for BLANKS it — after which the next filter change read
+  // Number('') || DEFAULT_LIMIT and silently snapped a 75-row feed back to 25
+  // under the reader. Two controls over one filter stay consistent only if
+  // every writer uses values both can hold.
+  var LIMIT_STEPS = [25, 50, 100, 200];
   el('feed-more').addEventListener('click', function () {
-    state.limit = Math.min(200, state.limit + 25);
+    for (var i = 0; i < LIMIT_STEPS.length; i++) {
+      if (LIMIT_STEPS[i] > state.limit) { state.limit = LIMIT_STEPS[i]; break; }
+    }
     el('limit').value = String(state.limit);
     refresh(true);
   });

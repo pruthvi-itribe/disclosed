@@ -203,7 +203,7 @@ export const SCRIPT_FEED = `
       if (lines.length > CARD_CLAIMS && !isOpen) {
         // EXPANDS RATHER THAN ANNOUNCES. '+ 6 more' as dead text tells a reader
         // the card is hiding something and gives them nowhere to go; the whole
-        // reason the card stops at four is that eleven is a wall, and the
+        // reason the card stops at two is that eleven is a wall, and the
         // reason it says so is that silently truncating would make a partial
         // card look complete.
         var more = document.createElement('button');

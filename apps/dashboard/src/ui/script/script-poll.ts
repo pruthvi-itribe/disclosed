@@ -48,9 +48,21 @@ export const SCRIPT_POLL = `
 
   function refresh(force) {
     var slow = force === true || state.ticks % SLOW_EVERY === 0;
+    // Claimed BEFORE the requests go out. Responses do not arrive in the order
+    // requests were sent, and the filings callback decides which view to draw
+    // by reading state at response time — so without this, a poll request sent
+    // just before a ticker click can land after openCompany() and paint the
+    // whole feed as that company's filings. Same fix, same shape, as
+    // suggestState.seq.
+    var seq = state.refreshSeq + 1;
+    state.refreshSeq = seq;
+    var fresh = function () { return seq === state.refreshSeq; };
     var jobs = [
-      getJson('api/summary').then(function (b) { renderSummary(b.data); }),
+      getJson('api/summary').then(function (b) {
+        if (fresh()) renderSummary(b.data);
+      }),
       getJson(query()).then(function (b) {
+        if (!fresh()) return;
         // BOTH VIEWS, FROM ONE REQUEST. Rendering only the visible one would
         // save a few milliseconds of DOM work and cost a tab switch a round
         // trip — and the two would then be able to disagree, which is the one
@@ -72,10 +84,15 @@ export const SCRIPT_POLL = `
     }
 
     return Promise.all(jobs).then(function () {
+      if (!fresh()) return;
       state.failures = 0;
       clearError();
       setLive('live', 'live');
     }).catch(function (err) {
+      // A STALE FAILURE SAYS NOTHING. A refresh superseded mid-flight can only
+      // report on a question nobody is asking any more, and marking the page
+      // down for it would contradict the newer refresh that succeeded.
+      if (!fresh()) return;
       state.failures += 1;
       // Never swallowed. A dashboard that silently stops updating is worse
       // than one that says it stopped, because the stale numbers still read

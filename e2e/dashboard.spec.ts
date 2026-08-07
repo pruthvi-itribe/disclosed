@@ -331,6 +331,46 @@ test.describe('the company page', () => {
     expect(await page.locator('#co-topics-legend .mixitem').count()).toBeLessThanOrEqual(3);
   });
 
+  test('drops a feed response that lands after a ticker click', async ({
+    page,
+  }) => {
+    // THE RACE: the filings callback decides which view to draw by reading
+    // state at RESPONSE time. A poll request sent just before the click has no
+    // symbol filter, so if its response is allowed to render after
+    // openCompany(), the company page repaints as the ENTIRE feed wearing one
+    // company's heading. Fetch promises nothing about ordering, so this is
+    // reproduced by delaying exactly that response.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    // From here on, feed-shaped requests (no symbol) crawl; company-shaped
+    // ones (symbol=...) pass at full speed.
+    await page.route('**/api/filings*', async (route) => {
+      if (!route.request().url().includes('symbol=')) {
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+      }
+      await route.continue();
+    });
+
+    // Wait for the poll tick to fire a (now slow) feed request, then click a
+    // ticker while it is in flight.
+    await page.waitForTimeout(4_100);
+    const symbol = (
+      await page.locator('#feed .card button.sym').first().textContent()
+    )?.trim();
+    await page.locator('#feed .card button.sym').first().click();
+    await expect(page.locator('#co-symbol')).toHaveText(symbol ?? '');
+
+    // Let the stale feed response land, then check it changed nothing: every
+    // card on the company page still belongs to the company.
+    await page.waitForTimeout(2_000);
+    const symbols = await page
+      .locator('#company-feed .card button.sym')
+      .allTextContents();
+    expect(symbols.length).toBeGreaterThan(0);
+    expect(new Set(symbols.map((s) => s.trim()))).toEqual(new Set([symbol]));
+  });
+
   test('does not repeat the company identity on every card', async ({
     page,
   }) => {
@@ -353,6 +393,27 @@ test.describe('the company page', () => {
     await page.locator('#company-back').click();
     await expect(page.locator('#view-feed')).toBeVisible();
     await expect(page.locator('#view-company')).toBeHidden();
+  });
+});
+
+test.describe('load more', () => {
+  test('grows through values the limit select can hold', async ({ page }) => {
+    // The limit is TWO controls over one filter: this button, and a select in
+    // Admin holding 25/50/100/200. Growing by +25 assigned the select 75,
+    // which a select with no such option answers by BLANKING — and the next
+    // filter change read Number('') || DEFAULT_LIMIT and silently snapped the
+    // feed back to 25 under the reader.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const more = page.locator('#feed-more');
+    if (await more.isHidden()) return; // fewer filings than one page holds
+    await more.click();
+    await more.click();
+
+    const value = await page.locator('#limit').inputValue();
+    expect(['50', '100', '200']).toContain(value);
+    expect(value).not.toBe('');
   });
 });
 

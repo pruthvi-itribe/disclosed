@@ -21,11 +21,19 @@
  * quietly reaches for the network is a tool nobody can predict the cost of.
  * Re-running it after the cache fills finishes the job.
  *
- * WHAT IT WRITES. The claims, the claim line and the claim discards are cleared
- * and `coverageSkip` is set to `shared-page`, which is exactly the state the
- * worker would have produced had the gate existed when the filing was read. The
- * filing keeps its outcome, its category group and its amount: this refuses an
- * attribution, not a document.
+ * WHAT IT WRITES: the whole claim lane, to exactly the state the worker's own
+ * skip path produces — claims, line and discards cleared, `claimsProposed`
+ * nulled, the refusal fields set to `not-eligible` with the same wording, and
+ * `coverageSkip` set to `shared-page`. THE DOCUMENT SUMMARY IS CLEARED TOO,
+ * because it is model prose about the whole page and mis-attributes exactly the
+ * way a claim does; on the worker's path it is never produced, since the
+ * eligibility gate refuses before the extractor is called. The filing keeps its
+ * outcome, its category group and its amount: this refuses an attribution, not
+ * a document.
+ *
+ * RE-RUNNABLE. A filing already purged is found again (by its `shared-page`
+ * skip) and rewritten to the same state, so running the tool after improving it
+ * repairs earlier, shallower purges.
  *
  * Usage:
  *   npm run claims:purge-shared -- [--dry-run]
@@ -65,7 +73,15 @@ async function main(): Promise<void> {
 
   const rows = (await filings
     .find(
-      { 'enrichment.claims.0': { $exists: true } },
+      {
+        // Filings that still hold claims, PLUS ones an earlier run already
+        // purged — so improving what the purge writes and re-running repairs
+        // the earlier, shallower state instead of skipping past it.
+        $or: [
+          { 'enrichment.claims.0': { $exists: true } },
+          { 'enrichment.coverageSkip': 'shared-page' },
+        ],
+      },
       {
         projection: {
           _id: 0,
@@ -81,7 +97,7 @@ async function main(): Promise<void> {
   let uncached = 0;
   let shared = 0;
   let claimsCleared = 0;
-  const writes: { seqId: number }[] = [];
+  const writes: { seqId: number; companies: number }[] = [];
 
   for (const row of rows) {
     const path = cachePath(row.seqId);
@@ -95,7 +111,10 @@ async function main(): Promise<void> {
     shared += 1;
     const claims = row.enrichment?.claims ?? [];
     claimsCleared += claims.length;
-    writes.push({ seqId: row.seqId });
+    writes.push({
+      seqId: row.seqId,
+      companies: companyIdentitiesIn(text).size,
+    });
     process.stdout.write(
       `${row.symbol.padEnd(12)} seq ${row.seqId}  ` +
         `${String(companyIdentitiesIn(text).size).padStart(2)} companies  ` +
@@ -128,6 +147,16 @@ async function main(): Promise<void> {
               'enrichment.claims': [],
               'enrichment.claimLine': null,
               'enrichment.claimDiscards': [],
+              'enrichment.claimsProposed': null,
+              'enrichment.claimRefusalReason': 'not-eligible',
+              'enrichment.claimRefusalDetail':
+                `the document names ${write.companies} companies, so a ` +
+                'sentence in it cannot be attributed to this filer',
+              // The model's prose summary of the page, which mis-attributes
+              // exactly the way a claim does. The worker's skip path never
+              // produces one, because eligibility refuses before the extractor.
+              'enrichment.documentSummary': null,
+              'enrichment.documentSummaryRefusalReason': null,
               'enrichment.coverageSkip': 'shared-page',
             },
           },

@@ -150,7 +150,14 @@ export const SCRIPT_BASE = `
     company: null,
     // What the reader asked the claims to be ABOUT. Empty means any. A separate
     // axis from 'group', which is what KIND of filing NSE says it is.
-    topic: ''
+    topic: '',
+    // Monotonic id of the LATEST refresh, for the same bug the suggest box
+    // already guards against: fetch does not promise ordering. The filings
+    // callback decides which view to draw by reading state at RESPONSE time,
+    // so a poll request sent just before a ticker click could land after
+    // openCompany() and paint the whole feed as that company's filings. A
+    // response whose id is stale renders nothing.
+    refreshSeq: 0
   };
 
   // A lookup that cannot be walked into the prototype chain. The keys come from
