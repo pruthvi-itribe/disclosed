@@ -161,6 +161,22 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <button class="chip" type="button" data-topic="product">Product</button>
       <button class="chip" type="button" data-topic="ratings">Ratings</button>
     </div>
+    <!--
+      THE LEGEND FOR THE MOVEMENT MARKS, hidden until a marked card is on
+      screen. Only 23.2% of verified claims carry a mark, so a permanent legend
+      would explain glyphs that are usually not there.
+
+      The last sentence is not a disclaimer bolted on: a triangle is the most
+      rating-shaped thing this product has ever drawn, and the difference
+      between a direction the filing printed and a view about the company is
+      the difference between reporting a disclosure and publishing unregistered
+      research on a named listed scrip.
+    -->
+    <div id="dir-legend" class="dirlegend" data-ui="direction-legend" hidden>
+      <strong>▲ ▼ ◆ mark movement the document itself printed</strong> — the direction word and the
+      figure it printed beside it. They describe what the filing said about its own numbers.
+      They are not a view on the company or its shares, and Turret publishes none.
+    </div>
     <div id="search-note" class="searchnote" hidden></div>
     <label class="onlyinsights">
       <input id="only-insights" type="checkbox" checked>
@@ -411,6 +427,13 @@ export const renderDashboardPage = (): string => `<!doctype html>
   exchange-stated means NSE's own summary said it and nobody has checked it against the attached document;
   category only means all that is known is what kind of filing this is.
   Category only is an honest floor, not a failure — an investor presentation nobody verified is still an investor presentation.
+  A ▲, ▼ or ◆ appears on a claim only where the document printed both a direction — up, down, grew, declined —
+  and the amount, as a percentage or in basis points. Where a filing did not print both, no mark appears;
+  that is the case for about three-quarters of verified claims, and an absent mark means the filing was silent, not that nothing happened.
+  A fall is not bad news and a rise is not good news: these marks follow the figure, not the company.
+  In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions —
+  a decrease every reader would call an improvement. Read the claim, not the arrow.
+  Turret does not rate companies or securities. It reports what documents say and shows you where they say it.
   Amount-path refusals are diagnostics, not headlines: no-candidate and ambiguity-keyword together accounted for
   95% of a collection none of whose rows are blank, so they are still counted and still filterable under Diagnostics
   rather than shouted from every row. The panel is collapsed and not removed, and its summary carries the live

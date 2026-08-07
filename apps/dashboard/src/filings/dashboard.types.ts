@@ -177,6 +177,29 @@ export interface ClaimView {
    */
   readonly topic: string | null;
   /**
+   * The movement the DOCUMENT printed about this claim's figure — `expansion`,
+   * `contraction`, `mixed` or `unrated`.
+   *
+   * A THIRD AXIS, and the only one derived from the source sentence rather than
+   * from the model's words. The card draws a mark from it and nothing else:
+   * `unrated` draws none, because an explicit badge on three-quarters of claims
+   * is noise and its absence already means what it means.
+   *
+   * Null for a claim stored before the classifier existed. Not `unrated` —
+   * that is a verdict about a document, and "never classified" is the absence
+   * of one.
+   */
+  readonly direction: string | null;
+  /**
+   * The document's own characters that decided `direction`, quoted from the
+   * collapsed span. Null when `unrated` and null when never classified.
+   *
+   * SENT WITH THE MARK, ALWAYS. The mark is admissible only because a reader
+   * can check it, and this is what they check it against — it goes in the
+   * glyph's `title` as "Printed in the document: ...".
+   */
+  readonly directionEvidence: string | null;
+  /**
    * The verbatim heading that stated the claim's fiscal period, when the period
    * came from outside the sentence. Null otherwise, which is the usual case.
    *

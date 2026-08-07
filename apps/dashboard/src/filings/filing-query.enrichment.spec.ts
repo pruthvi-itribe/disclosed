@@ -429,7 +429,15 @@ describe('the claim lane', () => {
     // what a claim written before the classifier existed looks like. The page
     // draws it as "everything else" and must be able to tell that from a claim
     // the rules genuinely could not name.
-    expect(view.claims).toEqual([{ ...CLAIM, echo: false, topic: null }]);
+    expect(view.claims).toEqual([
+      {
+        ...CLAIM,
+        echo: false,
+        topic: null,
+        direction: null,
+        directionEvidence: null,
+      },
+    ]);
     // The document's own line break survives the round trip, because the span
     // is what a reviewer checks against the source.
     expect(view.claims[0].span).toContain('\n');
@@ -462,6 +470,41 @@ describe('the claim lane', () => {
     expect(items[0].enrichment.claims.map((claim) => claim.topic)).toEqual([
       'financial',
       'dividend',
+    ]);
+  });
+
+  it('sends the printed movement and the characters that prove it', async () => {
+    // THE MARK AND ITS EVIDENCE TRAVEL TOGETHER. The card draws a glyph from
+    // `direction` and puts `directionEvidence` in its title, so a reader can
+    // check the mark against the document's own words without leaving the
+    // page. Sending one without the other would be a mark nobody can check,
+    // which is the only kind this pipeline may not show.
+    await seed([
+      [
+        1,
+        enrichment({
+          claims: [
+            {
+              ...CLAIM,
+              span: 'Revenue up 16% YoY and down 2% QoQ',
+              direction: 'mixed',
+              directionEvidence: 'up 16% YoY and down 2%',
+            },
+            { ...CLAIM, direction: 'unrated', directionEvidence: null },
+          ],
+        }),
+      ],
+    ]);
+
+    const { items } = await page();
+    expect(
+      items[0].enrichment.claims.map((claim) => [
+        claim.direction,
+        claim.directionEvidence,
+      ]),
+    ).toEqual([
+      ['mixed', 'up 16% YoY and down 2%'],
+      ['unrated', null],
     ]);
   });
 

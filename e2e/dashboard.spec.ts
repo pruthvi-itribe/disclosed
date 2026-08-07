@@ -139,6 +139,56 @@ test.describe('the card', () => {
     await expect(link).toHaveAttribute('rel', /noopener/);
   });
 
+  test('marks a printed movement, quotes it, and colours nothing', async ({
+    page,
+  }) => {
+    // Executed rather than string-matched: the glyph, its accessible name, the
+    // quote in its title and the absence of colour are four separate ways this
+    // could ship broken while every unit test still passed.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const mark = page.locator('#feed [data-ui="claim-direction"]').first();
+    test.skip(
+      (await mark.count()) === 0,
+      'no claim in view carries a printed movement',
+    );
+
+    // PINNED BY data-seq, not by position: the feed repaints every four
+    // seconds and "the first mark" names a different node after a repaint.
+    const seq = await mark
+      .locator('xpath=ancestor::article[@data-ui="card"]')
+      .getAttribute('data-seq');
+    const pinned = page
+      .locator('#feed .card[data-seq="' + seq + '"] [data-ui="claim-direction"]')
+      .first();
+
+    await expect(pinned).toHaveText(/[▲▼◆]/);
+    await expect(pinned).toHaveAttribute(
+      'aria-label',
+      /(increase|decrease|both) printed/,
+    );
+    await expect(pinned).toHaveAttribute(
+      'title',
+      /^Printed in the document: ".+"$/,
+    );
+
+    // THE COLOUR DECISION, ASSERTED ON THE RENDERED PIXEL. 13 of the 45 marked
+    // decreases in the collection are falling bad loans, debt, borrowing costs
+    // or emissions, so a red triangle would be wrong on more than a quarter of
+    // them. The mark is the same colour as the sentence it sits in.
+    const colours = await pinned.evaluate((node) => ({
+      mark: getComputedStyle(node).color,
+      line: getComputedStyle(
+        node.closest('li') ?? node.parentElement ?? node,
+      ).color,
+    }));
+    expect(colours.mark).toBe(colours.line);
+
+    // And the legend that explains it is on screen with it.
+    await expect(page.locator('#dir-legend')).toBeVisible();
+  });
+
   test('never renders a source sentence in the feed', async ({ page }) => {
     // THE REGRESSION THIS GUARDS. Every accepted claim's quoted PDF sentence,
     // its period heading, the results basis and a row per figure were all

@@ -44,10 +44,17 @@ export const SCRIPT_FEED = `
    *
    * RESULTS BEAT CLAIMS. On the day a company reports, its numbers ARE the
    * event and everything else it said that morning is context.
+   *
+   * Each line carries the movement its source sentence printed, because the
+   * mark belongs to the claim and not to the card: one filing routinely says
+   * revenue rose and margin fell.
    */
   function insightLines(e) {
     var lines = [];
-    if (e.resultsLine) lines.push(e.resultsLine);
+    // The results line has no direction of its own and never will: it is a
+    // table of figures the document printed, and reading a direction out of
+    // two of them is the arithmetic 'results-line.ts' refuses.
+    if (e.resultsLine) lines.push({ text: e.resultsLine, direction: '', evidence: '' });
     var claims = e.claims || [];
     for (var i = 0; i < claims.length; i++) {
       // ECHOES ARE SKIPPED, not dropped. The server marks a claim whose fact an
@@ -57,9 +64,20 @@ export const SCRIPT_FEED = `
       // The claim is still in the payload with its span and still shown in the
       // detail view; it just stops being one of the card's headlines.
       if (claims[i].echo === true) continue;
-      lines.push(claims[i].text);
+      lines.push({
+        text: claims[i].text,
+        direction: claims[i].direction || '',
+        evidence: claims[i].directionEvidence || ''
+      });
     }
     return lines;
+  }
+
+  /** The lines a card would copy: what the company said, without our layout. */
+  function insightText(lines) {
+    var out = [];
+    for (var i = 0; i < lines.length; i++) out.push(lines[i].text);
+    return out;
   }
 
   /**
@@ -122,6 +140,53 @@ export const SCRIPT_FEED = `
     if (at < value.length) {
       node.appendChild(document.createTextNode(value.slice(at)));
     }
+  }
+
+  // The movement the DOCUMENT printed, one glyph each. There is deliberately
+  // no entry for 'unrated': three-quarters of claims are unrated, an explicit
+  // badge on three-quarters of a feed is noise, and the absence of a mark
+  // already means what it means — the filing printed no direction beside a
+  // figure. A missing key here draws nothing, which is the same thing.
+  var DIRECTION_GLYPH = { expansion: '▲', contraction: '▼', mixed: '◆' };
+
+  // Spelled out for a reader who cannot see the glyph. The words describe the
+  // DOCUMENT's act - it printed an increase - and never the company.
+  var DIRECTION_LABEL = {
+    expansion: 'increase printed',
+    contraction: 'decrease printed',
+    mixed: 'both printed'
+  };
+
+  /**
+   * Writes one insight line: the movement mark, then the claim.
+   *
+   * NO COLOUR ON THE MARK, and this is the single most important rendering
+   * decision on the page. Red and green ARE a view about the company, and the
+   * collection says the view would be wrong: 13 of the 45 marked decreases are
+   * falling bad loans, debt, borrowing costs or emissions - ESAF's gross NPA
+   * down from 7.5% to 5.4% is a triangle pointing down and is the best news in
+   * that filing. The mark follows the figure; the reader reads the claim.
+   */
+  function writeInsight(node, line) {
+    // The direction arrives from the database and 'constructor' is a key on
+    // every object literal's prototype, so an unguarded lookup would draw a
+    // function as a glyph.
+    if (Object.prototype.hasOwnProperty.call(DIRECTION_GLYPH, line.direction)) {
+      var mark = document.createElement('span');
+      mark.className = 'dir';
+      mark.setAttribute('data-ui', 'claim-direction');
+      mark.setAttribute('data-direction', line.direction);
+      mark.textContent = DIRECTION_GLYPH[line.direction];
+      mark.setAttribute('aria-label', DIRECTION_LABEL[line.direction]);
+      // WHAT MAKES THE MARK ADMISSIBLE. It is derived rather than quoted, so
+      // the characters it was derived from travel with it and a reader can
+      // check it without opening the PDF.
+      if (line.evidence) {
+        mark.title = 'Printed in the document: "' + line.evidence + '"';
+      }
+      node.appendChild(mark);
+    }
+    writeClaim(node, line.text);
   }
 
   function feedCard(f) {
@@ -196,7 +261,7 @@ export const SCRIPT_FEED = `
       list.setAttribute('data-ui', 'card-claims');
       for (var i = 0; i < lines.length && i < shown; i++) {
         var li = document.createElement('li');
-        writeClaim(li, lines[i]);
+        writeInsight(li, lines[i]);
         list.appendChild(li);
       }
       card.appendChild(list);
@@ -218,7 +283,7 @@ export const SCRIPT_FEED = `
             state.expanded[String(seqId)] = true;
             for (var k = 0; k < rest.length; k++) {
               var extra = document.createElement('li');
-              writeClaim(extra, rest[k]);
+              writeInsight(extra, rest[k]);
               list.appendChild(extra);
             }
             button.remove();
@@ -279,7 +344,7 @@ export const SCRIPT_FEED = `
             window.setTimeout(function () { button.textContent = 'Copy'; }, 1500);
           }, function () { button.textContent = 'failed'; });
         };
-      })(f.symbol + ': ' + lines.join('\\n' + f.symbol + ': '), copy);
+      })(f.symbol + ': ' + insightText(lines).join('\\n' + f.symbol + ': '), copy);
       foot.appendChild(copy);
     }
 
@@ -353,10 +418,20 @@ export const SCRIPT_FEED = `
 
     if (chrome) {
       var withInsight = 0;
+      var marks = 0;
       for (var n = 0; n < items.length; n++) {
-        if (insightLines(items[n].enrichment || {}).length > 0) withInsight += 1;
+        var insights = insightLines(items[n].enrichment || {});
+        if (insights.length > 0) withInsight += 1;
+        for (var m = 0; m < insights.length; m++) {
+          if (Object.prototype.hasOwnProperty.call(DIRECTION_GLYPH, insights[m].direction)) marks += 1;
+        }
       }
       setText('hero-insights', groupInt(withInsight));
+      // THE LEGEND FOLLOWS THE MARKS. Only 23.2% of claims carry one, so a
+      // permanent legend explaining glyphs nobody can see on this screen is
+      // furniture; a legend that appears with the first mark is an answer to
+      // the question the mark just raised.
+      el('dir-legend').hidden = marks === 0;
     }
 
     if (items.length === 0) {

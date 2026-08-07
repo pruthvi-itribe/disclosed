@@ -794,6 +794,31 @@ button.sym:hover { color: var(--accent); }
   color: #fff;
 }
 
+/* THE MOVEMENT MARK, AND WHY IT HAS NO COLOUR OF ITS OWN.
+
+   Inheriting the colour is the whole rule, and it is a product decision rather
+   than a typographic one. Red and green ARE the sentiment claim, smuggled back
+   in through CSS, and the collection says it would be wrong: of the 45 claims
+   whose span printed a decrease, 13 are falling gross NPA, net debt, cost of
+   borrowing, slippages or emissions — ESAF's gross NPA down from 7.5% to 5.4%
+   is the best news in that filing and would be drawn in red. The mark says what
+   the document printed; the sentence beside it says what moved.
+
+   Nothing keys off the data-direction attribute, deliberately. It is there so a
+   mark can be found and read, not so it can be painted. */
+.insights .dir {
+  color: inherit;
+  font-size: 11px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  opacity: .75;
+}
+
+/* The legend sits under the filter row, in the quieter register the topic chips
+   use, and is hidden by the script until a marked card is on screen. */
+.dirlegend { color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 66ch; }
+.dirlegend strong { color: var(--text); font-weight: 600; }
+
 /* A weekend bar is short because the exchange is quiet, not because ingestion
    stopped. Marked so the two cannot be confused: measured over 32 days a
    Sunday is 26 filings against a Tuesday's 832. */

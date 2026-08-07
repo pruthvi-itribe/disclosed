@@ -371,6 +371,107 @@ describe('renderDashboardPage — outcome, group and confidence', () => {
 });
 
 /**
+ * THE MOVEMENT MARK, AND THE DECISION NOT TO COLOUR IT.
+ *
+ * A mark appears on a claim only where the document printed both a direction
+ * word and the size of the move. 803 of 3,461 stored claims (23.2%) carry one,
+ * so this is a sometimes-marker on a minority of cards rather than a rating on
+ * every update.
+ *
+ * THE COLOUR TEST IS THE POINT OF THIS SUITE. Red and green ARE the sentiment
+ * claim, smuggled back in through CSS, and the corpus says they would be wrong:
+ * 13 of the 45 marked decreases are falling bad loans, debt, borrowing costs or
+ * emissions. Somebody will ask for colour; this is where the answer lives.
+ */
+describe('renderDashboardPage — the movement mark', () => {
+  const script = html.slice(
+    html.indexOf('<script>') + '<script>'.length,
+    html.lastIndexOf('</script>'),
+  );
+
+  it('draws one glyph per printed direction, and none for unrated', () => {
+    // An explicit "unrated" badge on three-quarters of claims is noise, and its
+    // absence already means what it means: the filing printed no movement.
+    const glyphs = /var DIRECTION_GLYPH = \{([^}]*)\};/.exec(script);
+    expect(glyphs).not.toBeNull();
+
+    const keys = (glyphs?.[1] ?? '').match(/(\w+):/g) ?? [];
+    expect(keys.map((key) => key.replace(':', ''))).toEqual([
+      'expansion',
+      'contraction',
+      'mixed',
+    ]);
+    expect(glyphs?.[1]).not.toContain('unrated');
+  });
+
+  it('never colours the mark', () => {
+    // THE REGRESSION LOCK. `color: inherit` and nothing else: the mark is the
+    // same weight and the same colour as the sentence it sits in.
+    const rule = /\.insights \.dir \{([^}]*)\}/.exec(html);
+    expect(rule).not.toBeNull();
+    expect(rule?.[1]).toContain('color: inherit');
+    expect(rule?.[1]).not.toMatch(/var\(--(?:bad|warn|accent|claim|ok|good)\)/);
+    expect(rule?.[1]).not.toMatch(/#[0-9a-f]{3}|\brgb|\bgreen\b|\bred\b/i);
+  });
+
+  it('styles no rule off the direction value, so none can be coloured later', () => {
+    // Asserted as an absence rather than left to the rule above, because the
+    // cheapest way to colour a mark is a second selector somewhere else in the
+    // stylesheet. There is no `[data-direction=...]` rule and there must not be.
+    expect(html).not.toMatch(
+      /\[data-direction="?(?:expansion|contraction|mixed)/,
+    );
+  });
+
+  it('puts the document’s own words in the mark’s title', () => {
+    // What makes a derived tag admissible here at all: the reader can check it
+    // against the source without leaving the page.
+    expect(script).toContain(
+      "mark.title = 'Printed in the document: \"' + line.evidence + '\"';",
+    );
+  });
+
+  it('spells the mark out for a screen reader', () => {
+    expect(script).toContain('var DIRECTION_LABEL = {');
+    expect(script).toContain('increase printed');
+    expect(script).toContain('decrease printed');
+    expect(script).toContain('both printed');
+    expect(script).toContain("mark.setAttribute('aria-label',");
+  });
+
+  it('carries a legend that is shown only when a marked card is', () => {
+    expect(html).toContain('id="dir-legend"');
+    expect(html).toContain('mark movement the document itself printed');
+    expect(script).toContain("el('dir-legend').hidden = marks === 0;");
+  });
+
+  it('says in the footer that a fall is not bad news', () => {
+    // The page's own account of itself. A mark a reader misreads as a rating is
+    // worse than no mark, and this paragraph is the whole mitigation.
+    const prose = html.replace(/\s+/g, ' ');
+    expect(prose).toContain(
+      'A fall is not bad news and a rise is not good news',
+    );
+    expect(prose).toContain(
+      '13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions',
+    );
+    expect(prose).toContain('Turret does not rate companies or securities');
+    expect(prose).toContain('an absent mark means the filing was silent');
+  });
+
+  it('uses none of the sentiment vocabulary anywhere on the page', () => {
+    // `expansion` and `contraction` are terms about a figure's movement;
+    // `positive` and `negative` are terms about an entity, and
+    // `claim-advisory.ts` blocks the second pair on the way to the wire. The
+    // page does not get to reintroduce them.
+    const prose = html.replace(/\s+/g, ' ');
+    expect(prose).not.toMatch(
+      /\bpositive for\b|\bnegative for\b|\bbullish\b|\bbearish\b/i,
+    );
+  });
+});
+
+/**
  * THE AMOUNT-PATH REFUSALS, DEMOTED FROM LABELS TO DIAGNOSTICS.
  *
  * `no-candidate` and `ambiguity-keyword` between them covered 95% of the

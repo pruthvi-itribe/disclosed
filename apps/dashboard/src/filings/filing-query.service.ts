@@ -994,6 +994,12 @@ function toEnrichmentView(
       // the page could filter BY topic and not show what the topics were, so a
       // company's mix came back as one segment reading "Everything else".
       topic: claim.topic ?? null,
+      // The movement the source sentence printed, and the words that printed
+      // it. Sent together and nullish-coalesced together: a mark whose evidence
+      // did not arrive is a mark a reader cannot check, and the whole reason a
+      // derived tag is allowed on this page is that they can.
+      direction: claim.direction ?? null,
+      directionEvidence: claim.directionEvidence ?? null,
       // Nullish-coalesced rather than read directly: every claim stored before
       // the period rule existed carries no such field, and `undefined` reaching
       // the page would render as the string "undefined" beside a real quote.
