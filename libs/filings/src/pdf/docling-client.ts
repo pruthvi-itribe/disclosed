@@ -45,6 +45,19 @@
  * value is reading order and column alignment and OCR buys a measured <1%
  * difference in output for 2-15x the time and triple the memory.
  *
+ * `force_ocr` IS NOT A LOUDER `do_ocr`, and reading it that way is what left a
+ * whole class of documents unreadable. `do_ocr=true` asks the service to OCR
+ * the pages that need it, and Docling decides a page needs it by whether it
+ * already has a text layer — not by whether that layer is any good. On a PDF
+ * with a broken `ToUnicode` map every page has a layer, so `do_ocr=true` is a
+ * NO-OP and the garbage is returned verbatim. `force_ocr=true` discards the
+ * layer and re-reads the pixels.
+ *
+ * Verified against the running service rather than inferred from the
+ * documentation: MSWIL seqId 106726228, three pages, one process. `do_ocr=true`
+ * answered `3XUVXDQW WR 5HJXODWLRQ` in 44.1 s; `force_ocr=true` answered
+ * "Pursuant to Regulation" in 46.1 s. Same bytes, same page range.
+ *
  * `page_range` is the truncation parameter and `max_num_pages` is NOT — the
  * latter aborts the whole conversion with `ConversionError: Document has 640
  * pages, exceeding the max_num_pages limit of 40`. Sending the wrong one turns
@@ -59,6 +72,14 @@ export interface DoclingRequest {
   readonly fileName: string;
   /** True for raster scans, false for text-layer results filings. */
   readonly ocr: boolean;
+  /**
+   * True to re-read the pixels of pages that ALREADY carry a text layer.
+   *
+   * A SEPARATE FLAG BECAUSE `ocr` DOES NOT DO THIS, which is not obvious from
+   * either name and was verified against the running service before being
+   * written down. See the module comment.
+   */
+  readonly forceOcr: boolean;
   /** 1-indexed, inclusive, and sent as `page_range` rather than a page cap. */
   readonly maxPages: number;
 }
@@ -227,6 +248,13 @@ export function buildDoclingForm(request: DoclingRequest): FormData {
   );
   form.append('to_formats', 'md');
   form.append('do_ocr', request.ocr ? 'true' : 'false');
+  // `do_ocr` ALONE CANNOT REPAIR A CORRUPT TEXT LAYER. Docling reads an
+  // existing layer in preference to the pixels and does not grade it, so a
+  // document whose font carries a broken ToUnicode map comes back exactly as
+  // wrong as it went in. Measured on the live service: MSWIL seqId 106726228
+  // with do_ocr=true returned `3XUVXDQW WR 5HJXODWLRQ`, and with force_ocr=true
+  // returned "Pursuant to Regulation", from the same bytes in the same run.
+  form.append('force_ocr', request.forceOcr ? 'true' : 'false');
   // 1-INDEXED AND INCLUSIVE, and `page_range` rather than `max_num_pages`. See
   // the module comment: the other parameter rejects the document instead of
   // truncating it.

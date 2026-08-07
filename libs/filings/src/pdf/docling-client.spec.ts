@@ -31,6 +31,7 @@ const requestFor = (over: Partial<DoclingRequest> = {}): DoclingRequest => ({
   data: Buffer.from('%PDF-1.4 not really a pdf'),
   fileName: 'JKIL-outcome.pdf',
   ocr: false,
+  forceOcr: false,
   maxPages: 150,
   ...over,
 });
@@ -196,6 +197,22 @@ describe('buildDoclingForm', () => {
     // differently.
     const form = buildDoclingForm(requestFor({ ocr }));
     expect(form.getAll('do_ocr')).toEqual([expected]);
+  });
+
+  it('sends force_ocr only when the caller asks for it', () => {
+    // VERIFIED AGAINST THE LIVE SERVICE, because the two flags read as
+    // synonyms and are not. MSWIL's newspaper disclosure (seqId 106726228)
+    // converted with do_ocr=true came back `3XUVXDQW WR 5HJXODWLRQ` — the
+    // document's own displaced text layer, untouched — and the same bytes with
+    // force_ocr=true came back "Pursuant to Regulation". Docling defers to an
+    // existing text layer no matter how bad it is; only force_ocr re-reads the
+    // pixels.
+    expect(
+      buildDoclingForm(requestFor({ forceOcr: true })).getAll('force_ocr'),
+    ).toEqual(['true']);
+    expect(
+      buildDoclingForm(requestFor({ ocr: true })).getAll('force_ocr'),
+    ).toEqual(['false']);
   });
 
   it('sends the page bound as a 1-indexed inclusive page_range PAIR', () => {
