@@ -1,3 +1,5 @@
+export * from './account-indexes';
+export * from './account.schemas';
 export * from './channel';
 export * from './email-normalise';
 export * from './login-backoff';
@@ -5,5 +7,8 @@ export * from './origin-guard';
 export * from './password-hash';
 export * from './password-policy';
 export * from './session-token';
+export * from './session.repository';
 export * from './symbol-validate';
+export * from './user.repository';
 export * from './watchlist-cap';
+export * from './watchlist.repository';
