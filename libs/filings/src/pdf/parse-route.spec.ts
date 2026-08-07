@@ -3,6 +3,7 @@ import {
   DOCLING_BASIS_HEADING_REACH,
 } from '../logic/results-basis';
 import {
+  carriesNoStatement,
   basisReachFor,
   DOCLING_LAYOUT_MAX_PAGES,
   DOCLING_OCR_MAX_PAGES,
@@ -320,5 +321,76 @@ describe('basisReachFor', () => {
     for (const route of PARSE_ROUTES) {
       expect(basisReachFor(route)).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('routeAfterFirstRead — prose about results is not a results statement', () => {
+  // A real transcript's shape: it quotes the figures, so the structural test
+  // for "carries a statement" fires on it.
+  const TRANSCRIPT = [
+    'ESAF Small Finance Bank Q1 FY27 Earnings Conference Call',
+    'Moderator: Ladies and gentlemen, welcome to the earnings call.',
+    'Management: Turning to our consolidated results, total income for the',
+    'quarter grew to INR 50,140 crores, against INR 40,923 crores last year.',
+    'On the standalone results the picture is similar.',
+    'Profit after tax improved through the quarter, and revenue from operations',
+    'was up 23% year on year.',
+  ].join('\n');
+
+  it('still reads the transcript as carrying a statement, structurally', () => {
+    // The premise. The detector is not wrong about the text — a person reading
+    // a table aloud produces the same row labels and basis markers a table
+    // does. It simply cannot tell the two apart, which is why the category has
+    // to rule it out.
+    expect(looksLikeResultsStatement(TRANSCRIPT)).toBe(true);
+  });
+
+  it('does NOT escalate an earnings call to Docling', () => {
+    // ESAFSFB's call was escalated, which inflated the text from 31,923
+    // characters to 51,180 and produced NOTHING — the claims call returned
+    // empty content on a document that answered fine from the cheap parser.
+    // There is no column alignment to fix in dialogue.
+    const decision = routeAfterFirstRead({
+      category: 'Analysts/Institutional Investor Meet/Con. Call Updates',
+      pages: 12,
+      text: TRANSCRIPT,
+      hasTextLayer: true,
+      doclingAvailable: true,
+    });
+    expect(decision.route).toBe('pdf-parse');
+  });
+
+  it.each([
+    'Analysts/Institutional Investor Meet/Con. Call Updates',
+    'Earnings Call Transcript',
+    'Investor Meet',
+  ])('rules out %s before reading', (category) => {
+    expect(carriesNoStatement(category)).toBe(true);
+  });
+
+  it.each([
+    'Outcome of Board Meeting',
+    'Integrated Filing- Financial',
+    'Financial Results',
+    'Copy of Newspaper Publication',
+  ])('leaves %s free to escalate', (category) => {
+    // The rule-out set must stay small. A newspaper publication REPRINTS the
+    // statutory statement, table and all, so it is exactly the case Docling
+    // exists for — excluding it would trade one false positive for a real loss.
+    expect(carriesNoStatement(category)).toBe(false);
+  });
+
+  it('still sends a SCANNED transcript to OCR', () => {
+    // The rule-out removes a table-alignment escalation, not character
+    // recovery. A transcript delivered as a raster scan has no text at all,
+    // and there is nothing for the cheap parser to hand back.
+    const decision = routeAfterFirstRead({
+      category: 'Analysts/Institutional Investor Meet/Con. Call Updates',
+      pages: 12,
+      text: '',
+      hasTextLayer: false,
+      doclingAvailable: true,
+    });
+    expect(decision.route).toBe('docling-ocr');
   });
 });

@@ -190,6 +190,36 @@ export function looksLikeResultsStatement(documentText: string): boolean {
   );
 }
 
+/**
+ * Categories whose documents are PROSE ABOUT results rather than a statement of
+ * them, and which must therefore never be escalated for table alignment.
+ *
+ * THIS IS NOT THE CATEGORY ROUTING THIS MODULE ARGUES AGAINST ABOVE, and the
+ * distinction is the whole justification. That argument is that a category
+ * cannot FIND results filings — only 8.66% of live filings carry a statement
+ * against 11.85% in the category, so the document's own structure has to
+ * decide. This is the inverse: a small set of categories that can be ruled OUT
+ * before reading, because an earnings-call transcript is not a Regulation 33
+ * statement no matter what it quotes.
+ *
+ * It exists because ESAF Small Finance Bank's earnings call was escalated to
+ * Docling and then produced nothing at all. The transcript DISCUSSES results,
+ * so it carries the row labels and the basis markers `looksLikeResultsStatement`
+ * looks for, and the structural test cannot tell a table from a person reading
+ * one aloud. The escalation then bought nothing — there is no column alignment
+ * to fix in dialogue — while inflating the text from 31,923 characters to
+ * 51,180, and the claims call came back with empty content on a document that
+ * answered fine from the cheap parser's text.
+ *
+ * So the cost of the false positive is not "a slower read". It is 60% more
+ * input tokens, spent to make an extraction fail.
+ */
+const NEVER_A_STATEMENT =
+  /\b(con\.?\s*call|conference call|earnings call|analysts?\s*\/|investor meet|transcript)\b/i;
+
+export const carriesNoStatement = (category: string): boolean =>
+  NEVER_A_STATEMENT.test(category);
+
 const decide = (
   route: ParseRoute,
   reason: string,
@@ -264,7 +294,11 @@ export function routeAfterFirstRead(
     );
   }
 
-  if (looksLikeResultsStatement(text)) {
+  // Checked AFTER the scan branch, deliberately. A transcript delivered as a
+  // raster scan still has no text for anything to read, and OCR is not optional
+  // there — this rules out the table-alignment escalation, not character
+  // recovery.
+  if (looksLikeResultsStatement(text) && !carriesNoStatement(input.category)) {
     if (pages > DOCLING_LAYOUT_MAX_PAGES) {
       return decide(
         'pdf-parse',
