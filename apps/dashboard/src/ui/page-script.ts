@@ -839,18 +839,30 @@ export const PAGE_SCRIPT = `
 
   // How many claims a card shows before it stops.
   //
-  // THREE, AND THE NUMBER IS ABOUT THE GRID RATHER THAN THE CARD. A card is a
+  // TWO, AND THE NUMBER IS ABOUT THE GRID RATHER THAN THE CARD. A card is a
   // glance and TRANSRAILL's presentation yields eleven, so some cap was always
-  // needed — but the cap also decides how ragged a row of cards looks, and
-  // measured at four the feed ran 118px to 350px, a 3.0x spread leaving up to
-  // 198px of empty space beside a short card.
+  // needed — but the cap is also the ONLY control over how tall the tallest
+  // card in a row can be, and the row's height is the tallest card in it.
   //
-  // The middle of that distribution is already tight: p25 240px, p75 293px. It
-  // is the tails that do the damage, so the cap pulls the top one in and a
-  // min-height on the card lifts the bottom one. Three is where the two meet
-  // without either padding a one-line card into a mostly-empty box or hiding a
-  // fourth fact somebody would have read.
-  var CARD_CLAIMS = 3;
+  // Measured at 1440px over the live feed, height range and the empty space
+  // left above the shortest card's footer:
+  //
+  //     claims shown      heights      spread   worst void
+  //     three            234-330px      1.41       149px
+  //     two              211-279px      1.32       104px
+  //
+  // Each claim dropped takes about 45px off the ceiling and the same off every
+  // card that did not need it. Two is where a row stops looking like one card
+  // ran out of things to say — and nothing is lost, because the claims past it
+  // are one click away and the card SAYS how many there are.
+  //
+  // NOT SOLVED BY TRUNCATING A CLAIM INSTEAD. Clamping each line to two lines
+  // was measured too and is very slightly tidier (max 266px), but it cuts
+  // "...interim dividend Rs. 20/share FY end…" mid-figure with no control to
+  // see the rest. This product's premise is that every claim matched its source
+  // character for character; a card that silently truncates one is the wrong
+  // trade for 13 pixels.
+  var CARD_CLAIMS = 2;
 
   /**
    * The lines a card leads with, best first.

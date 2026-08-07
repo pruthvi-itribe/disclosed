@@ -418,6 +418,60 @@ test.describe('the feed layout', () => {
     expect(overflowing).toBe(0);
   });
 
+  test('ends every card in a row at the same height', async ({ page }) => {
+    // THE RAGGED EDGE, and it is the reason the cap is two claims rather than
+    // three. Cards used to keep their own heights, so a row ran 149px between
+    // its tallest and its shortest and the feed's bottom edge stepped up and
+    // down across every row. Grid rows match heights now; a future change that
+    // reintroduces 'align-items: start' passes every other test in this file
+    // and fails here.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const worstRowGap = await page.evaluate(() => {
+      const rows = new Map<number, number[]>();
+      for (const card of document.querySelectorAll('#feed .card')) {
+        const box = card.getBoundingClientRect();
+        const top = Math.round(box.top);
+        rows.set(top, [...(rows.get(top) ?? []), box.height]);
+      }
+      return Math.max(
+        0,
+        ...[...rows.values()].map((hs) => Math.max(...hs) - Math.min(...hs)),
+      );
+    });
+    // A pixel of tolerance for subpixel layout, not a pixel of raggedness.
+    expect(worstRowGap).toBeLessThanOrEqual(1);
+  });
+
+  test('puts every footer in a row on the same baseline', async ({ page }) => {
+    // What makes the space above a short card's footer read as air rather than
+    // as a card that gave up early. Equal heights alone do not do it — a
+    // footer that sits directly under its last line leaves the emptiness
+    // BELOW itself, which is what `.card.quiet` did until its own margin rule
+    // stopped overriding the push.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const worstSpaceBelow = await page.evaluate(() =>
+      Math.max(
+        0,
+        ...[...document.querySelectorAll('#feed .card')].map((card) => {
+          const foot = card.querySelector('.cardfoot');
+          if (foot === null) return 0;
+          return (
+            card.getBoundingClientRect().bottom -
+            foot.getBoundingClientRect().bottom
+          );
+        }),
+      ),
+    );
+    // The card's own bottom padding, and nothing else.
+    expect(worstSpaceBelow).toBeLessThanOrEqual(20);
+  });
+
   test('keeps every card header on one line', async ({ page }) => {
     // A long company name pushed the timestamp onto a second row, so cards in
     // the same grid row started at different heights for no visible reason.

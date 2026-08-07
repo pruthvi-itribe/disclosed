@@ -510,13 +510,29 @@ td.grp { white-space: nowrap; }
    chronological feed stops being chronological. Grid flows left to right, row
    by row, which is the order the eye already reads in.
 
-   'align-items: start' so a tall card does not stretch its neighbour to match:
-   an eleven-claim results card beside a one-line record date should leave the
-   second one short, not pad it with empty panel. */
+   ROWS STRETCH, and the earlier design said the opposite for a reason that
+   stopped being true. 'align-items: start' let each card keep its own height so
+   a tall one would not pad its neighbour — correct while a card could be 330px,
+   because stretching to that leaves 126px of empty panel in the two beside it.
+   The fix was not to smooth the result but to bound the input: at two claims a
+   card is 211-279px, so a row's tallest is close enough to its shortest that
+   matching them costs less than the ragged edge did.
+
+   Measured at 1440px over the live feed, and the trade is visible in one line:
+
+     variant                       spread   worst row gap   worst void
+     floor 170, align start         1.94        149px          40px
+     stretch, three claims          1.41          0            149px
+     stretch, two claims            1.32          0            104px
+
+   There is no arrangement with neither, because the content itself is the
+   variable — one filing says two things and another says eleven. The choice is
+   only ever WHERE the slack goes, and it goes inside the card: a flat row edge
+   with a little air above an aligned footer reads as rhythm, while a 149px step
+   between two card bottoms reads as breakage. */
 .feed {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  align-items: start;
   gap: 10px;
 }
 /* The time buckets are dividers across the whole feed, not cards in it. */
@@ -533,39 +549,21 @@ td.grp { white-space: nowrap; }
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 14px; padding: 16px 18px;
   transition: border-color .12s ease, transform .12s ease;
-  /* A FLOOR, NOT A MATCH, and the distinction is the whole design. Stretching
-     every card to its row's tallest (align-items default) turns a one-line
-     record date into a mostly-empty box beside an eleven-claim results card.
-     A floor instead lifts only the shortest cards, so the rhythm is regular
-     without anything being padded to fill a neighbour's space.
-
-     Measured at 1440px before this: heights ran 118px to 350px, a 3.0x spread
-     with up to 198px of ragged gap in one row. The middle was already tight —
-     p25 240, p75 293 — so only the tails needed moving.
-
-     170px, and the value sits on an edge found by sweeping it against the live
-     feed. Dead space is the height between a card's last line and its footer:
-
-       floor    spread   worst row gap   worst dead   cards over 40px dead
-       none      2.5x        139px          29px            0
-       150px     2.0x        133px          29px            0
-       170px     1.7x        116px          40px            0
-       196px     1.5x         90px          66px            3
-
-     A floor up to ~150px is FREE — it lifts short cards without opening any
-     void, because their own content already reaches that far. Past 170px it
-     stops being free: at 196 three cards carry 66px of nothing above their
-     footer, and empty space inside a bounded box reads as broken in a way a
-     gap between boxes never does. So the floor stops where the void starts,
-     and the last of the raggedness is left alone deliberately. */
-  min-height: 170px;
+  /* A floor for the row that is short all the way across. The grid matches
+     heights WITHIN a row, so this only does anything when every card in a row
+     is small — without it a row of three one-line record dates collapses to a
+     band thinner than the filter chips above it. 150px was measured free: no
+     card's own content stops short of it, so nothing is padded to reach it. */
+  min-height: 150px;
   display: flex;
   flex-direction: column;
 }
-/* The footer sits at the bottom of its own card rather than floating under the
-   last line. It does NOT align across a row — cards are different heights and
-   this does not change that — but it does mean the space a floor adds appears
-   as one gap in a predictable place instead of the card ending early. */
+/* THE FOOTERS ALIGN, and that is what makes the space above them read as air
+   rather than as a card that gave up early. Every card in a row is now the same
+   height, so pushing each footer to its own bottom puts all three on one line
+   across the feed — the horizontal rule a reader's eye follows. This one
+   declaration is doing the work that a fixed card height would otherwise need,
+   without freezing a height that content will outgrow. */
 .card .cardfoot { margin-top: auto; }
 .card:hover { border-color: #3a4553; }
 /* A filing that said nothing verifiable is drawn quieter, not dropped.
@@ -612,7 +610,14 @@ td.grp { white-space: nowrap; }
   margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line);
   font-size: 11.5px;
 }
-.card.quiet .cardfoot { margin-top: 8px; padding-top: 8px; border-top-color: transparent; }
+/* A quiet card's footer is drawn without its rule, but it is still pushed to
+   the bottom — 'margin-top: 8px' here used to override the 'auto' above, which
+   left the footer floating under two lines of text with the rest of the card
+   empty below it. That was the one thing in a stretched row that still looked
+   like a mistake: every other footer on the line sat on the baseline and these
+   two did not. The 8px separation moves to padding, where it cannot compete
+   with the push. */
+.card.quiet .cardfoot { margin-top: auto; padding-top: 8px; border-top-color: transparent; }
 .cardcat { color: var(--muted); }
 .grow { flex: 1 1 auto; }
 .copy, .srclink {
