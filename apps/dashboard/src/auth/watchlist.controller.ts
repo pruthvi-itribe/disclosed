@@ -11,7 +11,7 @@ import {
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
-import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import {
   isPlausibleSymbol,
   MAX_WATCHED_SYMBOLS,
@@ -30,6 +30,7 @@ import {
 import { CompanyDirectory } from '../search/company-directory';
 import { ApiError, ApiErrorFilter } from './api-error';
 import { OriginGuard, SessionGuard, type AuthedRequest } from './session.guard';
+import { SkipAuthLimits, SkipEveryLimit } from './throttle';
 
 /** One row of the watchlist, with what the directory already knows about it. */
 export interface WatchedCompany {
@@ -76,7 +77,7 @@ export const MAX_WATCH_OFFSET = 100_000;
 @UseFilters(ApiErrorFilter)
 @UseGuards(SessionGuard, ThrottlerGuard)
 // The auth buckets are for the routes an attacker attacks without an account.
-@SkipThrottle({ 'auth-minute': true, 'auth-hour': true })
+@SkipAuthLimits()
 export class WatchlistController {
   constructor(
     private readonly watchlists: WatchlistRepository,
@@ -109,7 +110,7 @@ export class WatchlistController {
    */
   @Get()
   @Header('Cache-Control', 'no-store')
-  @SkipThrottle()
+  @SkipEveryLimit()
   async list(
     @Req() request: AuthedRequest,
   ): Promise<ApiEnvelope<readonly WatchedCompany[], WatchlistMeta>> {
@@ -143,7 +144,7 @@ export class WatchlistController {
    */
   @Get('feed')
   @Header('Cache-Control', 'no-store')
-  @SkipThrottle()
+  @SkipEveryLimit()
   async feed(
     @Req() request: AuthedRequest,
     @Query() query: RawQuery,

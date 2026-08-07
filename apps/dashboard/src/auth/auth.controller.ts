@@ -12,7 +12,7 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import { SkipThrottle, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import {
   MAX_WATCHED_SYMBOLS,
@@ -27,6 +27,7 @@ import { AuthService } from './auth.service';
 import { ChangePasswordDto, CredentialsDto } from './auth.dto';
 import { OriginGuard, SessionGuard, type AuthedRequest } from './session.guard';
 import { SessionService } from './session.service';
+import { SkipEveryLimit, SkipWatchlistLimit } from './throttle';
 
 /** What `api/me` answers. Signed out, only the first field is present. */
 export interface MeView {
@@ -67,7 +68,7 @@ export interface MeView {
 @UseFilters(ApiErrorFilter)
 @UseGuards(ThrottlerGuard)
 // The watchlist bucket is a different question and a different route set.
-@SkipThrottle({ 'watchlist-minute': true })
+@SkipWatchlistLimit()
 /**
  * `whitelist` IS THE CLAUSE THAT MATTERS, and `forbidNonWhitelisted` is what
  * makes it audible. Together with `@IsString()` on every DTO field they are what
@@ -137,7 +138,7 @@ export class AuthController {
   @Header('Cache-Control', 'no-store')
   @UseGuards(OriginGuard)
   @HttpCode(200)
-  @SkipThrottle()
+  @SkipEveryLimit()
   async logout(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
@@ -151,7 +152,7 @@ export class AuthController {
   @Header('Cache-Control', 'no-store')
   @UseGuards(SessionGuard, OriginGuard)
   @HttpCode(200)
-  @SkipThrottle()
+  @SkipEveryLimit()
   async logoutAll(
     @Req() request: AuthedRequest,
     @Res({ passthrough: true }) response: Response,
@@ -200,7 +201,7 @@ export class AuthController {
    */
   @Get('me')
   @Header('Cache-Control', 'no-store')
-  @SkipThrottle()
+  @SkipEveryLimit()
   async me(@Req() request: Request): Promise<ApiEnvelope<MeView>> {
     const who = await this.sessions.resolve(request);
     if (who === null) return ok({ signedIn: false });

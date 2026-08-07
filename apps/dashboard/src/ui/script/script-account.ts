@@ -150,10 +150,18 @@ export const SCRIPT_ACCOUNT = `
       return;
     }
 
-    // Signed out: forget the watchlist and leave a view the reader can no
-    // longer see. Leaving them on Watching would poll a route that answers 401
-    // every four seconds.
+    // Signed out: forget the watchlist, EMPTY the Watching view, and leave it
+    // if that is where the reader was.
+    //
+    // Emptied rather than merely hidden. A hidden section keeps its nodes, so
+    // the cards of a signed-out reader's watchlist would sit in the document
+    // with their stars still on them — invisible, still in the DOM, and still
+    // that person's data on a shared machine.
     state.watched = {};
+    el('watch-feed').textContent = '';
+    clear(el('watch-empty'));
+    el('watch-empty').hidden = true;
+    setText('watch-count', '');
     paintWatchButtons();
     if (state.view === 'watching') {
       showView('feed');

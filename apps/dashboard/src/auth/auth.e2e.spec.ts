@@ -454,6 +454,20 @@ describe('api/me', () => {
     });
   });
 
+  it('survives far more page loads than the auth burst allows', async () => {
+    // THE BUG THIS PINS SHIPPED. Every throttler here is NAMED, and a bare
+    // `@SkipThrottle()` opts out of a bucket called `default` — which does not
+    // exist — so it skips nothing and the route stays limited at 10/min. One
+    // read per page load then started answering 429 after ten loads from one
+    // address. The browser suite caught it; no unit test could have.
+    const statuses: number[] = [];
+    for (let i = 0; i < 15; i += 1) {
+      statuses.push((await call('GET', '/api/me')).status);
+    }
+
+    expect(statuses.every((status) => status === 200)).toBe(true);
+  });
+
   it('ignores a session token that was never issued', async () => {
     const response = await call('GET', '/api/me', {
       cookie: 'turret_sid=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
