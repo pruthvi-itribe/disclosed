@@ -170,20 +170,16 @@ export const renderDashboardPage = (): string => `<!doctype html>
 
 <main class="grid">
   <div class="panel">
-    <h2><span>Recent filings</span><span class="muted">newest first, by dissemination</span></h2>
+    <h2><span>Recent filings</span><span class="muted">newest first — click a row for the detail behind it</span></h2>
     <div class="scroll">
       <table>
         <thead>
           <tr>
-            <th>Time (IST)</th>
+            <th>When</th>
             <th>Symbol</th>
-            <th>Outcome</th>
+            <th>What was said</th>
             <th>Group</th>
-            <th>Headline</th>
-            <th>Amount</th>
-            <th>Enrichment</th>
             <th>Source</th>
-            <th>Seq</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>

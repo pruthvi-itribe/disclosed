@@ -100,22 +100,38 @@ describe('renderDashboardPage — content', () => {
     expect(html).toContain(`id="${id}"`);
   });
 
-  it('labels every time column as IST', () => {
-    expect(html).toContain('Time (IST)');
+  it('keeps IST the stated basis for every absolute time', () => {
+    // The row's own time column reads "14 min ago" now, because that is what a
+    // reader scanning the day wants. The exact IST instant did not go away — it
+    // is the cell's title and a line in the detail row — and the footer still
+    // states the basis, because a page of times with no timezone on it is a
+    // page of times somebody will read in their own.
     expect(html).toContain('per IST day');
+    expect(html).toContain('All times are IST');
   });
 
   it('states that the view is read-only', () => {
     expect(html).toContain('never writes');
   });
 
-  it('leads the filings table with the composed headline', () => {
-    // The change this page exists to show: the exchange's boilerplate is no
-    // longer the first thing in the row.
-    expect(html).toContain('<th>Headline</th>');
-    expect(html).toContain('<th>Amount</th>');
-    expect(html).toContain('<th>Enrichment</th>');
+  it('gives the row to what was said, not to how we read it', () => {
+    // The table is five columns and every one of them is about the filing.
+    // Amount, enrichment state and seqId were columns until they crowded out
+    // the thing the page is for; they are in the detail row now, which is why
+    // the header advertises that a row opens.
+    expect(html).toContain('<th>What was said</th>');
+    expect(html).toContain('click a row for the detail');
   });
+
+  it.each(['<th>Amount</th>', '<th>Enrichment</th>', '<th>Seq</th>'])(
+    'no longer spends a column on %s',
+    (column) => {
+      // Asserted as absence rather than left to the column count, so putting one
+      // back is a decision somebody makes against this line rather than a
+      // regression that still adds up.
+      expect(html).not.toContain(column);
+    },
+  );
 
   it('keeps the refusal reasons a reachable, filterable panel', () => {
     // A refusal nobody can reach is indistinguishable from a bug, and the
@@ -181,18 +197,14 @@ describe('renderDashboardPage — content', () => {
  * dropped. These assert the contract that change made, not its typography.
  */
 describe('renderDashboardPage — outcome, group and confidence', () => {
-  it('gives the outcome and the category group first-class columns', () => {
-    expect(html).toContain('<th>Outcome</th>');
+  it('keeps the category group a first-class column', () => {
+    // The group survives on the row where the outcome did not, and the reason
+    // is what each answers. The group says what KIND of filing this is, which
+    // is how somebody scans a day's flow and what they filter on. The outcome
+    // is a sentence about this one filing, and the claim line above it says the
+    // same thing with evidence whenever there is any — so it reads as the
+    // fallback it is, in the detail row.
     expect(html).toContain('<th>Group</th>');
-  });
-
-  it('puts the outcome ahead of the composed headline', () => {
-    // For most rows the outcome is the only fact stated: the composed headline
-    // beside it degrades to the exchange's own category whenever nothing was
-    // verified, so leading with the headline would lead with a blank.
-    expect(html.indexOf('<th>Outcome</th>')).toBeLessThan(
-      html.indexOf('<th>Headline</th>'),
-    );
   });
 
   it('spans the empty-state row across every column it renders', () => {

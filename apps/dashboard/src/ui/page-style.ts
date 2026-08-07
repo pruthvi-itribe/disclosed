@@ -104,7 +104,38 @@ thead th {
 tbody td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: rgba(88, 166, 255, 0.06); }
-td.time, td.seq { font-family: var(--mono); white-space: nowrap; font-size: 12px; color: var(--muted); }
+/* Relative now ("14 min ago"), so it is prose rather than a monospaced instant.
+   The exact IST time is the cell's title and a line in the detail row. */
+td.time { white-space: nowrap; font-size: 12px; color: var(--muted); }
+
+/* A row opens. Say so with the cursor rather than with an affordance column. */
+tbody tr.clickable { cursor: pointer; }
+tbody tr.open { background: rgba(88, 166, 255, 0.08); }
+tbody tr.open td { border-bottom-color: transparent; }
+
+tr.detail td { padding: 0 12px 12px; background: rgba(88, 166, 255, 0.04); }
+.detailbox {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: .35rem 1.5rem;
+  padding: .7rem .8rem;
+  border-left: 2px solid rgba(88, 166, 255, .35);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ditem { display: flex; gap: .5rem; align-items: baseline; min-width: 0; }
+.dlabel {
+  flex: 0 0 auto;
+  min-width: 96px;
+  color: var(--muted);
+  font-size: .68rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.dvalue { min-width: 0; overflow-wrap: anywhere; }
+/* The one line in the box that no span was matched against keeps saying so. */
+.ditem.unverified .dlabel, .ditem.unverified .dvalue { color: var(--muted); font-style: italic; }
+.ditem.refused .dvalue { font-family: var(--mono); font-size: 11px; }
 td.sym { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
 td.cat { color: var(--muted); font-size: 12px; max-width: 210px; }
 td.sum { min-width: 260px; }

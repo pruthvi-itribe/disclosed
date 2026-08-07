@@ -31,10 +31,12 @@ export const PAGE_SCRIPT = `
   var SLOW_EVERY = 5;
   var DEFAULT_LIMIT = 25;
 
-  // Columns in the filings table. Named because the empty-state row has to span
-  // all of them, and a colspan that silently drifts short of the real count
-  // renders as a torn row rather than as an error.
-  var COLUMN_COUNT = 9;
+  // Columns in the filings table. Named because the empty-state row AND the
+  // per-row detail row both have to span all of them, and a colspan that
+  // silently drifts short of the real count renders as a torn row rather than
+  // as an error. Asserted against the rendered header-cell count in
+  // page.spec.ts, so the two cannot drift apart silently.
+  var COLUMN_COUNT = 5;
 
   // The ordinary parser. A route equal to this is not worth a tag - it is what
   // reading a PDF normally means - and the tag exists to mark the exceptions.
@@ -146,6 +148,36 @@ export const PAGE_SCRIPT = `
     var h = Math.floor(m / 60);
     if (h < 24) return h + 'h ' + (m % 60) + 'm';
     return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+  }
+
+  // How long ago, in the words a person uses.
+  //
+  // READ AGAINST THE BROWSER'S CLOCK, which is the one exception to this page's
+  // rule that the server owns every time calculation. The rule exists because
+  // IST is a fixed offset the server holds one definition of and a browser in
+  // another timezone would render differently; "how long ago" is not a timezone
+  // question at all — it is a difference between two instants, identical in
+  // every timezone, and it has to move as the reader watches without a refetch.
+  // The absolute IST string the server computed is still what the title carries.
+  //
+  // Falls back to the raw value rather than inventing one: an unparseable date
+  // shows as itself, which is debuggable, instead of "just now", which is a lie.
+  function relativeTime(iso) {
+    if (typeof iso !== 'string' || iso === '') return '—';
+    var then = Date.parse(iso);
+    if (isNaN(then)) return iso;
+    var s = Math.round((Date.now() - then) / 1000);
+    if (s < 0) return 'just now';
+    if (s < 45) return 'just now';
+    if (s < 90) return 'a minute ago';
+    var m = Math.round(s / 60);
+    if (m < 60) return m + ' min ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ' + (m % 60 ? (m % 60) + 'm ago' : 'ago');
+    var d = Math.floor(h / 24);
+    if (d === 1) return 'yesterday';
+    if (d < 7) return d + ' days ago';
+    return Math.floor(d / 7) + 'w ago';
   }
 
   // Only http(s) links are ever rendered. Anything else - including the
@@ -349,6 +381,107 @@ export const PAGE_SCRIPT = `
     row.appendChild(cell);
   }
 
+  // One labelled fact in the detail row. Returns nothing when there is nothing
+  // to say, so an absent field costs no line rather than printing a dash.
+  function detailItem(box, label, value, className) {
+    if (value === null || value === undefined || value === '') return;
+    var item = document.createElement('div');
+    item.className = 'ditem' + (className ? ' ' + className : '');
+    var name = document.createElement('span');
+    name.className = 'dlabel';
+    name.textContent = label;
+    item.appendChild(name);
+    var body = document.createElement('span');
+    body.className = 'dvalue';
+    body.textContent = String(value);
+    item.appendChild(body);
+    box.appendChild(item);
+  }
+
+  // THE ROW BEHIND THE ROW.
+  //
+  // Everything here was on the main table until it stopped being readable: the
+  // amount and its refusal, the enrichment state and its tags, the parse route,
+  // the model summary, the seqId, the exchange's own words. None of it is
+  // wrong and none of it is what the page is for. A reader scanning the day
+  // wants what the companies said; a reader who has stopped on one row wants to
+  // know how we know it, and that is a different question asked at a different
+  // moment.
+  //
+  // Collapsed by default and built eagerly. Building on expand would be less
+  // work on first paint and would make the row's content depend on when it was
+  // opened, which is the kind of difference that turns into a bug report about
+  // a value that "changed on its own" during a poll.
+  function detailRow(parent, f, e) {
+    var tr = document.createElement('tr');
+    tr.className = 'detail';
+    tr.hidden = true;
+
+    var td = document.createElement('td');
+    td.colSpan = COLUMN_COUNT;
+
+    var box = document.createElement('div');
+    box.className = 'detailbox';
+
+    detailItem(box, 'Exchange said', f.summary);
+    detailItem(box, 'Category', f.category);
+    detailItem(box, 'Outcome', f.outcome);
+    detailItem(box, 'Confidence', f.confidenceTierLabel + ' · ' + f.outcomeSource);
+
+    // The model summary keeps its warning here. Moving it off the main table
+    // does not make it verified, and it is the one line in this box that no
+    // span was matched against.
+    if (e.documentSummary) {
+      detailItem(box, 'Model summary — NOT verified', e.documentSummary, 'unverified');
+    }
+
+    if (e.amountRupees !== null && e.amountRupees !== undefined) {
+      detailItem(box, 'Amount', groupInt(e.amountRupees) + (e.amountLabel ? ' · ' + e.amountLabel : ''));
+    } else if (e.amountRefusalReason) {
+      detailItem(box, 'No amount read', e.amountRefusalReason);
+    }
+
+    detailItem(box, 'Counterparty', e.counterparty);
+    detailItem(box, 'Read by', e.parseRoute ? e.parseRoute + (e.documentChars ? ' · ' + groupInt(e.documentChars) + ' chars' : '') : null);
+    detailItem(box, 'Files', e.documentSource);
+    detailItem(box, 'Enrichment', e.state + (e.unparseableReason ? ' · ' + e.unparseableReason : ''));
+    detailItem(box, 'Context', e.contextLine);
+    detailItem(box, 'Disseminated', f.disseminatedAtIst + ' IST · ingested +' + duration(f.pipelineLagMs));
+    detailItem(box, 'Sequence', f.seqId);
+
+    // What the gate threw away, and why. This is the honest half of the
+    // precision claim: a row showing three verified claims and nothing else
+    // hides that nine were proposed.
+    var discards = e.claimDiscards;
+    if (discards && discards.length) {
+      var counts = {};
+      for (var d = 0; d < discards.length; d++) {
+        var reason = discards[d].reason;
+        counts[reason] = (counts[reason] || 0) + 1;
+      }
+      var parts = [];
+      for (var key in counts) {
+        if (Object.prototype.hasOwnProperty.call(counts, key)) {
+          parts.push(counts[key] + ' × ' + key);
+        }
+      }
+      detailItem(box, 'Refused by the gate', parts.join(', '), 'refused');
+    }
+
+    td.appendChild(box);
+    tr.appendChild(td);
+
+    parent.className += ' clickable';
+    parent.onclick = function () {
+      tr.hidden = !tr.hidden;
+      parent.className = tr.hidden
+        ? parent.className.replace(' open', '')
+        : parent.className + ' open';
+    };
+
+    return tr;
+  }
+
   // The group, compact, because it says what KIND of filing this is rather than
   // anything about this one. It is a filter for the same reason the category is:
   // NSE's 111 categories are too fine to scan and the eleven groups are the
@@ -469,48 +602,27 @@ export const PAGE_SCRIPT = `
       cell.appendChild(box);
     }
 
-    // THE MODEL SUMMARY, and it is deliberately unlike everything above it.
-    // Every claim in this cell carries a sentence matched against the source;
-    // this carries nothing. It is labelled, dashed and muted so a reader
-    // scanning the column can tell at a glance which line nothing verified,
-    // and it is never sent to Telegram.
-    if (e.documentSummary) {
-      var summary = document.createElement('div');
-      summary.className = 'modelsummary';
-      var label = document.createElement('span');
-      label.className = 'tagm';
-      label.textContent = 'model summary - not verified';
-      summary.appendChild(label);
-      summary.appendChild(document.createTextNode(String(e.documentSummary)));
-      cell.appendChild(summary);
+    // THE MODEL SUMMARY, THE FILE LIST, THE DERIVED CONTEXT, THE EXCHANGE'S OWN
+    // SENTENCE AND THE LAG ALL MOVED TO THE DETAIL ROW.
+    //
+    // Not deleted — every one of them is still rendered, one click down. The
+    // reason they left this cell is that they are all statements about the
+    // pipeline, and stacking five of them under each verified claim meant the
+    // verified claim was the smallest thing in its own column. The model
+    // summary in particular was the loudest line on a row whose whole point is
+    // that everything else on it was checked against the document, and it is
+    // the one line that never was; it keeps its NOT-verified label downstairs.
+    //
+    // What stays here is what the filing said and the evidence for it.
+
+    // When nothing was verified, the exchange's own sentence is what this
+    // filing said, and a blank cell would be a worse answer than a quiet one.
+    if (!e.resultsLine && !e.claimLine && !e.headline) {
+      var fallback = document.createElement('div');
+      fallback.className = 'summary-line';
+      fallback.textContent = f.summary;
+      cell.appendChild(fallback);
     }
-
-    // Which archived files the text came from. Shown because a filing whose
-    // text is three concatenated documents is a different object from one
-    // whose text is a document, and a span has to be traceable to a file.
-    if (e.documentSource) {
-      var source = document.createElement('div');
-      source.className = 'claimspan periodspan';
-      source.textContent = e.documentSource;
-      cell.appendChild(source);
-    }
-
-    if (e.contextLine) {
-      var ctx = document.createElement('div');
-      ctx.className = 'context';
-      ctx.textContent = e.contextLine;
-      cell.appendChild(ctx);
-    }
-
-    var summary = document.createElement('div');
-    summary.className = 'summary-line';
-    summary.textContent = f.summary;
-    cell.appendChild(summary);
-
-    var lag = document.createElement('div');
-    lag.className = 'lag';
-    lag.textContent = f.category + ' · ingested +' + duration(f.pipelineLagMs);
-    cell.appendChild(lag);
 
     row.appendChild(cell);
   }
@@ -669,18 +781,24 @@ export const PAGE_SCRIPT = `
       var row = document.createElement('tr');
       if (previousHigh !== null && f.seqId > previousHigh) row.className = 'fresh';
 
-      cell(row, 'time', f.disseminatedAtIst);
+      var when = cell(row, 'time', relativeTime(f.disseminatedAt));
+      // The exact IST timestamp is one hover away rather than gone. "14m ago"
+      // is what a reader scanning the day wants; "07 Aug 2026, 08:14:23" is
+      // what they want the moment they are reconciling against something else.
+      when.title = f.disseminatedAtIst + ' IST';
+
       cell(row, 'sym', f.symbol).title = f.companyName;
 
       var enrichment = f.enrichment || { state: 'pending', attempts: 0 };
-      // The outcome leads the prose columns because for most rows it is the only
-      // fact stated: the composed headline beside it degrades to the exchange's
-      // own category whenever nothing was verified.
-      outcomeCell(row, f);
-      groupCell(row, f);
+      // WHAT THE FILING SAID, and nothing about how we came to know it. The
+      // amount column, the enrichment tags, the seqId and the model summary all
+      // used to sit on this row; every one of them is a fact about the pipeline
+      // rather than about the company, and together they crowded out the thing
+      // a reader opens this page for. They are all still here — one click down,
+      // in the detail row, where somebody asking "how do you know that" finds
+      // them and nobody else has to look at them.
       headlineCell(row, f);
-      amountCell(row, enrichment);
-      enrichmentCell(row, enrichment);
+      groupCell(row, f);
 
       var src = cell(row, 'src', null);
       var href = safeHref(f.attachmentUrl);
@@ -690,14 +808,16 @@ export const PAGE_SCRIPT = `
         link.rel = 'noopener noreferrer nofollow';
         link.target = '_blank';
         link.textContent = 'source';
+        // The link must not also toggle the row it sits in.
+        link.onclick = function (event) { event.stopPropagation(); };
         src.appendChild(link);
       } else {
         src.textContent = '—';
         src.className = 'src muted';
       }
 
-      cell(row, 'seq', f.seqId);
       body.appendChild(row);
+      body.appendChild(detailRow(row, f, enrichment));
     }
 
     state.highestSeen = newHigh;
