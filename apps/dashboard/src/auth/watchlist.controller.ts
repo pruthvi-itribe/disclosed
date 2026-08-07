@@ -8,10 +8,12 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import type { Response } from 'express';
 import {
   isPlausibleSymbol,
   MAX_WATCHED_SYMBOLS,
@@ -196,6 +198,7 @@ export class WatchlistController {
   async add(
     @Req() request: AuthedRequest,
     @Query() query: RawQuery,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<ApiEnvelope<{ symbol: string; addedAt: string }, WatchlistMeta>> {
     const symbol = await this.requireKnownSymbol(query);
     const result = await this.watchlists.add(
@@ -213,6 +216,12 @@ export class WatchlistController {
         { used: result.used, cap: MAX_WATCHED_SYMBOLS },
       );
     }
+
+    // 201 for a CREATED entry, 200 for one that was already there. The bodies
+    // are identical on purpose — a double-click is not an error, and the page
+    // has nothing different to do — but the status still says which of the two
+    // happened, which is what a status line is for.
+    response.status(result.outcome === 'added' ? 201 : 200);
 
     const entries = await this.watchlists.entriesFor(request.signedin!.userId);
     const stored = entries.find((entry) => entry.symbol === symbol);

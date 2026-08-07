@@ -519,6 +519,9 @@ describe('the watchlist', () => {
       cookie,
     });
 
+    // Same body, and a 200 rather than a 201: the entry was not created this
+    // time, and the status is the one place that difference is visible.
+    expect(again.status).toBe(200);
     expect(again.body.meta).toEqual({ used: 1, cap: 50 });
   });
 
