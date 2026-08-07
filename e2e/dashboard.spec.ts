@@ -251,3 +251,72 @@ test('an expanded card stays expanded across the four-second repaint', async ({
   await page.waitForTimeout(6000);
   expect(await card.locator('.insights li').count()).toBe(opened);
 });
+
+test.describe('the company page', () => {
+  test('opens from a card symbol and states what it was computed over', async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(String(error)));
+
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await page.locator('#feed .card button.sym').first().click();
+
+    await expect(page.locator('#view-company')).toBeVisible();
+    await expect(page.locator('#view-feed')).toBeHidden();
+    await expect(page.locator('#co-symbol')).not.toBeEmpty();
+
+    // THE COVERAGE LINE IS THE POINT. Measured 2026-08-07, 460 of 960 companies
+    // had filed exactly once and the collection held four IST days — so every
+    // number on this page is computed over a window the reader has to be told
+    // about. context-line.ts settled the principle: a claim about thirty days,
+    // made by a database holding four, is every word true and the whole
+    // sentence false.
+    await expect(page.locator('#co-coverage')).toContainText('filings held');
+    await expect(page.locator('#co-coverage')).toContainText('IST day');
+
+    await expect(page.locator('#co-strip .stripday')).not.toHaveCount(0);
+    await expect(page.locator('#company-feed .card')).not.toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test('suppresses the group mix below five filings', async ({ page }) => {
+    // A stacked bar over one observation is a single colour claiming to be a
+    // distribution. That the widget is usually absent is the widget working.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await page.locator('#feed .card button.sym').first().click();
+    await expect(page.locator('#co-symbol')).not.toBeEmpty();
+
+    const filings = Number(
+      (await page.locator('#co-filings').textContent())?.replace(/[^0-9]/g, ''),
+    );
+    const shown = await page.locator('#co-mix-wrap').isVisible();
+    expect(shown).toBe(filings >= 5);
+  });
+
+  test('does not repeat the company identity on every card', async ({
+    page,
+  }) => {
+    // On a page headed GODREJCP, six cards each reading "GODREJCP Godrej
+    // Consumer Products Limited" is six lines answering a question the heading
+    // already answered.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await page.locator('#feed .card button.sym').first().click();
+    await expect(page.locator('#company-feed .card')).not.toHaveCount(0);
+    await expect(page.locator('#company-feed .who').first()).toBeHidden();
+  });
+
+  test('goes back to the feed', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await page.locator('#feed .card button.sym').first().click();
+    await expect(page.locator('#view-company')).toBeVisible();
+
+    await page.locator('#company-back').click();
+    await expect(page.locator('#view-feed')).toBeVisible();
+    await expect(page.locator('#view-company')).toBeHidden();
+  });
+});

@@ -155,7 +155,12 @@ export const PAGE_SCRIPT = `
     // opened, because the reader loses their place and cannot tell whether they
     // misclicked. Anything a reader does to this page has to outlive the
     // refresh that is the whole reason the page is live.
-    expanded: {}
+    expanded: {},
+    // The company whose page is open, or null. In 'state' for the same reason
+    // 'expanded' is: the page repaints every four seconds, and a view that
+    // forgot which company it was showing would snap back to the feed under a
+    // reader mid-scroll.
+    company: null
   };
 
   // A lookup that cannot be walked into the prototype chain. The keys come from
@@ -871,9 +876,20 @@ export const PAGE_SCRIPT = `
 
     var who = document.createElement('div');
     who.className = 'who';
-    var sym = document.createElement('span');
+    // THE WAY INTO THE COMPANY PAGE. A button rather than a styled span, so it
+    // is reachable by keyboard and announced as an action — the symbol is the
+    // most obvious thing on the card to click and it did nothing.
+    var sym = document.createElement('button');
+    sym.type = 'button';
     sym.className = 'sym';
     sym.textContent = f.symbol;
+    sym.title = 'All filings from ' + f.symbol;
+    sym.onclick = (function (symbol) {
+      return function (event) {
+        event.stopPropagation();
+        openCompany(symbol);
+      };
+    })(f.symbol);
     who.appendChild(sym);
     var name = document.createElement('span');
     name.className = 'coname';
@@ -1032,16 +1048,30 @@ export const PAGE_SCRIPT = `
     return 'Try a different group, or clear the search.';
   }
 
-  function renderFeed(items, meta) {
-    var feed = el('feed');
+  /**
+   * Draws a list of filings into any container.
+   *
+   * SHARED BY THE FEED AND THE COMPANY PAGE on purpose, and it is the largest
+   * saving in the company view: the body of that page is this code, which
+   * already renders results lines, claim lines, quiet cards, the expander, Copy
+   * and Source, and already carries the createElement/textContent/safeHref
+   * discipline. A second card renderer would be a second place for exchange
+   * text to reach the DOM.
+   *
+   * 'chrome' is false for the company page, whose paging and counts live in its
+   * own header rather than in the feed's footer.
+   */
+  function renderFeedInto(feed, items, meta, chrome) {
     if (!feed) return;
     feed.textContent = '';
 
-    var withInsight = 0;
-    for (var n = 0; n < items.length; n++) {
-      if (insightLines(items[n].enrichment || {}).length > 0) withInsight += 1;
+    if (chrome) {
+      var withInsight = 0;
+      for (var n = 0; n < items.length; n++) {
+        if (insightLines(items[n].enrichment || {}).length > 0) withInsight += 1;
+      }
+      setText('hero-insights', groupInt(withInsight));
     }
-    setText('hero-insights', groupInt(withInsight));
 
     if (items.length === 0) {
       var none = document.createElement('div');
@@ -1069,8 +1099,10 @@ export const PAGE_SCRIPT = `
       hint.textContent = emptyHint();
       none.appendChild(hint);
       feed.appendChild(none);
-      setText('feed-info', '');
-      el('feed-more').hidden = true;
+      if (chrome) {
+        setText('feed-info', '');
+        el('feed-more').hidden = true;
+      }
       return;
     }
 
@@ -1088,9 +1120,238 @@ export const PAGE_SCRIPT = `
       feed.appendChild(feedCard(f));
     }
 
-    var shown = meta.offset + meta.returned;
-    setText('feed-info', shown + ' of ' + groupInt(meta.total));
-    el('feed-more').hidden = !meta.hasMore;
+    if (chrome) {
+      var shown = meta.offset + meta.returned;
+      setText('feed-info', shown + ' of ' + groupInt(meta.total));
+      el('feed-more').hidden = !meta.hasMore;
+    }
+  }
+
+  /** The market feed: the shared renderer, into #feed, with its own chrome. */
+  function renderFeed(items, meta) {
+    renderFeedInto(el('feed'), items, meta, true);
+  }
+
+  /**
+   * Filings below which a per-company distribution is not drawn.
+   *
+   * Five, and it suppresses the mix bar for most companies — measured on
+   * 2026-08-07, 460 of 960 companies had filed exactly ONCE and only 128 had
+   * filed five times or more. A stacked bar over one observation is not a
+   * distribution, it is a single colour claiming to be a summary.
+   *
+   * That the widget is usually absent is the widget working. 'context-line.ts'
+   * settled this argument for the alert path already: a claim about thirty days
+   * of data, made by a database holding four, is every word true and the whole
+   * sentence false.
+   */
+  var MIN_DISTRIBUTION_FILINGS = 5;
+
+  /** Every IST day from first to last inclusive, so gaps are drawn as gaps. */
+  function istDaySpan(from, to) {
+    var days = [];
+    var cursor = Date.parse(from + 'T00:00:00Z');
+    var end = Date.parse(to + 'T00:00:00Z');
+    if (isNaN(cursor) || isNaN(end)) return days;
+    // Bounded independently of the dates, so a malformed pair cannot spin.
+    for (var guard = 0; cursor <= end && guard < 400; guard += 1) {
+      days.push(new Date(cursor).toISOString().slice(0, 10));
+      cursor += 86400000;
+    }
+    return days;
+  }
+
+  var WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  /**
+   * The filing strip: one column per IST day, one square per filing.
+   *
+   * A SQUARE PER FILING, NOT A BAR, and that is the whole design. At the
+   * measured 2.36 filings a company, a bar chart is two bars of height one and
+   * needs an axis before it can be read at all. Squares are countable — a
+   * reader gets the number without reading anything.
+   *
+   * A DAY WITH NO FILINGS GETS A RULE, NOT A SHORT COLUMN. In the 32-day corpus
+   * a Sunday carries 26 filings against a Tuesday's 832 — a factor of 32 — so a
+   * proportional bar renders an ordinary weekend as an outage. "Nobody filed"
+   * and "one filing" must not look alike.
+   */
+  function renderStrip(box, items) {
+    box.textContent = '';
+    if (items.length === 0) return;
+
+    var byDay = {};
+    for (var i = 0; i < items.length; i++) {
+      var key = items[i].istDay;
+      if (!key) continue;
+      if (!Object.prototype.hasOwnProperty.call(byDay, key)) byDay[key] = [];
+      byDay[key].push(items[i]);
+    }
+
+    var keys = Object.keys(byDay).sort();
+    if (keys.length === 0) return;
+
+    var days = istDaySpan(keys[0], keys[keys.length - 1]);
+    for (var d = 0; d < days.length; d++) {
+      var day = days[d];
+      var onDay = Object.prototype.hasOwnProperty.call(byDay, day)
+        ? byDay[day]
+        : [];
+      var weekday = new Date(day + 'T00:00:00Z').getUTCDay();
+
+      var column = document.createElement('div');
+      column.className =
+        'stripday' + (weekday === 0 || weekday === 6 ? ' weekend' : '');
+
+      var stack = document.createElement('div');
+      stack.className = 'stripstack';
+      if (onDay.length === 0) {
+        var none = document.createElement('div');
+        none.className = 'stripnone';
+        stack.appendChild(none);
+      }
+      for (var k = 0; k < onDay.length; k++) {
+        var cell = document.createElement('button');
+        cell.type = 'button';
+        var f = onDay[k];
+        // Three meanings, not eleven. Eleven groups cannot take eleven hues on
+        // a dark theme without a legend, and a legend defeats a glance — so
+        // colour carries what a reader already learned from the cards.
+        var kind =
+          f.categoryGroup === 'results'
+            ? ' results'
+            : (f.enrichment && f.enrichment.claims || []).length > 0
+              ? ' claim'
+              : f.categoryGroup === 'routine' ||
+                  f.categoryGroup === 'governance'
+                ? ' quiet'
+                : '';
+        cell.className = 'stripcell' + kind;
+        cell.title = f.disseminatedAtIst + ' IST · ' + f.category;
+        cell.onclick = (function (seqId) {
+          return function () {
+            var card = document.querySelector(
+              '#company-feed .card[data-seq="' + seqId + '"]',
+            );
+            if (card && card.scrollIntoView) {
+              card.scrollIntoView({ block: 'center' });
+            }
+          };
+        })(f.seqId);
+        stack.appendChild(cell);
+      }
+      column.appendChild(stack);
+
+      var label = document.createElement('div');
+      label.className = 'striplabel';
+      label.textContent = WEEKDAY[weekday];
+      column.appendChild(label);
+
+      var dayNum = document.createElement('div');
+      dayNum.className = 'stripday-num';
+      dayNum.textContent = day.slice(8);
+      column.appendChild(dayNum);
+
+      box.appendChild(column);
+    }
+  }
+
+  /**
+   * The group mix, as one bar.
+   *
+   * Widths are set with 'flexGrow' rather than a percentage, so flex does the
+   * arithmetic exactly and no rounding has to be reconciled against 100.
+   */
+  function renderMix(bar, legend, items) {
+    bar.textContent = '';
+    legend.textContent = '';
+
+    var counts = {};
+    var order = [];
+    for (var i = 0; i < items.length; i++) {
+      var g = items[i].categoryGroup;
+      if (!Object.prototype.hasOwnProperty.call(counts, g)) {
+        counts[g] = { n: 0, label: items[i].categoryGroupLabel };
+        order.push(g);
+      }
+      counts[g].n += 1;
+    }
+    order.sort(function (a, b) { return counts[b].n - counts[a].n; });
+
+    for (var j = 0; j < order.length; j++) {
+      var group = order[j];
+      var seg = document.createElement('div');
+      seg.className = 'mixseg g-' + group;
+      seg.style.flexGrow = String(counts[group].n);
+      seg.title = counts[group].label + ': ' + counts[group].n;
+      bar.appendChild(seg);
+
+      if (j < 3) {
+        var item = document.createElement('span');
+        item.className = 'mixitem';
+        var swatch = document.createElement('span');
+        swatch.className = 'mixdot g-' + group;
+        item.appendChild(swatch);
+        var text = document.createElement('span');
+        text.textContent = counts[group].label + ' ' + counts[group].n;
+        item.appendChild(text);
+        legend.appendChild(item);
+      }
+    }
+  }
+
+  function renderCompany(items, meta) {
+    if (state.company === null) return;
+
+    setText('co-symbol', state.company);
+    setText('co-name', items.length > 0 ? items[0].companyName : '');
+
+    // Industry appears ONLY when it is known. It is null on 58.2% of filings,
+    // so it can never be a structural element — a page whose third line reads
+    // "Industry: —" on six companies in ten looks broken rather than honest.
+    var industry = items.length > 0 ? items[0].industry : null;
+    var industryTag = el('co-industry');
+    industryTag.hidden = !industry;
+    if (industry) industryTag.textContent = industry;
+
+    var verified = 0;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].confidenceTier === 'verified') verified += 1;
+    }
+    setText('co-filings', groupInt(meta.total));
+    setText('co-verified', groupInt(verified));
+    setText('co-last', items.length > 0 ? relativeTime(items[0].disseminatedAt) : '—');
+
+    // THE COVERAGE LINE, and it is the first thing that tells a reader whether
+    // anything below it means anything.
+    var days = {};
+    for (var d = 0; d < items.length; d++) {
+      if (items[d].istDay) days[items[d].istDay] = true;
+    }
+    var dayKeys = Object.keys(days).sort();
+    setText(
+      'co-coverage',
+      dayKeys.length === 0
+        ? ''
+        : groupInt(meta.total) +
+            ' filings held · ' +
+            dayKeys[0] +
+            ' to ' +
+            dayKeys[dayKeys.length - 1] +
+            ' · ' +
+            dayKeys.length +
+            (dayKeys.length === 1 ? ' IST day' : ' IST days'),
+    );
+
+    renderStrip(el('co-strip'), items);
+
+    var mixWrap = el('co-mix-wrap');
+    mixWrap.hidden = items.length < MIN_DISTRIBUTION_FILINGS;
+    if (!mixWrap.hidden) {
+      renderMix(el('co-mix'), el('co-mix-legend'), items);
+    }
+
+    renderFeedInto(el('company-feed'), items, meta, false);
   }
 
   function renderFilings(items, meta) {
@@ -1562,6 +1823,16 @@ export const PAGE_SCRIPT = `
 
   function query() {
     var parts = ['limit=' + state.limit, 'offset=' + state.offset];
+    // A COMPANY PAGE IS THE SAME ROUTE WITH A SYMBOL. It deliberately ignores
+    // the feed's filters — a reader who opened RELIANCE wants RELIANCE's
+    // filings, not the ones that survive whatever group chip was active when
+    // they clicked. 200 is roughly ten months of the heaviest measured filer.
+    if (state.company !== null) {
+      return (
+        'api/filings?limit=200&offset=0&symbol=' +
+        encodeURIComponent(state.company)
+      );
+    }
     // The feed's "said something" toggle IS the verified tier. Expressed here
     // rather than as a separate parameter because the server already filters on
     // exactly this set, and inventing a second name for it would be two ways to
@@ -1592,6 +1863,10 @@ export const PAGE_SCRIPT = `
         // save a few milliseconds of DOM work and cost a tab switch a round
         // trip — and the two would then be able to disagree, which is the one
         // thing a page showing the same rows twice must never do.
+        if (state.company !== null) {
+          renderCompany(b.data, b.meta);
+          return;
+        }
         renderFeed(b.data, b.meta);
         renderFilings(b.data, b.meta);
       })
@@ -2108,11 +2383,28 @@ export const PAGE_SCRIPT = `
     state.view = name;
     el('view-feed').hidden = name !== 'feed';
     el('view-admin').hidden = name !== 'admin';
+    el('view-company').hidden = name !== 'company';
+    // The company view is reached from a card, not from a tab, so neither tab
+    // is active while it is open. Leaving Feed lit would say the reader is
+    // somewhere they are not.
     el('tab-feed').className = 'tab' + (name === 'feed' ? ' active' : '');
     el('tab-admin').className = 'tab' + (name === 'admin' ? ' active' : '');
     el('tab-feed').setAttribute('aria-selected', String(name === 'feed'));
     el('tab-admin').setAttribute('aria-selected', String(name === 'admin'));
+    if (name !== 'company') state.company = null;
   }
+
+  /** Opens one company, and asks for its filings unfiltered. */
+  function openCompany(symbol) {
+    state.company = symbol;
+    state.offset = 0;
+    showView('company');
+    refresh(true);
+  }
+  el('company-back').addEventListener('click', function () {
+    showView('feed');
+    refresh(true);
+  });
   el('tab-feed').addEventListener('click', function () { showView('feed'); });
   el('tab-admin').addEventListener('click', function () { showView('admin'); });
 

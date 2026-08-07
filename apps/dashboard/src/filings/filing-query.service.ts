@@ -764,6 +764,16 @@ export class FilingQueryService {
       announcedAtIst: istTimestamp(doc.announcedAt),
       disseminatedAt: disseminatedAt.toISOString(),
       disseminatedAtIst: istTimestamp(disseminatedAt),
+      // THE IST DAY, COMPUTED HERE AND NOT IN THE BROWSER. The company page's
+      // filing strip buckets by IST calendar day, and the rule at the top of
+      // `page-script.ts` is that the server owns every IST decision — a browser
+      // in another timezone would bucket the same filing differently, and the
+      // 18:30Z boundary is exactly where that goes wrong.
+      //
+      // Sent as its own field rather than sliced off `disseminatedAtIst`. The
+      // slice would work today and would be a silent coupling to a server
+      // format that can change, which is the shape of bug that survives review.
+      istDay: istDayKey(disseminatedAt),
       ingestedAtIst: istTimestamp(doc.ingestedAt),
       pipelineLagMs: instantMs(doc.ingestedAt) - instantMs(doc.disseminatedAt),
       outcome: outcome.text,

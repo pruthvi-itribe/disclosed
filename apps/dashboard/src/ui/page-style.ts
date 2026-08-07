@@ -573,4 +573,86 @@ td.grp { white-space: nowrap; }
   .herovalue { font-size: 30px; }
   .cardmeta { margin-left: 0; width: 100%; }
 }
+
+/* ===================== COMPANY PAGE ===================================== */
+
+.back {
+  background: transparent; border: 0; color: var(--muted);
+  font: inherit; font-size: 12.5px; cursor: pointer; padding: 4px 0;
+  margin-bottom: 12px;
+}
+.back:hover { color: var(--text); }
+/* The arrow is drawn in CSS rather than typed as a character, and NOT as a
+   unicode escape. This file is a TypeScript template literal, so a backslash
+   followed by digits is read as an octal escape and rejected by the compiler —
+   which is true of the comment as much as of the rule, because a comment
+   inside a template literal is still string content. A rotated border draws
+   the same arrow with nothing to escape. */
+.back::before {
+  content: ""; display: inline-block; width: 6px; height: 6px;
+  margin-right: 8px; border-left: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor; transform: rotate(45deg);
+  vertical-align: middle;
+}
+
+.cohead { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.coident { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.cosym { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.cocoverage { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+/* The symbol on a card is the way into the company page. Styled as text, not
+   as a button, because a border on every card would be nine borders of chrome
+   competing with the sentence the card exists to show. */
+button.sym {
+  background: transparent; border: 0; padding: 0; cursor: pointer;
+  color: var(--text); font: inherit;
+  font-size: 17px; font-weight: 680; letter-spacing: -0.01em;
+}
+button.sym:hover { color: var(--accent); }
+.card.quiet button.sym { font-size: 14px; }
+
+/* --- the filing strip ---------------------------------------------------
+   One column per IST day, one square per filing. A square rather than a bar
+   because at ~2.4 filings a company a bar chart is two bars of height one and
+   needs an axis; squares are countable at a glance. */
+.strip { display: flex; gap: 6px; align-items: flex-end; overflow-x: auto; padding: 4px 0 0; }
+.stripday { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 18px; }
+.stripstack { display: flex; flex-direction: column-reverse; gap: 2px; min-height: 12px; justify-content: flex-start; }
+.stripcell {
+  width: 12px; height: 12px; border-radius: 3px; padding: 0;
+  border: 0; cursor: pointer; background: var(--accent); opacity: .65;
+}
+.stripcell:hover { opacity: 1; }
+.stripcell.results { background: var(--results, #fcd34d); opacity: .85; }
+.stripcell.claim { background: var(--claim, #7dd3fc); opacity: .85; }
+/* routine and governance are 57% of everything filed. Making them recede is
+   the most informative thing colour does on this page. */
+.stripcell.quiet { background: var(--line); opacity: 1; }
+/* A day with NO filings is a rule, not a short column: on real data a Sunday
+   is 26 filings against a Tuesday's 832, so a proportional bar renders an
+   ordinary weekend as an outage. */
+.stripnone { width: 12px; height: 2px; border-radius: 1px; background: var(--line); }
+.striplabel { color: var(--muted); font-size: 10px; line-height: 1; }
+.stripday-num { color: var(--muted); font-size: 10px; opacity: .6; line-height: 1; }
+.stripday.weekend .striplabel, .stripday.weekend .stripday-num { opacity: .35; }
+
+/* --- the group mix ------------------------------------------------------ */
+.mix { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
+.mixseg { min-width: 2px; }
+.mixlegend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.mixitem { display: flex; align-items: center; gap: 6px; }
+.mixdot { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
+
+.g-results { background: var(--results, #fcd34d); }
+.g-narrative, .g-orders, .g-mna, .g-ratings, .g-capital, .g-legal, .g-verification, .g-other { background: var(--accent); }
+.g-routine, .g-governance { background: var(--line); }
+
+#company-feed { margin-top: 10px; }
+/* On a page headed GODREJCP, repeating "GODREJCP Godrej Consumer Products
+   Limited" on all six cards is six lines of chrome answering a question the
+   heading answered. The identity is hidden and the time moves left into the
+   space it leaves, so the insight starts where the eye already is. */
+#company-feed .who { display: none; }
+#company-feed .cardmeta { margin-left: 0; width: 100%; }
+#company-feed .cardhead { margin-bottom: 8px; }
 `;

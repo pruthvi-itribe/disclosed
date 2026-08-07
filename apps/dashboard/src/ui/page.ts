@@ -139,6 +139,62 @@ export const renderDashboardPage = (): string => `<!doctype html>
   </div>
 </section>
 
+<!-- =========================== COMPANY ========================== -->
+<!--
+  A third view, entered by clicking a symbol in the feed. It costs no new route
+  and no new index: it is 'api/filings?symbol=X' — which the existing
+  'symbol_1_category_1_disseminatedAt_-1' index serves — and every widget in it
+  is derived in the browser from that one payload.
+
+  THE COVERAGE LINE IS NOT DECORATION. Measured on 2026-08-07, this collection
+  holds 2,261 filings across 960 companies over four IST days: 460 companies
+  have filed exactly ONCE and only 128 have filed five times or more. Any
+  distribution drawn over that is computed from one or two observations for most
+  of the population, so the page states what it was computed over and the
+  group-mix bar suppresses itself below five filings. 'context-line.ts' already
+  wrote the rule: a claim about thirty days of data, made by a database holding
+  four, is the most confident lie the system is capable of.
+-->
+<section id="view-company" class="view" role="tabpanel" hidden>
+  <button id="company-back" class="back" type="button">Back to feed</button>
+
+  <div class="cohead">
+    <div class="coident">
+      <span id="co-symbol" class="cosym"></span>
+      <span id="co-name" class="coname"></span>
+      <span id="co-industry" class="tag" hidden></span>
+    </div>
+    <div id="co-coverage" class="cocoverage"></div>
+  </div>
+
+  <div class="hero">
+    <div class="herostat">
+      <div id="co-filings" class="herovalue">—</div>
+      <div class="herolabel">filings held</div>
+    </div>
+    <div class="herostat">
+      <div id="co-verified" class="herovalue accent">—</div>
+      <div class="herolabel">verified</div>
+    </div>
+    <div class="herostat">
+      <div id="co-last" class="herovalue">—</div>
+      <div class="herolabel">last filed</div>
+    </div>
+  </div>
+
+  <h2 class="bucket">Filing timeline</h2>
+  <div id="co-strip" class="strip"></div>
+
+  <div id="co-mix-wrap" hidden>
+    <h2 class="bucket">What they file</h2>
+    <div id="co-mix" class="mix"></div>
+    <div id="co-mix-legend" class="mixlegend"></div>
+  </div>
+
+  <h2 class="bucket">Filings</h2>
+  <div id="company-feed" class="feed"></div>
+</section>
+
 <!-- ============================ ADMIN =========================== -->
 <section id="view-admin" class="view" role="tabpanel" aria-labelledby="tab-admin" hidden>
 

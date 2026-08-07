@@ -275,7 +275,13 @@ test.describe('the mouse', () => {
     // click below the input lands ON the list, which is the correct behaviour
     // and not a dismissal. The first version of this test clicked the feed and
     // failed for exactly that reason.
-    await page.locator('.hero').click({ position: { x: 5, y: 5 } });
+    // Scoped to the FEED's hero. The company page has a hero of its own, so a
+    // bare '.hero' is ambiguous — and an ambiguous locator fails loudly under
+    // strict mode rather than silently clicking the wrong one, which is the
+    // behaviour worth keeping.
+    await page
+      .locator('#view-feed .hero')
+      .click({ position: { x: 5, y: 5 } });
 
     await expect(page.locator('#suggest')).toBeHidden();
   });

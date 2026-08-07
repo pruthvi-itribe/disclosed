@@ -193,6 +193,15 @@ export interface FilingView {
   /** ISO-8601 UTC. The authoritative exchange clock, and the sort key. */
   readonly disseminatedAt: string;
   readonly disseminatedAtIst: string;
+  /**
+   * The IST calendar day this filing was disseminated on, as `YYYY-MM-DD`.
+   *
+   * Carried separately from `disseminatedAtIst` so the company page's filing
+   * strip can bucket by day without the browser computing IST — which it must
+   * not, because the 18:30Z boundary would put the same filing on different
+   * days for readers in different timezones.
+   */
+  readonly istDay: string;
   readonly ingestedAtIst: string;
   /**
    * Milliseconds between the exchange disseminating the filing and this
