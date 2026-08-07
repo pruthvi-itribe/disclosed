@@ -1,4 +1,7 @@
-import { hasUsableTextLayer } from '../logic/enrichment-policy';
+import {
+  hasCorruptTextLayer,
+  hasUsableTextLayer,
+} from '../logic/enrichment-policy';
 import type { DoclingConverter } from './docling-client';
 import {
   routeAfterFirstRead,
@@ -86,6 +89,7 @@ export async function readWithRouting(
     pages,
     text,
     hasTextLayer: hasUsableTextLayer(text),
+    textLayerCorrupt: hasCorruptTextLayer(text),
     doclingAvailable: converter !== null && converter.isAvailable(),
   });
 
@@ -102,6 +106,7 @@ export async function readWithRouting(
     data,
     fileName,
     ocr: decision.route === 'docling-ocr',
+    forceOcr: decision.forceOcr,
     // Non-null on every Docling route by construction; the fallback keeps the
     // compiler honest without inventing a branch a caller could reach.
     maxPages: decision.maxPages ?? 1,

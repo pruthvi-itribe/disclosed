@@ -158,6 +158,9 @@ describe('readWithRouting — the escalations that pay', () => {
         // OFF for a text-layer filing: the value here is reading order and
         // column alignment, and OCR buys under 1% of output for 2-15x the time.
         ocr: false,
+        // And NOT forced: the layer is fine, it is the column alignment that
+        // is not.
+        forceOcr: false,
         maxPages: DOCLING_LAYOUT_MAX_PAGES,
       },
     ]);
@@ -181,9 +184,62 @@ describe('readWithRouting — the escalations that pay', () => {
         data: readInput().data,
         fileName: 'JKIL-outcome.pdf',
         ocr: true,
+        // Nothing to force past — this document has no layer at all.
+        forceOcr: false,
         maxPages: DOCLING_OCR_MAX_PAGES,
       },
     ]);
+  });
+
+  it('forces OCR past a text layer that is present and displaced', async () => {
+    // MSWIL seqId 106726228. The layer clears the character count 92x over and
+    // says nothing, so this is the one route that recovers the document —
+    // `docling-layout` would read the same broken layer, and plain `do_ocr`
+    // defers to it.
+    const converter = stubConverter({ outcome: 'ok', text: OCR_MARKDOWN });
+    const displaced =
+      '3XUVXDQW WR 5HJXODWLRQ 30 UHDG ZLWK 6FKHGXOH ,,, (3DUW $) WR WKH 6(%, '.repeat(
+        130,
+      );
+
+    const read = await readWithRouting(
+      readInput({ text: displaced, pages: 3, converter }),
+    );
+
+    expect(read.text).toBe(OCR_MARKDOWN);
+    expect(read.route).toBe('docling-ocr');
+    expect(read.fallbackReason).toBeNull();
+    expect(converter.requests).toEqual([
+      {
+        data: readInput().data,
+        fileName: 'JKIL-outcome.pdf',
+        ocr: true,
+        forceOcr: true,
+        maxPages: DOCLING_OCR_MAX_PAGES,
+      },
+    ]);
+  });
+
+  it('keeps the displaced text when the forced re-read does not happen', async () => {
+    // The optional dependency's rule, unchanged by the escalation: a filing
+    // never gets worse because a service was down. The text stays exactly as
+    // bad as it was and the record says why nothing improved it.
+    const converter = stubConverter({
+      outcome: 'unavailable',
+      message: 'connect ECONNREFUSED',
+    });
+    const displaced =
+      '3XUVXDQW WR 5HJXODWLRQ 30 UHDG ZLWK 6FKHGXOH ,,, (3DUW $) WR WKH 6(%, '.repeat(
+        130,
+      );
+
+    const read = await readWithRouting(
+      readInput({ text: displaced, pages: 3, converter }),
+    );
+
+    expect(read.text).toBe(displaced);
+    expect(read.route).toBe('pdf-parse');
+    expect(read.fallbackReason).toContain('docling-ocr was chosen');
   });
 
   it('sends the bytes it was given rather than re-fetching them', async () => {

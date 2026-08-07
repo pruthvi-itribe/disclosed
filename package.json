@@ -38,6 +38,7 @@
     "basis:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-basis-reach.ts",
     "routing:prove": "ts-node -r tsconfig-paths/register tools/parsing/prove-routing.ts",
     "results:prove": "ts-node -r tsconfig-paths/register tools/results/prove-results-route.ts",
+    "quality:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-text-quality.ts",
     "density:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-text-density.ts",
     "bse:overlap": "ts-node -r tsconfig-paths/register tools/bse/measure-overlap.ts",
     "search:indexes": "ts-node -r tsconfig-paths/register tools/search/build-search-indexes.ts",

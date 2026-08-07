@@ -4,7 +4,9 @@ import {
   DEFAULT_RETRY_BASE_MS,
   DEFAULT_RETRY_MAX_MS,
   EOF_SCAN_BYTES,
+  hasCorruptTextLayer,
   hasUsableTextLayer,
+  MIN_READABLE_WINDOW_FRACTION,
   MIN_TEXT_LAYER_CHARS,
   nextAttemptDelayMs,
   NOT_FOUND_STATUSES,
@@ -178,6 +180,69 @@ describe('hasUsableTextLayer', () => {
     const padded = ' \n'.repeat(MIN_TEXT_LAYER_CHARS * 5);
     expect(hasUsableTextLayer(padded)).toBe(false);
     expect(padded.length).toBeGreaterThan(MIN_TEXT_LAYER_CHARS);
+  });
+});
+
+describe('hasCorruptTextLayer', () => {
+  /**
+   * MSWIL seqId 106726228 as `pdf-parse` rendered it — every code point
+   * displaced by three, so `Pursuant to Regulation` arrives displaced too.
+   */
+  const DISPLACED =
+    '3XUVXDQW WR 5HJXODWLRQ 30 UHDG ZLWK 6FKHGXOH ,,, (3DUW $) WR WKH 6(%, ' +
+    "(/LVWLQJ 2EOLJDWLRQV DQG 'LVFORVXUH 5HTXLUHPHQWV) 5HJXODWLRQV, 2015, ";
+
+  const READABLE =
+    'Pursuant to Regulation 30 read with Schedule III (Part A) to the SEBI ' +
+    '(Listing Obligations and Disclosure Requirements) Regulations, 2015, ';
+
+  const repeatTo = (unit: string, chars: number): string =>
+    unit.repeat(Math.ceil(chars / unit.length)).slice(0, chars);
+
+  it('catches a layer that passes the character count and says nothing', () => {
+    // 9,226 characters is 92x MIN_TEXT_LAYER_CHARS. Quantity was never the
+    // question.
+    const document = repeatTo(DISPLACED, 9_000);
+    expect(hasUsableTextLayer(document)).toBe(true);
+    expect(hasCorruptTextLayer(document)).toBe(true);
+  });
+
+  it('leaves an ordinary filing alone', () => {
+    expect(hasCorruptTextLayer(repeatTo(READABLE, 9_000))).toBe(false);
+  });
+
+  it('does not call a raster scan corrupt', () => {
+    // `no-text-layer` and "the layer is garbage" are different facts with
+    // different remedies, and only one of them needs OCR forced past
+    // something. Both verdicts firing at once would put a filing on two
+    // routes.
+    for (const scan of ['', '   \n ', 'Page 1/6']) {
+      expect(hasUsableTextLayer(scan)).toBe(false);
+      expect(hasCorruptTextLayer(scan)).toBe(false);
+    }
+  });
+
+  it('tolerates the covering letter that fronts every NSE filing', () => {
+    // MSWIL's shape: 500 clean characters, then 8,700 corrupt ones. The
+    // document is still corrupt — a whole-document average would hide that,
+    // and the windowed fraction is what does not.
+    const document = repeatTo(READABLE, 500) + repeatTo(DISPLACED, 8_700);
+    expect(hasCorruptTextLayer(document)).toBe(true);
+  });
+
+  it('puts the bound where the measurement put it', () => {
+    // Literal as well as constant. 0.50 sits in a band — 0.20 to 0.50 — holding
+    // ZERO of 522 measured non-newspaper filings, and a later edit that moves
+    // it without re-measuring should fail here rather than quietly re-route
+    // hundreds of documents to the most expensive parser configuration.
+    expect(MIN_READABLE_WINDOW_FRACTION).toBe(0.5);
+
+    // Two thirds readable is above the bound and must not escalate; one third
+    // is below it and must.
+    const mostlyFine = repeatTo(READABLE, 6_000) + repeatTo(DISPLACED, 3_000);
+    const mostlyNot = repeatTo(READABLE, 3_000) + repeatTo(DISPLACED, 6_000);
+    expect(hasCorruptTextLayer(mostlyFine)).toBe(false);
+    expect(hasCorruptTextLayer(mostlyNot)).toBe(true);
   });
 });
 

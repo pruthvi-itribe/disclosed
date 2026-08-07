@@ -15,6 +15,7 @@ export * from './logic/context-line';
 export * from './logic/attachment';
 export * from './logic/enrichment.types';
 export * from './logic/enrichment-policy';
+export * from './logic/text-quality';
 export * from './logic/enrichment-merge';
 export * from './logic/parse-retry';
 export * from './logic/requeue-policy';

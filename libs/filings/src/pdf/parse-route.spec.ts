@@ -36,8 +36,71 @@ const routeInput = (over: Partial<ParseRouteInput> = {}): ParseRouteInput => ({
   pages: 12,
   text: PLAIN_TEXT,
   hasTextLayer: true,
+  textLayerCorrupt: false,
   doclingAvailable: true,
   ...over,
+});
+
+describe('routeAfterFirstRead — a text layer that is present and wrong', () => {
+  it('re-reads the pixels of a corrupt layer, forcing OCR past it', () => {
+    // MSWIL seqId 106726228: 9,226 non-space characters, 92x the bound
+    // `hasUsableTextLayer` applies, and past the covering letter every one of
+    // them is displaced three code points. `docling-layout` cannot help — it
+    // reads the same broken layer — and `do_ocr=true` alone is a no-op on a
+    // page that already has one, so this is the only route that recovers the
+    // document.
+    const decision = routeAfterFirstRead(
+      routeInput({ textLayerCorrupt: true, pages: 3 }),
+    );
+    expect(decision.route).toBe('docling-ocr');
+    expect(decision.forceOcr).toBe(true);
+    expect(decision.maxPages).toBe(DOCLING_OCR_MAX_PAGES);
+    expect(decision.reason).toContain('corrupt');
+  });
+
+  it('outranks the results escalation, which cannot repair a layer', () => {
+    // A corrupt results filing is the case that would otherwise cost the most:
+    // `docling-layout` runs with do_ocr=false, aligns the columns of the
+    // garbage, and returns it looking authoritative.
+    const decision = routeAfterFirstRead(
+      routeInput({ textLayerCorrupt: true, text: RESULTS_TEXT, pages: 3 }),
+    );
+    expect(decision.route).toBe('docling-ocr');
+    expect(decision.forceOcr).toBe(true);
+  });
+
+  it('is still bounded by the OCR page ceiling', () => {
+    // Forced OCR is the MOST expensive configuration this pipeline has — it
+    // re-reads every page's pixels including the ones that were fine — so the
+    // ceiling that exists for scans is not optional here.
+    const decision = routeAfterFirstRead(
+      routeInput({ textLayerCorrupt: true, pages: DOCLING_OCR_MAX_PAGES + 1 }),
+    );
+    expect(decision.route).toBe('pdf-parse');
+    expect(decision.forceOcr).toBe(false);
+    expect(decision.reason).toContain('corrupt');
+  });
+
+  it('does not force OCR on a document that simply has no layer', () => {
+    // There is nothing to force past. Forcing costs the same but says
+    // something untrue about why the route was taken.
+    const decision = routeAfterFirstRead(
+      routeInput({ hasTextLayer: false, pages: 3 }),
+    );
+    expect(decision.route).toBe('docling-ocr');
+    expect(decision.forceOcr).toBe(false);
+  });
+
+  it('never forces OCR on any route that is not an OCR route', () => {
+    const routes: readonly Partial<ParseRouteInput>[] = [
+      { doclingAvailable: false, textLayerCorrupt: true },
+      { text: RESULTS_TEXT },
+      {},
+    ];
+    for (const over of routes) {
+      expect(routeAfterFirstRead(routeInput(over)).forceOcr).toBe(false);
+    }
+  });
 });
 
 describe('routeAfterFirstRead — the degraded path', () => {
@@ -355,6 +418,7 @@ describe('routeAfterFirstRead — prose about results is not a results statement
       pages: 12,
       text: TRANSCRIPT,
       hasTextLayer: true,
+      textLayerCorrupt: false,
       doclingAvailable: true,
     });
     expect(decision.route).toBe('pdf-parse');
@@ -389,6 +453,7 @@ describe('routeAfterFirstRead — prose about results is not a results statement
       pages: 12,
       text: '',
       hasTextLayer: false,
+      textLayerCorrupt: false,
       doclingAvailable: true,
     });
     expect(decision.route).toBe('docling-ocr');

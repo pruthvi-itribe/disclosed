@@ -144,6 +144,17 @@ export interface ParseRouteInput {
    * to record `no-text-layer`.
    */
   readonly hasTextLayer: boolean;
+  /**
+   * Whether that text layer, having passed the character count, is GARBAGE.
+   *
+   * The second half of a question `hasTextLayer` only half answers. A PDF whose
+   * font carries a broken `ToUnicode` map emits the right number of characters
+   * in the right places and every one of them is wrong, so the quantity test
+   * passes it and the document is stored unreadable. Passed in for the same
+   * reason `hasTextLayer` is — `hasCorruptTextLayer` owns the definition, and
+   * routing on one and recording another is how the two drift apart.
+   */
+  readonly textLayerCorrupt: boolean;
   /** False when no Docling service is configured or it is known to be down. */
   readonly doclingAvailable: boolean;
 }
@@ -172,6 +183,18 @@ export interface ParseRouteDecision {
    * turn a long filing into a hard failure instead of a partial read.
    */
   readonly maxPages: number | null;
+  /**
+   * Whether Docling must DISCARD the document's own text layer and re-read the
+   * pixels.
+   *
+   * SEPARATE FROM THE ROUTE because `docling-ocr` alone does not imply it, and
+   * assuming it did is what left the corrupt-layer class unreadable. Docling
+   * decides a page needs OCR by whether it already has a text layer, not by
+   * whether that layer is any good, so `do_ocr=true` on a document that has one
+   * returns the same garbage. Verified against the running service; see
+   * `docling-client.ts`.
+   */
+  readonly forceOcr: boolean;
 }
 
 /**
@@ -235,7 +258,8 @@ const decide = (
   route: ParseRoute,
   reason: string,
   maxPages: number | null = null,
-): ParseRouteDecision => ({ route, reason, maxPages });
+  forceOcr = false,
+): ParseRouteDecision => ({ route, reason, maxPages, forceOcr });
 
 /**
  * Which parser should read this document, given what the cheap one found.
@@ -281,7 +305,8 @@ export const basisReachFor = (route: ParseRoute): number =>
 export function routeAfterFirstRead(
   input: ParseRouteInput,
 ): ParseRouteDecision {
-  const { pages, text, hasTextLayer, doclingAvailable } = input;
+  const { pages, text, hasTextLayer, textLayerCorrupt, doclingAvailable } =
+    input;
 
   if (!doclingAvailable) {
     return decide(
@@ -302,6 +327,29 @@ export function routeAfterFirstRead(
       'docling-ocr',
       `the document has no text layer, so ${pages} page(s) go to Docling with OCR`,
       DOCLING_OCR_MAX_PAGES,
+    );
+  }
+
+  // BETWEEN THE TWO, and the position is the policy. A document whose layer is
+  // corrupt has text for `looksLikeResultsStatement` to read and none of it
+  // means anything, so leaving this below the results branch would send the
+  // expensive-and-useless route: `docling-layout` runs with `do_ocr=false`,
+  // reads the same broken layer, aligns its columns, and returns garbage that
+  // now looks like a table.
+  if (textLayerCorrupt) {
+    if (pages > DOCLING_OCR_MAX_PAGES) {
+      return decide(
+        'pdf-parse',
+        `the document's text layer is corrupt but it is ${pages} pages, over ` +
+          `the ${DOCLING_OCR_MAX_PAGES}-page ceiling for an OCR read`,
+      );
+    }
+    return decide(
+      'docling-ocr',
+      `the document's text layer is corrupt, so ${pages} page(s) go to ` +
+        'Docling with OCR forced past it',
+      DOCLING_OCR_MAX_PAGES,
+      true,
     );
   }
 

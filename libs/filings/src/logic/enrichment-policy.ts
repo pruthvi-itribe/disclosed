@@ -1,4 +1,5 @@
 import type { UnparseableReason } from './enrichment.types';
+import { readableWindowFraction } from './text-quality';
 
 /**
  * When to give up, when to try again, and how long to wait.
@@ -139,6 +140,53 @@ export function parseFailureReason(body: Uint8Array): UnparseableReason {
 /** True when extracted text is substantial enough to be a text layer. */
 export const hasUsableTextLayer = (text: string): boolean =>
   text.replace(/\s+/g, '').length >= MIN_TEXT_LAYER_CHARS;
+
+/**
+ * Share of a document that must read as text before its layer is trusted.
+ *
+ * 0.50 — more than half the document must be unreadable before the pixels are
+ * re-read — and the number is placed by a measured empty band rather than by
+ * taste. Over 522 live filings from every category EXCEPT newspaper
+ * publications, `readableWindowFraction` puts 507 at 0.95-1.00 and 10 more at
+ * 0.90-0.95. Between 0.20 and 0.50 there are ZERO. The three that sit below are
+ * all, on inspection, newspaper advertisements filed under another category —
+ * ORBTEXP's post-buyback announcement, WESTLIFE's and UGROCAP's general
+ * updates — so at this bound every ordinary filing that changes verdict is
+ * verifiably a newspaper page.
+ *
+ * NEWSPAPER PUBLICATIONS THEMSELVES ARE A CONTINUUM, from 0.05 to 1.00 with no
+ * gap anywhere, because a newspaper page legitimately carries a Marathi AGM
+ * notice and another company's SARFAESI notice beside the results table. So
+ * the position of the bound INSIDE the empty band is a cost decision and is not
+ * pretending otherwise: lower is cheaper, and 0.50 is the cheap end of a band
+ * that runs to 0.80.
+ *
+ * The escalation was verified to pay before the bound was chosen. SUMMITSEC's
+ * newspaper publication (seqId 106727130) reads 0.514 through `pdf-parse` and
+ * 1.000 once OCR is forced past its legacy-font pages, and the re-read carries
+ * MORE of what a results statement needs — 9 basis markers against 7 — not
+ * fewer.
+ */
+export const MIN_READABLE_WINDOW_FRACTION = 0.5;
+
+/**
+ * True when a document HAS a text layer and that layer is not text.
+ *
+ * The half of "is this readable" that a character count cannot answer. MSWIL's
+ * newspaper disclosure (seqId 106726228) carries 9,226 non-space characters,
+ * clearing `MIN_TEXT_LAYER_CHARS` by 92x, and past the covering letter every
+ * one of them is displaced three code points — `3XUVXDQW WR 5HJXODWLRQ` for
+ * "Pursuant to Regulation". `hasUsableTextLayer` says yes, the router sends it
+ * to `pdf-parse`, and the filing is stored unreadable.
+ *
+ * GUARDED BY `hasUsableTextLayer`, deliberately, so the two verdicts can never
+ * both fire. A raster scan has no layer to call corrupt, and `no-text-layer`
+ * and "the layer is garbage" are different facts with different remedies —
+ * only the second one needs OCR forced past something.
+ */
+export const hasCorruptTextLayer = (text: string): boolean =>
+  hasUsableTextLayer(text) &&
+  readableWindowFraction(text) < MIN_READABLE_WINDOW_FRACTION;
 
 export interface BackoffInput {
   /** Attempts already made, including the one that just failed. 1-based. */
