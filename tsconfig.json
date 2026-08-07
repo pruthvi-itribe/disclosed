@@ -15,6 +15,8 @@
     "strict": true,
     "resolveJsonModule": true,
     "paths": {
+      "@app/accounts": ["libs/accounts/src"],
+      "@app/accounts/*": ["libs/accounts/src/*"],
       "@app/common": ["libs/common/src"],
       "@app/common/*": ["libs/common/src/*"],
       "@app/filings": ["libs/filings/src"],

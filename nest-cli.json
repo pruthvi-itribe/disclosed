@@ -54,6 +54,15 @@
         "tsConfigPath": "libs/notify/tsconfig.lib.json"
       }
     },
+    "accounts": {
+      "type": "library",
+      "root": "libs/accounts",
+      "entryFile": "index",
+      "sourceRoot": "libs/accounts/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/accounts/tsconfig.lib.json"
+      }
+    },
     "enrichment": {
       "type": "application",
       "root": "apps/ingest",
