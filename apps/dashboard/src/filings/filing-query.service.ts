@@ -31,6 +31,7 @@ import type {
   PageMeta,
   SummaryView,
 } from './dashboard.types';
+import { rankStages, SEARCH_SORT, textFilter } from '../search/search-rank';
 import type { FilingReadModel } from './filing-read.model';
 
 /** Enrichment states a caller may filter on. */
@@ -95,6 +96,16 @@ const VERIFIED_PREDICATE: readonly Record<string, unknown>[] = [
 export interface RecentQuery {
   readonly limit: number;
   readonly offset: number;
+  /**
+   * Free text: a company name, a ticker, a category, or something a filing
+   * said. Served by the `filing_text` index and ranked by `search-rank.ts`.
+   *
+   * SEPARATE FROM `symbol`, deliberately. `symbol` is an exact identifier the
+   * type-ahead applies when a reader PICKS a company, and it stays exact — a
+   * reader who chose BRITANNIA from the list wants Britannia and not every
+   * filing that mentions biscuits. `q` is what they typed before they chose.
+   */
+  readonly q?: string;
   readonly symbol?: string;
   readonly category?: string;
   /** Enrichment state. `pending` also matches filings never attempted. */
@@ -162,9 +173,35 @@ interface GroupedCount<TKey> {
  * assert "roughly".
  */
 export class FilingQueryService {
+  /**
+   * `resolveSymbols` IS THE PREFIX HALF OF SEARCH, and it is a function rather
+   * than a collaborator so this class keeps depending on nothing but a read
+   * handle and a clock.
+   *
+   * A text index matches WHOLE WORDS. That is exactly right for `solar` finding
+   * `Vikram Solar Limited` and exactly wrong for `brit` finding anything at all
+   * — and `brit` is what a reader has typed for the first four keystrokes of
+   * every search for Britannia. Measured on the live collection: `$search:
+   * 'solar'` returns 29 filings and does NOT include Solarworld Energy
+   * Solutions, whose name tokenises to the single word `solarworld`.
+   *
+   * The company directory answers prefixes because it holds 954 pre-tokenised
+   * companies in memory. So a search that the text index cannot answer is
+   * resolved to SYMBOLS and asked again as `{symbol: {$in: [...]}}`, which the
+   * `symbol_1` index serves exactly. Two round trips, but only on the miss path
+   * — and only when the directory has something to offer, so a genuinely absent
+   * query still costs one.
+   *
+   * It defaults to resolving nothing, which is what keeps this class testable
+   * on its own and what makes the fallback a wiring decision rather than a
+   * hidden behaviour.
+   */
   constructor(
     private readonly filings: FilingReadModel,
     private readonly now: () => Date = () => new Date(),
+    private readonly resolveSymbols: (
+      query: string,
+    ) => Promise<readonly string[]> = async () => [],
   ) {}
 
   /**
@@ -237,16 +274,75 @@ export class FilingQueryService {
    * collection grows underneath a reader who is paging through it.
    */
   async getRecent(query: RecentQuery): Promise<RecentPage> {
-    const filter = this.buildFilter(query);
+    // A QUERY THAT REDUCES TO NO TERM IS NOT NO FILTER. `?q=---` holds nothing
+    // searchable, and dropping it would return the whole collection through a
+    // route the reader believes they narrowed — the same failure the numeric
+    // parsers in `query-params.ts` refuse. It is answered as an empty page,
+    // without a round trip, because there is no question to ask.
+    if (query.q !== undefined && textFilter(query.q) === null) {
+      return emptyPage(query);
+    }
 
+    const page = await this.filterPage(
+      query,
+      this.buildFilter(query),
+      query.q ?? null,
+    );
+    if (query.q === undefined || page.meta.total > 0) return page;
+
+    // Nothing said the reader's word — but they may have typed only part of
+    // one. See `resolveSymbols`.
+    const symbols = await this.resolveSymbols(query.q);
+    if (symbols.length === 0) return page;
+
+    // Asked UNRANKED, and that is the honest ordering rather than a shortcut.
+    // Every row here matched because its company's ticker or name completes
+    // what the reader typed, so all of them are identity matches — the same
+    // tier — and inside a tier this page orders by the clock.
+    return this.filterPage(
+      query,
+      {
+        ...this.buildFilter({ ...query, q: undefined }),
+        symbol: { $in: [...symbols] },
+      },
+      null,
+    );
+  }
+
+  /**
+   * One page for an already-built filter, with the count beside it.
+   *
+   * The two reads are issued together rather than in sequence: they are
+   * independent and this route is polled every four seconds, so serialising
+   * them would make the dashboard's own latency the thing you notice.
+   *
+   * `rankFor` is the text the rows are ranked against, or null for the ordinary
+   * newest-first page. It is a SEPARATE ARGUMENT from `query.q` because the
+   * prefix fallback above runs with a query that still carries `q` and a filter
+   * that carries no `$text` — and asking for `$meta: 'textScore'` without a
+   * `$text` predicate is a MongoServerError, not an empty column.
+   */
+  private async filterPage(
+    query: RecentQuery,
+    filter: Record<string, unknown>,
+    rankFor: string | null,
+  ): Promise<RecentPage> {
     const [docs, total] = await Promise.all([
-      this.filings
-        .find(filter, DISPLAY_PROJECTION)
-        .sort({ disseminatedAt: -1, seqId: -1 })
-        .skip(query.offset)
-        .limit(query.limit)
-        .lean()
-        .exec(),
+      // TWO READ PATHS, and the fork is the whole point rather than an
+      // oversight. Unranked this is the `find` it has always been: same filter,
+      // same sort, same plan, so adding search changed the cost of every OTHER
+      // view on this page by exactly nothing. Ranked, the rows have to come
+      // back in rank order, which is a computed key — and a computed sort key
+      // is an aggregation or it is nothing.
+      rankFor === null
+        ? this.filings
+            .find(filter, DISPLAY_PROJECTION)
+            .sort({ disseminatedAt: -1, seqId: -1 })
+            .skip(query.offset)
+            .limit(query.limit)
+            .lean()
+            .exec()
+        : this.rankedPage(query, filter, rankFor),
       this.filings.countDocuments(filter).exec(),
     ]);
 
@@ -262,6 +358,34 @@ export class FilingQueryService {
         hasMore: query.offset + items.length < total,
       },
     };
+  }
+
+  /**
+   * One page of a ranked search.
+   *
+   * `$sort` IS ADJACENT TO `$skip` AND `$limit` on purpose. MongoDB coalesces
+   * the three into a top-k sort that holds only `offset + limit` documents in
+   * memory — verified in the explain output, which reports `limit: 50` on the
+   * sort stage for a second page of 25. Without that adjacency a query matching
+   * a common word would sort its entire match set in memory and, past 100MB,
+   * fail rather than degrade. `$project` comes after, because the sort keys have
+   * to still exist when the sort runs.
+   */
+  private async rankedPage(
+    query: RecentQuery,
+    filter: Record<string, unknown>,
+    rankFor: string,
+  ): Promise<unknown[]> {
+    return this.filings
+      .aggregate<unknown>([
+        { $match: filter },
+        ...rankStages(rankFor),
+        { $sort: SEARCH_SORT },
+        { $skip: query.offset },
+        { $limit: query.limit },
+        { $project: DISPLAY_PROJECTION },
+      ])
+      .exec();
   }
 
   /**
@@ -522,6 +646,12 @@ export class FilingQueryService {
    */
   private buildFilter(query: RecentQuery): Record<string, unknown> {
     return {
+      // `$text` sits at the TOP LEVEL and never inside the `$or` the refusal and
+      // tier filters build. MongoDB permits at most one `$text` per query and
+      // requires every sibling of one inside an `$or` to be indexed; keeping it
+      // out here means neither rule can be broken by a filter combination
+      // somebody adds later.
+      ...(query.q === undefined ? {} : (textFilter(query.q) ?? {})),
       ...(query.symbol === undefined
         ? {}
         : { symbol: query.symbol.toUpperCase() }),
@@ -646,6 +776,24 @@ export class FilingQueryService {
     };
   }
 }
+
+/**
+ * A page of nothing, shaped like a page of something.
+ *
+ * Built rather than returned as a constant so `limit` and `offset` are the ones
+ * the caller asked for: a client that reads `meta.limit` back to decide its next
+ * request must not be handed a number nobody sent.
+ */
+const emptyPage = (query: RecentQuery): RecentPage => ({
+  items: [],
+  meta: {
+    total: 0,
+    limit: query.limit,
+    offset: query.offset,
+    returned: 0,
+    hasMore: false,
+  },
+});
 
 /**
  * The Mongo clause for a category group.
