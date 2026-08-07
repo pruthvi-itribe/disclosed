@@ -753,6 +753,7 @@ describe('EnrichmentWorker — containment', () => {
       retried: 0,
       failed: 0,
       claimed_lines: 0,
+      claimLinesMuted: 0,
       claimsDiscarded: 0,
       resultsLines: 0,
       alerted: 0,
@@ -1162,6 +1163,7 @@ describe('EnrichmentWorker — saying that it is alive', () => {
       retried: 1,
       failed: 0,
       claimed_lines: 2,
+      claimLinesMuted: 1,
       claimsDiscarded: 5,
       resultsLines: 3,
       alerted: 2,
@@ -1176,6 +1178,7 @@ describe('EnrichmentWorker — saying that it is alive', () => {
     expect(line).toContain('failed 0');
     expect(line).toContain('claim-lines 2');
     expect(line).toContain('5 claim(s) discarded');
+    expect(line).toContain('1 muted off the wire');
     expect(line).toContain('results-lines 3');
     expect(line).toContain('alerted 2');
   });
@@ -2069,5 +2072,137 @@ describe('EnrichmentWorker — financial results', () => {
     );
     await worker.tick(NOW);
     expect(telegram.sent).toHaveLength(0);
+  });
+});
+
+/**
+ * The wire mute: which verified claims reach Telegram.
+ *
+ * THE INVARIANT UNDER TEST IS THAT MUTING IS PRESENTATION-ONLY. Every case
+ * below asserts BOTH halves — what was stored and what was sent — because a
+ * mute that quietly stopped storing a claim would pass any test that only
+ * looked at the message, and would silently delete the record the feed serves.
+ */
+const ESOP_SENTENCE =
+  'The Company granted 1,02,726 employee stock options under the ESOP Plan 2021.';
+
+const ESOP_CLAIM = {
+  span: ESOP_SENTENCE,
+  text: 'granted 1,02,726 employee stock options under the ESOP Plan 2021',
+  kind: 'operational' as const,
+};
+
+/** The press release, with an ESOP paragraph the way a real one carries one. */
+const RELEASE_WITH_ESOP = [PRESS_RELEASE, ESOP_SENTENCE].join('\n');
+
+/** An order intimation long enough to be read for claims as well as an amount. */
+const ORDER_WITH_ESOP = [ORDER_DOCUMENT, ESOP_SENTENCE, 'x'.repeat(1_600)].join(
+  '\n',
+);
+
+describe('EnrichmentWorker — muting the boilerplate claims', () => {
+  it('stores every claim but sends only the ones worth a wire line', async () => {
+    const extractor = new StubExtractor({
+      outcome: 'ok',
+      claims: [TRUE_CLAIM, ESOP_CLAIM],
+    });
+    const { worker, repository, telegram } = claimHarness(extractor, {
+      text: RELEASE_WITH_ESOP,
+    });
+
+    await worker.tick(NOW);
+
+    // STORED: both claims, and the stored line carries both. This is what the
+    // feed reads, and the mute must not touch it.
+    const stored = onlyRecorded(repository);
+    expect(stored.claims).toHaveLength(2);
+    expect(stored.claimLine).toContain('JOINS THE MICROSOFT');
+    expect(stored.claimLine).toContain('EMPLOYEE STOCK OPTIONS');
+
+    // SENT: only the claim a reader wants.
+    expect(telegram.sent).toHaveLength(1);
+    expect(telegram.sent[0]).toContain('JOINS THE MICROSOFT');
+    expect(telegram.sent[0]).not.toContain('EMPLOYEE STOCK OPTIONS');
+  });
+
+  it('keeps the muted claim’s span, so the record stays reviewable', async () => {
+    const extractor = new StubExtractor({
+      outcome: 'ok',
+      claims: [ESOP_CLAIM],
+    });
+    const { worker, repository } = claimHarness(extractor, {
+      text: RELEASE_WITH_ESOP,
+    });
+
+    await worker.tick(NOW);
+
+    const stored = onlyRecorded(repository);
+    expect(stored.claims).toHaveLength(1);
+    expect(RELEASE_WITH_ESOP).toContain(stored.claims[0].span);
+    expect(stored.claimRefusalReason).toBeNull();
+  });
+
+  describe('when EVERY claim is muted', () => {
+    it('sends no follow-up, and still stores the claim and its line', async () => {
+      // THE EDGE CASE. The filing does not vanish: the poller already alerted on
+      // it at dissemination with the exchange's own summary, and this lane only
+      // ever adds a second message when it has something verified to add. An
+      // ESOP grant is not that.
+      const extractor = new StubExtractor({
+        outcome: 'ok',
+        claims: [ESOP_CLAIM],
+      });
+      const { worker, repository, telegram } = claimHarness(extractor, {
+        text: RELEASE_WITH_ESOP,
+      });
+
+      const result = await worker.tick(NOW);
+
+      expect(telegram.sent).toHaveLength(0);
+      expect(result.alerted).toBe(0);
+      // The STORED line still exists, so `claimed_lines` still counts it. The
+      // two counters answer different questions and must not collapse.
+      expect(result.claimed_lines).toBe(1);
+      expect(result.claimLinesMuted).toBe(1);
+      expect(onlyRecorded(repository).claimLine).not.toBeNull();
+    });
+
+    it('STILL alerts when the document also yielded a verified amount', async () => {
+      // The claim line is one of three independent reasons to send. Muting it
+      // must not take the other two with it, or a mute on the noisiest claim
+      // would suppress an order worth ₹18.54 crore.
+      const extractor = new StubExtractor({
+        outcome: 'ok',
+        claims: [ESOP_CLAIM],
+      });
+      const { worker, telegram } = claimHarness(extractor, {
+        category: 'Bagging/Receiving of orders/contracts',
+        text: ORDER_WITH_ESOP,
+      });
+
+      const result = await worker.tick(NOW);
+
+      expect(result.alerted).toBe(1);
+      expect(telegram.sent).toHaveLength(1);
+      expect(telegram.sent[0]).toContain('RAILTEL BAGS ORDER ₹18.54 cr');
+      expect(telegram.sent[0]).not.toContain('EMPLOYEE STOCK OPTIONS');
+      expect(result.claimLinesMuted).toBe(1);
+    });
+  });
+
+  it('counts nothing muted when every claim reaches the wire', async () => {
+    const extractor = new StubExtractor({
+      outcome: 'ok',
+      claims: [TRUE_CLAIM],
+    });
+    const { worker } = claimHarness(extractor);
+
+    expect((await worker.tick(NOW)).claimLinesMuted).toBe(0);
+  });
+
+  it('counts nothing muted when there was no claim line to begin with', async () => {
+    // A filing that produced no claims has not had one taken away.
+    const { worker } = claimHarness(new StubExtractor());
+    expect((await worker.tick(NOW)).claimLinesMuted).toBe(0);
   });
 });

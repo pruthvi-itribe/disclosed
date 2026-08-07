@@ -42,7 +42,8 @@
     "bse:overlap": "ts-node -r tsconfig-paths/register tools/bse/measure-overlap.ts",
     "search:indexes": "ts-node -r tsconfig-paths/register tools/search/build-search-indexes.ts",
     "test:e2e": "playwright test",
-    "claims:topics": "ts-node -r tsconfig-paths/register tools/claims/classify-topics.ts"
+    "claims:topics": "ts-node -r tsconfig-paths/register tools/claims/classify-topics.ts",
+    "claims:mute": "ts-node -r tsconfig-paths/register tools/claims/measure-topic-mute.ts"
   },
   "keywords": [],
   "author": "",

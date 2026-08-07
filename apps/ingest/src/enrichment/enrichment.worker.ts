@@ -8,6 +8,7 @@ import {
   composeClaimLine,
   composeOutcome,
   composeResultsLine,
+  composeWireClaimLine,
   decideAttachment,
   decideParseFailure,
   describeParseRetry,
@@ -90,6 +91,17 @@ export interface EnrichmentTickResult {
   readonly failed: number;
   /** Documents that produced at least one verified claim. */
   readonly claimed_lines: number;
+  /**
+   * Documents whose stored claim line said nothing the wire would carry.
+   *
+   * SEPARATE FROM `claimed_lines`, which counts what was STORED. The two
+   * disagree exactly when every claim on a filing was boilerplate, and that
+   * disagreement is the whole effect of the mute — collapsing them into one
+   * counter would make "the extractor found nothing" and "everything it found
+   * was an ESOP grant" indistinguishable in the logs, which is how a mute that
+   * had started eating real claims would stay invisible.
+   */
+  readonly claimLinesMuted: number;
   /** Proposed claims the verbatim gate refused. */
   readonly claimsDiscarded: number;
   /** Documents that produced a verified results line. */
@@ -113,7 +125,8 @@ export const describeTick = (result: EnrichmentTickResult): string =>
   `(amount refused on ${result.refused}), unparseable ${result.unparseable}, ` +
   `parse-retried ${result.parseRetried}, retried ${result.retried}, ` +
   `failed ${result.failed}, claim-lines ${result.claimed_lines} ` +
-  `(${result.claimsDiscarded} claim(s) discarded), ` +
+  `(${result.claimsDiscarded} claim(s) discarded, ` +
+  `${result.claimLinesMuted} muted off the wire), ` +
   `results-lines ${result.resultsLines}, alerted ${result.alerted}`;
 
 const EMPTY_TICK: EnrichmentTickResult = {
@@ -125,6 +138,7 @@ const EMPTY_TICK: EnrichmentTickResult = {
   retried: 0,
   failed: 0,
   claimed_lines: 0,
+  claimLinesMuted: 0,
   claimsDiscarded: 0,
   resultsLines: 0,
   alerted: 0,
@@ -719,9 +733,18 @@ export class EnrichmentWorker {
     // stored cannot be explained the next morning.
     await this.repository.recordEnrichment(filing.seqId, enrichment);
 
+    // COMPOSED A SECOND TIME, FROM THE SAME CLAIMS, AND NEVER STORED. The line
+    // above went to the database and is what the feed shows; this one is what
+    // Telegram gets, and it drops the claims `claim-mute.ts` recognises as
+    // administrative boilerplate. Two calls rather than one field, because the
+    // moment the wire's line is stored anywhere it stops being a presentation
+    // decision and starts deleting the record.
+    const wireClaimLine = composeWireClaimLine(filing.symbol, claims.claims);
+
     const alerted = await this.announce(
       filing,
       enrichment,
+      wireClaimLine,
       verdict.headlineForm,
       now,
     );
@@ -729,6 +752,8 @@ export class EnrichmentWorker {
       enriched: 1,
       refused: verdict.amountRupees === null ? 1 : 0,
       claimed_lines: enrichment.claimLine === null ? 0 : 1,
+      claimLinesMuted:
+        enrichment.claimLine !== null && wireClaimLine === null ? 1 : 0,
       claimsDiscarded: claims.discards.length,
       resultsLines: enrichment.resultsLine === null ? 0 : 1,
       alerted,
@@ -997,23 +1022,31 @@ export class EnrichmentWorker {
    * outage must never turn a successful enrichment into a failed one, because
    * the verdict is already stored and re-running it would spend another NSE
    * request to reach the same answer.
+   *
+   * `wireClaimLine` IS THE MUTED LINE, not the stored one, and the distinction
+   * is the whole of this module's part in the mute. The stored line still exists
+   * on `enrichment` and is still what the feed serves; nothing below may read it
+   * except to notice that it was muted.
    */
   private async announce(
     filing: Filing,
     enrichment: FilingEnrichment,
+    wireClaimLine: string | null,
     form: string,
     now: Date,
   ): Promise<number> {
-    // TWO INDEPENDENT REASONS TO SEND, and the second is the point of the claim
-    // work: most of what a filings desk wants to read carries no figure at all,
-    // so a follow-up gated on the amount alone stays silent on exactly the
-    // filings this pipeline was built to stop missing.
+    // THREE INDEPENDENT REASONS TO SEND, and muting takes away exactly one of
+    // them. A filing whose every claim was boilerplate but which also carries a
+    // verified amount or a results table still sends — with the claim row gone
+    // and the rest intact — because the claim line was never the reason those
+    // two are worth a message.
     const headline = form === 'enriched' ? enrichment.headline : null;
     if (
       headline === null &&
-      enrichment.claimLine === null &&
+      wireClaimLine === null &&
       enrichment.resultsLine === null
     ) {
+      this.noteMutedLine(filing, enrichment, now);
       return 0;
     }
     if (!passesContentGates(filing, this.watchlist)) return 0;
@@ -1023,7 +1056,7 @@ export class EnrichmentWorker {
       await this.telegram.send(
         formatInsightAlert(filing, {
           headline,
-          claimLine: enrichment.claimLine,
+          claimLine: wireClaimLine,
           resultsLine: enrichment.resultsLine,
           contextLine: enrichment.contextLine,
           evidence: enrichment.amountEvidence,
@@ -1037,6 +1070,41 @@ export class EnrichmentWorker {
       );
       return 0;
     }
+  }
+
+  /**
+   * Says out loud when the mute is the only reason a filing sent nothing.
+   *
+   * A MUTE NOBODY CAN SEE IS A MUTE NOBODY CAN CHECK. Measured on the live
+   * collection, 43 of 1,014 claim-bearing filings — 4.2% — lose their follow-up
+   * this way, so the volume is a handful a day and each one names the filing and
+   * quotes the line that was suppressed. If this rule ever starts eating real
+   * claims, the evidence is in the log rather than in a reader's memory of an
+   * alert that never came.
+   *
+   * IT RE-CHECKS THE OTHER GATES FIRST, and that is the point of the method
+   * rather than an inline log. A routine category, an unwatched symbol or a
+   * backfilled filing from last week would not have sent a message whatever the
+   * mute did, and reporting those as suppressed would bury the real ones under
+   * a backfill's worth of noise. The gates are pure and only run on this path.
+   *
+   * Called only from the branch where the wire line is already null, so the one
+   * thing left to establish is that there WAS a stored line to lose — a filing
+   * that produced no claims at all has not been muted, it has been quiet.
+   */
+  private noteMutedLine(
+    filing: Filing,
+    enrichment: FilingEnrichment,
+    now: Date,
+  ): void {
+    if (enrichment.claimLine === null) return;
+    if (!passesContentGates(filing, this.watchlist)) return;
+    if (!isWithinAlertWindow(filing, now, this.options.alertWindowMs)) return;
+
+    this.logger.log(
+      `seqId ${filing.seqId} (${filing.symbol}): every claim was boilerplate, ` +
+        `so no follow-up was sent. Stored line: ${enrichment.claimLine}`,
+    );
   }
 
   /**
@@ -1325,6 +1393,7 @@ const merge = (
   retried: tally.retried + delta.retried,
   failed: tally.failed + delta.failed,
   claimed_lines: tally.claimed_lines + delta.claimed_lines,
+  claimLinesMuted: tally.claimLinesMuted + delta.claimLinesMuted,
   claimsDiscarded: tally.claimsDiscarded + delta.claimsDiscarded,
   resultsLines: tally.resultsLines + delta.resultsLines,
   alerted: tally.alerted + delta.alerted,
