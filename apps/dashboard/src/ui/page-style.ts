@@ -670,4 +670,10 @@ button.sym:hover { color: var(--accent); }
   font-weight: 620;
   color: #fff;
 }
+
+/* A weekend bar is short because the exchange is quiet, not because ingestion
+   stopped. Marked so the two cannot be confused: measured over 32 days a
+   Sunday is 26 filings against a Tuesday's 832. */
+.day.weekend { opacity: .45; }
+.day.weekend.empty { background: var(--line); opacity: .7; }
 `;

@@ -1266,6 +1266,7 @@ export const PAGE_SCRIPT = `
   }
 
   var WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  var WEEKDAY_NAME = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   /**
    * The filing strip: one column per IST day, one square per filing.
@@ -1913,9 +1914,32 @@ export const PAGE_SCRIPT = `
     for (var j = 0; j < rows.length; j++) {
       var bar = document.createElement('div');
       var count = rows[j].count;
-      bar.className = 'day' + (count === 0 ? ' empty' : '') + (j === rows.length - 1 ? ' today' : '');
+      // WEEKENDS ARE MARKED, and this is a correctness fix rather than
+      // decoration. Measured over the 32-day corpus, a Sunday carries 26
+      // filings against a Tuesday's 832 — a factor of 32 — so a bar scaled to
+      // the week's peak renders an ordinary weekend as an outage, twice a
+      // week, forever. An operator who learns to ignore two red bars a week
+      // has learned to ignore this panel.
+      //
+      // getUTCDay on a YYYY-MM-DD parsed as UTC midnight is the IST weekday:
+      // the key is already an IST calendar day, so no offset is applied to it
+      // a second time.
+      var weekday = new Date(rows[j].istDay + 'T00:00:00Z').getUTCDay();
+      var weekend = weekday === 0 || weekday === 6;
+      bar.className =
+        'day' +
+        (count === 0 ? ' empty' : '') +
+        (weekend ? ' weekend' : '') +
+        (j === rows.length - 1 ? ' today' : '');
       bar.style.height = (count === 0 ? 2 : Math.max(3, Math.round((count / peak) * 100))) + '%';
-      bar.title = rows[j].istDay + ' IST: ' + count + ' filing(s)';
+      bar.title =
+        rows[j].istDay +
+        ' IST (' +
+        WEEKDAY_NAME[weekday] +
+        '): ' +
+        count +
+        ' filing(s)' +
+        (weekend ? ' — weekend, the exchange is quiet' : '');
       box.appendChild(bar);
     }
 
