@@ -43,8 +43,29 @@ import { LEGAL_BLOCK_PATTERNS } from './legal-block';
  * line being full is never reported as a claim that failed verification.
  */
 
-/** The most claims one wire line may carry. */
-export const MAX_CLAIMS_PER_FILING = 3;
+/**
+ * The most claims verification will keep for one filing.
+ *
+ * NOT THE SAME QUANTITY AS THE WIRE LINE'S, and conflating the two cost us most
+ * of what the documents were saying. `MAX_CLAIMS_ON_WIRE` is a presentation
+ * bound — a Telegram line a human reads in one glance — and it was being used
+ * as the EXTRACTION bound as well, which meant the prompt asked a 40-slide
+ * investor deck and a one-page notice for the same three facts.
+ *
+ * The live collection shows exactly what that cost: 803 of 1,096 filings
+ * proposed precisely three claims, and 76 of 103 investor presentations
+ * finished on three. Those are not documents that ran out of things to say;
+ * they are documents that hit the number in the prompt. LUPIN filed a deck and
+ * a press release covering the same quarter and we published one line from the
+ * deck.
+ *
+ * Twelve, and the number is a ceiling on a tail rather than a target. It is
+ * four times the wire line so a dense deck is read for everything it states,
+ * and it is small enough that a model looping on near-duplicate sentences is
+ * still bounded. What is stored is what the document supports; what is
+ * published is `MAX_CLAIMS_ON_WIRE` of it.
+ */
+export const MAX_CLAIMS_EXTRACTED = 12;
 
 /** The longest a single claim may be. */
 export const MAX_CLAIM_CHARS = 120;
@@ -241,7 +262,7 @@ const isDiscard = (
  * expansion claim off the end of the line.
  */
 export function verifyClaims(input: ClaimVerificationInput): ClaimVerification {
-  const limit = input.maxClaims ?? MAX_CLAIMS_PER_FILING;
+  const limit = input.maxClaims ?? MAX_CLAIMS_EXTRACTED;
   const accepted: VerifiedClaim[] = [];
   const discards: ClaimDiscard[] = [];
   const seen = new Set<string>();

@@ -27,6 +27,23 @@ import type { VerifiedClaim } from './claim.types';
 export const CLAIM_SEPARATOR = ' || ';
 
 /**
+ * The most claims one wire line may carry.
+ *
+ * THE PRESENTATION BOUND, and the only one of the two that belongs here.
+ * `verifyClaims` now keeps up to `MAX_CLAIMS_EXTRACTED` so a dense document is
+ * read for everything it states; this is what a reader sees of that in a
+ * Telegram message they scan in one glance.
+ *
+ * IT MUST BE AN EXPLICIT COUNT, not a consequence of the character bound below.
+ * While extraction and presentation shared a limit of three, the character
+ * bound could never fire and was documented as a backstop. Handing the composer
+ * twelve claims without this line would make that backstop the thing silently
+ * deciding what a reader sees — a limit nobody chose, expressed in characters,
+ * on a decision that is about attention.
+ */
+export const MAX_CLAIMS_ON_WIRE = 3;
+
+/**
  * The longest line that may be composed.
  *
  * A BACKSTOP RATHER THAN A WORKING CONSTRAINT, and sized so it stays one. Three
@@ -68,6 +85,7 @@ export function composeClaimLine(
   let length = head.length;
 
   for (const claim of claims) {
+    if (parts.length === MAX_CLAIMS_ON_WIRE) break;
     const text = wireCase(claim.text);
     if (text.length === 0) continue;
     const cost =

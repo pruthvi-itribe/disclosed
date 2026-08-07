@@ -1,7 +1,8 @@
 import type { ClaimDiscardReason, ProposedClaim } from './claim.types';
+import { MAX_CLAIMS_ON_WIRE } from './claim-line';
 import {
   MAX_CLAIM_CHARS,
-  MAX_CLAIMS_PER_FILING,
+  MAX_CLAIMS_EXTRACTED,
   MAX_DISCARDED_CLAIM_CHARS,
   verifyClaims,
 } from './claim-verify';
@@ -345,17 +346,39 @@ describe('verifyClaims — the bookkeeping', () => {
     expect(claims).toHaveLength(1);
   });
 
-  it('caps the line and records what it dropped', () => {
+  it('caps what it keeps and records what it dropped', () => {
     // Distinct texts with NO digits in them: a numeric suffix would be a
     // figure the span does not carry, and every claim would be refused for that
     // instead of reaching the limit.
-    const four = ['alpha', 'beta', 'gamma', 'delta'].map((word) =>
+    const words = Array.from(
+      { length: MAX_CLAIMS_EXTRACTED + 1 },
+      (_unused, index) => `variant${'x'.repeat(index + 1)}`,
+    );
+    const proposals = words.map((word) =>
       claim({ text: `joins the Microsoft Intelligent Security ${word}` }),
     );
-    const { claims, discards } = verify(four);
+    const { claims, discards } = verify(proposals);
 
-    expect(claims).toHaveLength(MAX_CLAIMS_PER_FILING);
+    expect(claims).toHaveLength(MAX_CLAIMS_EXTRACTED);
     expect(discards.map((row) => row.reason)).toEqual(['over-limit']);
+  });
+
+  it('keeps far more than one wire line can carry', () => {
+    // THE POINT OF THE SPLIT. 803 of 1,096 live filings proposed exactly three
+    // claims because three is what the prompt asked for, and 76 of 103
+    // investor presentations stopped there — the documents had more to say and
+    // nobody asked. Verification stores what the document supports; the wire
+    // line takes its own, much smaller, share.
+    expect(MAX_CLAIMS_EXTRACTED).toBeGreaterThan(MAX_CLAIMS_ON_WIRE);
+
+    const six = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta'].map(
+      (word) =>
+        claim({ text: `joins the Microsoft Intelligent Security ${word}` }),
+    );
+    const { claims, discards } = verify(six);
+
+    expect(claims).toHaveLength(6);
+    expect(discards).toHaveLength(0);
   });
 
   it('leads with guidance when the document offered some', () => {

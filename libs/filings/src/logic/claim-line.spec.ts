@@ -3,8 +3,9 @@ import {
   CLAIM_SEPARATOR,
   composeClaimLine,
   MAX_CLAIM_LINE_CHARS,
+  MAX_CLAIMS_ON_WIRE,
 } from './claim-line';
-import { MAX_CLAIM_CHARS } from './claim-verify';
+import { MAX_CLAIM_CHARS, MAX_CLAIMS_EXTRACTED } from './claim-verify';
 
 const claim = (text: string): VerifiedClaim => ({
   text,
@@ -35,6 +36,22 @@ describe('composeClaimLine', () => {
 
   it('is two pipes with a space either side', () => {
     expect(CLAIM_SEPARATOR).toBe(' || ');
+  });
+
+  it('carries at most MAX_CLAIMS_ON_WIRE, however many were verified', () => {
+    // THE GUARD ON THE EXTRACTION SPLIT. Verification now keeps up to
+    // MAX_CLAIMS_EXTRACTED so a 40-slide deck is read for everything it says,
+    // and the wire must not silently inherit that. Without an explicit count
+    // here the 400-character backstop — documented as a backstop precisely
+    // because three short claims could never reach it — quietly becomes the
+    // thing deciding what a reader sees.
+    const many = Array.from({ length: MAX_CLAIMS_EXTRACTED }, (_u, i) =>
+      claim(`fact number ${i + 1}`),
+    );
+    const line = composeClaimLine('X', many) ?? '';
+
+    expect(line.split(CLAIM_SEPARATOR)).toHaveLength(MAX_CLAIMS_ON_WIRE);
+    expect(line.length).toBeLessThan(MAX_CLAIM_LINE_CHARS);
   });
 
   it('collapses a line break inside a claim', () => {

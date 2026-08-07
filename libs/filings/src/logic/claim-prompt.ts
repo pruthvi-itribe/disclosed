@@ -1,5 +1,5 @@
 import { CLAIM_KINDS, type ClaimKind, type ProposedClaim } from './claim.types';
-import { MAX_CLAIM_CHARS, MAX_CLAIMS_PER_FILING } from './claim-verify';
+import { MAX_CLAIM_CHARS, MAX_CLAIMS_EXTRACTED } from './claim-verify';
 import { MAX_SPAN_CHARS } from './claim-span';
 
 /**
@@ -77,7 +77,7 @@ Rules:
 5. Never write a claim about an individual, or about anyone being appointed, resigning, or ceasing to hold office.
 6. Never write a claim about litigation, a regulator's enforcement action, insolvency, or fraud.
 7. Skip anything conditional or unconfirmed: a letter of intent, an in-principle approval, a memorandum of understanding, a media report, anything "subject to" a further step.
-8. Return at most ${MAX_CLAIMS_PER_FILING} claims, best first. Keep each "text" under ${MAX_CLAIM_CHARS} characters and each "span" under ${MAX_SPAN_CHARS}.
+8. Return up to ${MAX_CLAIMS_EXTRACTED} claims, best first. Return as many as the document genuinely supports: a one-page notice may hold none and a results presentation may hold ten, and a long document is not a reason to stop at three. Do not pad, do not split one fact across two entries, and do not restate the same fact in different words. Keep each "text" under ${MAX_CLAIM_CHARS} characters and each "span" under ${MAX_SPAN_CHARS}.
 
 Most filings contain nothing worth a wire line. Returning an empty list is the normal and correct answer, not a failure. A claim you cannot quote exactly is a claim you must not return.
 
