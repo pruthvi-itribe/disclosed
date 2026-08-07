@@ -2,11 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { describeError, stackOf } from '@app/common';
 import {
   basisReachFor,
-  categoryGroupFor,
   claimEligibility,
   classifyFetchFailure,
   composeClaimLine,
-  composeOutcome,
   composeResultsLine,
   composeWireClaimLine,
   decideAttachment,
@@ -43,10 +41,21 @@ import {
   type RoutedRead,
   type UnparseableReason,
   type ZipReader,
-  type ZipTextOk,
 } from '@app/filings';
 import { formatInsightAlert, type TelegramService } from '@app/notify';
 import type { FilingContextService } from './filing-context.service';
+import {
+  blankVerdict,
+  describeZipSource,
+  outcomeFieldsFor,
+} from './enrichment-record';
+import {
+  describeTick,
+  EMPTY_TICK,
+  HEARTBEAT_MS,
+  merge,
+  type EnrichmentTickResult,
+} from './enrichment-tick';
 
 export interface EnrichmentOptions {
   /** How long to wait after a tick that found nothing to do. */
@@ -74,75 +83,6 @@ export interface EnrichmentOptions {
 }
 
 /** What one tick did, counted by outcome. */
-export interface EnrichmentTickResult {
-  readonly claimed: number;
-  readonly enriched: number;
-  /** Documents read successfully whose amount the extractor refused. */
-  readonly refused: number;
-  readonly unparseable: number;
-  /**
-   * Parse failures put back to be looked at again, because the filing is young
-   * enough that NSE's own upload could still be the explanation.
-   */
-  readonly parseRetried: number;
-  /** Transient failures put back with a backoff. */
-  readonly retried: number;
-  /** Transient failures that exhausted the attempt budget. */
-  readonly failed: number;
-  /** Documents that produced at least one verified claim. */
-  readonly claimed_lines: number;
-  /**
-   * Documents whose stored claim line said nothing the wire would carry.
-   *
-   * SEPARATE FROM `claimed_lines`, which counts what was STORED. The two
-   * disagree exactly when every claim on a filing was boilerplate, and that
-   * disagreement is the whole effect of the mute — collapsing them into one
-   * counter would make "the extractor found nothing" and "everything it found
-   * was an ESOP grant" indistinguishable in the logs, which is how a mute that
-   * had started eating real claims would stay invisible.
-   */
-  readonly claimLinesMuted: number;
-  /** Proposed claims the verbatim gate refused. */
-  readonly claimsDiscarded: number;
-  /** Documents that produced a verified results line. */
-  readonly resultsLines: number;
-  /** Follow-up messages ATTEMPTED. Not proof of delivery. */
-  readonly alerted: number;
-}
-
-/**
- * How long the loop may sit idle before it says so.
- *
- * Five minutes: frequent enough that a dead lane is visible within one coffee
- * break, rare enough that a quiet overnight costs a dozen log lines and a dozen
- * indexed counts.
- */
-export const HEARTBEAT_MS = 300_000;
-
-/** One tick's outcome, in the order an operator reads it. */
-export const describeTick = (result: EnrichmentTickResult): string =>
-  `Enrichment tick: claimed ${result.claimed}, enriched ${result.enriched} ` +
-  `(amount refused on ${result.refused}), unparseable ${result.unparseable}, ` +
-  `parse-retried ${result.parseRetried}, retried ${result.retried}, ` +
-  `failed ${result.failed}, claim-lines ${result.claimed_lines} ` +
-  `(${result.claimsDiscarded} claim(s) discarded, ` +
-  `${result.claimLinesMuted} muted off the wire), ` +
-  `results-lines ${result.resultsLines}, alerted ${result.alerted}`;
-
-const EMPTY_TICK: EnrichmentTickResult = {
-  claimed: 0,
-  enriched: 0,
-  refused: 0,
-  unparseable: 0,
-  parseRetried: 0,
-  retried: 0,
-  failed: 0,
-  claimed_lines: 0,
-  claimLinesMuted: 0,
-  claimsDiscarded: 0,
-  resultsLines: 0,
-  alerted: 0,
-};
 
 /**
  * Reads filings' source PDFs in the background and records what they say.
@@ -1268,133 +1208,3 @@ export class EnrichmentWorker {
     this.wake = null;
   }
 }
-
-/**
- * Adds one document's outcome to the running tally.
- *
- * Takes a COMPLETE result rather than a partial: every path through `process`
- * spreads `EMPTY_TICK` before it returns, so a per-field fallback here would be
- * seven branches no input can reach — and an unreachable branch is a claim
- * nobody can check.
- */
-/**
- * What the filing SAYS, on every write path without exception.
- *
- * DERIVED FROM FIELDS THE POLLER ALWAYS WROTE — `symbol`, `category` and
- * `summary` — so it costs no fetch, no model call and no branch, and it is
- * therefore present on a filing whose PDF is a raster scan, whose attachment URL
- * is NSE's `"-"` sentinel and whose extractor returned a 429. Those three
- * populations produced a completely blank row before the coverage work, and a
- * blank row is what hid quarterly results for weeks.
- *
- * Spread into `blankVerdict` as well as into the enriched record, which is the
- * whole point: the states that mean "this document could not be read" are
- * exactly the ones that most need to still say what the filing was.
- */
-const outcomeFieldsFor = (
-  filing: Filing,
-): Pick<FilingEnrichment, 'outcome' | 'outcomeSource' | 'categoryGroup'> => {
-  const outcome = composeOutcome(filing);
-  return {
-    outcome: outcome.text,
-    outcomeSource: outcome.source,
-    categoryGroup: categoryGroupFor(filing.category),
-  };
-};
-
-/**
- * An enrichment carrying no verdict: the counters, the clock, and eighteen
- * nulls.
- *
- * Exists because `recordEnrichment` `$set`s the WHOLE block rather than the
- * fields that changed, which is what stops a filing ending up with an amount
- * from one attempt and a refusal reason from another. Three call sites need
- * that same wall of nulls, and three hand-written copies is three chances for
- * one of them to forget a field and silently carry a stale value forward.
- */
-const blankVerdict = (
-  filing: Filing,
-  attempts: number,
-  parseAttempts: number,
-  now: Date,
-): Omit<FilingEnrichment, 'state'> => ({
-  attempts,
-  parseAttempts,
-  attemptedAt: now,
-  nextAttemptAt: null,
-  unparseableReason: null,
-  lastError: null,
-  documentChars: null,
-  documentSource: null,
-  parseRoute: null,
-  parseFallbackReason: null,
-  coverageSkip: null,
-  ...outcomeFieldsFor(filing),
-  amountRupees: null,
-  amountEvidence: null,
-  amountAnchor: null,
-  amountLabel: null,
-  amountRefusalReason: null,
-  amountRefusalDetail: null,
-  counterparty: null,
-  counterpartyEvidence: null,
-  counterpartyRefusalReason: null,
-  claims: [],
-  claimLine: null,
-  claimDiscards: [],
-  claimsProposed: null,
-  claimRefusalReason: null,
-  claimRefusalDetail: null,
-  results: null,
-  resultsLine: null,
-  resultsDiscards: [],
-  resultsProposed: null,
-  resultsRefusalReason: null,
-  resultsRefusalDetail: null,
-  documentSummary: null,
-  documentSummaryRefusalReason: null,
-  headline: null,
-  contextLine: null,
-});
-
-/**
- * The one-line provenance a ZIP-sourced document carries.
- *
- * Names every PDF entry with its own character count, because the text stored
- * on the filing is the concatenation of several documents and a reviewer
- * reading a span needs to know which of them it came out of. The ignored names
- * are listed too: an archive whose MP3 was skipped and one that contained only
- * the PDF are different facts about the filing.
- */
-export const describeZipSource = (opened: ZipTextOk): string => {
-  const members = opened.members
-    .map(
-      (member) =>
-        `${member.fileName} (${member.chars === null ? `unreadable: ${member.message ?? 'no reason given'}` : `${member.chars} chars`})`,
-    )
-    .join(', ');
-  const ignored =
-    opened.ignored.length === 0 ? '' : `; ignored ${opened.ignored.join(', ')}`;
-  return `zip: ${members}${ignored}`.slice(0, MAX_DOCUMENT_SOURCE_CHARS);
-};
-
-/** How much provenance is kept. Long enough for three entries and their names. */
-export const MAX_DOCUMENT_SOURCE_CHARS = 500;
-
-const merge = (
-  tally: EnrichmentTickResult,
-  delta: EnrichmentTickResult,
-): EnrichmentTickResult => ({
-  claimed: tally.claimed + delta.claimed,
-  enriched: tally.enriched + delta.enriched,
-  refused: tally.refused + delta.refused,
-  unparseable: tally.unparseable + delta.unparseable,
-  parseRetried: tally.parseRetried + delta.parseRetried,
-  retried: tally.retried + delta.retried,
-  failed: tally.failed + delta.failed,
-  claimed_lines: tally.claimed_lines + delta.claimed_lines,
-  claimLinesMuted: tally.claimLinesMuted + delta.claimLinesMuted,
-  claimsDiscarded: tally.claimsDiscarded + delta.claimsDiscarded,
-  resultsLines: tally.resultsLines + delta.resultsLines,
-  alerted: tally.alerted + delta.alerted,
-});

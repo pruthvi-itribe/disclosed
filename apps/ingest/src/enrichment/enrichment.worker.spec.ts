@@ -18,13 +18,11 @@ import type {
 import type { TelegramService } from '@app/notify';
 import type { FilingContextService } from './filing-context.service';
 import {
-  describeTick,
   describeZipSource,
-  EnrichmentWorker,
-  HEARTBEAT_MS,
   MAX_DOCUMENT_SOURCE_CHARS,
-  type EnrichmentOptions,
-} from './enrichment.worker';
+} from './enrichment-record';
+import { describeTick, HEARTBEAT_MS } from './enrichment-tick';
+import { EnrichmentWorker, type EnrichmentOptions } from './enrichment.worker';
 
 const NOW = new Date('2026-08-06T06:00:00.000Z');
 
