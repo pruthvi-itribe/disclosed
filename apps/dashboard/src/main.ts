@@ -25,11 +25,16 @@ async function bootstrap(): Promise<void> {
   const config = loadDashboardConfig();
 
   const app = await NestFactory.create(DashboardModule, {
-    // No request body is read, by any parser, on any route. Every handler is a
-    // GET and the service behind them cannot write, so a body would have
-    // nowhere to go — and turning the parsers off takes multer, body-parser and
-    // qs's array handling off the request path entirely rather than leaving
-    // them mounted and unused.
+    // NOTHING IS MOUNTED GLOBALLY. This used to mean "no request body is read
+    // anywhere", and it no longer does: a password cannot travel in a query
+    // string, because query strings land in access logs, `Referer` headers and
+    // browser history. `DashboardModule.configure()` mounts
+    // `express.json({limit: '4kb'})` on `/api/auth` and nowhere else.
+    //
+    // What this flag still buys is the part that mattered: no `urlencoded`, so
+    // qs's array handling never touches a request, and no `multipart`, so
+    // multer stays unreachable. The feed routes, the watchlist routes and the
+    // page itself are parsed by nothing.
     bodyParser: false,
   });
 

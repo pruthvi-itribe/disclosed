@@ -37,3 +37,35 @@ export const okWith = <TData, TMeta>(
   error: null,
   meta,
 });
+
+/**
+ * The failure variant, the same four keys the other way round.
+ *
+ * A STABLE `code` BESIDE A HUMAN `message`, and both are needed. The page shows
+ * the message — `WATCHLIST_FULL`, `UNKNOWN_SYMBOL` and `INVALID_CREDENTIALS`
+ * are all things a reader has to be told — and branches on the code, because
+ * branching on prose is how a copy edit becomes a behaviour change.
+ *
+ * NOTHING FROM AN EXCEPTION EVER REACHES THIS. Mongo errors, stack traces and
+ * provider bodies are logged server-side; what is serialised is a value this
+ * codebase wrote. The auth codes are deliberately LESS informative than a
+ * developer would like — see `auth.service.ts` on enumeration.
+ */
+export interface ApiFailure {
+  readonly success: false;
+  readonly data: null;
+  readonly error: { readonly code: string; readonly message: string };
+  readonly meta: unknown;
+}
+
+/** Wraps a refusal, with optional metadata — `{used, cap}` on a full watchlist. */
+export const failure = (
+  code: string,
+  message: string,
+  meta: unknown = null,
+): ApiFailure => ({
+  success: false,
+  data: null,
+  error: { code, message },
+  meta,
+});

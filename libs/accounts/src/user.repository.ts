@@ -127,6 +127,21 @@ export class UserRepository {
       .exec();
   }
 
+  /**
+   * The stored channels, raw.
+   *
+   * Raw because `config` is `Mixed` and the only correct reader of it is
+   * `parseChannels`; typing it here would be this layer claiming a validation
+   * it does not perform.
+   */
+  async channelsFor(id: string): Promise<unknown> {
+    const found = await this.users
+      .findById(id, { 'alerts.channels': 1 })
+      .lean<UserDocument>()
+      .exec();
+    return found?.alerts?.channels ?? [];
+  }
+
   /** Stamps the Watching tab as read, which is what the unread count counts from. */
   async markWatchlistSeen(id: string, now: Date): Promise<void> {
     await this.users

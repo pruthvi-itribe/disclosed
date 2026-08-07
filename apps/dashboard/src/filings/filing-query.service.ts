@@ -503,6 +503,67 @@ export class FilingQueryService {
   }
 
   /**
+   * One page of filings from a set of symbols — the v1 alert surface.
+   *
+   * THE SAME SHAPE `api/filings` RETURNS, deliberately, so the page's
+   * `renderFeedInto` draws this unchanged. That reuse is the largest saving in
+   * the whole accounts design: the Watching view is a new query and no new
+   * rendering, so claim lines, results lines, quiet cards, Copy and Source all
+   * arrive with the `createElement`/`textContent`/`safeHref` discipline already
+   * on them.
+   *
+   * NO NEW INDEX. `{symbol: {$in: [...]}} ` sorted `disseminatedAt: -1` is
+   * served by the existing `symbol_1_category_1_disseminatedAt_-1`.
+   *
+   * WHAT IS NOT CLAIMED: that MongoDB plans it as a sort-merge rather than a
+   * blocking SORT. The design names that as a measurement to run
+   * (`explain()` over a real collection with a 50-symbol `$in`), and it has not
+   * been run — so the plan is not written down here as though it had been. The
+   * bound that DOES hold whatever the plan is: the symbol list is capped at 50
+   * by `MAX_WATCHED_SYMBOLS` and the page is capped by `limit`.
+   *
+   * An empty symbol list is answered WITHOUT A READ. `{$in: []}` matches
+   * nothing, so the round trip is knowable in advance.
+   */
+  async getWatchedPage(
+    symbols: readonly string[],
+    limit: number,
+    offset: number,
+  ): Promise<RecentPage> {
+    if (symbols.length === 0) {
+      return {
+        items: [],
+        meta: { total: 0, limit, offset, returned: 0, hasMore: false },
+      };
+    }
+
+    return this.filterPage(
+      { limit, offset },
+      { symbol: { $in: [...symbols] } },
+      null,
+    );
+  }
+
+  /**
+   * How many filings from these symbols arrived since the reader last looked.
+   *
+   * `null` for `since` means they have never looked, and the honest answer then
+   * is the whole set rather than zero — a badge reading 0 on a watchlist full
+   * of filings would be the page telling a reader there is nothing to see.
+   */
+  async countWatchedSince(
+    symbols: readonly string[],
+    since: Date | null,
+  ): Promise<number> {
+    if (symbols.length === 0) return 0;
+
+    const filter: Record<string, unknown> = { symbol: { $in: [...symbols] } };
+    if (since !== null) filter.disseminatedAt = { $gt: since };
+
+    return this.filings.countDocuments(filter).exec();
+  }
+
+  /**
    * The category breakdown, largest first.
    *
    * Sorted by count and then by name, so two categories on the same count keep

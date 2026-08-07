@@ -113,6 +113,8 @@ describe('loadDashboardConfig', () => {
       mongoUri: DASHBOARD_DEFAULTS.MONGO_URI,
       port: DASHBOARD_DEFAULTS.DASHBOARD_PORT,
       host: DASHBOARD_HOST,
+      sessionTtlDays: DASHBOARD_DEFAULTS.SESSION_TTL_DAYS,
+      publicOrigin: `http://${DASHBOARD_HOST}:${DASHBOARD_DEFAULTS.DASHBOARD_PORT}`,
     });
   });
 
@@ -134,6 +136,11 @@ describe('loadDashboardConfig', () => {
       mongoUri: 'mongodb://db:27017/x',
       port: 9001,
       host: DASHBOARD_HOST,
+      sessionTtlDays: DASHBOARD_DEFAULTS.SESSION_TTL_DAYS,
+      // Defaulted to this process's own URL, so a loopback deployment needs no
+      // configuration — and note it follows the PORT rather than the default,
+      // or a dashboard on 9001 would refuse every mutation from its own page.
+      publicOrigin: 'http://127.0.0.1:9001',
     });
   });
 
@@ -148,12 +155,65 @@ describe('loadDashboardConfig', () => {
   });
 });
 
+describe('loadDashboardConfig: the session lifetime', () => {
+  it('defaults to thirty days', () => {
+    expect(loadDashboardConfig(env()).sessionTtlDays).toBe(30);
+  });
+
+  it('reads an override', () => {
+    expect(
+      loadDashboardConfig(env({ SESSION_TTL_DAYS: '7' })).sessionTtlDays,
+    ).toBe(7);
+  });
+
+  it.each([
+    ['a word', 'nope'],
+    ['a fraction', '0.5'],
+    ['zero', '0'],
+    ['a year and a day', '366'],
+  ])('refuses %s rather than starting on a default', (_label, raw) => {
+    // The same four checks `readPort` makes. `Number('nope')` is NaN and
+    // `NaN < 1` is FALSE, so a bare lower bound would ACCEPT it — after which
+    // every session's `expiresAt` is an Invalid Date the TTL index cannot act
+    // on, and sessions never expire at all.
+    expect(() => loadDashboardConfig(env({ SESSION_TTL_DAYS: raw }))).toThrow(
+      /SESSION_TTL_DAYS/,
+    );
+  });
+});
+
+describe('loadDashboardConfig: the public origin', () => {
+  it("defaults to this process's own loopback URL", () => {
+    // Blank fails CLOSED in `isAllowedOrigin`, which is right for a
+    // misconfiguration and wrong for the shipped loopback deployment — every
+    // mutation from the real page would be refused before anyone configured
+    // anything.
+    expect(loadDashboardConfig(env()).publicOrigin).toBe(
+      'http://127.0.0.1:7717',
+    );
+  });
+
+  it('reads the https origin a reverse proxy terminates', () => {
+    expect(
+      loadDashboardConfig(env({ PUBLIC_ORIGIN: 'https://turret.example' }))
+        .publicOrigin,
+    ).toBe('https://turret.example');
+  });
+});
+
 describe('describeDashboardConfig', () => {
-  it('names the bind address and the mode', () => {
+  it('names the bind address and what this process may write', () => {
     const line = describeDashboardConfig(loadDashboardConfig(env()));
 
     expect(line).toContain('bind=127.0.0.1:7717');
-    expect(line).toContain('mode=read-only');
+    // NO LONGER `mode=read-only`. This process writes `users`, `sessions` and
+    // `watchlists` now, and it still never writes a filing — which is the
+    // claim the narrowed `FilingReadModel` actually enforces. The startup line
+    // is where an operator looks to find out what this can do to their
+    // database, so it must not overstate the restriction.
+    expect(line).toContain('filings=read-only');
+    expect(line).toContain('accounts=read-write');
+    expect(line).not.toContain('mode=read-only');
   });
 
   it('redacts credentials in the mongo URI', () => {
