@@ -283,7 +283,53 @@ export class OpenRouterClaimExtractor
         // be routed to a host that ignores `response_format` — which returns
         // fluent prose, fails to parse, and records "the extractor failed" on
         // every filing while looking like a model problem.
-        provider: { require_parameters: true },
+        //
+        // `quantizations` IS THE SECOND HALF OF THE SAME PROBLEM, and it is an
+        // accuracy control before it is a cost one. OpenRouter serves this
+        // model from more than twenty upstreams at fp4, fp8 and undeclared
+        // precision, and picks per request. Two identical calls were measured
+        // returning different prompt-token counts (1,388 and 1,467) and
+        // different prices — different tokenizers, so different hosts — and a
+        // 51,180-character earnings-call transcript came back with EMPTY
+        // content from the pipeline while the identical request answered with
+        // 2,860 characters of good claims moments later. A filing lost to a bad
+        // draw is indistinguishable from a filing the model could not read.
+        //
+        // Constraining the precision rather than naming providers is deliberate:
+        // a hardcoded list goes stale when OpenRouter changes its roster, and
+        // "never fp4" is the actual requirement. The cheapest upstream is fp4
+        // and 36% cheaper, and it is excluded on purpose.
+        //
+        // `order` IS WHAT MAKES THE CACHE REACHABLE, and the precision floor
+        // alone does NOT — that was measured, having first been assumed.
+        // Constraining to fp8 still drew SiliconFlow, Cloudflare and CoreWeave
+        // on three consecutive calls, and a prefix cache is per-upstream, so
+        // routing that moves every call can never warm one: `cached_tokens`
+        // was 0 every time. Pinning the order settled it on one host, and even
+        // then SiliconFlow reported 0 — it prices a cache read without serving
+        // one for this model.
+        //
+        // Novita and GMICloud do serve it, measured on the same request twice:
+        // 0 then 1,280 of 1,347 tokens cached, $0.000195 -> $0.0000732 and
+        // $0.000192 -> $0.0000500. So the two that demonstrably cache lead, and
+        // the rest are availability behind them.
+        //
+        // `allow_fallbacks` STAYS TRUE. The list is a preference, not a pin: a
+        // host that is down must cost latency, not the filing. Every name on it
+        // is fp8, and `quantizations` is what guarantees that a fallback — or a
+        // provider added to the roster tomorrow — cannot quietly be fp4.
+        provider: {
+          require_parameters: true,
+          quantizations: ['fp8'],
+          order: [
+            'Novita',
+            'GMICloud',
+            'AtlasCloud',
+            'Cloudflare',
+            'SiliconFlow',
+          ],
+          allow_fallbacks: true,
+        },
       });
 
       // READ BEFORE `choices`. An upstream failure arrives as a 200 carrying an

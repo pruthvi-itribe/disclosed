@@ -150,7 +150,26 @@ describe('OpenRouterClaimExtractor — the request', () => {
     // support. Without this the request can land on a host that ignores
     // `response_format`, returns fluent prose, and records "the extractor
     // failed" on every filing while looking like a model problem.
-    expect((await bodyOf()).provider).toEqual({ require_parameters: true });
+    const provider = (await bodyOf()).provider as Record<string, unknown>;
+    expect(provider.require_parameters).toBe(true);
+  });
+
+  it('never lets a request be served at fp4', async () => {
+    // AN ACCURACY CONTROL BEFORE A COST ONE. This model is served from more
+    // than twenty upstreams at fp4, fp8 and undeclared precision, chosen per
+    // request — two identical calls were measured returning different
+    // prompt-token counts and different prices, and a 51,180-character
+    // transcript came back with empty content from the pipeline while the
+    // identical request answered with good claims moments later.
+    //
+    // The cheapest upstream is fp4 and 36% cheaper. It is excluded on purpose,
+    // and asserted as a named absence so re-including it is a decision rather
+    // than a routing default nobody notices.
+    const provider = (await bodyOf()).provider as {
+      quantizations?: readonly string[];
+    };
+    expect(provider.quantizations).not.toContain('fp4');
+    expect(provider.quantizations).toEqual(['fp8']);
   });
 
   it('reads rather than composes', async () => {
@@ -576,7 +595,12 @@ describe('OpenRouterClaimExtractor — the results lane', () => {
     // filing while looking like a model problem.
     const chat = new RecordingChat(RESULTS_REPLY);
     await extractorWith(chat).extractResults(REQUEST);
-    expect(chat.bodies[0].provider).toEqual({ require_parameters: true });
+    // The results lane carries the SAME routing constraint as the claims lane.
+    // A precision floor applied to one and not the other would mean the two
+    // were measured against different models while appearing to share one.
+    const routing = chat.bodies[0].provider as Record<string, unknown>;
+    expect(routing.require_parameters).toBe(true);
+    expect(routing.quantizations).toEqual(['fp8']);
     expect(chat.bodies[0].temperature).toBe(0);
     expect(chat.bodies[0].max_tokens).toBe(CLAIM_MAX_TOKENS);
   });
@@ -662,5 +686,37 @@ describe('OpenRouterClaimExtractor — the results lane', () => {
     }).extractResults({ ...REQUEST, documentText: 'x'.repeat(100) });
     const messages = chat.bodies[0].messages as { content: string }[];
     expect(messages[1].content).toContain('first 12 characters of 100');
+  });
+});
+
+describe('OpenRouterClaimExtractor — provider routing', () => {
+  it('prefers the fp8 hosts that actually serve a prefix cache', async () => {
+    // MEASURED, after the precision floor alone was assumed to be enough and
+    // was not. Constraining to fp8 still drew SiliconFlow, Cloudflare and
+    // CoreWeave on three consecutive calls, and a prefix cache is per-upstream
+    // — `cached_tokens` was 0 every time. Even pinned, SiliconFlow reported 0:
+    // it prices a cache read without serving one for this model.
+    //
+    // Novita and GMICloud do serve it, on the same request twice: 0 then 1,280
+    // of 1,347 tokens cached, $0.000195 -> $0.0000732 and $0.000192 ->
+    // $0.0000500. So those two lead.
+    const provider = (await bodyOf()).provider as {
+      order?: readonly string[];
+    };
+    expect(provider.order?.slice(0, 2)).toEqual(['Novita', 'GMICloud']);
+  });
+
+  it('keeps fallbacks on, so a host being down costs latency not the filing', async () => {
+    // The list is a preference, not a pin. `quantizations` is what guarantees a
+    // fallback — or a provider added to the roster tomorrow — cannot quietly be
+    // served at fp4.
+    const provider = (await bodyOf()).provider as Record<string, unknown>;
+    expect(provider.allow_fallbacks).toBe(true);
+    expect(provider.quantizations).toEqual(['fp8']);
+  });
+
+  it('offers enough fallbacks to survive a host outage', async () => {
+    const provider = (await bodyOf()).provider as { order?: readonly string[] };
+    expect(provider.order?.length).toBeGreaterThanOrEqual(5);
   });
 });
