@@ -17,6 +17,7 @@ export const SCRIPT_VIEWS = `
     state.view = name;
     el('view-brief').hidden = name !== 'brief';
     el('view-feed').hidden = name !== 'feed';
+    el('view-watching').hidden = name !== 'watching';
     el('view-admin').hidden = name !== 'admin';
     el('view-company').hidden = name !== 'company';
     // The company view is reached from a card, not from a tab, so no tab
@@ -24,9 +25,13 @@ export const SCRIPT_VIEWS = `
     // somewhere they are not.
     el('tab-brief').className = 'tab' + (name === 'brief' ? ' active' : '');
     el('tab-feed').className = 'tab' + (name === 'feed' ? ' active' : '');
+    // The count is a child of the tab, so the class is set rather than the
+    // whole element rebuilt - assigning textContent here would delete it.
+    el('tab-watching').className = 'tab' + (name === 'watching' ? ' active' : '');
     el('tab-admin').className = 'tab' + (name === 'admin' ? ' active' : '');
     el('tab-brief').setAttribute('aria-selected', String(name === 'brief'));
     el('tab-feed').setAttribute('aria-selected', String(name === 'feed'));
+    el('tab-watching').setAttribute('aria-selected', String(name === 'watching'));
     el('tab-admin').setAttribute('aria-selected', String(name === 'admin'));
     // THE DECK OWNS THE VIEWPORT WHILE IT IS OPEN: it is a scroll container
     // sized to the window, so the page behind it must not scroll too. Written
@@ -59,6 +64,10 @@ export const SCRIPT_VIEWS = `
   });
   el('tab-feed').addEventListener('click', function () {
     showView('feed');
+    refresh(true);
+  });
+  el('tab-watching').addEventListener('click', function () {
+    showView('watching');
     refresh(true);
   });
   el('tab-admin').addEventListener('click', function () {

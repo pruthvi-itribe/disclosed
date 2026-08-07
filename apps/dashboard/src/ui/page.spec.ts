@@ -5,7 +5,10 @@ import { join } from 'path';
 import { renderDashboardPage } from './page';
 import { PAGE_STYLE } from './page-style';
 import { PAGE_STYLE_BRIEF } from './page-style-brief';
+import { SCRIPT_ACCOUNT } from './script/script-account';
+import { SCRIPT_BASE } from './script/script-base';
 import { SCRIPT_BRIEF } from './script/script-brief';
+import { SCRIPT_POLL } from './script/script-poll';
 
 /**
  * A SMOKE suite, deliberately. The markup itself is not asserted line by line —
@@ -112,6 +115,25 @@ describe('renderDashboardPage — content', () => {
     'brief-end-line',
     'brief-to-feed',
     'brief-empty',
+    'signin',
+    'signout',
+    'tab-watching',
+    'tab-watching-count',
+    'view-watching',
+    'watch-count',
+    'watch-empty',
+    'watch-feed',
+    'co-watch',
+    'auth-back',
+    'auth-form',
+    'auth-email',
+    'auth-password',
+    'auth-go',
+    'auth-alt',
+    'auth-close',
+    'auth-error',
+    'auth-title',
+    'auth-lead',
   ] as const;
 
   it.each(REQUIRED_IDS)('carries the #%s the script writes into', (id) => {
@@ -130,8 +152,13 @@ describe('renderDashboardPage — content', () => {
     expect(html).toContain('All times are IST');
   });
 
-  it('states that the view is read-only', () => {
+  it('states that the view never writes a filing', () => {
+    // The first two words used to be "Read-only." and they had to go: this
+    // process now writes `users`, `sessions` and `watchlists`. What did not
+    // change is the claim the narrowed `FilingReadModel` actually enforces, and
+    // it is the one the sentence still makes.
     expect(html).toContain('never writes');
+    expect(html).not.toContain('Read-only. This view');
   });
 
   it('gives the row to what was said, not to how we read it', () => {
@@ -1021,6 +1048,194 @@ describe('renderDashboardPage — the Brief', () => {
       // deliberately diverges from renderTopics(), which counts null as `other`
       // so its segments add up to the claim count.
       expect(SCRIPT_BRIEF).toContain('topic === null || topic === undefined');
+    });
+  });
+});
+
+/**
+ * The account controls, the star and the Watching view.
+ *
+ * Asserted against the RENDERED page and the fragment sources, because the
+ * failures these guard against are all invisible in review: an ARIA violation
+ * in the header, a star typed as a character the emoji test rejects, and a
+ * watched state kept in a DOM that is thrown away every four seconds.
+ */
+describe('renderDashboardPage — the account', () => {
+  describe('where the controls live', () => {
+    it('puts the account outside the tablist, not inside it', () => {
+      // A non-tab child of role="tablist" is an ARIA violation. The buttons
+      // share the tab's styling by CLASS and take none of its role.
+      const tablist = html.slice(
+        html.indexOf('<nav class="tabs"'),
+        html.indexOf('</nav>'),
+      );
+      expect(tablist).not.toContain('id="signin"');
+      expect(html).toContain('<div class="account" data-ui="account">');
+    });
+
+    it('starts both header buttons hidden, so the header cannot flicker', () => {
+      // Until api/me answers, the page does not know which of the two states
+      // is true. Drawing either through that gap is a header that changes
+      // under the reader on every load.
+      expect(html).toMatch(/id="signin"[^>]*hidden/);
+      expect(html).toMatch(/id="signout"[^>]*hidden/);
+    });
+
+    it('starts the Watching tab hidden, since it is meaningless signed out', () => {
+      expect(html).toMatch(/id="tab-watching"[^>]*hidden/);
+    });
+
+    it('puts the company page control after the industry tag, inside .coident', () => {
+      const ident = html.slice(
+        html.indexOf('<div class="coident">'),
+        html.indexOf('id="co-coverage"'),
+      );
+      expect(ident.indexOf('id="co-industry"')).toBeLessThan(
+        ident.indexOf('id="co-watch"'),
+      );
+    });
+  });
+
+  describe('the star', () => {
+    it('is drawn in CSS rather than typed as a character', () => {
+      // `page.spec.ts` already rejects U+2600-U+27BF anywhere on the page, and
+      // that range holds both star glyphs. This asserts the replacement is a
+      // shape rather than the star simply being absent.
+      expect(html).toContain('clip-path: polygon(');
+      expect(html).toContain('.watch::before');
+    });
+
+    it('carries a text label as well as the shape', () => {
+      // A clip-path is invisible to a screen reader: there is no glyph and no
+      // image to describe.
+      expect(SCRIPT_ACCOUNT).toContain("'aria-label'");
+      expect(SCRIPT_ACCOUNT).toContain(
+        "text.textContent = on ? 'Watching' : 'Watch'",
+      );
+    });
+
+    it('is absent when signed out rather than disabled', () => {
+      // A control that is permanently greyed out and never explains itself
+      // reads as a broken page rather than as a feature behind a sign-in.
+      expect(SCRIPT_ACCOUNT).toContain('if (!signedIn()) return null;');
+    });
+
+    it('keeps the watched set in state, not in the DOM', () => {
+      // The feed repaints every four seconds and no node survives a poll, so a
+      // star that lived in the DOM would un-fill itself under the cursor. The
+      // same rule `state.expanded` follows.
+      expect(SCRIPT_BASE).toContain('watched: {}');
+      expect(SCRIPT_ACCOUNT).toContain('state.watched[symbol] = true');
+    });
+
+    it('keys the watched set by symbol rather than by seqId', () => {
+      // One company files repeatedly; the star belongs to the company.
+      expect(SCRIPT_ACCOUNT).toContain('data-symbol');
+      expect(SCRIPT_ACCOUNT).not.toContain('state.watched[seqId]');
+    });
+  });
+
+  describe('the sign-in panel', () => {
+    it('is a panel in this document rather than a second served page', () => {
+      // A second HTML document would duplicate the whole inline-CSS shell for
+      // two input fields.
+      expect(html).toContain('id="auth-back"');
+      expect(html).toContain('role="dialog"');
+    });
+
+    it('never submits natively', () => {
+      // A native POST navigates away from a page whose whole design is one
+      // document, and the reader lands on a JSON body.
+      expect(SCRIPT_ACCOUNT).toContain('event.preventDefault();');
+    });
+
+    it('lets a password manager do its job', () => {
+      expect(html).toContain('autocomplete="email"');
+      expect(html).toContain('autocomplete="current-password"');
+      expect(SCRIPT_ACCOUNT).toContain(
+        "registering ? 'new-password' : 'current-password'",
+      );
+    });
+
+    it('says in plain words that there is no self-serve reset yet', () => {
+      // A reset link that quietly does nothing, or a page that stays silent
+      // while somebody locks themselves out, are both worse than saying so.
+      expect(html).toContain(
+        'No password reset yet — message the operator and it will be reset by hand.',
+      );
+    });
+
+    it('writes the error line with textContent, never innerHTML', () => {
+      expect(SCRIPT_ACCOUNT).toContain("setText('auth-error'");
+      expect(SCRIPT_ACCOUNT).not.toContain('innerHTML');
+    });
+
+    it('shows the server own login failure rather than inventing a distinction', () => {
+      // The server answers a wrong password and an unknown address identically
+      // on purpose; a page that rewrote either would undo that.
+      expect(SCRIPT_ACCOUNT).toContain('err && err.message ? err.message');
+    });
+  });
+
+  describe('the Watching view', () => {
+    it('reuses the feed renderer rather than drawing its own cards', () => {
+      // The largest saving in the design, and the reason exchange text still
+      // has exactly one path to the DOM.
+      expect(SCRIPT_ACCOUNT).toContain(
+        'renderFeedInto(feed, items, meta, false)',
+      );
+    });
+
+    it('says out loud that an in-app view is not a push channel', () => {
+      // A product-messaging obligation, not just an engineering note: the
+      // latency promise returns with a real push channel and not before.
+      expect(html).toContain('is NOT a push channel');
+    });
+
+    it('distinguishes "watching nothing" from "they have filed nothing"', () => {
+      expect(SCRIPT_ACCOUNT).toContain('You are not watching anything yet');
+      expect(SCRIPT_ACCOUNT).toContain('Nothing yet from the ');
+    });
+
+    it('polls with a session only while its own tab is open', () => {
+      expect(SCRIPT_POLL).toContain(
+        "state.view === 'watching' ? refreshWatching(fresh)",
+      );
+    });
+
+    it('treats a session that ended as a sign-out rather than a page error', () => {
+      // A red banner every four seconds is not a useful answer to "your
+      // session expired".
+      expect(SCRIPT_ACCOUNT).toContain('err.status === 401');
+    });
+
+    it('hides the unread badge at zero rather than drawing a 0', () => {
+      expect(SCRIPT_ACCOUNT).toContain('badge.hidden = n === 0');
+    });
+  });
+
+  describe('the writes the page makes', () => {
+    it('sends a JSON body only to the auth routes', () => {
+      // Watchlist mutations carry their parameter in the path or the query
+      // string, which is what keeps body parsing mounted on one prefix.
+      expect(SCRIPT_ACCOUNT).toContain(
+        "postJson(path, on ? 'DELETE' : 'POST', undefined)",
+      );
+      expect(SCRIPT_ACCOUNT).toContain(
+        "'api/watchlist?symbol=' + encodeURIComponent(symbol)",
+      );
+    });
+
+    it('states the credentials mode rather than relying on the default', () => {
+      expect(SCRIPT_BASE).toContain("credentials: 'same-origin'");
+    });
+
+    it('surfaces the failure envelope message instead of a generic string', () => {
+      expect(SCRIPT_BASE).toContain('parsed.error.message');
+    });
+
+    it('builds every path relative, since no URL appears in the client', () => {
+      expect(SCRIPT_ACCOUNT).not.toMatch(/https?:\/\//);
     });
   });
 });

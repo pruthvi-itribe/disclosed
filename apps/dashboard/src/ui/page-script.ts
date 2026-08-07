@@ -23,6 +23,7 @@
  *
  * NO URL APPEARS IN THIS FILE. Every request is same-origin and path-relative.
  */
+import { SCRIPT_ACCOUNT } from './script/script-account';
 import { SCRIPT_ADMIN } from './script/script-admin';
 import { SCRIPT_BASE } from './script/script-base';
 import { SCRIPT_BRIEF } from './script/script-brief';
@@ -35,7 +36,7 @@ import { SCRIPT_VIEWS } from './script/script-views';
 
 /**
  * ================================================================
- * WHY THE SCRIPT IS EIGHT FILES AND ONE FUNCTION
+ * WHY THE SCRIPT IS TEN FILES AND ONE FUNCTION
  * ================================================================
  *
  * It was 2,660 lines in a single template literal, 1,660 of them code, against
@@ -69,6 +70,10 @@ const FRAGMENTS: readonly string[] = [
   SCRIPT_ADMIN,
   SCRIPT_POLL,
   SCRIPT_SUGGEST,
+  // Before `script-views`, which ends with the page's three bootstrap lines.
+  // `api/me` has to be asked before the first refresh, or the first paint
+  // draws a signed-in reader as signed out.
+  SCRIPT_ACCOUNT,
   SCRIPT_VIEWS,
 ];
 

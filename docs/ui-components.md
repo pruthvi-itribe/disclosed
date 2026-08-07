@@ -27,15 +27,17 @@ or `document.getElementById('co-topics')`.
 | `apps/dashboard/src/ui/script/script-admin.ts` | the admin panels |
 | `apps/dashboard/src/ui/script/script-poll.ts` | the poll loop and the filters |
 | `apps/dashboard/src/ui/script/script-suggest.ts` | the type-ahead |
+| `apps/dashboard/src/ui/script/script-account.ts` | **the account**: sign-in panel, the watch star, the Watching view |
 | `apps/dashboard/src/ui/script/script-views.ts` | tabs, company view, chip state |
 
-## The four views
+## The five views
 
 | Name | What it is |
 | --- | --- |
 | `view-brief` | the day as a finite deck. The default view at 430px and below |
 | `view-feed` | the product: what companies said today. The default above 430px |
 | `view-company` | one company, reached by clicking a ticker |
+| `view-watching` | filings from the companies this reader watches. **Signed in only** |
 | `view-admin` | the instrument panel: refusals, routes, tiers, states |
 
 While the Brief is open the body carries the class `briefing`: the deck is a
@@ -82,7 +84,7 @@ from>"`, which are the only stable ways to name **one specific card**.
 
 | Name | What it is |
 | --- | --- |
-| `top-bar` | brand, the Feed/Admin tabs, and the live indicator |
+| `top-bar` | brand, the tabs, the account controls, and the live indicator |
 | `live-dot` / `live-text` / `generated` | poll health and the IST time of the last refresh |
 | `alert` | the red banner, hidden unless a fetch failed |
 | `feed-hero` | the three big numbers |
@@ -138,6 +140,58 @@ across the four-second repaint.
 | `rows` | the filings table body |
 | `page-info` / `prev` / `next` | pagination |
 
+## The account
+
+The two header buttons are a **sibling of `nav.tabs`, not a child of it** — a
+non-tab child of a `role="tablist"` is an ARIA violation, so they share the
+tab's styling by class and take none of its role. Both start `hidden` and stay
+hidden until `api/me` answers: "we do not know yet" is a third state, and
+drawing either of the other two through it makes the header flicker on load.
+
+| Name | What it is |
+| --- | --- |
+| `account` | the wrapper, between the tabs and the live indicator |
+| `signin` / `signout` | the two header buttons. Exactly one is ever visible |
+| `auth-panel` (`auth-back`) | the sign-in / register modal, in this document |
+| `auth-form` | `auth-email`, `auth-password`, `auth-go`, `auth-alt`, `auth-close` |
+| `auth-title` / `auth-lead` | swap between Sign in and Create an account |
+| `auth-error` | one line, written with `textContent`, empty when there is nothing to say |
+
+The panel says in plain words that there is no self-serve password reset yet.
+That is not a placeholder: reset needs email, email needs a verified sending
+domain, and that is the same domain the TLS certificate needs.
+
+## Watching
+
+| Name | What it is |
+| --- | --- |
+| `tab-watching` | the fourth tab. **Hidden when signed out** |
+| `tab-watching-count` | the unread badge. **Absent at zero**, never a `0` |
+| `watch-count` | "N of 50 companies watched" |
+| `watch-feed` | the same card grid the feed uses, drawn by `renderFeedInto` |
+| `watch-empty` | shown **instead of** the grid, and it says which of the two empties this is |
+| `watch` (`data-ui`) | the star. Repeated, and each carries `data-symbol="<symbol>"` |
+| `co-watch` | the company page's star, inside `company-head` after `co-industry` |
+
+The star is **drawn in CSS, not typed**: `page.spec.ts` rejects the emoji range
+`U+2600`-`U+27BF`, which holds both star glyphs, and rejects any CSS reference
+to a remote asset. It is a `clip-path` polygon, filled when watching and
+punched out when not, and it carries a text label as well — a clip-path shape
+is invisible to a screen reader.
+
+**The star is absent, not disabled, when signed out.** A control that is
+permanently greyed out and never explains itself reads as a broken page.
+
+**Watched state lives in `state.watched`, keyed by symbol.** The feed repaints
+every four seconds and no DOM node survives a poll, so a star kept in the DOM
+would un-fill itself under the reader's cursor — the same rule `state.expanded`
+follows. Keyed by symbol rather than by `seqId` because one company files
+repeatedly and the star belongs to the company.
+
+While the Watching tab is open the four-second poll is **authenticated** — one
+indexed session read per poll. On every other tab the poll is anonymous and
+touches no session.
+
 ## Rules that hold across all of it
 
 - **No `innerHTML`, ever.** Every value reaches the DOM through `textContent` or
@@ -150,3 +204,9 @@ across the four-second repaint.
   single IIFE, so a function declared in one is visible to all the others.
 - **No backtick and no `${` inside a fragment.** Both are eaten by the composing
   template literal before the browser sees them. A test asserts this.
+- **`getJson` reads and `postJson` writes**, and they are siblings rather than
+  one function with a flag: a failed read is "refresh failed", and a failed
+  write carries a message the reader has to see (`WATCHLIST_FULL`,
+  `UNKNOWN_SYMBOL`, `INVALID_CREDENTIALS`). A JSON body goes only to
+  `api/auth/*`; watchlist mutations carry their parameter in the path or the
+  query string, which is what keeps body parsing mounted on one prefix.

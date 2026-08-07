@@ -830,4 +830,115 @@ button.sym:hover { color: var(--accent); }
    back, so two rows of chips do not compete for the same attention. */
 .chips.topics .chip { font-size: 12px; opacity: .85; }
 .chips.topics .chip.active { opacity: 1; background: var(--claim, #7dd3fc); border-color: var(--claim, #7dd3fc); color: #06101f; }
+
+/* ===================== ACCOUNT, WATCH STAR, WATCHING ==================== */
+
+/* A SIBLING OF nav.tabs, NOT A CHILD OF IT. A non-tab child of a
+   role="tablist" is an ARIA violation, so the styling is shared by class and
+   the role is not. '.topbar .status' carries 'margin-left: auto', so slotting
+   this in immediately before it changes no layout. */
+.account { display: flex; align-items: center; gap: 4px; }
+/* Both start hidden and stay hidden until api/me answers, so the header never
+   flickers between "sign in" and a signed-in state on every load. */
+.account .tab[hidden] { display: none; }
+
+/* The unread count on the Watching tab. Absent, not zero, when there is
+   nothing new: a badge reading 0 is furniture. */
+.tabcount {
+  display: inline-block; margin-left: 6px; padding: 0 5px;
+  border-radius: 8px; background: var(--accent); color: var(--bg);
+  font-size: 10.5px; font-weight: 700; line-height: 15px; min-width: 15px;
+  text-align: center;
+}
+.tab.active .tabcount { background: var(--bg); color: var(--text); }
+
+/* THE STAR IS DRAWN, NOT TYPED.
+   'page.spec.ts' rejects the emoji range U+2600-U+27BF, which contains both
+   U+2605 BLACK STAR and U+2606 WHITE STAR, and a second test rejects any CSS
+   reference to a remote asset — so the glyph cannot be a character and the
+   icon cannot be a file. A clip-path polygon is neither, and it passes both.
+   (That second test matches on the four letters of the CSS function itself, so
+   this comment cannot spell it either. The rule is enforced by the test, not
+   by the prose.)
+
+   OUTLINED IS A PUNCH-OUT, not a second polygon: '::before' is the filled star
+   in the current colour and '::after' is a smaller one in the card's own
+   background, which reads as an outline. Watched hides the punch-out, and the
+   star fills. */
+.watch {
+  background: transparent; border: 1px solid var(--line); border-radius: 7px;
+  color: var(--muted); font: inherit; font-size: 11px; cursor: pointer;
+  padding: 4px 8px; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px;
+  position: relative;
+}
+.watch:hover { color: var(--text); border-color: var(--muted); }
+.watch::before {
+  content: ""; display: inline-block; width: 12px; height: 12px;
+  background: currentColor;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.watch::after {
+  content: ""; position: absolute; left: 8px; top: 50%; width: 7.2px; height: 7.2px;
+  margin-top: -3.6px; margin-left: 2.4px;
+  background: var(--panel);
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+.watch.on { color: var(--warn); border-color: rgba(210, 153, 34, 0.45); }
+.watch.on::after { display: none; }
+/* In the card footer it joins the group that must never shrink or wrap, beside
+   Copy and Source. */
+.cardfoot .watch { flex: 0 0 auto; }
+/* On the company page it sits in '.coident' after the industry tag, on the
+   baseline the ticker and the name share. */
+.coident .watch { align-self: center; font-size: 12px; padding: 5px 10px; }
+.watch[hidden] { display: none; }
+
+/* THE SIGN-IN PANEL, in this document rather than as a second page: a separate
+   served HTML document would duplicate the whole inline-CSS shell for two
+   input fields. */
+.authback {
+  position: fixed; inset: 0; background: rgba(4, 8, 14, 0.72);
+  display: flex; align-items: center; justify-content: center; z-index: 40;
+  padding: 20px;
+}
+.authback[hidden] { display: none; }
+.authpanel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px 24px; width: 100%; max-width: 380px;
+}
+.authpanel h2 { margin: 0 0 4px; font-size: 18px; }
+.authpanel .authlead { color: var(--muted); font-size: 12.5px; margin-bottom: 16px; }
+.authpanel label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.authpanel input {
+  width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 9px;
+  font: inherit; padding: 9px 11px; margin-bottom: 12px;
+}
+.authpanel input:focus { outline: none; border-color: var(--accent); }
+.authrow { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.authgo {
+  background: var(--accent); color: var(--bg); border: 0; border-radius: 9px;
+  font: inherit; font-weight: 600; padding: 9px 18px; cursor: pointer;
+}
+.authgo:disabled { opacity: .5; cursor: default; }
+.authalt, .authclose {
+  background: transparent; border: 0; color: var(--muted);
+  font: inherit; font-size: 12.5px; cursor: pointer; padding: 4px 0;
+}
+.authalt:hover, .authclose:hover { color: var(--text); text-decoration: underline; }
+/* Written with textContent, never innerHTML, and empty when there is nothing
+   to say — an error line that is always present is a line a reader stops
+   reading. */
+.autherr { color: var(--bad); font-size: 12.5px; margin-top: 12px; min-height: 1px; }
+/* MVP day says out loud that there is no self-serve reset. A login page that
+   stays silent lets someone lock themselves out and never learn why. */
+.authnote { color: var(--muted); font-size: 11.5px; margin-top: 14px; line-height: 1.5; }
+
+/* The Watching view is the feed grid with its own empty state; the cards are
+   drawn by the same renderer, so it needs no card rules of its own. */
+.watchhead { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.watchcount { color: var(--muted); font-size: 12.5px; }
+.watchempty { padding: 48px 20px; text-align: center; color: var(--muted); max-width: 520px; margin: 0 auto; line-height: 1.6; }
+.watchempty strong { color: var(--text); display: block; font-size: 16px; margin-bottom: 8px; }
 `;

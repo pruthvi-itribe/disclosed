@@ -325,6 +325,14 @@ export const SCRIPT_FEED = `
     spacer.className = 'grow';
     foot.appendChild(spacer);
 
+    // THE WATCH STAR, beside Copy and Source rather than in the card head: the
+    // head is one line of identity and time and has no room, and this belongs
+    // with the other two things a reader DOES with a card. Null when signed
+    // out - absent rather than disabled, because a control that is permanently
+    // greyed out and never explains itself reads as a broken page.
+    var star = watchButton(f.symbol);
+    if (star) foot.appendChild(star);
+
     // COPY, because the thing a reader does with a line like this is send it to
     // somebody. Writing the claims rather than the rendered card: what belongs
     // in a message is what the company said, not our layout.

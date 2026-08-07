@@ -69,7 +69,11 @@ export const SCRIPT_POLL = `
       getJson('api/summary').then(function (b) {
         if (fresh()) renderSummary(b.data);
       }),
-      getJson(query()).then(function (b) {
+      // THE ONE AUTHENTICATED POLL. Watching asks a different route with a
+      // session cookie on it, and it handles its own 401 rather than reporting
+      // a session that ended as a page failure - see 'refreshWatching'. Every
+      // other view polls anonymously and touches no session.
+      state.view === 'watching' ? refreshWatching(fresh) : getJson(query()).then(function (b) {
         if (!fresh()) return;
         // BOTH VIEWS, FROM ONE REQUEST. Rendering only the visible one would
         // save a few milliseconds of DOM work and cost a tab switch a round

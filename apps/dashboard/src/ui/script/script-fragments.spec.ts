@@ -1,4 +1,5 @@
 import { PAGE_SCRIPT } from '../page-script';
+import { SCRIPT_ACCOUNT } from './script-account';
 import { SCRIPT_ADMIN } from './script-admin';
 import { SCRIPT_BASE } from './script-base';
 import { SCRIPT_BRIEF } from './script-brief';
@@ -10,7 +11,7 @@ import { SCRIPT_SUGGEST } from './script-suggest';
 import { SCRIPT_VIEWS } from './script-views';
 
 /**
- * The client script is nine strings joined into one function, and these are
+ * The client script is ten strings joined into one function, and these are
  * the properties that make that safe to keep doing.
  *
  * `page.spec.ts` already proves the JOINED result parses as JavaScript, which
@@ -30,6 +31,9 @@ const FRAGMENTS: ReadonlyArray<readonly [string, string]> = [
   ['script-admin', SCRIPT_ADMIN],
   ['script-poll', SCRIPT_POLL],
   ['script-suggest', SCRIPT_SUGGEST],
+  // Before `script-views`: that fragment ends with the three lines that start
+  // the page, and `api/me` must be asked above them.
+  ['script-account', SCRIPT_ACCOUNT],
   ['script-views', SCRIPT_VIEWS],
 ];
 

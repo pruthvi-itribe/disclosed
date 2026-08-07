@@ -151,6 +151,19 @@ export const SCRIPT_BASE = `
     // What the reader asked the claims to be ABOUT. Empty means any. A separate
     // axis from 'group', which is what KIND of filing NSE says it is.
     topic: '',
+    // WHO THIS BROWSER IS, as api/me last answered. Null before the first
+    // answer, which is why both header buttons start hidden: "we do not know
+    // yet" is a third state and drawing either of the other two through it is
+    // a header that flickers on every load.
+    me: null,
+    // WHICH COMPANIES THIS READER WATCHES, keyed by SYMBOL and not by seqId.
+    //
+    // IN STATE FOR THE REASON 'expanded' IS. The feed repaints every four
+    // seconds and no DOM node survives a poll, so a star that lived in the DOM
+    // would un-fill itself under the reader's cursor. Keyed by symbol because
+    // one company files repeatedly and the star belongs to the company, not to
+    // the filing that happens to be on screen.
+    watched: {},
     // Monotonic id of the LATEST refresh, for the same bug the suggest box
     // already guards against: fetch does not promise ordering. The filings
     // callback decides which view to draw by reading state at RESPONSE time,
@@ -283,6 +296,50 @@ export const SCRIPT_BASE = `
         }
         return body;
       });
+  }
+
+  // The only WRITE this page makes, and a sibling of getJson rather than an
+  // option on it, because the two differ in exactly the place that matters: a
+  // failed read is reported as "refresh failed" and a failed write carries a
+  // message the reader has to see. WATCHLIST_FULL, UNKNOWN_SYMBOL and
+  // INVALID_CREDENTIALS are all sentences somebody is waiting for.
+  //
+  // The rejection carries 'status', 'code' and 'meta' as well as the message,
+  // so a caller can branch on the code rather than on the prose - a copy edit
+  // must not be a behaviour change.
+  //
+  // A JSON body ONLY for the auth routes. Watchlist mutations pass undefined
+  // and carry their parameter in the path or the query string, which is what
+  // keeps body parsing mounted on one prefix on the server.
+  function postJson(path, method, body) {
+    var init = {
+      method: method,
+      // The default, stated: this cookie is the whole session and a future
+      // edit that set 'omit' would sign everybody out silently.
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    };
+    if (body !== undefined && body !== null) {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(body);
+    }
+    return fetch(path, init).then(function (res) {
+      return res
+        .json()
+        .catch(function () { return null; })
+        .then(function (parsed) {
+          if (res.ok && parsed && parsed.success === true) return parsed;
+          var message =
+            parsed && parsed.error && parsed.error.message
+              ? parsed.error.message
+              : 'That did not work (' + res.status + ').';
+          var failure = new Error(message);
+          failure.status = res.status;
+          failure.code = parsed && parsed.error ? parsed.error.code : '';
+          failure.meta = parsed ? parsed.meta : null;
+          throw failure;
+        });
+    });
   }
 
   function lagClass(ms) {

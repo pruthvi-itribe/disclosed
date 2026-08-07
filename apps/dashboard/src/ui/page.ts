@@ -74,8 +74,23 @@ export const renderDashboardPage = (): string => `<!doctype html>
     -->
     <button id="tab-brief" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-brief">Brief</button>
     <button id="tab-feed" class="tab active" type="button" role="tab" aria-selected="true" aria-controls="view-feed">Feed</button>
+    <button id="tab-watching" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-watching" hidden>Watching<span id="tab-watching-count" class="tabcount" hidden></span></button>
     <button id="tab-admin" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-admin">Admin</button>
   </nav>
+  <!--
+    A SIBLING OF nav.tabs, NOT A CHILD OF IT. A non-tab child of a
+    role="tablist" is an ARIA violation, so these share the tab's styling by
+    class and take none of its role. '.topbar .status' carries
+    'margin-left: auto', so this slots in with no CSS layout change.
+
+    BOTH START HIDDEN. Until api/me answers, this page does not know which of
+    the two states is true, and a header that flickers between "Sign in" and an
+    address on every load is a page that looks broken while working.
+  -->
+  <div class="account" data-ui="account">
+    <button id="signin" class="tab" type="button" hidden>Sign in</button>
+    <button id="signout" class="tab" type="button" hidden></button>
+  </div>
   <div class="status">
     <span id="live-dot" class="dot"></span>
     <span id="live-text">connecting</span>
@@ -294,6 +309,11 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <span id="co-symbol" class="cosym"></span>
       <span id="co-name" class="coname"></span>
       <span id="co-industry" class="tag" hidden></span>
+      <!-- Hidden until api/me says somebody is signed in; renderCompany sets
+           the label and the flag the same way it already does the industry
+           tag. '.cohead' is flex with '.cocoverage' at margin-left:auto, so
+           nothing moves. -->
+      <button id="co-watch" class="watch" type="button" hidden></button>
     </div>
     <div id="co-coverage" class="cocoverage"></div>
   </div>
@@ -334,6 +354,35 @@ export const renderDashboardPage = (): string => `<!doctype html>
 
   <h2 class="bucket">Filings</h2>
   <div id="company-feed" class="feed" data-ui="company-feed"></div>
+</section>
+
+<!-- =========================== WATCHING ========================= -->
+<!--
+  THE v1 ALERT SURFACE, and it is a QUERY rather than a channel.
+
+  It needs no fan-out, no outbox, no delivery state, no sender rate limiter and
+  no third party: it is 'api/watchlist/feed', which is the filings collection
+  filtered to the symbols this reader picked. That is the single largest
+  simplification in the accounts design.
+
+  THE HONEST COST, stated where a reader of this file will see it: an in-app
+  view is NOT a push channel. Somebody who is not looking at this page learns
+  nothing until they look. The latency promise this product is built on returns
+  with a real push channel (web push or a Telegram DM), and until then the
+  alerting must not be described to anyone as real-time.
+
+  THE BODY IS 'renderFeedInto', UNCHANGED. Same cards, same claim lines, same
+  Copy and Source, same createElement/textContent/safeHref discipline — a
+  second card renderer would be a second place for exchange text to reach the
+  DOM.
+-->
+<section id="view-watching" data-ui="view-watching" class="view" role="tabpanel" aria-labelledby="tab-watching" hidden>
+  <div class="watchhead" data-ui="watching-head">
+    <h2 class="bucket" style="margin:0">What the companies you watch have said</h2>
+    <span id="watch-count" class="watchcount"></span>
+  </div>
+  <div id="watch-empty" class="watchempty" hidden></div>
+  <div id="watch-feed" class="feed" data-ui="watching-feed"></div>
 </section>
 
 <!-- ============================ ADMIN =========================== -->
@@ -495,8 +544,50 @@ export const renderDashboardPage = (): string => `<!doctype html>
   </main>
 </section>
 
+<!-- ========================== SIGN IN =========================== -->
+<!--
+  A MODAL PANEL INSIDE THIS DOCUMENT, not a second served page: another HTML
+  document would duplicate the whole inline-CSS shell for two input fields.
+
+  The form MUST NOT SUBMIT NATIVELY. A native POST navigates away from a page
+  whose whole design is one document, so the script calls preventDefault and
+  posts the JSON itself.
+
+  The autocomplete attributes are a SECURITY CONTROL, not a convenience:
+  omitting them stops a password manager offering to generate and store a
+  password, and people who cannot store a password pick a worse one.
+-->
+<div id="auth-back" class="authback" hidden>
+  <div class="authpanel" data-ui="auth-panel" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <h2 id="auth-title">Sign in</h2>
+    <div id="auth-lead" class="authlead">Watch companies and see what they said, in one place.</div>
+    <form id="auth-form">
+      <label for="auth-email">Email</label>
+      <input id="auth-email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" required>
+      <label for="auth-password">Password</label>
+      <input id="auth-password" type="password" autocomplete="current-password" required>
+      <div class="authrow">
+        <button id="auth-go" class="authgo" type="submit">Sign in</button>
+        <button id="auth-alt" class="authalt" type="button">Create an account</button>
+        <span style="flex:1 1 auto"></span>
+        <button id="auth-close" class="authclose" type="button">Close</button>
+      </div>
+    </form>
+    <div id="auth-error" class="autherr"></div>
+    <!--
+      SAID OUT LOUD, because it is true and because the alternative is worse. A
+      reset link needs email, email needs a verified sending domain, and that
+      domain is the same one the TLS certificate needs — so on a loopback
+      deployment reset is not a cost trade-off, it is not possible. What is not
+      acceptable is a reset link that quietly does nothing, or a page that stays
+      silent while somebody locks themselves out.
+    -->
+    <div class="authnote">No password reset yet — message the operator and it will be reset by hand.</div>
+  </div>
+</div>
+
 <footer>
-  Read-only. This view never writes to the filings collection. All times are IST (UTC+05:30).
+  This view never writes to the filings collection. All times are IST (UTC+05:30).
   Every insight is traceable: the symbol and category are stored verbatim, the action phrase is a fixed lookup,
   and the amount and counterparty quote the source document.
   A refused amount degrades the headline to the exchange's own words.

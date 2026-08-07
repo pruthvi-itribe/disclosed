@@ -346,6 +346,13 @@ export const SCRIPT_COMPANY = `
     industryTag.hidden = !industry;
     if (industry) industryTag.textContent = industry;
 
+    // The watch control, hidden exactly the way the industry tag above it is.
+    // Absent when signed out for the same reason the card's star is: a
+    // permanently disabled control explains nothing.
+    var watch = el('co-watch');
+    watch.hidden = !signedIn();
+    if (!watch.hidden) setWatchLabel(watch, state.company);
+
     var verified = 0;
     for (var i = 0; i < items.length; i++) {
       if (items[i].confidenceTier === 'verified') verified += 1;
