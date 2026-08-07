@@ -39,8 +39,18 @@ describe('the provider vocabulary', () => {
     // Asserted against literals, not against themselves. Two providers measured
     // with different budgets are not being compared, and a per-provider ceiling
     // is exactly how that would happen without anyone noticing.
-    expect(CLAIM_MAX_TOKENS).toBe(16_000);
-    expect(CLAIM_TIMEOUT_MS).toBe(120_000);
+    expect(CLAIM_MAX_TOKENS).toBe(32_000);
+    expect(CLAIM_TIMEOUT_MS).toBe(180_000);
+  });
+
+  it('leaves the timeout room for the tokens the ceiling permits', () => {
+    // THE PAIRING THAT MUST NOT DRIFT. The token ceiling's only real cost is
+    // latency — a results call was measured at 60-120s against 16,000 tokens —
+    // so raising the budget without raising the timeout converts truncated
+    // replies into timed-out ones and looks like a fix. Both must move, and
+    // both must stay inside the ten-minute enrichment lease.
+    expect(CLAIM_TIMEOUT_MS).toBeGreaterThanOrEqual(CLAIM_MAX_TOKENS / 200);
+    expect(CLAIM_TIMEOUT_MS).toBeLessThan(10 * 60 * 1000);
   });
 });
 

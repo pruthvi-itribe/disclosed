@@ -100,18 +100,39 @@ export const DEFAULT_CLAIM_MODEL: Readonly<Record<ClaimProviderName, string>> =
  * cost of the raise is zero. What it does cost is LATENCY: a results call on
  * this provider now takes 60 to 120 seconds, which is why the enrichment lease
  * had to be raised with it.
+ *
+ * RAISED AGAIN TO 32,000, AND THE CLAIMS LANE FORCED IT THIS TIME. Splitting
+ * MAX_CLAIMS_EXTRACTED from MAX_CLAIMS_ON_WIRE changed the prompt from "return
+ * at most 3 claims" to "return up to 12", and a reply carrying four times the
+ * claims plus the reasoning that found them does not fit a budget sized for
+ * three. TRANSRAILL's and HEROMOTOCO's investor presentations both came back
+ * `the reply was truncated at 16000 tokens` and produced nothing at all — a
+ * deck that had yielded two claims under the old cap yielding zero under the
+ * new one, which is the worst possible direction for a change meant to extract
+ * more.
+ *
+ * It is the same ceiling that was already costing the RESULTS lane 32 filings
+ * before the claims change existed, so this raise repairs a regression and a
+ * standing defect with one number.
  */
-export const CLAIM_MAX_TOKENS = 16_000;
+export const CLAIM_MAX_TOKENS = 32_000;
 
 /**
  * Wall-clock ceiling for one call, shared.
  *
  * The worker is not latency-critical — the filing has already been stored and
  * alerted — but it is sequential, so a call that hangs stops the queue behind
- * it. Two minutes is far beyond the observed shape of this request and well
- * inside the claim lease.
+ * it. Three minutes is beyond the observed shape of this request and well
+ * inside the ten-minute claim lease.
+ *
+ * RAISED WITH `CLAIM_MAX_TOKENS`, and they must move together. The token
+ * ceiling's only real cost is latency — a results call was already measured at
+ * 60 to 120 seconds against a 16,000-token budget — so doubling the budget
+ * while leaving a 120-second timeout would convert truncated replies into
+ * timed-out ones and call it a fix. A generated token still takes time to
+ * generate whether or not the ceiling allows it.
  */
-export const CLAIM_TIMEOUT_MS = 120_000;
+export const CLAIM_TIMEOUT_MS = 180_000;
 
 /**
  * What one call cost, as the provider reported it.
