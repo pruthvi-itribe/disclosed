@@ -225,3 +225,131 @@ FilingSchema.index(
   { symbol: 1, category: 1, disseminatedAt: -1 },
   { name: 'symbol_1_category_1_disseminatedAt_-1' },
 );
+
+/**
+ * Serves the type-ahead's company directory, and nothing else.
+ *
+ * The directory asks one question — "every distinct (symbol, companyName) and
+ * how many filings each has" — and this index answers it FROM THE INDEX ALONE.
+ * Measured on the live collection of 2,243 filings, with the pipeline in
+ * `apps/dashboard/src/search/company-directory.ts` and the hint it pins:
+ *
+ *   without a hint   COLLSCAN            2,243 docs examined,     0 keys, 2ms
+ *   with the hint    PROJECTION_COVERED       0 docs examined, 2,243 keys, 5ms
+ *
+ * ZERO DOCUMENTS EXAMINED is the whole reason this index exists. A viewer
+ * building a suggestion list must not pull 2,243 documents through the page
+ * cache the ingest poller is using for its own working set — the two processes
+ * share this collection and the poller's job is not to be slowed down by
+ * somebody typing.
+ *
+ * NOT REDUNDANT WITH `symbol_1_category_1_disseminatedAt_-1`, which shares its
+ * `symbol` prefix. That one carries `category` second and therefore cannot cover
+ * a projection of `companyName`; a `$group` against it fetches every document
+ * and the measurement above is exactly what that costs. This is the only index
+ * on the collection from which a company's NAME can be read without reading the
+ * company's filings.
+ *
+ * The hint is load-bearing and is asserted by the spec: without a predicate the
+ * planner has no reason to prefer an index over a scan, even one that covers the
+ * projection completely.
+ */
+FilingSchema.index(
+  { symbol: 1, companyName: 1 },
+  { name: 'symbol_1_companyName_1' },
+);
+
+/**
+ * Serves the search box: one weighted text index over everything a reader could
+ * reasonably be searching FOR.
+ *
+ * ================================================================
+ * WHY A TEXT INDEX AND NOT A REGEX
+ * ================================================================
+ *
+ * The search this replaces was a prefix match on `symbol`. A reader typing
+ * `britannia`, `lupin pharma`, `solar` or `stock split` got nothing, because
+ * none of those is the beginning of a ticker. The obvious repair — a
+ * case-insensitive regex over `companyName` and `summary` — is the wrong one
+ * twice over: a regex with the `i` flag CANNOT USE AN INDEX, so every keystroke
+ * becomes a collection scan against a collection a live poller is inserting
+ * into; and a pattern assembled from request text is both an injection surface
+ * and a ReDoS one, which `filing-query.service.ts` already refuses for `symbol`.
+ *
+ * A text index has neither problem. Measured on the live collection:
+ *
+ *   $search 'britannia'     5 returned,   5 keys,   5 docs,  3ms
+ *   $search 'solar'        29 returned,  29 keys,  29 docs,  0ms
+ *   $search 'lupin pharma' 26 returned,  26 keys,  26 docs,  0ms
+ *   $search 'stock split' 369 returned, 376 keys, 369 docs,  1ms
+ *   $search 'zzzqqq'        0 returned,   0 keys,   0 docs,  0ms
+ *
+ * Keys examined equals documents returned: the index is doing all of the work
+ * and the FETCH is only pulling rows that are already answers. The plan is
+ * `TEXT_MATCH → TEXT_OR → IXSCAN` per term, which is why a two-word query plans
+ * as two index scans and why `MAX_SEARCH_TERMS` caps how many a reader can ask
+ * for.
+ *
+ * ================================================================
+ * WHAT IS IN IT, AND WHAT IS DELIBERATELY NOT
+ * ================================================================
+ *
+ * The nine fields below are the ones that carry what a filing SAYS. The weights
+ * are not a ranking on their own — the search's ordering is a three-tier rule in
+ * `search-rank.ts` and the score only separates rows inside the last tier — but
+ * they decide which body match beats which, so they run from identity (`symbol`)
+ * through description (`companyName`, `category`) to content.
+ *
+ * `enrichment.claims.span` and `enrichment.results.*.span` are OUT. They are the
+ * raw PDF sentences the claim text was verified against — the same content in a
+ * rawer form, with the line breaks and the hyphenation a text layer leaves
+ * behind. Indexing them would roughly double a 1.3MB index (measured, 2,243
+ * filings) to make `britannia` match the same filings twice.
+ *
+ * `isin` is OUT: it has an exact-match index of its own and nobody searches for
+ * an identifier by fragment.
+ *
+ * ONE TEXT INDEX PER COLLECTION IS A MONGODB LIMIT, so this is the only one
+ * there can be. Adding a field here later is an index rebuild, not a new index.
+ */
+FilingSchema.index(
+  {
+    symbol: 'text',
+    companyName: 'text',
+    category: 'text',
+    summary: 'text',
+    'enrichment.outcome': 'text',
+    'enrichment.claimLine': 'text',
+    'enrichment.resultsLine': 'text',
+    'enrichment.claims.text': 'text',
+    'enrichment.documentSummary': 'text',
+  },
+  {
+    name: 'filing_text',
+    // The exchange publishes in English and the extractor writes in English;
+    // naming it rather than defaulting means a future stored `language` field
+    // cannot silently re-stem the whole index.
+    default_language: 'english',
+    weights: {
+      // Identity beats description beats content. A filing whose SYMBOL is the
+      // query is about the company the reader named; one whose claim line
+      // mentions it may merely be a counterparty.
+      symbol: 40,
+      companyName: 20,
+      category: 8,
+      // The exchange's own sentence, which is mostly `<name> has informed the
+      // Exchange about <category>` — it restates the two fields above it, so it
+      // is weighted below both rather than counting them a second time.
+      summary: 4,
+      'enrichment.outcome': 4,
+      'enrichment.claimLine': 2,
+      'enrichment.resultsLine': 2,
+      'enrichment.claims.text': 2,
+      // The one line on a filing that no span was matched against. It is
+      // searchable because it is often the only prose a scanned document
+      // yielded, and it is last because it is the only field here that nothing
+      // verified.
+      'enrichment.documentSummary': 1,
+    },
+  },
+);

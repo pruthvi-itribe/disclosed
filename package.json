@@ -39,7 +39,9 @@
     "routing:prove": "ts-node -r tsconfig-paths/register tools/parsing/prove-routing.ts",
     "results:prove": "ts-node -r tsconfig-paths/register tools/results/prove-results-route.ts",
     "density:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-text-density.ts",
-    "bse:overlap": "ts-node -r tsconfig-paths/register tools/bse/measure-overlap.ts"
+    "bse:overlap": "ts-node -r tsconfig-paths/register tools/bse/measure-overlap.ts",
+    "search:indexes": "ts-node -r tsconfig-paths/register tools/search/build-search-indexes.ts",
+    "test:e2e": "playwright test"
   },
   "keywords": [],
   "author": "",
@@ -67,6 +69,7 @@
     "@nestjs/cli": "^10.4.9",
     "@nestjs/schematics": "^10.2.3",
     "@nestjs/testing": "^10.4.22",
+    "@playwright/test": "^1.61.1",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.19.43",
     "@types/node-telegram-bot-api": "^0.64.15",
