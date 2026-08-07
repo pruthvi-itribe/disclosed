@@ -145,21 +145,39 @@ export const hasUsableTextLayer = (text: string): boolean =>
  * Share of a document that must read as text before its layer is trusted.
  *
  * 0.50 — more than half the document must be unreadable before the pixels are
- * re-read — and the number is placed by a measured empty band rather than by
- * taste. Over 522 live filings from every category EXCEPT newspaper
- * publications, `readableWindowFraction` puts 507 at 0.95-1.00 and 10 more at
- * 0.90-0.95. Between 0.20 and 0.50 there are ZERO. The three that sit below are
- * all, on inspection, newspaper advertisements filed under another category —
- * ORBTEXP's post-buyback announcement, WESTLIFE's and UGROCAP's general
- * updates — so at this bound every ordinary filing that changes verdict is
- * verifiably a newspaper page.
+ * re-read — and the number is placed by a measured distribution rather than by
+ * taste. Over 849 live filings from every category EXCEPT newspaper
+ * publications, `readableWindowFraction` puts 831 at 0.95-1.00 and 12 more at
+ * 0.90-0.95. Only THREE sit below this bound, and all three were read by hand:
+ *
+ *     0.188  ORBTEXP   post-buyback announcement   a newspaper page
+ *     0.194  WESTLIFE  general update              a newspaper page
+ *     0.375  NUVOCO    general update              CORRUPT, and not a newspaper
+ *
+ * NUVOCO's AGM notice (seqId 106731971) is the one that matters, and it is the
+ * reason this comment no longer claims the band below 0.90 is empty — an
+ * earlier measurement over 522 documents did not contain it and said so. Its
+ * covering letter is clean English for three windows and then every remaining
+ * window reads `6XE1RWLFHRIWKH$QQXDO*HQHUDO0HHWLQJ` — "Sub: Notice of the
+ * Annual General Meeting" at the same +3 displacement as MSWIL. It stores zero
+ * claims today.
+ *
+ * So the corrupt-layer class is NOT a newspaper phenomenon that happens to be
+ * miscategorised, which is what the first reading of the data suggested. It is
+ * a property of the font a filer's software embedded, and an ordinary AGM
+ * notice can carry it. That makes the bound load-bearing on its own account
+ * rather than a proxy for a category.
  *
  * NEWSPAPER PUBLICATIONS THEMSELVES ARE A CONTINUUM, from 0.05 to 1.00 with no
- * gap anywhere, because a newspaper page legitimately carries a Marathi AGM
- * notice and another company's SARFAESI notice beside the results table. So
- * the position of the bound INSIDE the empty band is a cost decision and is not
- * pretending otherwise: lower is cheaper, and 0.50 is the cheap end of a band
- * that runs to 0.80.
+ * gap anywhere — 26 below 0.20, 44 between 0.20 and 0.50, 111 between 0.50 and
+ * 0.90, 227 above — because a newspaper page legitimately carries a Marathi AGM
+ * notice and another company's SARFAESI notice beside the results table.
+ *
+ * SO THE EXACT POSITION OF THIS BOUND IS A COST DECISION, and it is only the
+ * newspapers that make it one: they are where moving it up or down changes the
+ * count, and 70 of the 73 documents it catches are theirs. Raising it to 0.80
+ * would pull in another 111 OCR passes to catch nothing the three ordinary
+ * filings above did not already give up. 0.50 is the cheap end.
  *
  * The escalation was verified to pay before the bound was chosen. SUMMITSEC's
  * newspaper publication (seqId 106727130) reads 0.514 through `pdf-parse` and

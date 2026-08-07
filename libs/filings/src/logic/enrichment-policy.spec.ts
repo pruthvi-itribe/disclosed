@@ -18,6 +18,7 @@ import {
   PENDING_ENRICHMENT,
   TERMINAL_STATES,
 } from './enrichment.types';
+import { readableWindowFraction } from './text-quality';
 
 describe('classifyFetchFailure', () => {
   it.each([
@@ -230,11 +231,26 @@ describe('hasCorruptTextLayer', () => {
     expect(hasCorruptTextLayer(document)).toBe(true);
   });
 
+  it('catches the corrupt filing that is not a newspaper page', () => {
+    // NUVOCO seqId 106731971, and the reason the bound is not a proxy for the
+    // newspaper category. An AGM notice: three windows of clean covering
+    // letter, then five reading `6XE1RWLFHRIWKH$QQXDO*HQHUDO0HHWLQJ` at the
+    // same +3 displacement as MSWIL. 0.375 readable, the closest any real
+    // non-newspaper document sits to the bound, and it stores zero claims.
+    const document = repeatTo(READABLE, 1_800) + repeatTo(DISPLACED, 2_672);
+    // Pinned, not merely `true`: this document's whole value as a test case is
+    // that it sits 0.125 from the bound rather than 0.45 away like MSWIL, so a
+    // test that passed at any fraction below 0.5 would not be testing it.
+    expect(readableWindowFraction(document)).toBeCloseTo(0.375, 3);
+    expect(hasCorruptTextLayer(document)).toBe(true);
+  });
+
   it('puts the bound where the measurement put it', () => {
-    // Literal as well as constant. 0.50 sits in a band — 0.20 to 0.50 — holding
-    // ZERO of 522 measured non-newspaper filings, and a later edit that moves
-    // it without re-measuring should fail here rather than quietly re-route
-    // hundreds of documents to the most expensive parser configuration.
+    // Literal as well as constant. Of 849 measured non-newspaper filings, 843
+    // read above 0.90 and exactly THREE fall below this bound, so a later edit
+    // that moves it without re-measuring should fail here rather than quietly
+    // re-route hundreds of documents to the most expensive parser
+    // configuration — 111 newspaper pages sit between 0.50 and 0.90 alone.
     expect(MIN_READABLE_WINDOW_FRACTION).toBe(0.5);
 
     // Two thirds readable is above the bound and must not escalate; one third
