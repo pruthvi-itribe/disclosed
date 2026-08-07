@@ -1,6 +1,10 @@
-import { findVerbatimSpan } from './claim-span';
+import { findVerbatimSpan, type SpanMatch } from './claim-span';
 import { malformedGroupingIn } from './grouped-number';
-import { BASIS_HEADING_REACH, governingBasis } from './results-basis';
+import {
+  BASIS_HEADING_REACH,
+  governingBasis,
+  type GoverningBasis,
+} from './results-basis';
 import { metricLabelRefusal } from './results-metric';
 import {
   conflictingQuarter,
@@ -21,6 +25,7 @@ import {
   ROW_CURRENCY,
   ROW_PERCENT,
   ROW_SCOPED_UNIT_METRICS,
+  type GoverningScale,
 } from './results-unit';
 import {
   RESULTS_METRIC_RANK,
@@ -356,28 +361,63 @@ function unitFor(
  * of which is traceable to a quoted row in a table whose basis, columns and
  * scale the document itself states — or a refusal with the reason.
  */
-export function verifyResults(
-  input: ResultsVerificationInput,
-): ResultsVerification {
-  const { documentText, proposed } = input;
-  const limit = input.maxFigures ?? MAX_RESULTS_FIGURES;
+/**
+ * The table's own properties, settled once before any row is read.
+ *
+ * Every field here is a property of the TABLE rather than of a figure in it,
+ * and each one is a refusal of the whole block when it cannot be established —
+ * a table whose basis, scale or columns this pipeline cannot name has nothing
+ * publishable in it, however well-formed its rows are.
+ */
+interface TableFrame {
+  /** The document's own bytes for the column header, and where they sit. */
+  readonly header: SpanMatch;
+  readonly dates: readonly ColumnDate[];
+  readonly basis: Exclude<GoverningBasis, { outcome: 'none' }>;
+  readonly scale: Exclude<GoverningScale, { outcome: 'none' }>;
+}
 
-  // --- the table's own properties, settled once ------------------------------
+/**
+ * A stage's answer: what it established, or the refusal that ends the whole
+ * verification.
+ *
+ * CARRYING THE REFUSAL RATHER THAN A REASON CODE, so a stage decides its own
+ * wording and the caller only has to pass it back. `verifyResults` reads as the
+ * four questions it asks in order, which is what it always was underneath 212
+ * lines of asking them inline.
+ */
+type Stage<T> =
+  | { readonly outcome: 'ok'; readonly value: T }
+  | { readonly outcome: 'refused'; readonly refusal: ResultsVerification };
+
+const staged = <T>(value: T): Stage<T> => ({ outcome: 'ok', value });
+const stageRefusal = <T>(refusal: ResultsVerification): Stage<T> => ({
+  outcome: 'refused',
+  refusal,
+});
+
+/** Where the table is, what periods its columns carry, and how to read them. */
+function frameTable(input: ResultsVerificationInput): Stage<TableFrame> {
+  const { documentText, proposed } = input;
 
   const header = findVerbatimSpan(documentText, proposed.columnsSpan);
   if (header === null) {
-    return refuse(
-      'columns-not-found',
-      `the quoted column header is not in the document: "${proposed.columnsSpan}"`,
+    return stageRefusal(
+      refuse(
+        'columns-not-found',
+        `the quoted column header is not in the document: "${proposed.columnsSpan}"`,
+      ),
     );
   }
 
   const dates = columnDatesIn(header.evidence);
   if (dates.length < 2) {
-    return refuse(
-      'period-not-derivable',
-      `the quoted column header states ${dates.length} period-end date(s), ` +
-        'so no column can be identified',
+    return stageRefusal(
+      refuse(
+        'period-not-derivable',
+        `the quoted column header states ${dates.length} period-end date(s), ` +
+          'so no column can be identified',
+      ),
     );
   }
 
@@ -387,13 +427,15 @@ export function verifyResults(
     input.basisReach ?? BASIS_HEADING_REACH,
   );
   if (basis.outcome === 'none') {
-    return refuse('basis-not-determinable', basis.detail);
+    return stageRefusal(refuse('basis-not-determinable', basis.detail));
   }
   if (basis.basis !== proposed.basis) {
-    return refuse(
-      'basis-not-determinable',
-      `the extractor read this table as ${proposed.basis} and the statement ` +
-        `heading above it says ${basis.basis}: "${basis.evidence}"`,
+    return stageRefusal(
+      refuse(
+        'basis-not-determinable',
+        `the extractor read this table as ${proposed.basis} and the statement ` +
+          `heading above it says ${basis.basis}: "${basis.evidence}"`,
+      ),
     );
   }
 
@@ -403,35 +445,34 @@ export function verifyResults(
     header.evidence.length,
   );
   if (scale.outcome === 'none') {
-    return refuse('unit-not-determinable', scale.detail);
+    return stageRefusal(refuse('unit-not-determinable', scale.detail));
   }
 
-  // --- each row --------------------------------------------------------------
+  return staged({ header, dates, basis, scale });
+}
 
-  const discards: ResultsFigureDiscard[] = [];
-  const resolved: ResolvedRow[] = [];
-  for (const figure of proposed.figures) {
-    const row = resolveRow(
-      figure,
-      documentText,
-      header.offset,
-      header.evidence.length,
-      dates.length,
-    );
-    if (isDiscard(row)) discards.push(row);
-    else resolved.push(row);
-  }
+/** The two columns every row was read across, and the periods they name. */
+interface ColumnPair {
+  readonly current: number;
+  readonly prior: number;
+  readonly period: ResultsPeriod;
+  readonly priorPeriod: ResultsPeriod;
+}
 
-  if (resolved.length === 0) {
-    return refuse(
-      'all-discarded',
-      `all ${proposed.figures.length} proposed figure(s) were refused`,
-      discards,
-    );
-  }
-
-  // --- the columns the rows were read across, agreed and checked -------------
-
+/**
+ * Agrees the column pair across every resolved row, then checks it names a
+ * year-on-year comparison the document does not contradict.
+ *
+ * AGREED BEFORE IT IS CHECKED, deliberately. Two rows read across different
+ * columns is a different failure from two columns that are not a year apart,
+ * and collapsing them would report the second when the first is what happened.
+ */
+function agreeColumns(
+  resolved: readonly ResolvedRow[],
+  frame: TableFrame,
+  documentText: string,
+  discards: readonly ResultsFigureDiscard[],
+): Stage<ColumnPair> {
   const pair = {
     current: resolved[0].currentIndex,
     prior: resolved[0].priorIndex,
@@ -440,68 +481,96 @@ export function verifyResults(
     (row) => row.currentIndex !== pair.current || row.priorIndex !== pair.prior,
   );
   if (disagreeing !== undefined) {
-    return refuse(
-      'columns-inconsistent',
-      `one row was read across columns ${pair.current + 1} and ` +
-        `${pair.prior + 1} and another across ${disagreeing.currentIndex + 1} ` +
-        `and ${disagreeing.priorIndex + 1}`,
-      discards,
+    return stageRefusal(
+      refuse(
+        'columns-inconsistent',
+        `one row was read across columns ${pair.current + 1} and ` +
+          `${pair.prior + 1} and another across ${disagreeing.currentIndex + 1} ` +
+          `and ${disagreeing.priorIndex + 1}`,
+        discards,
+      ),
     );
   }
 
-  const currentDate = dates[pair.current];
-  const priorDate = dates[pair.prior];
+  const currentDate = frame.dates[pair.current];
+  const priorDate = frame.dates[pair.prior];
   if (
-    occurrences(dates, currentDate) > 1 ||
-    occurrences(dates, priorDate) > 1
+    occurrences(frame.dates, currentDate) > 1 ||
+    occurrences(frame.dates, priorDate) > 1
   ) {
-    return refuse(
-      'period-ambiguous',
-      `the column header repeats ${currentDate.raw} or ${priorDate.raw}, so ` +
-        'which column a value sits in does not say which period it is',
-      discards,
+    return stageRefusal(
+      refuse(
+        'period-ambiguous',
+        `the column header repeats ${currentDate.raw} or ${priorDate.raw}, so ` +
+          'which column a value sits in does not say which period it is',
+        discards,
+      ),
     );
   }
 
   if (!isYearBefore(currentDate, priorDate)) {
-    return refuse(
-      'not-year-on-year',
-      `the column beside ${currentDate.raw} is ${priorDate.raw}, which is not ` +
-        'the year-ago period',
-      discards,
+    return stageRefusal(
+      refuse(
+        'not-year-on-year',
+        `the column beside ${currentDate.raw} is ${priorDate.raw}, which is not ` +
+          'the year-ago period',
+        discards,
+      ),
     );
   }
 
   const period = periodForColumnDate(currentDate);
   const priorPeriod = periodForColumnDate(priorDate);
   if (period === null || priorPeriod === null) {
-    return refuse(
-      'period-not-derivable',
-      `${currentDate.raw} does not close a statutory quarter, so this ` +
-        'pipeline cannot say which quarter it is',
-      discards,
+    return stageRefusal(
+      refuse(
+        'period-not-derivable',
+        `${currentDate.raw} does not close a statutory quarter, so this ` +
+          'pipeline cannot say which quarter it is',
+        discards,
+      ),
     );
   }
 
   const conflict = conflictingQuarter(
     documentText,
-    header.offset,
-    header.evidence.length,
+    frame.header.offset,
+    frame.header.evidence.length,
     period,
   );
   if (conflict !== null) {
-    return refuse(
-      'period-conflict',
-      `the column dates make this ${period.label} and the document writes ` +
-        `"${conflict}" beside the table`,
-      discards,
+    return stageRefusal(
+      refuse(
+        'period-conflict',
+        `the column dates make this ${period.label} and the document writes ` +
+          `"${conflict}" beside the table`,
+        discards,
+      ),
     );
   }
 
-  // --- units, duplicates, ranking, limit -------------------------------------
+  return staged({ ...pair, period, priorPeriod });
+}
 
+/**
+ * Publishes the rows whose values, unit and metric all survive, and discards
+ * the rest with a reason each.
+ *
+ * MUTATES THE DISCARD LIST IT IS GIVEN rather than returning a second one,
+ * because a figure refused here belongs in the same list as one refused while
+ * its row was being resolved — a caller that had to concatenate two lists could
+ * put them in an order that no longer matches the order the figures were
+ * proposed in.
+ */
+function acceptRows(
+  resolved: readonly ResolvedRow[],
+  frame: TableFrame,
+  pair: ColumnPair,
+  discards: ResultsFigureDiscard[],
+): readonly VerifiedResultsFigure[] {
   const accepted: VerifiedResultsFigure[] = [];
   const seen = new Set<ResultsMetric>();
+
   for (const row of resolved) {
     // THE SECOND HALF OF THE GROUPING GUARD, and it is not redundant with the
     // one in `resolveRow`. What gets published is the DOCUMENT'S token, not the
@@ -526,7 +595,7 @@ export function verifyResults(
       continue;
     }
 
-    const unit = unitFor(row.figure.metric, row.evidence, scale.token);
+    const unit = unitFor(row.figure.metric, row.evidence, frame.scale.token);
     if (unit.outcome === 'none') {
       discards.push(
         discard(
@@ -560,6 +629,50 @@ export function verifyResults(
     });
   }
 
+  return accepted;
+}
+
+export function verifyResults(
+  input: ResultsVerificationInput,
+): ResultsVerification {
+  const { documentText, proposed } = input;
+  const limit = input.maxFigures ?? MAX_RESULTS_FIGURES;
+
+  const framed = frameTable(input);
+  if (framed.outcome === 'refused') return framed.refusal;
+  const frame = framed.value;
+
+  const discards: ResultsFigureDiscard[] = [];
+  const resolved: ResolvedRow[] = [];
+  for (const figure of proposed.figures) {
+    const row = resolveRow(
+      figure,
+      documentText,
+      frame.header.offset,
+      frame.header.evidence.length,
+      frame.dates.length,
+    );
+    if (isDiscard(row)) discards.push(row);
+    else resolved.push(row);
+  }
+
+  // CHECKED BEFORE THE COLUMNS ARE AGREED, and the order is load-bearing rather
+  // than tidy: agreeing them reads `resolved[0]`, and with nothing resolved
+  // there is no such row. Both refusals say `all-discarded`; this is the one
+  // that means nothing survived far enough to have a column pair at all.
+  if (resolved.length === 0) {
+    return refuse(
+      'all-discarded',
+      `all ${proposed.figures.length} proposed figure(s) were refused`,
+      discards,
+    );
+  }
+
+  const agreed = agreeColumns(resolved, frame, documentText, discards);
+  if (agreed.outcome === 'refused') return agreed.refusal;
+  const pair = agreed.value;
+
+  const accepted = acceptRows(resolved, frame, pair, discards);
   if (accepted.length === 0) {
     return refuse(
       'all-discarded',
@@ -576,11 +689,11 @@ export function verifyResults(
   return {
     outcome: 'ok',
     results: {
-      basis: basis.basis,
-      basisSpan: basis.evidence,
-      columnsSpan: header.evidence,
-      period: period.label,
-      priorPeriod: priorPeriod.label,
+      basis: frame.basis.basis,
+      basisSpan: frame.basis.evidence,
+      columnsSpan: frame.header.evidence,
+      period: pair.period.label,
+      priorPeriod: pair.priorPeriod.label,
       figures: ranked.slice(0, limit),
     },
     discards: [
