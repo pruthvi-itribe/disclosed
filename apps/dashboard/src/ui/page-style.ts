@@ -676,4 +676,10 @@ button.sym:hover { color: var(--accent); }
    Sunday is 26 filings against a Tuesday's 832. */
 .day.weekend { opacity: .45; }
 .day.weekend.empty { background: var(--line); opacity: .7; }
+
+/* The topic row sits under the group row and reads as the quieter question:
+   what a filing is ABOUT rather than what KIND it is. Same control, one step
+   back, so two rows of chips do not compete for the same attention. */
+.chips.topics .chip { font-size: 12px; opacity: .85; }
+.chips.topics .chip.active { opacity: 1; background: var(--claim, #7dd3fc); border-color: var(--claim, #7dd3fc); color: #06101f; }
 `;

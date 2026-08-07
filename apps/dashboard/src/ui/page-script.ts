@@ -160,7 +160,10 @@ export const PAGE_SCRIPT = `
     // 'expanded' is: the page repaints every four seconds, and a view that
     // forgot which company it was showing would snap back to the feed under a
     // reader mid-scroll.
-    company: null
+    company: null,
+    // What the reader asked the claims to be ABOUT. Empty means any. A separate
+    // axis from 'group', which is what KIND of filing NSE says it is.
+    topic: ''
   };
 
   // A lookup that cannot be walked into the prototype chain. The keys come from
@@ -1975,6 +1978,7 @@ export const PAGE_SCRIPT = `
     if (state.symbol) parts.push('symbol=' + encodeURIComponent(state.symbol));
     if (state.category) parts.push('category=' + encodeURIComponent(state.category));
     if (state.group) parts.push('group=' + encodeURIComponent(state.group));
+    if (state.topic) parts.push('topic=' + encodeURIComponent(state.topic));
     if (state.tier) parts.push('tier=' + encodeURIComponent(state.tier));
     if (state.enrichState) parts.push('state=' + encodeURIComponent(state.enrichState));
     if (state.amount) parts.push('amount=' + encodeURIComponent(state.amount));
@@ -2071,6 +2075,11 @@ export const PAGE_SCRIPT = `
     state.q = '';
     state.picked = null;
     state.refusal = '';
+    // The topic row is a filter like any other, so Clear must reach it. A
+    // Clear that left one chip lit would leave the feed narrowed by a control
+    // the reader believes they just reset.
+    state.topic = '';
+    syncTopics();
     closeSuggest();
     renderSearchNote();
     renderRefusalChip();
@@ -2557,6 +2566,28 @@ export const PAGE_SCRIPT = `
     state.group = group;
     state.offset = 0;
     syncChips();
+    refresh(true);
+  });
+
+  // The topic row: the same control shape as the group chips, over a different
+  // question. Kept as its own state and its own sync so the two rows can be set
+  // independently — a reader narrowing to Dividends has not said anything about
+  // which category group they want.
+  function syncTopics() {
+    var chips = el('topics').getElementsByClassName('chip');
+    for (var i = 0; i < chips.length; i++) {
+      var mine = chips[i].getAttribute('data-topic') === state.topic;
+      chips[i].className = 'chip' + (mine ? ' active' : '');
+    }
+  }
+  el('topics').addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.getAttribute) return;
+    var topic = target.getAttribute('data-topic');
+    if (topic === null) return;
+    state.topic = topic;
+    state.offset = 0;
+    syncTopics();
     refresh(true);
   });
 

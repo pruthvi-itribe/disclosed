@@ -138,6 +138,31 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <button class="chip" type="button" data-group="routine">Routine</button>
       <button class="chip" type="button" data-group="other">Other</button>
     </div>
+    <!--
+      TOPIC CHIPS, a second row and a different question from the one above.
+      The group chips ask what KIND of filing this is, which is NSE's taxonomy;
+      these ask what its claims are ABOUT. The two disagree constantly and both
+      are right — a dividend declaration arrives as an Outcome of Board Meeting
+      and says something about a payout — and before topics existed there was no
+      way to ask the second question at all, because 67% of claims sat under one
+      kind called 'operational'.
+    -->
+    <!--
+      LABELS DELIBERATELY DIFFERENT FROM THE GROUP ROW ABOVE. Both rows would
+      otherwise carry a chip reading "Results", "Orders" and "M&A" meaning
+      different things one line apart — the group row means what KIND of filing
+      NSE calls this, and this row means what its claims are about.
+    -->
+    <div id="topics" class="chips topics">
+      <button class="chip active" type="button" data-topic="">Any topic</button>
+      <button class="chip" type="button" data-topic="financial">Financials</button>
+      <button class="chip" type="button" data-topic="dividend">Dividends</button>
+      <button class="chip" type="button" data-topic="orders">Order wins</button>
+      <button class="chip" type="button" data-topic="acquisition">Deals</button>
+      <button class="chip" type="button" data-topic="capacity">Capacity</button>
+      <button class="chip" type="button" data-topic="product">Product</button>
+      <button class="chip" type="button" data-topic="ratings">Ratings</button>
+    </div>
     <div id="search-note" class="searchnote" hidden></div>
     <label class="onlyinsights">
       <input id="only-insights" type="checkbox" checked>

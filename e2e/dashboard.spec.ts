@@ -320,3 +320,51 @@ test.describe('the company page', () => {
     await expect(page.locator('#view-company')).toBeHidden();
   });
 });
+
+test.describe('the topic chips', () => {
+  test('filter by what a filing SAID, not what kind it is', async ({
+    page,
+  }) => {
+    // The two rows ask different questions and both are right: a dividend
+    // declaration arrives as an Outcome of Board Meeting (group `results`) and
+    // says something about a payout (topic `dividend`). Before topics existed
+    // there was no way to ask the second — 67% of claims sat under one kind.
+    const asked: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('api/filings')) asked.push(r.url());
+    });
+
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    await page.locator('.chip[data-topic="dividend"]').click();
+    await expect(page.locator('.chip[data-topic="dividend"]')).toHaveClass(
+      /active/,
+    );
+    await expect
+      .poll(() => asked.some((url) => url.includes('topic=dividend')))
+      .toBe(true);
+    await expect(page.locator('#feed .card, #feed .emptyfeed')).not.toHaveCount(
+      0,
+    );
+  });
+
+  test('Clear resets the topic row too', async ({ page }) => {
+    // A Clear that left one chip lit would leave the feed narrowed by a control
+    // the reader believes they just reset.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await page.locator('.chip[data-topic="financial"]').click();
+    await expect(page.locator('.chip[data-topic="financial"]')).toHaveClass(
+      /active/,
+    );
+
+    await page.locator('#tab-admin').click();
+    await page.locator('#clear').click();
+    await page.locator('#tab-feed').click();
+    await expect(page.locator('.chip[data-topic=""]')).toHaveClass(/active/);
+    await expect(page.locator('.chip[data-topic="financial"]')).not.toHaveClass(
+      /active/,
+    );
+  });
+});

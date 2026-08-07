@@ -237,6 +237,20 @@ FilingSchema.index(
  * made; a symbol filing daily accumulates those without bound. This index
  * answers the count from the index alone.
  */
+/**
+ * Serves the feed's topic filter: "show me dividends", newest first.
+ *
+ * A MULTIKEY INDEX over an array field, which is what makes the filter mean
+ * what a reader means by it — a filing matches if ANY of its claims carries the
+ * topic, so a results presentation that also declares a payout appears under
+ * both. Without this the filter is a collection scan on a page that polls every
+ * four seconds, against the collection the ingest poller is writing to.
+ */
+FilingSchema.index(
+  { 'enrichment.claims.topic': 1, disseminatedAt: -1 },
+  { name: 'claims_topic_1_disseminatedAt_-1' },
+);
+
 FilingSchema.index(
   { symbol: 1, category: 1, disseminatedAt: -1 },
   { name: 'symbol_1_category_1_disseminatedAt_-1' },

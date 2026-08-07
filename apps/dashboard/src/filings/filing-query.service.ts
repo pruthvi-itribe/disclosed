@@ -18,6 +18,7 @@ import {
   formatRupees,
   MAPPED_GROUP_CATEGORIES,
   type CategoryGroup,
+  type ClaimTopic,
   type Filing,
   type FilingEnrichment,
 } from '@app/filings';
@@ -118,6 +119,17 @@ export interface RecentQuery {
   readonly claim?: ClaimFilter;
   /** NSE's categories collapsed to a readable set. */
   readonly group?: CategoryGroup;
+  /**
+   * What a filing's claims are ABOUT: dividends, results, orders.
+   *
+   * SEPARATE FROM `group`, which is what KIND of filing NSE says it is. The two
+   * disagree constantly and both are right: a dividend declaration arrives as
+   * `Outcome of Board Meeting` (group `results`) and says something about a
+   * payout (topic `dividend`). A reader hunting payouts wants the second, and
+   * before topics existed there was no way to ask for it — 67% of claims sat
+   * under the single kind `operational`.
+   */
+  readonly topic?: ClaimTopic;
   /** Whether anything about this filing survived a gate against the document. */
   readonly tier?: TierFilter;
 }
@@ -714,6 +726,12 @@ export class FilingQueryService {
         : { symbol: query.symbol.toUpperCase() }),
       ...(query.category === undefined ? {} : { category: query.category }),
       ...groupFilter(query.group),
+      // Matches a filing ANY of whose claims carries the topic, which is what a
+      // reader means by "show me dividends" — a results presentation that also
+      // declares a payout belongs in both. Served by the `claims.topic` index.
+      ...(query.topic === undefined
+        ? {}
+        : { 'enrichment.claims.topic': query.topic }),
       ...this.enrichmentFilter(query),
     };
   }

@@ -1,5 +1,6 @@
 import { Controller, Get, Header, Query } from '@nestjs/common';
 import { ok, okWith, type ApiEnvelope } from '../http/envelope';
+import { CLAIM_TOPICS } from '@app/filings';
 import {
   readBoundedInteger,
   readEnum,
@@ -130,6 +131,9 @@ export class DashboardController {
       // nothing, and on a page whose job is showing what was found that is
       // indistinguishable from nothing having been found.
       group: readEnum('group', query, GROUP_FILTERS),
+      // Validated against the closed list like every other filter, so caller
+      // text never reaches a Mongo predicate.
+      topic: readEnum('topic', query, CLAIM_TOPICS),
       tier: readEnum('tier', query, TIER_FILTERS),
       refusal: readFilter('refusal', query),
     });
