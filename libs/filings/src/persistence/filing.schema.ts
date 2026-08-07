@@ -48,6 +48,36 @@ const ClaimSchema = new Schema(
      * model cost, so a change of mind costs a re-run and not a re-extraction.
      */
     topic: { type: String, default: null },
+    /**
+     * The movement the DOCUMENT printed about this claim's figure, derived from
+     * the verified `span` by `claimDirection` — expansion, contraction, mixed
+     * or unrated.
+     *
+     * A THIRD AXIS, and the only one read off the source rather than off the
+     * claim. `kind` is the shape the extractor was asked for and `topic` is
+     * what the claim is about; both are functions of the model's text. This is
+     * a function of the document's own sentence, which is what makes it safe to
+     * show: 803 of 3,461 stored claims (23.2%) carry one, and the other 76.8%
+     * are `unrated` because the filing printed no direction word beside a
+     * percentage.
+     *
+     * NOT A SENTIMENT. 13 of the 45 contractions are falling NPA, debt,
+     * borrowing cost or emissions. Nothing downstream may colour this field.
+     *
+     * Stored rather than computed on read for the reason `topic` is: it is
+     * derived deterministically at zero model cost, so a change of mind costs a
+     * re-run, and a page that had to derive it per document at render time
+     * could not filter or count on it.
+     */
+    direction: { type: String, default: null },
+    /**
+     * The document's own characters that decided `direction`, quoted from the
+     * collapsed span. Null when `unrated`, and null on every claim stored
+     * before this existed — which is why `direction` is defaulted to null too
+     * rather than to `unrated`: "never classified" and "classified as no
+     * printed movement" are different facts about a claim.
+     */
+    directionEvidence: { type: String, default: null },
     // Null on every claim stored before the period rule existed, and null on
     // every claim whose own sentence states its quarter. Defaulted rather than
     // required so a filing written by the previous build reads back cleanly.

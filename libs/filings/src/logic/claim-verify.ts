@@ -1,5 +1,6 @@
 import { hasAmbiguityKeyword } from './ambiguity';
 import { advisoryHitIn, individualHitIn } from './claim-advisory';
+import { claimDirection } from './claim-direction';
 import { unsupportedNumbers } from './claim-numbers';
 import { PERIOD_CONTEXT_CHARS, supportPeriods } from './claim-period';
 import { findVerbatimSpan, MIN_SPAN_CHARS } from './claim-span';
@@ -239,6 +240,8 @@ function checkOne(
     );
   }
 
+  const reading = claimDirection(match.evidence);
+
   return {
     text,
     span: match.evidence,
@@ -265,6 +268,19 @@ function checkOne(
     // `financial`. Those are the loudest filings in the collection, missing
     // from the one control a reader has for finding them.
     topic: claimTopic(text),
+    // READ OFF THE SPAN, not off `text`, and filed here for the same reason
+    // `topic` is: it costs nothing, and a field a tool has to remember to
+    // backfill is a field the collection is permanently half-missing.
+    //
+    // The asymmetry with `topic` is the reason it reads the other string. A
+    // wrong topic files a true sentence badly; a direction taken from the
+    // model's own words could assert a movement the document never printed,
+    // which is a new publication rather than a filing decision. The span is the
+    // document's bytes, already matched above.
+    direction: reading.direction,
+    // Null rather than '' when unrated, so "no movement was printed" and "the
+    // evidence is an empty string" cannot render the same.
+    directionEvidence: reading.evidence === '' ? null : reading.evidence,
     periodSpan: period.evidence,
   };
 }

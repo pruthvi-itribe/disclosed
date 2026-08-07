@@ -68,6 +68,29 @@ describe('verifyClaims — what it accepts', () => {
     expect(claims[0].topic).toBe('other');
   });
 
+  it('files the movement the SPAN printed, with the characters that say so', () => {
+    // Read off the document's own sentence rather than the claim's text, for
+    // the reason `claim-direction.ts` opens with: a model asked to compress a
+    // filing will characterise a movement the filing never characterised.
+    const { claims } = verify([
+      claim({
+        span: 'Instamart expects volume growth of 16-18% through the year.',
+        text: 'expects volume growth of 16-18%',
+        kind: 'guidance',
+      }),
+    ]);
+    expect(claims[0].direction).toBe('expansion');
+    expect(claims[0].directionEvidence).toBe('growth of 16-18%');
+  });
+
+  it('leaves an unrated claim with no evidence rather than an empty quote', () => {
+    // `unrated` is a verdict — the document printed no checkable movement — and
+    // a null beside it is the absence of evidence rather than an empty one.
+    const { claims } = verify([claim()]);
+    expect(claims[0].direction).toBe('unrated');
+    expect(claims[0].directionEvidence).toBeNull();
+  });
+
   it('stores the DOCUMENT’s bytes as the span, not the extractor’s', () => {
     // The extractor normalised the line break; what is stored and shown must be
     // what the filing actually says.

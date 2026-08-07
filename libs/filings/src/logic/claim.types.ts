@@ -19,6 +19,7 @@ import type { SummaryRefusalReason } from './claim-summary';
  * statements than a wire line can carry, and "quantified guidance" outranks "a
  * new certification" when something has to be dropped.
  */
+import type { ClaimDirection } from './claim-direction';
 import type { ClaimTopic } from './claim-topic';
 
 export type ClaimKind =
@@ -95,6 +96,30 @@ export interface VerifiedClaim {
    * and an absent field does not.
    */
   readonly topic?: ClaimTopic;
+  /**
+   * The movement the DOCUMENT printed about this claim's own figure.
+   *
+   * SET BY `verifyClaims` ON EVERY CLAIM IT ACCEPTS, from the span rather than
+   * from the text. Optional for the same reason `topic` is, and the option is
+   * about READING rather than writing: the claims stored before this existed
+   * have none, and a reader must be able to tell "not classified yet" from
+   * "classified as no printed movement" — which is what `unrated` means and an
+   * absent field does not.
+   *
+   * NOT A SENTIMENT and never to be rendered as one. 13 of the 45 contractions
+   * in the live collection are falling bad loans, debt, borrowing costs or
+   * emissions. See `claim-direction.ts`.
+   */
+  readonly direction?: ClaimDirection;
+  /**
+   * The document's own characters that decided `direction`, quoted contiguously
+   * from the whitespace-collapsed span. Null when `unrated`.
+   *
+   * Present so a mark on a card can be checked without opening the PDF, which
+   * is the only thing that makes a derived tag admissible in this pipeline at
+   * all.
+   */
+  readonly directionEvidence?: string | null;
   /**
    * The document's own bytes around the heading that stated this claim's fiscal
    * period, when the period came from outside `span`. Null when the span stated
