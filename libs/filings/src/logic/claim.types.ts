@@ -19,6 +19,8 @@ import type { SummaryRefusalReason } from './claim-summary';
  * statements than a wire line can carry, and "quantified guidance" outranks "a
  * new certification" when something has to be dropped.
  */
+import type { ClaimTopic } from './claim-topic';
+
 export type ClaimKind =
   /** A stated expectation about the company's own future numbers. */
   | 'guidance'
@@ -82,6 +84,14 @@ export interface VerifiedClaim {
    */
   readonly span: string;
   readonly kind: ClaimKind;
+  /**
+   * What the claim is about, derived from its text.
+   *
+   * Optional because the whole stored collection predates it, and a reader of
+   * an older claim must be able to tell "not classified yet" from "classified
+   * as nothing in particular" — which is what `other` means and this does not.
+   */
+  readonly topic?: ClaimTopic;
   /**
    * The document's own bytes around the heading that stated this claim's fiscal
    * period, when the period came from outside `span`. Null when the span stated

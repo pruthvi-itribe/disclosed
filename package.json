@@ -41,7 +41,8 @@
     "density:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-text-density.ts",
     "bse:overlap": "ts-node -r tsconfig-paths/register tools/bse/measure-overlap.ts",
     "search:indexes": "ts-node -r tsconfig-paths/register tools/search/build-search-indexes.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "claims:topics": "ts-node -r tsconfig-paths/register tools/claims/classify-topics.ts"
   },
   "keywords": [],
   "author": "",

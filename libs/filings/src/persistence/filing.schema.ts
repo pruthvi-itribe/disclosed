@@ -32,6 +32,22 @@ const ClaimSchema = new Schema(
     text: { type: String, default: '' },
     span: { type: String, default: '' },
     kind: { type: String, default: 'operational' },
+    /**
+     * What the claim is ABOUT, derived from its own text by `claimTopic`.
+     *
+     * A SECOND AXIS, not a replacement for `kind`. `kind` is the shape the
+     * extractor was asked for — forward-looking, an approval, a partnership —
+     * and measured across 2,365 stored claims it is one bucket wearing six
+     * labels: `operational` holds 67% of them, so a dividend, a revenue figure
+     * and a new plant are indistinguishable. `topic` is what a reader filters
+     * by, and it names 58.7% of that catch-all.
+     *
+     * Stored rather than computed on read because the dashboard filters on it,
+     * and a filter over a value derived per-document at query time is a
+     * collection scan against a live ingest. Derived deterministically at zero
+     * model cost, so a change of mind costs a re-run and not a re-extraction.
+     */
+    topic: { type: String, default: null },
     // Null on every claim stored before the period rule existed, and null on
     // every claim whose own sentence states its quarter. Defaulted rather than
     // required so a filing written by the previous build reads back cleanly.
