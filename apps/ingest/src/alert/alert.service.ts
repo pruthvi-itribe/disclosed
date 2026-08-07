@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { describeError, safeText, stackOf } from '@app/common';
 import {
+  isNotRoutine,
+  isWatchedByOperator,
   normaliseWatchlist,
   partitionForAlerting,
-  passesContentGates,
   type Filing,
 } from '@app/filings';
 import { formatFilingAlert, TelegramService } from '@app/notify';
@@ -91,11 +92,12 @@ export class AlertService {
     if (this.watchlist.size > 0) return;
 
     this.logger.warn(
-      'WATCHLIST is empty, so every non-routine filing is alerted. Measured ' +
-        `over a 32-day corpus that is ~${FILINGS_PER_DAY_UNFILTERED} Telegram ` +
-        `messages a day, peaking at ${PEAK_FILINGS_PER_HOUR} in one hour. A ` +
-        'channel at that volume gets muted, and every operator alert is muted ' +
-        'with it. Set WATCHLIST before pointing this at a chat you rely on.',
+      'OPERATOR_WATCHLIST is empty, so every non-routine filing is alerted. ' +
+        `Measured over a 32-day corpus that is ~${FILINGS_PER_DAY_UNFILTERED} ` +
+        `Telegram messages a day, peaking at ${PEAK_FILINGS_PER_HOUR} in one ` +
+        'hour. A channel at that volume gets muted, and every operator alert ' +
+        'is muted with it. Set OPERATOR_WATCHLIST before pointing this at a ' +
+        'chat you rely on.',
     );
   }
 
@@ -196,9 +198,15 @@ export class AlertService {
    * with the enrichment worker's follow-up messages. A second copy here would
    * let an operator set a watchlist, watch this lane fall silent, and keep
    * receiving the other one.
+   *
+   * COMPOSED HERE, not in the library, because the two halves have different
+   * audiences: the routine gate is a fact about the filing and holds for every
+   * lane, and the watchlist is the OPERATOR's preference and holds only for
+   * this channel. A per-user fan-out calls `isNotRoutine` alone — see the
+   * header of `alert-gate.ts` for the bug that folding them together ships.
    */
   private shouldAlert(filing: Filing): boolean {
-    return passesContentGates(filing, this.watchlist);
+    return isNotRoutine(filing) && isWatchedByOperator(filing, this.watchlist);
   }
 
   /**

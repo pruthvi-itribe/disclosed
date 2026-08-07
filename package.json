@@ -47,7 +47,8 @@
     "claims:direction": "ts-node -r tsconfig-paths/register tools/claims/classify-direction.ts",
     "claims:purge-shared": "ts-node -r tsconfig-paths/register tools/claims/purge-shared-page-claims.ts",
     "claims:purge-direction": "ts-node -r tsconfig-paths/register tools/claims/purge-unprinted-direction.ts",
-    "claims:mute": "ts-node -r tsconfig-paths/register tools/claims/measure-topic-mute.ts"
+    "claims:mute": "ts-node -r tsconfig-paths/register tools/claims/measure-topic-mute.ts",
+    "watch:cap": "ts-node -r tsconfig-paths/register tools/accounts/measure-watch-cap.ts"
   },
   "keywords": [],
   "author": "",
@@ -60,6 +61,8 @@
     "@nestjs/mongoose": "^11.0.4",
     "@nestjs/platform-express": "^10.4.22",
     "@nestjs/schedule": "^4.1.2",
+    "@nestjs/throttler": "^5.2.0",
+    "@node-rs/argon2": "^2.0.2",
     "axios": "^1.19.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.4",

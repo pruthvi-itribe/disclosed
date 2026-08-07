@@ -105,7 +105,7 @@ async function main(): Promise<void> {
       parseRetryBaseMs: config.enrichmentParseRetryBaseMs,
       leaseMs: config.enrichmentLeaseMs,
       alertWindowMs: config.alertWindowMs,
-      watchlist: config.watchlist,
+      watchlist: config.operatorWatchlist,
       maxClaims: config.claimMaxClaims,
     },
     undefined,

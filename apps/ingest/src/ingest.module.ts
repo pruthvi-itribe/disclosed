@@ -131,7 +131,8 @@ export const RESULTS_EXTRACTOR = 'RESULTS_EXTRACTOR';
           telegram,
           {
             alertWindowMs: config.getOrThrow<number>('alertWindowMs'),
-            watchlist: config.getOrThrow<readonly string[]>('watchlist'),
+            watchlist:
+              config.getOrThrow<readonly string[]>('operatorWatchlist'),
           },
           // The derived-context line. Contained inside AlertService, so a slow
           // or failing query costs the line and never the alert.
@@ -229,7 +230,8 @@ export const RESULTS_EXTRACTOR = 'RESULTS_EXTRACTOR';
             ),
             leaseMs: config.getOrThrow<number>('enrichmentLeaseMs'),
             alertWindowMs: config.getOrThrow<number>('alertWindowMs'),
-            watchlist: config.getOrThrow<readonly string[]>('watchlist'),
+            watchlist:
+              config.getOrThrow<readonly string[]>('operatorWatchlist'),
             maxClaims: config.getOrThrow<number>('claimMaxClaims'),
           },
           undefined,

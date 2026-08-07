@@ -34,7 +34,17 @@ export interface IngestConfig {
   readonly alertWindowMs: number;
   readonly burstThreshold: number;
   readonly failureThreshold: number;
-  readonly watchlist: readonly string[];
+  /**
+   * Symbols the OPERATOR's own Telegram channel carries. Empty means every
+   * non-routine filing.
+   *
+   * NAMED FOR ITS OWNER. A per-user watchlist is a document in the `watchlists`
+   * collection and has nothing to do with this value; when one word meant both,
+   * setting this to `RELIANCE` would have silenced every subscriber watching
+   * anything else, forever, with no error raised. See the header of
+   * `libs/filings/src/logic/alert-gate.ts`.
+   */
+  readonly operatorWatchlist: readonly string[];
 
   // --- the background attachment worker -------------------------------------
   /** False stops the worker being started at all. It never touches the poller. */
@@ -387,7 +397,7 @@ const readString = (
 /**
  * Splits a comma-separated symbol list, dropping blanks.
  *
- * `WATCHLIST=` parses to `['']`, and a blank entry kept as a real member
+ * `OPERATOR_WATCHLIST=` parses to `['']`, and a blank entry kept as a real member
  * matches no symbol and mutes the bot completely — a failure that presents as a
  * quiet market. Case is deliberately preserved: `AlertService` normalises both
  * sides of the comparison, and folding here as well is how the two sides drift.
@@ -448,6 +458,36 @@ const readList = (key: string, env: NodeJS.ProcessEnv): string[] =>
     .filter((entry) => entry.length > 0);
 
 /**
+ * Stops the process when the pre-rename key is still set.
+ *
+ * `WATCHLIST` became `OPERATOR_WATCHLIST` when per-user watchlists arrived and
+ * one word started meaning two things. A silent rename is the worst possible
+ * handling of that: an operator whose `.env` still says `WATCHLIST=RELIANCE`
+ * would boot cleanly, read an EMPTY operator watchlist, and take the documented
+ * empty-watchlist branch — which is alert-on-everything, ~376 messages a day
+ * measured over the 33-day corpus, on the channel that also carries INGEST
+ * DEGRADED. A firehose is not a plausible reading of "I set a filter", and the
+ * failure mode of getting it wrong is a muted channel and a pipeline that goes
+ * dark unnoticed.
+ *
+ * Refused rather than aliased, because an alias is a second name for one
+ * setting that lives forever and drifts.
+ */
+const refuseRenamedWatchlist = (env: NodeJS.ProcessEnv): void => {
+  const legacy = env.WATCHLIST;
+  if (legacy === undefined) return;
+
+  throw new Error(
+    'WATCHLIST has been renamed to OPERATOR_WATCHLIST, and is still set. It ' +
+      "named the OPERATOR channel's own filter; per-user watchlists are " +
+      'documents in the `watchlists` collection and are unrelated. Rename the ' +
+      'key in your .env. Left as a silent rename, this boots with no operator ' +
+      'filter at all — ~376 messages a day, on the channel that also carries ' +
+      'the outage alarms.',
+  );
+};
+
+/**
  * Builds the configuration, or throws naming the offending key.
  *
  * Takes the environment as an argument so it can be tested without mutating a
@@ -457,6 +497,10 @@ const readList = (key: string, env: NodeJS.ProcessEnv): string[] =>
 export const loadConfig = (
   env: NodeJS.ProcessEnv = process.env,
 ): IngestConfig => {
+  // Before anything else: a stale key here is read as an absent filter, and an
+  // absent filter is the firehose.
+  refuseRenamedWatchlist(env);
+
   // Read first, because the model default depends on it. An operator who names
   // a provider and nothing else must get that provider's own model.
   const claimProvider = readChoice(
@@ -480,7 +524,7 @@ export const loadConfig = (
     alertWindowMs: readNumeric('ALERT_WINDOW_MS', env),
     burstThreshold: readNumeric('BURST_THRESHOLD', env),
     failureThreshold: readNumeric('FAILURE_THRESHOLD', env),
-    watchlist: readList('WATCHLIST', env),
+    operatorWatchlist: readList('OPERATOR_WATCHLIST', env),
     enrichmentEnabled: readBoolean('ENRICH_ENABLED', env, true),
     enrichmentInProcess: readBoolean('ENRICH_IN_PROCESS', env, true),
     enrichmentIdleIntervalMs: readNumeric('ENRICH_IDLE_INTERVAL_MS', env),
@@ -567,7 +611,7 @@ export const describeConfig = (config: IngestConfig): string =>
     `window=${config.alertWindowMs}ms`,
     `burst=${config.burstThreshold}`,
     `failures=${config.failureThreshold}`,
-    `watchlist=${config.watchlist.length}`,
+    `operatorWatchlist=${config.operatorWatchlist.length}`,
     `enrich=${config.enrichmentEnabled ? 'on' : 'off'}`,
     `enrichWhere=${config.enrichmentInProcess ? 'in-process' : 'separate-process'}`,
     `enrichDelay=${config.enrichmentRequestDelayMs}ms`,

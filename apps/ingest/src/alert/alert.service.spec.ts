@@ -826,7 +826,7 @@ describe('AlertService: the watchlist', () => {
   );
 
   /**
-   * A watchlist arrives from `WATCHLIST=RELIANCE, TCS`.split(','), so entry two
+   * A watchlist arrives from `OPERATOR_WATCHLIST=RELIANCE, TCS`.split(','), so entry two
    * carries a leading space. Unnormalised it matches nothing, and because the
    * failure is "no alerts" rather than an error, a bot that has gone completely
    * silent looks exactly like a quiet market. Normalising both sides here is
@@ -856,7 +856,7 @@ describe('AlertService: the watchlist', () => {
   });
 
   /**
-   * `WATCHLIST=` parses to `['']`, not `[]`. Treated as a real entry it matches
+   * `OPERATOR_WATCHLIST=` parses to `['']`, not `[]`. Treated as a real entry it matches
    * no symbol and mutes the bot entirely; treated as absent it means what the
    * operator wrote, which is "no watchlist". The documented semantics of an
    * empty watchlist are alert-on-everything, so this must take that branch.
@@ -1080,7 +1080,7 @@ describe('AlertService: immutability and no-op paths', () => {
 });
 
 /**
- * The shipped default is `WATCHLIST=` — alert on everything. That is the
+ * The shipped default is `OPERATOR_WATCHLIST=` — alert on everything. That is the
  * documented behaviour and is deliberately unchanged, but the volume it implies
  * is invisible until the chat is unusable: measured over the recorded 32-day
  * corpus, 12,415 of 17,442 filings (71.2%) clear the routine gate, which is
@@ -1105,7 +1105,7 @@ describe('AlertService: the empty-watchlist firehose is announced', () => {
     new AlertService(telegramStub(), { alertWindowMs: WINDOW, watchlist: [] });
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnings()).toContain('WATCHLIST is empty');
+    expect(warnings()).toContain('OPERATOR_WATCHLIST is empty');
   });
 
   it('states the measured volume, not a vague caution', () => {
@@ -1122,7 +1122,7 @@ describe('AlertService: the empty-watchlist firehose is announced', () => {
   });
 
   it('warns for a watchlist of blanks, which means the same thing', () => {
-    // `WATCHLIST=,  ,` normalises to no entries and takes the alert-on-all
+    // `OPERATOR_WATCHLIST=,  ,` normalises to no entries and takes the alert-on-all
     // branch, so it must warn exactly as an absent one does.
     new AlertService(telegramStub(), {
       alertWindowMs: WINDOW,

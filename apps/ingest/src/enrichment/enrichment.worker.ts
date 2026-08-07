@@ -13,13 +13,14 @@ import {
   extractPdfText,
   extractZipText,
   hasUsableTextLayer,
+  isNotRoutine,
+  isWatchedByOperator,
   isWithinAlertWindow,
   nextAttemptDelayMs,
   normaliseWatchlist,
   parseFailureReason,
   NO_CLAIMS,
   NO_RESULTS,
-  passesContentGates,
   readDocument,
   readWithRouting,
   resultsEligibility,
@@ -989,7 +990,7 @@ export class EnrichmentWorker {
       this.noteMutedLine(filing, enrichment, now);
       return 0;
     }
-    if (!passesContentGates(filing, this.watchlist)) return 0;
+    if (!this.passesOperatorGates(filing)) return 0;
     if (!isWithinAlertWindow(filing, now, this.options.alertWindowMs)) return 0;
 
     try {
@@ -1038,13 +1039,29 @@ export class EnrichmentWorker {
     now: Date,
   ): void {
     if (enrichment.claimLine === null) return;
-    if (!passesContentGates(filing, this.watchlist)) return;
+    if (!this.passesOperatorGates(filing)) return;
     if (!isWithinAlertWindow(filing, now, this.options.alertWindowMs)) return;
 
     this.logger.log(
       `seqId ${filing.seqId} (${filing.symbol}): every claim was boilerplate, ` +
         `so no follow-up was sent. Stored line: ${enrichment.claimLine}`,
     );
+  }
+
+  /**
+   * The content gates for THIS lane, which is an operator lane.
+   *
+   * Two gates with two different audiences, composed here rather than in the
+   * library. `isNotRoutine` is a fact about the filing and holds everywhere;
+   * `isWatchedByOperator` is the operator's own preference and holds only for
+   * the operator's channel. `alert-gate.ts`'s header records what folding them
+   * back together would cost once per-user watchlists exist.
+   *
+   * Reads `category` and `symbol`, both of which throw on a malformed record,
+   * so it is only ever called from inside a per-filing try.
+   */
+  private passesOperatorGates(filing: Filing): boolean {
+    return isNotRoutine(filing) && isWatchedByOperator(filing, this.watchlist);
   }
 
   /**

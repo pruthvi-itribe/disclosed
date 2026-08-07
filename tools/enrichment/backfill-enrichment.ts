@@ -532,7 +532,7 @@ async function main(): Promise<void> {
       // stored filings sending a hundred and fifty follow-ups about last week's
       // news; setting the window to nothing means nothing is ever inside it.
       alertWindowMs: 0,
-      watchlist: config.watchlist,
+      watchlist: config.operatorWatchlist,
       maxClaims: config.claimMaxClaims,
     },
     undefined,

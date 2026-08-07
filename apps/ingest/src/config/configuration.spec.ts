@@ -51,8 +51,8 @@ describe('loadConfig: defaults', () => {
     expect(config.telegramChatId).toBe('');
   });
 
-  it('defaults the watchlist to empty, meaning alert on everything', () => {
-    expect(loadConfig(empty).watchlist).toEqual([]);
+  it('defaults the operator watchlist to empty, meaning alert on everything', () => {
+    expect(loadConfig(empty).operatorWatchlist).toEqual([]);
   });
 
   it('every shipped default is itself valid', () => {
@@ -198,7 +198,7 @@ describe('loadConfig: numeric validation', () => {
   });
 });
 
-describe('loadConfig: strings and the watchlist', () => {
+describe('loadConfig: strings and the operator watchlist', () => {
   it('reads the mongo uri', () => {
     expect(
       loadConfig(withEnv({ MONGO_URI: 'mongodb://db:27017/x' })).mongoUri,
@@ -230,15 +230,53 @@ describe('loadConfig: strings and the watchlist', () => {
   ];
 
   it.each(WATCHLIST_CASES)('parses %s', (_label, raw, expected) => {
-    expect(loadConfig(withEnv({ WATCHLIST: raw })).watchlist).toEqual(expected);
+    expect(
+      loadConfig(withEnv({ OPERATOR_WATCHLIST: raw })).operatorWatchlist,
+    ).toEqual(expected);
   });
 
   it('preserves the case the operator wrote, leaving folding to the consumer', () => {
     // AlertService normalises both sides of the comparison; doing it twice in
     // two places is how the two sides drift apart.
-    expect(loadConfig(withEnv({ WATCHLIST: 'reliance' })).watchlist).toEqual([
-      'reliance',
-    ]);
+    expect(
+      loadConfig(withEnv({ OPERATOR_WATCHLIST: 'reliance' })).operatorWatchlist,
+    ).toEqual(['reliance']);
+  });
+});
+
+/**
+ * The rename is refused rather than aliased, and that asymmetry is deliberate.
+ *
+ * Read as absent, a stale `WATCHLIST=RELIANCE` takes the documented
+ * empty-watchlist branch, which is alert-on-everything — the exact opposite of
+ * what the person who wrote that line asked for, on the channel that also
+ * carries the outage alarms. Silence is the one handling that cannot be
+ * noticed.
+ */
+describe('loadConfig: the WATCHLIST rename', () => {
+  it('refuses to boot while the old key is still set', () => {
+    expect(() => loadConfig(withEnv({ WATCHLIST: 'RELIANCE' }))).toThrow(
+      /OPERATOR_WATCHLIST/,
+    );
+  });
+
+  it('refuses an EMPTY old key too, because it still says the operator has not migrated', () => {
+    expect(() => loadConfig(withEnv({ WATCHLIST: '' }))).toThrow(
+      /renamed to OPERATOR_WATCHLIST/,
+    );
+  });
+
+  it('says what a silent rename would have cost', () => {
+    // The message has to carry the consequence, not just the new spelling: an
+    // operator who reads "renamed" and shrugs is the one who ends up with the
+    // firehose.
+    expect(() => loadConfig(withEnv({ WATCHLIST: 'RELIANCE' }))).toThrow(/376/);
+  });
+
+  it('boots cleanly once the key is renamed', () => {
+    expect(
+      loadConfig(withEnv({ OPERATOR_WATCHLIST: 'RELIANCE' })).operatorWatchlist,
+    ).toEqual(['RELIANCE']);
   });
 });
 
@@ -269,7 +307,7 @@ describe('describeConfig', () => {
       MONGO_URI: 'mongodb://alice:hunter2@db:27017/turret',
       TELEGRAM_BOT_TOKEN: '123456:AAH-super-secret-token',
       TELEGRAM_CHAT_ID: '-1001234567890',
-      WATCHLIST: 'RELIANCE,TCS',
+      OPERATOR_WATCHLIST: 'RELIANCE,TCS',
     }),
   );
 
@@ -283,7 +321,7 @@ describe('describeConfig', () => {
     expect(line).toContain('window=600000ms');
     expect(line).toContain('burst=8');
     expect(line).toContain('failures=3');
-    expect(line).toContain('watchlist=2');
+    expect(line).toContain('operatorWatchlist=2');
   });
 
   const SECRETS: ReadonlyArray<readonly [string, string]> = [
