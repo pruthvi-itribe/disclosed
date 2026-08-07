@@ -960,6 +960,9 @@ export const PAGE_SCRIPT = `
     var name = document.createElement('span');
     name.className = 'coname';
     name.textContent = f.companyName;
+    // The name truncates in a narrow column, so the whole of it stays
+    // reachable rather than being merely absent.
+    name.title = f.companyName;
     who.appendChild(name);
     head.appendChild(who);
 

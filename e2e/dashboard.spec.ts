@@ -368,3 +368,69 @@ test.describe('the topic chips', () => {
     );
   });
 });
+
+test.describe('the feed layout', () => {
+  test('fills the width with columns instead of one card per row', async ({
+    page,
+  }) => {
+    // A card carrying a single short claim is a full-width strip of mostly
+    // empty space on anything wider than a laptop, and at ~2.4 claims a filing
+    // most cards are three lines tall.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const columns = await page
+      .locator('#feed')
+      .evaluate(
+        (node) =>
+          getComputedStyle(node).gridTemplateColumns.split(' ').length,
+      );
+    expect(columns).toBeGreaterThan(1);
+  });
+
+  test('collapses to a single column on a narrow screen', async ({ page }) => {
+    await page.setViewportSize({ width: 560, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const columns = await page
+      .locator('#feed')
+      .evaluate(
+        (node) =>
+          getComputedStyle(node).gridTemplateColumns.split(' ').length,
+      );
+    expect(columns).toBe(1);
+  });
+
+  test('never lets a card overflow its column', async ({ page }) => {
+    // Claim text is exchange-derived and can carry a very long unbroken token.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const overflowing = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('#feed .card')].filter(
+          (card) => card.scrollWidth > card.clientWidth + 1,
+        ).length,
+    );
+    expect(overflowing).toBe(0);
+  });
+
+  test('keeps every card header on one line', async ({ page }) => {
+    // A long company name pushed the timestamp onto a second row, so cards in
+    // the same grid row started at different heights for no visible reason.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const wrapped = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('#feed .cardhead')].filter(
+          (head) => head.getBoundingClientRect().height > 30,
+        ).length,
+    );
+    expect(wrapped).toBe(0);
+  });
+});

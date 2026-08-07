@@ -35,6 +35,11 @@ body {
   font-size: 14px;
   line-height: 1.45;
   padding: 16px 20px 32px;
+  /* Centred and capped. Without this the feed keeps adding columns on a very
+     wide monitor until a card is 200px of text in a 2,500px row, and the
+     header rule stretches to a hairline the eye cannot follow back. */
+  max-width: 1680px;
+  margin: 0 auto;
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -494,7 +499,28 @@ td.grp { white-space: nowrap; }
 .onlyinsights input { accent-color: var(--accent); }
 
 /* --- the feed ------------------------------------------------------------ */
-.feed { display: flex; flex-direction: column; gap: 10px; }
+/* A GRID THAT FILLS THE WIDTH, not one card per row.
+   A card carrying a single short claim is a full-width strip of mostly empty
+   space on any monitor wider than a laptop, and the feed is mostly such cards:
+   at 2.4 claims per filing, most of them are three lines tall.
+
+   ROW-MAJOR, WHICH IS WHY IT IS GRID AND NOT COLUMNS. A CSS multi-column
+   layout packs cards tighter but fills column one top to bottom before column
+   two, so the newest filing sits above one from an hour ago and a
+   chronological feed stops being chronological. Grid flows left to right, row
+   by row, which is the order the eye already reads in.
+
+   'align-items: start' so a tall card does not stretch its neighbour to match:
+   an eleven-claim results card beside a one-line record date should leave the
+   second one short, not pad it with empty panel. */
+.feed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  align-items: start;
+  gap: 10px;
+}
+/* The time buckets are dividers across the whole feed, not cards in it. */
+.feed .bucket { grid-column: 1 / -1; }
 
 .bucket {
   font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
@@ -515,8 +541,15 @@ td.grp { white-space: nowrap; }
 .card.quiet { background: transparent; padding: 11px 18px; }
 .card.quiet .sym { font-size: 14px; }
 
-.cardhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-.who { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
+/* ONE LINE, and the company name is what gives. In a 400px grid column a long
+   name like "Aditya Birla Lifestyle Brands Limited" pushed the timestamp and
+   the group chip onto a second row, so cards in the same row started at
+   different heights for no reason a reader could see. The ticker never
+   truncates — it is the identifier — and the full name is the title attribute. */
+.cardhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.who { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.who .coname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cardmeta { flex: 0 0 auto; }
 .sym { font-size: 17px; font-weight: 680; letter-spacing: -0.01em; }
 .coname { color: var(--muted); font-size: 12.5px; }
 .cardmeta { margin-left: auto; display: flex; align-items: center; gap: 10px; }
