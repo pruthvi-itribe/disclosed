@@ -17,6 +17,8 @@ import type { EnrichmentSummaryView, SummaryView } from './dashboard.types';
 const SUMMARY: SummaryView = {
   totalFilings: 1005,
   todayCount: 402,
+  todayByGroup: { results: 2, routine: 1 },
+  todayVerified: 1,
   todayIstDay: '2026-08-05',
   newestDisseminatedAt: '2026-08-05T18:02:13.000Z',
   newestDisseminatedAtIst: '2026-08-05 23:32:13',

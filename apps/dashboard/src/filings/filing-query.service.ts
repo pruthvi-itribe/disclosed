@@ -215,34 +215,89 @@ export class FilingQueryService {
     const now = this.now();
     const dayStart = startOfIstDay(now);
 
-    const [totalFilings, todayCount, newest, topSeq] = await Promise.all([
-      this.filings.countDocuments({}).exec(),
-      // Bounded at BOTH ends. An open-ended `$gte` would fold a filing dated
-      // into the future — clock skew on the exchange side, or a mapper bug —
-      // into today's count, and today's count is the number an operator uses
-      // to decide whether ingestion is alive.
-      this.filings
-        .countDocuments({
-          disseminatedAt: {
-            $gte: dayStart,
-            $lt: new Date(dayStart.getTime() + IST_DAY_MS),
-          },
-        })
-        .exec(),
-      this.filings
-        .findOne({}, { _id: 0, disseminatedAt: 1 })
-        .sort({ disseminatedAt: -1 })
-        .lean()
-        .exec(),
-      // Deliberately NOT the newest record's seqId. NSE disseminates out of
-      // seq_id order, so the highest id and the latest timestamp belong to
-      // different rows — and the cursor the poller resumes from is the id.
-      this.filings
-        .findOne({}, { _id: 0, seqId: 1 })
-        .sort({ seqId: -1 })
-        .lean()
-        .exec(),
-    ]);
+    const dayWindow = {
+      disseminatedAt: {
+        $gte: dayStart,
+        $lt: new Date(dayStart.getTime() + IST_DAY_MS),
+      },
+    };
+
+    const [totalFilings, todayCount, newest, topSeq, todayShape] =
+      await Promise.all([
+        this.filings.countDocuments({}).exec(),
+        // Bounded at BOTH ends. An open-ended `$gte` would fold a filing dated
+        // into the future — clock skew on the exchange side, or a mapper bug —
+        // into today's count, and today's count is the number an operator uses
+        // to decide whether ingestion is alive.
+        this.filings
+          .countDocuments({
+            disseminatedAt: {
+              $gte: dayStart,
+              $lt: new Date(dayStart.getTime() + IST_DAY_MS),
+            },
+          })
+          .exec(),
+        this.filings
+          .findOne({}, { _id: 0, disseminatedAt: 1 })
+          .sort({ disseminatedAt: -1 })
+          .lean()
+          .exec(),
+        // Deliberately NOT the newest record's seqId. NSE disseminates out of
+        // seq_id order, so the highest id and the latest timestamp belong to
+        // different rows — and the cursor the poller resumes from is the id.
+        this.filings
+          .findOne({}, { _id: 0, seqId: 1 })
+          .sort({ seqId: -1 })
+          .lean()
+          .exec(),
+        // TODAY'S SHAPE, not the collection's. The enrichment route already
+        // counts category groups, but over everything ever stored — using that
+        // for a bar labelled "today" would be a true number answering a
+        // different question, which is the failure mode this codebase treats as
+        // the most dangerous one it has.
+        //
+        // Bounded at both ends by the same IST window as the count above, and
+        // served by `disseminatedAt_-1`. `category` is required on every filing,
+        // so this summary's coverage is 100% and stays there — unlike claims,
+        // amounts or results, which is why it is the one shape worth leading
+        // the feed with.
+        this.filings
+          .aggregate<{ _id: string; n: number; verified: number }>([
+            { $match: dayWindow },
+            {
+              $group: {
+                _id: '$category',
+                n: { $sum: 1 },
+                verified: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $gt: [
+                          { $size: { $ifNull: ['$enrichment.claims', []] } },
+                          0,
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+              },
+            },
+          ])
+          .exec(),
+      ]);
+
+    // Folded into groups in Node rather than in the pipeline: the category to
+    // group mapping is a table this codebase owns, and duplicating it as an
+    // aggregation `$switch` would be a second copy to drift.
+    const todayByGroup: Record<string, number> = {};
+    let todayVerified = 0;
+    for (const row of todayShape) {
+      const group = categoryGroupFor(row._id);
+      todayByGroup[group] = (todayByGroup[group] ?? 0) + row.n;
+      todayVerified += row.verified;
+    }
 
     const newestAt =
       newest === null ? null : new Date(instantMs(newest.disseminatedAt));
@@ -250,6 +305,8 @@ export class FilingQueryService {
     return {
       totalFilings,
       todayCount,
+      todayByGroup,
+      todayVerified,
       todayIstDay: istDayKey(now),
       newestDisseminatedAt: newestAt === null ? null : newestAt.toISOString(),
       newestDisseminatedAtIst:

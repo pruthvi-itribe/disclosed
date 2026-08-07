@@ -313,6 +313,7 @@ export const PAGE_SCRIPT = `
     // and how long since the last one — the last of those being the only
     // honest way to tell a quiet market from a stopped pipeline.
     setText('hero-today', groupInt(d.todayCount));
+    renderDayBar(d.todayByGroup || {}, d.todayCount, d.todayVerified || 0);
     var heroLag = el('hero-lag');
     if (heroLag) {
       heroLag.textContent = duration(d.feedLagMs);
@@ -854,6 +855,68 @@ export const PAGE_SCRIPT = `
     return lines;
   }
 
+  /**
+   * A figure inside a claim, matched so it can be set apart typographically.
+   *
+   * WHAT THIS IS NOT: it does not compute, convert, round or compare anything.
+   * It finds the characters the document already printed and marks them, which
+   * is the only kind of emphasis this product is allowed to add. A percentage
+   * badge derived from two other figures is a calculation, and 'results-line.ts'
+   * carries the argument against those: a competitor published EBITDA MARGIN
+   * 13.32% for APOLLOTYRE where the arithmetic gives 13.23%, a figure the
+   * filing never printed, about a named listed company.
+   *
+   * Currency symbol and scale word are pulled in WITH the number, because
+   * '2,535' set apart from 'crore' is a worse reading of the sentence than
+   * leaving both plain. Direction words are deliberately NOT matched: 'up' is
+   * the document's word, but colouring it green is this page taking a view.
+   */
+  //
+  // EVERY BACKSLASH BELOW IS DOUBLED, and that is not a style choice. This file
+  // is a TypeScript template literal, so the compiler processes escape
+  // sequences before the browser ever sees them: a single backslash before a
+  // letter is consumed, and the class that should match a digit arrives at the
+  // page matching that letter instead. The first version of this shipped
+  // exactly that, and the feed rendered "Declared interim dividend" with the
+  // fourth letter in bold. The comment cannot demonstrate it either, for the
+  // same reason.
+  var FIGURE = /((?:₹|Rs\\.?|INR|USD|\\$)?\\s?\\d[\\d,]*(?:\\.\\d+)?\\s?(?:%|bps|crore|cr|lakh|lakhs|million|mn|billion|bn|MW|MTPA|x)?)/gi;
+
+  /**
+   * Writes a claim into a node with its figures marked.
+   *
+   * BUILT FROM TEXT NODES, never innerHTML. The claim is model-proposed text
+   * that was matched against an exchange PDF; it reaches the DOM as data or it
+   * does not reach it at all, and that rule does not bend for styling.
+   */
+  function writeClaim(node, text) {
+    var value = String(text);
+    FIGURE.lastIndex = 0;
+    var at = 0;
+    var match = FIGURE.exec(value);
+    while (match !== null) {
+      // A bare unit with no digits is not a figure; the alternation can match
+      // an empty string, which would spin the loop.
+      if (match[0].trim() === '' || !/\\d/.test(match[0])) {
+        FIGURE.lastIndex = match.index + Math.max(1, match[0].length);
+        match = FIGURE.exec(value);
+        continue;
+      }
+      if (match.index > at) {
+        node.appendChild(document.createTextNode(value.slice(at, match.index)));
+      }
+      var fig = document.createElement('span');
+      fig.className = 'fig';
+      fig.textContent = match[0];
+      node.appendChild(fig);
+      at = match.index + match[0].length;
+      match = FIGURE.exec(value);
+    }
+    if (at < value.length) {
+      node.appendChild(document.createTextNode(value.slice(at)));
+    }
+  }
+
   function feedCard(f) {
     var e = f.enrichment || {};
     var lines = insightLines(e);
@@ -918,7 +981,7 @@ export const PAGE_SCRIPT = `
       list.className = 'insights';
       for (var i = 0; i < lines.length && i < shown; i++) {
         var li = document.createElement('li');
-        li.textContent = lines[i];
+        writeClaim(li, lines[i]);
         list.appendChild(li);
       }
       card.appendChild(list);
@@ -940,7 +1003,7 @@ export const PAGE_SCRIPT = `
             state.expanded[String(seqId)] = true;
             for (var k = 0; k < rest.length; k++) {
               var extra = document.createElement('li');
-              extra.textContent = rest[k];
+              writeClaim(extra, rest[k]);
               list.appendChild(extra);
             }
             button.remove();
@@ -1130,6 +1193,47 @@ export const PAGE_SCRIPT = `
   /** The market feed: the shared renderer, into #feed, with its own chrome. */
   function renderFeed(items, meta) {
     renderFeedInto(el('feed'), items, meta, true);
+  }
+
+  /**
+   * The day as one bar and one sentence.
+   *
+   * Reads the category breakdown the summary route already returns, so it costs
+   * no extra request. The sentence names the two numbers a reader actually
+   * wants: how much of today is compliance paperwork, and how much of it said
+   * something a document verified.
+   */
+  function renderDayBar(byGroup, total, verified) {
+    var bar = el('day-mix');
+    if (!bar) return;
+    bar.textContent = '';
+
+    var groups = Object.keys(byGroup).sort(function (a, b) {
+      return byGroup[b] - byGroup[a];
+    });
+    var quiet = 0;
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      if (byGroup[g] === 0) continue;
+      if (g === 'routine' || g === 'governance') quiet += byGroup[g];
+      var seg = document.createElement('div');
+      seg.className = 'mixseg g-' + g;
+      seg.style.flexGrow = String(byGroup[g]);
+      seg.title = g + ': ' + byGroup[g];
+      bar.appendChild(seg);
+    }
+
+    setText(
+      'day-sentence',
+      total === 0
+        ? ''
+        : groupInt(total) +
+            ' filings today. ' +
+            groupInt(quiet) +
+            ' of them are routine or governance paperwork. ' +
+            groupInt(verified) +
+            ' said something a document verified.',
+    );
   }
 
   /**

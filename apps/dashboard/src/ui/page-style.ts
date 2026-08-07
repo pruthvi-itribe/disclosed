@@ -655,4 +655,19 @@ button.sym:hover { color: var(--accent); }
 #company-feed .who { display: none; }
 #company-feed .cardmeta { margin-left: 0; width: 100%; }
 #company-feed .cardhead { margin-bottom: 8px; }
+
+/* --- the day bar and figure emphasis ----------------------------------- */
+.daybar { margin-bottom: 20px; }
+.daybar .mix { height: 6px; }
+.daysentence { margin-top: 9px; color: var(--muted); font-size: 12.5px; }
+
+/* A figure the DOCUMENT printed, set apart so the eye finds it. It is
+   typography, never arithmetic: nothing here computes, converts or compares a
+   number, because a percentage derived from two other figures is a calculation
+   and nothing downstream can tell a right one from a wrong one. */
+.insights .fig {
+  font-variant-numeric: tabular-nums;
+  font-weight: 620;
+  color: #fff;
+}
 `;

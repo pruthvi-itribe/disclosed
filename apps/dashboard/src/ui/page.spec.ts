@@ -178,6 +178,36 @@ describe('renderDashboardPage — content', () => {
     expect(html).toContain('<tbody id="rows"></tbody>');
   });
 
+  it('survives the template literal with its escape sequences intact', () => {
+    // THE BUG THIS EXISTS FOR, which shipped. page-script.ts is a template
+    // literal, so TypeScript consumes escape sequences before the browser sees
+    // them: a digit class written with one backslash arrives as a letter class.
+    // The figure-emphasis regex did exactly that and the feed rendered
+    // "Declared interim dividend" with the fourth letter in bold, because the
+    // pattern was matching the letter instead of a digit.
+    //
+    // Asserted against the SERVED document rather than the source, because the
+    // source is correct in both the working and the broken version — the
+    // difference only exists after the compiler has run.
+    const script = html.slice(
+      html.indexOf('<script>') + '<script>'.length,
+      html.lastIndexOf('</script>'),
+    );
+    const figure = /var FIGURE = (\/.*?\/[a-z]*);/.exec(script);
+    expect(figure).not.toBeNull();
+
+    const source = String(figure?.[1]);
+    expect(source).toContain(String.fromCharCode(92) + 'd');
+    expect(source).toContain(String.fromCharCode(92) + 's');
+
+    // And it behaves: a digit is a figure, a letter never is.
+    const pattern = new RegExp(source.slice(1, source.lastIndexOf('/')), 'gi');
+    expect('Declared interim dividend'.replace(pattern, '#')).toBe(
+      'Declared interim dividend',
+    );
+    expect('revenue up 19% YoY'.match(pattern)?.join('')).toContain('19');
+  });
+
   it('inlines a client script that parses as JavaScript', () => {
     // The script is a template string inside a TypeScript file, so neither the
     // compiler nor the type checker ever parses what it will become — and

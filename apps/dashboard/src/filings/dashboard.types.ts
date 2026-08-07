@@ -323,6 +323,16 @@ export interface SummaryView {
   /** Filings whose `disseminatedAt` falls in the current IST calendar day. */
   readonly todayCount: number;
   /** The IST day `todayCount` counts, as `YYYY-MM-DD`. */
+  /**
+   * Today's filings by category group, and how many said something verified.
+   *
+   * TODAY'S SHAPE, not the collection's — the enrichment route counts groups
+   * over everything ever stored, which is a true number answering a different
+   * question. `category` is required on every filing, so this is the one
+   * summary whose coverage is 100% and stays there.
+   */
+  readonly todayByGroup: Readonly<Record<string, number>>;
+  readonly todayVerified: number;
   readonly todayIstDay: string;
   /** ISO-8601 UTC of the newest filing held, or null when the collection is empty. */
   readonly newestDisseminatedAt: string | null;
