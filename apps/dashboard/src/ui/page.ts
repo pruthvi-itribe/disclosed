@@ -1,5 +1,6 @@
 import { PAGE_SCRIPT } from './page-script';
 import { PAGE_STYLE } from './page-style';
+import { PAGE_STYLE_BRIEF } from './page-style-brief';
 
 /**
  * The dashboard page: one self-contained HTML document, in two views.
@@ -51,7 +52,12 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>Turret — what Indian companies said today</title>
-<style>${PAGE_STYLE}</style>
+<!--
+  TWO STYLESHEETS, ONE STYLE ELEMENT. The Brief's rules are a self-contained
+  layout for one view and page-style.ts is already past this project's
+  800-line file ceiling, so they file separately and are concatenated here.
+-->
+<style>${PAGE_STYLE}${PAGE_STYLE_BRIEF}</style>
 </head>
 <body>
 <header class="topbar" data-ui="top-bar">
@@ -59,6 +65,14 @@ export const renderDashboardPage = (): string => `<!doctype html>
     <span class="mark">tur<span class="dotmark">ret</span></span>
   </div>
   <nav class="tabs" role="tablist">
+    <!--
+      THE BRIEF IS FIRST because it is what a phone lands on: at 430px and
+      below the script opens this view instead of the feed. The feed's card
+      grid is a desktop object — a three-column grid whose card is 400px of
+      text — and the deck is a phone object. Each is default where it is right,
+      and both tabs are on both, so neither reader is trapped.
+    -->
+    <button id="tab-brief" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-brief">Brief</button>
     <button id="tab-feed" class="tab active" type="button" role="tab" aria-selected="true" aria-controls="view-feed">Feed</button>
     <button id="tab-admin" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-admin">Admin</button>
   </nav>
@@ -70,6 +84,71 @@ export const renderDashboardPage = (): string => `<!doctype html>
 </header>
 
 <div id="alert" class="alert" hidden></div>
+
+<!-- ============================ BRIEF =========================== -->
+<!--
+  THE DAY AS A FINITE, COUNTABLE DECK, and the word finite is the whole design.
+  The requirement was "the day's signal in under a minute", which is a
+  COMPLETION claim, and nothing endless can make one: an infinite tape of
+  claims has no "you are done" state and no honest ordering — 3,420 claims must
+  be sorted by something, recency is misleading when 43.6% of filings land in
+  four evening hours, and every other key is a materiality judgement, which is
+  advisory. Twelve cards have the same ordering problem in a form small enough
+  to answer: the cover states the rule, and the last card states the remainder.
+
+  IT COSTS NO NEW ROUTE. api/filings?tier=verified&limit=200 plus the summary
+  the page already polls; the grouping, the ordering and the cap are done in
+  the browser over that one payload.
+
+  THE SHELL IS EMPTY, like every other view here. The cards are built by the
+  script with createElement and textContent, because a claim is exchange-
+  derived text and this page has one absolute rule about that.
+-->
+<section id="view-brief" data-ui="view-brief" class="view" role="tabpanel" aria-labelledby="tab-brief" hidden>
+
+  <!-- One segment per card, filled up to the card the reader is on. Drawn by
+       the script only at three cards or more. -->
+  <div id="brief-rail" class="brail" aria-hidden="true" hidden></div>
+
+  <div id="brief-deck" class="bdeck" role="region" aria-roledescription="card deck"
+       aria-label="The day, one company per card" tabindex="0">
+
+    <!-- Card 0: the day, before any of its content. Orientation first, and it
+         costs one widget that already exists — the same group bar and the same
+         colours the feed's day bar draws. -->
+    <article id="brief-cover" class="bcard bcover">
+      <div id="brief-day" class="bday">—</div>
+      <!-- Not "in twelve cards": the deck is capped at twelve and often holds
+           fewer, and a heading that states a number the deck does not have is
+           the first thing a reader could catch this view lying about. The
+           counts are on the two lines below, from the data. -->
+      <h1 class="btitle">The day, card by card</h1>
+      <div id="brief-mix" class="mix"></div>
+      <div id="brief-cover-line" class="bcoverline"></div>
+      <div id="brief-cover-rule" class="bcoverrule"></div>
+      <div class="bhint">Scroll for the cards. There is an end.</div>
+    </article>
+
+    <!-- The company cards are inserted here, before the end card. -->
+
+    <!-- THE REMAINDER, STATED. Twelve cards is about five per cent of the
+         companies that said something a document verified, and a reader who
+         only ever opens the Brief would otherwise believe they had seen the
+         market. This is the mitigation, and it lives in copy, which is the
+         weakest place to put a guarantee — so it is also the loudest thing on
+         the last card. -->
+    <article id="brief-end" class="bcard bend">
+      <h2 class="btitle">That is the day.</h2>
+      <div id="brief-end-line" class="bendline"></div>
+      <button id="brief-to-feed" type="button" class="more">Open the feed</button>
+    </article>
+  </div>
+
+  <!-- Shown INSTEAD of the deck when nothing qualified, with the real number
+       of filings looked at. "Nothing was found" and "nothing was looked for"
+       are different facts and must not render the same. -->
+  <div id="brief-empty" class="bempty" hidden></div>
+</section>
 
 <!-- ============================ FEED ============================ -->
 <section id="view-feed" data-ui="view-feed" class="view" role="tabpanel" aria-labelledby="tab-feed">

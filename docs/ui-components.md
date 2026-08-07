@@ -17,23 +17,66 @@ or `document.getElementById('co-topics')`.
 | File | Holds |
 | --- | --- |
 | `apps/dashboard/src/ui/page.ts` | the markup shell — every `id` below with a fixed position |
-| `apps/dashboard/src/ui/page-style.ts` | all CSS |
+| `apps/dashboard/src/ui/page-style.ts` | all CSS except the Brief's |
+| `apps/dashboard/src/ui/page-style-brief.ts` | the Brief's CSS, concatenated onto the above by `page.ts` |
 | `apps/dashboard/src/ui/script/script-base.ts` | constants, DOM and format helpers |
 | `apps/dashboard/src/ui/script/script-cells.ts` | the admin table's cells |
 | `apps/dashboard/src/ui/script/script-feed.ts` | **the card** and the time buckets |
+| `apps/dashboard/src/ui/script/script-brief.ts` | **the deck**: candidates, ordering, one card, the rail |
 | `apps/dashboard/src/ui/script/script-company.ts` | the company page's widgets |
 | `apps/dashboard/src/ui/script/script-admin.ts` | the admin panels |
 | `apps/dashboard/src/ui/script/script-poll.ts` | the poll loop and the filters |
 | `apps/dashboard/src/ui/script/script-suggest.ts` | the type-ahead |
 | `apps/dashboard/src/ui/script/script-views.ts` | tabs, company view, chip state |
 
-## The three views
+## The four views
 
 | Name | What it is |
 | --- | --- |
-| `view-feed` | the product: what companies said today |
+| `view-brief` | the day as a finite deck. The default view at 430px and below |
+| `view-feed` | the product: what companies said today. The default above 430px |
 | `view-company` | one company, reached by clicking a ticker |
 | `view-admin` | the instrument panel: refusals, routes, tiers, states |
+
+While the Brief is open the body carries the class `briefing`: the deck is a
+scroll container sized to the viewport, so the page behind it must not scroll
+too.
+
+## The Brief
+
+Card 0 is the day, then up to twelve company cards, then the card that states
+what was left out. The cards are inserted between `brief-cover` and `brief-end`
+and are rebuilt only when the deck's contents actually change — the page
+repaints every four seconds and replacing twelve full-viewport cards under a
+reader's thumb costs them their place.
+
+| Name | What it is |
+| --- | --- |
+| `tab-brief` | the tab, first in `top-bar` |
+| `brief-rail` | the progress rail. One segment per card, hidden below three |
+| `brief-rail-seg` | one segment. `.on` up to the card the reader is on |
+| `brief-deck` | the scroll-snap container. Everything below lives inside it |
+| `brief-cover` | card 0: the day at phone scale |
+| `brief-day` / `brief-mix` | the IST day, and the day's group bar |
+| `brief-cover-line` / `brief-cover-rule` | what arrived today, and the ordering rule with the window it covers |
+| `brief-end` | the last card |
+| `brief-end-line` / `brief-to-feed` | the remainder, and the way into the feed |
+| `brief-empty` | shown **instead of** the deck when nothing qualified |
+
+### One card of the deck
+
+Repeated, so these are all `data-ui`. Each card also carries
+`data-symbol="<symbol>"` and `data-seq="<seqId of the filing the lede came
+from>"`, which are the only stable ways to name **one specific card**.
+
+| Name | What it is |
+| --- | --- |
+| `brief-card` | one company's day, exactly one viewport tall |
+| `brief-ident` | ticker, company name, and the IST time of the lede's filing |
+| `brief-lede` | the loudest claim, at 25px, with its figures marked |
+| `brief-rest` | up to two more claims. **Absent** from the DOM when there are none |
+| `brief-topic` | the topic dot, and a way into the feed filtered by it. **Absent** when the claim carries no topic |
+| `brief-foot` | tier badge, category, Copy, Source — every control a 44px target |
 
 ## The feed
 

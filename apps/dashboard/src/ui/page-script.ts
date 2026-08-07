@@ -25,6 +25,7 @@
  */
 import { SCRIPT_ADMIN } from './script/script-admin';
 import { SCRIPT_BASE } from './script/script-base';
+import { SCRIPT_BRIEF } from './script/script-brief';
 import { SCRIPT_CELLS } from './script/script-cells';
 import { SCRIPT_COMPANY } from './script/script-company';
 import { SCRIPT_FEED } from './script/script-feed';
@@ -60,6 +61,10 @@ const FRAGMENTS: readonly string[] = [
   SCRIPT_BASE,
   SCRIPT_CELLS,
   SCRIPT_FEED,
+  // After `script-feed`, and that is a dependency rather than a preference:
+  // every string the deck puts on screen goes through that fragment's
+  // `writeClaim`, and no other way.
+  SCRIPT_BRIEF,
   SCRIPT_COMPANY,
   SCRIPT_ADMIN,
   SCRIPT_POLL,

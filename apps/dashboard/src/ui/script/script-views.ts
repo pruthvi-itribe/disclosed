@@ -15,16 +15,24 @@ export const SCRIPT_VIEWS = `
   // ---------------------------------------------------------------- tabs ----
   function showView(name) {
     state.view = name;
+    el('view-brief').hidden = name !== 'brief';
     el('view-feed').hidden = name !== 'feed';
     el('view-admin').hidden = name !== 'admin';
     el('view-company').hidden = name !== 'company';
-    // The company view is reached from a card, not from a tab, so neither tab
+    // The company view is reached from a card, not from a tab, so no tab
     // is active while it is open. Leaving Feed lit would say the reader is
     // somewhere they are not.
+    el('tab-brief').className = 'tab' + (name === 'brief' ? ' active' : '');
     el('tab-feed').className = 'tab' + (name === 'feed' ? ' active' : '');
     el('tab-admin').className = 'tab' + (name === 'admin' ? ' active' : '');
+    el('tab-brief').setAttribute('aria-selected', String(name === 'brief'));
     el('tab-feed').setAttribute('aria-selected', String(name === 'feed'));
     el('tab-admin').setAttribute('aria-selected', String(name === 'admin'));
+    // THE DECK OWNS THE VIEWPORT WHILE IT IS OPEN: it is a scroll container
+    // sized to the window, so the page behind it must not scroll too. Written
+    // as one class on the body rather than inferred in CSS, so exactly one
+    // view is ever in that mode and leaving it puts everything back.
+    document.body.className = name === 'brief' ? 'briefing' : '';
     if (name !== 'company') state.company = null;
   }
 
@@ -39,8 +47,24 @@ export const SCRIPT_VIEWS = `
     showView('feed');
     refresh(true);
   });
-  el('tab-feed').addEventListener('click', function () { showView('feed'); });
-  el('tab-admin').addEventListener('click', function () { showView('admin'); });
+  // EVERY TAB REFRESHES NOW, and that is a change the Brief forced rather than
+  // a tidy-up. The deck asks the server a different question from the feed —
+  // the 200 most recent verified filings, ignoring the filter bar — so one
+  // response can only draw one of them. A tab switch costs a round trip, which
+  // is what 'company-back' has always cost, and the alternative is a view
+  // showing rows it did not ask for.
+  el('tab-brief').addEventListener('click', function () {
+    showView('brief');
+    refresh(true);
+  });
+  el('tab-feed').addEventListener('click', function () {
+    showView('feed');
+    refresh(true);
+  });
+  el('tab-admin').addEventListener('click', function () {
+    showView('admin');
+    refresh(true);
+  });
 
   // --------------------------------------------------------------- chips ----
   // The group filter, twice: chips in the feed and a select in Admin. They
@@ -126,6 +150,21 @@ export const SCRIPT_VIEWS = `
     event.preventDefault();
     el('symbol').focus();
   });
+
+  // WHERE EACH VIEW IS RIGHT, decided once at load.
+  //
+  // The feed is a three-column grid whose card is 400px of text; the deck is
+  // one claim at 25px filling a screen. 430px is the widest phone viewport in
+  // common use, so at or below it the deck is what a reader lands on and above
+  // it the feed stays. Neither reader is trapped: both tabs are on both.
+  //
+  // Read once rather than watched, deliberately. A viewport that crosses 430px
+  // mid-session is a rotated phone or a dragged window, and swapping the view
+  // out from under a reader who is part-way down a card is a worse answer than
+  // leaving them where they are.
+  if (window.matchMedia && window.matchMedia('(max-width: 430px)').matches) {
+    showView('brief');
+  }
 
   setLive('', 'connecting');
   refresh(true);

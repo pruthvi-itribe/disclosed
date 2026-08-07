@@ -1,6 +1,11 @@
 import { CATEGORY_GROUPS } from '@app/filings/logic/category-group';
 import { CONFIDENCE_TIERS } from '@app/filings/logic/confidence-tier';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { renderDashboardPage } from './page';
+import { PAGE_STYLE } from './page-style';
+import { PAGE_STYLE_BRIEF } from './page-style-brief';
+import { SCRIPT_BRIEF } from './script/script-brief';
 
 /**
  * A SMOKE suite, deliberately. The markup itself is not asserted line by line —
@@ -94,6 +99,19 @@ describe('renderDashboardPage — content', () => {
     'days',
     'day-from',
     'day-to',
+    'view-brief',
+    'tab-brief',
+    'brief-cover',
+    'brief-day',
+    'brief-mix',
+    'brief-cover-line',
+    'brief-cover-rule',
+    'brief-deck',
+    'brief-rail',
+    'brief-end',
+    'brief-end-line',
+    'brief-to-feed',
+    'brief-empty',
   ] as const;
 
   it.each(REQUIRED_IDS)('carries the #%s the script writes into', (id) => {
@@ -716,5 +734,293 @@ describe('renderDashboardPage — amount refusals demoted to diagnostics', () =>
     expect(prose).toContain(
       'an extractor whose refusals are invisible is indistinguishable from one that is not running',
     );
+  });
+});
+
+/**
+ * THE BRIEF: the day as a finite, countable deck.
+ *
+ * A string suite can prove three things about it and cannot prove the fourth.
+ * It can prove the shell carries every element the deck writes into, that the
+ * cover prints the ordering rule rather than implying it, that the deck adds no
+ * second path for exchange text into the DOM, and that the design's explicit
+ * exclusions are absent. It cannot prove the thing scroll-snap is for — that a
+ * card fills a phone and the next one starts below it — which is `e2e/brief.
+ * spec.ts` at 430x900.
+ *
+ * The measurements behind the numbers asserted here are in
+ * `docs/superpowers/specs/2026-08-08-genz-visual-consumption-design.md`.
+ */
+describe('renderDashboardPage — the Brief', () => {
+  const script = html.slice(
+    html.indexOf('<script>') + '<script>'.length,
+    html.lastIndexOf('</script>'),
+  );
+
+  describe('where it lives', () => {
+    it('puts its tab first, before Feed and Admin', () => {
+      // A phone reader lands here; the tab order is the reading order.
+      expect(html.indexOf('id="tab-brief"')).toBeLessThan(
+        html.indexOf('id="tab-feed"'),
+      );
+      expect(html.indexOf('id="tab-feed"')).toBeLessThan(
+        html.indexOf('id="tab-admin"'),
+      );
+    });
+
+    it('is a fourth view the tabs switch between', () => {
+      expect(script).toContain("el('view-brief').hidden = name !== 'brief';");
+      expect(script).toContain(
+        "el('tab-brief').className = 'tab' + (name === 'brief' ? ' active' : '');",
+      );
+    });
+
+    it('lands on the deck at 430px and on the feed above it', () => {
+      // The feed's card grid is a desktop object — a 3-column grid whose card
+      // is 400px of text — and the deck is a phone object. Each is default
+      // where it is right, and the tab is on both so neither reader is trapped.
+      expect(script).toContain("window.matchMedia('(max-width: 430px)')");
+    });
+
+    it('rides the request the page already makes, with no new route', () => {
+      // MAX_LIMIT is 200 and a verified day is 326-463 filings, so the deck is
+      // ordered over a window and the cover says so.
+      expect(script).toContain('var BRIEF_WINDOW = 200;');
+      expect(script).toContain(
+        "return 'api/filings?tier=verified&offset=0&limit=' + BRIEF_WINDOW;",
+      );
+      expect(script).not.toContain('api/brief');
+    });
+  });
+
+  describe('the ordering, and what it admits to', () => {
+    it('prints the rule on the cover, in the design’s own words', () => {
+      // Risk 1 of the design: 12 cards of 214 companies could read as the whole
+      // day. The mitigation lives in copy, which is the weakest place to put a
+      // guarantee — so the copy is pinned.
+      expect(script).toContain(
+        'Ordered by how much of what each company said could be checked against its own document',
+      );
+      expect(script).toContain(
+        'not by how much it matters. That judgement is yours.',
+      );
+    });
+
+    it('never calls the deck a top anything', () => {
+      // "Top 12 by evidence density" is a SELECTION, and a selection is only
+      // honest with a stated cut and a stated remainder. The deck has both, and
+      // it does not get to also imply a ranking it cannot support.
+      expect(SCRIPT_BRIEF).not.toMatch(/\btop\b/i);
+      expect(SCRIPT_BRIEF).not.toMatch(/\bmost important\b/i);
+      expect(SCRIPT_BRIEF).not.toMatch(/\bbiggest\b|\bmovers\b/i);
+    });
+
+    it('caps the deck at a number derived from a minute', () => {
+      // 12 cards at the ~4.5s a 25px sentence plus a glance at the ticker takes
+      // is 54 seconds. 15 would be 68 and break the promise the rail makes.
+      expect(script).toContain('var BRIEF_MAX_CARDS = 12;');
+      expect(script).toContain('var BRIEF_MIN_CARDS = 3;');
+    });
+
+    it('breaks every tie, so a repaint cannot reshuffle the deck', () => {
+      // The page repaints every four seconds. Two candidates equal on every
+      // countable key must not swap under a reader's thumb, which is the bug
+      // the topic bar's name tie-break already fixed once.
+      expect(script).toContain('return a.symbol < b.symbol ? -1 : 1;');
+    });
+
+    it('ranks on countable properties of the evidence only', () => {
+      expect(script).toContain('if (a.hasResults !== b.hasResults)');
+      expect(script).toContain('return b.figures - a.figures;');
+      expect(script).toContain('return b.claims.length - a.claims.length;');
+    });
+  });
+
+  describe('what the design excludes, asserted as absence', () => {
+    it('lifts no delta out of a claim', () => {
+      // 823 claims carry a printed delta and 71 carry two or more. A regex that
+      // lifts the first and shows it as THE number of the card is a
+      // summarisation, not a marking. Slice 4 does it in the pipeline instead.
+      expect(SCRIPT_BRIEF).not.toContain('%');
+    });
+
+    it('computes no number at all', () => {
+      // The verbatim gate: nothing reaches a reader that was not string-matched
+      // against the source document, and no arithmetic the filing did not
+      // print. These three are how a derived figure gets made — a ratio
+      // rounded, a percentage fixed to one place, a string turned into a
+      // number to divide it. Every number the deck shows is a substring of a
+      // claim that `writeClaim` marked and did not touch.
+      expect(SCRIPT_BRIEF).not.toContain('parseFloat');
+      expect(SCRIPT_BRIEF).not.toContain('toFixed');
+      expect(SCRIPT_BRIEF).not.toContain('Math.');
+    });
+
+    it('draws no comparison bar in this slice', () => {
+      // The pair-bar card is slice 3: 18 filings, 0.52% of the corpus, and it
+      // needs `renderResultsValue`'s output on the wire first so there is one
+      // definition of how a figure is spelled.
+      expect(html).not.toContain('brief-pair');
+    });
+
+    it('never colours a claim by its direction', () => {
+      // `writeClaim` already recorded the rule: "up" is the document's word,
+      // but colouring it green is this page taking a view.
+      expect(SCRIPT_BRIEF).not.toContain('DIRECTION_GLYPH');
+      expect(SCRIPT_BRIEF).not.toContain('data-direction');
+    });
+  });
+
+  describe('exchange text reaches the deck the way it reaches everything else', () => {
+    it('opens no second path into the DOM', () => {
+      expect(SCRIPT_BRIEF).not.toContain('innerHTML');
+      expect(SCRIPT_BRIEF).not.toContain('outerHTML');
+      expect(SCRIPT_BRIEF).not.toContain('insertAdjacentHTML');
+      expect(SCRIPT_BRIEF).not.toContain('document.write');
+    });
+
+    it('writes a claim through writeClaim and a link through safeHref', () => {
+      expect(SCRIPT_BRIEF).toContain('writeClaim(');
+      expect(SCRIPT_BRIEF).toContain('safeHref(');
+    });
+
+    it('looks a topic label up without walking the prototype chain', () => {
+      // The topic arrives from the database and `constructor` is a key on every
+      // object literal's prototype.
+      expect(SCRIPT_BRIEF).toContain('describe(TOPIC_LABEL,');
+    });
+  });
+
+  describe('the mechanics the stylesheet owns', () => {
+    it('scrolls by snapping, with no timer and no hijack', () => {
+      // scroll-snap is the entire mechanism. A deck that plays itself is a
+      // video, and a reader who looks away must not lose their place.
+      expect(html).toContain('scroll-snap-type: y mandatory');
+      expect(html).toContain('scroll-snap-align: start');
+      expect(html).toContain('overscroll-behavior-y: contain');
+      // No card advances itself. The only timer the deck is allowed is the one
+      // that puts the word "Copy" back on the Copy button.
+      expect(SCRIPT_BRIEF).not.toContain('setInterval');
+      expect(SCRIPT_BRIEF).not.toContain('requestAnimationFrame');
+    });
+
+    it('measures the viewport in dvh, never vh', () => {
+      // iOS Safari's collapsing URL bar makes `100vh` taller than the visible
+      // viewport, which puts the footer of every card under the chrome.
+      expect(PAGE_STYLE_BRIEF).toContain('100dvh');
+      expect(PAGE_STYLE_BRIEF).not.toContain('100vh');
+    });
+
+    it('clears the home indicator with the safe-area inset', () => {
+      expect(PAGE_STYLE_BRIEF).toContain('env(safe-area-inset-bottom)');
+    });
+
+    it('stops animating for a reader who asked it to', () => {
+      expect(PAGE_STYLE_BRIEF).toContain(
+        '@media (prefers-reduced-motion: reduce)',
+      );
+    });
+
+    it('carries no backtick and no interpolation of its own', () => {
+      // THE SAME GUARD `script-fragments.spec.ts` PUTS ON THE FRAGMENTS, for
+      // the same reason and against the same failure: this file is a
+      // TypeScript template literal, and it cost a broken build the first time
+      // a CSS comment quoted a property name. An ESCAPED backtick compiles
+      // fine and lands in the served stylesheet, which is the version of this
+      // bug the compiler cannot catch.
+      expect(PAGE_STYLE_BRIEF).not.toContain('`');
+      expect(PAGE_STYLE_BRIEF).not.toContain('${');
+    });
+
+    it('is served by the page', () => {
+      // A stylesheet module nothing concatenates is 140 lines of dead file and
+      // a deck with no layout at all.
+      expect(html).toContain(PAGE_STYLE_BRIEF);
+    });
+
+    it('costs `page-style.ts` nothing — it is already at the ceiling', () => {
+      // CLAUDE.md's file ceiling is 800 lines and `page-style.ts` is past it.
+      expect(PAGE_STYLE_BRIEF.length).toBeGreaterThan(0);
+      expect(PAGE_STYLE).not.toContain('brief-deck');
+    });
+  });
+
+  describe('the names', () => {
+    /** Every repeated part of the deck, as `docs/ui-components.md` spells it. */
+    const REPEATED = [
+      'brief-card',
+      'brief-rail-seg',
+      'brief-ident',
+      'brief-lede',
+      'brief-rest',
+      'brief-topic',
+      'brief-foot',
+    ] as const;
+
+    const index = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'docs', 'ui-components.md'),
+      'utf8',
+    );
+
+    it.each(REPEATED)('draws %s as a data-ui name', (name) => {
+      // Repeated elements cannot share an id: a duplicate one silently breaks
+      // getElementById for everybody.
+      expect(html).toContain(`'${name}'`);
+      expect(html).not.toContain(`id="${name}"`);
+    });
+
+    it.each(REPEATED)('documents %s in the component index', (name) => {
+      // The file's whole premise is that every part of the page has a name you
+      // can say out loud. A name in the code and not in the index is a part
+      // nobody can point at.
+      expect(index).toContain(name);
+    });
+
+    it.each([
+      'view-brief',
+      'brief-cover',
+      'brief-deck',
+      'brief-rail',
+      'brief-end',
+      'brief-empty',
+    ])('documents the #%s the page draws once', (id) => {
+      expect(index).toContain(id);
+    });
+
+    it('pins a card by its symbol and its seqId, never by position', () => {
+      // Playwright locators re-resolve on the four-second repaint, and the
+      // sharp-edges list already records what that costs.
+      expect(SCRIPT_BRIEF).toContain("card.setAttribute('data-symbol'");
+      expect(SCRIPT_BRIEF).toContain("card.setAttribute('data-seq'");
+    });
+  });
+
+  describe('the states that are not the happy one', () => {
+    it('says nothing qualified rather than drawing an empty deck', () => {
+      // "Nothing was found" and "nothing was looked for" are different facts
+      // and must not render the same.
+      expect(SCRIPT_BRIEF).toContain(
+        'carried a claim matched against its source document',
+      );
+    });
+
+    it('states the remainder on the end card', () => {
+      // The deck is 5.6% of the day. The end card is where that is admitted.
+      expect(SCRIPT_BRIEF).toContain('brief-end-line');
+      expect(SCRIPT_BRIEF).toContain('The rest are in the feed');
+    });
+
+    it('suppresses the rail below three cards', () => {
+      // A two-segment progress bar is chrome, not information.
+      expect(SCRIPT_BRIEF).toContain('count < BRIEF_MIN_CARDS');
+    });
+
+    it('hides the topic rather than filing a null claim under Everything else', () => {
+      // 15.4% of claims carry no topic, all of them on the newest day. A card
+      // has no sum to preserve, so absence is the honest render — this
+      // deliberately diverges from renderTopics(), which counts null as `other`
+      // so its segments add up to the claim count.
+      expect(SCRIPT_BRIEF).toContain('topic === null || topic === undefined');
+    });
   });
 });

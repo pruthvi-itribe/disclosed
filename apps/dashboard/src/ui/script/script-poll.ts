@@ -24,6 +24,14 @@ export const SCRIPT_POLL = `
         encodeURIComponent(state.company)
       );
     }
+    // THE DECK'S WINDOW, and it ignores the feed's filters for the same reason
+    // the company page does: a reader who opened the Brief asked for the day,
+    // not for whatever topic chip was lit when they tapped the tab. It is a
+    // WINDOW rather than the day — the server caps a page at 200 and a verified
+    // IST day is 326 to 463 filings — which is why the cover states it.
+    if (state.view === 'brief') {
+      return 'api/filings?tier=verified&offset=0&limit=' + BRIEF_WINDOW;
+    }
     // The feed's "said something" toggle IS the verified tier. Expressed here
     // rather than as a separate parameter because the server already filters on
     // exactly this set, and inventing a second name for it would be two ways to
@@ -69,6 +77,15 @@ export const SCRIPT_POLL = `
         // thing a page showing the same rows twice must never do.
         if (state.company !== null) {
           renderCompany(b.data, b.meta);
+          return;
+        }
+        // The deck asked a different question of the server than the feed
+        // does, so it is the only thing this response can honestly draw: the
+        // feed's chrome counts rows against the feed's own limit, and painting
+        // it from a 200-row verified window would snap a reader's paging under
+        // them the moment they came back to it.
+        if (state.view === 'brief') {
+          renderBrief(b.data, b.meta);
           return;
         }
         renderFeed(b.data, b.meta);

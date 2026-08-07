@@ -32,6 +32,10 @@ export const SCRIPT_CELLS = `
     // honest way to tell a quiet market from a stopped pipeline.
     setText('hero-today', groupInt(d.todayCount));
     renderDayBar(d.todayByGroup || {}, d.todayCount, d.todayVerified || 0);
+    // The Brief's cover card is the same day, at phone scale. Drawn from this
+    // payload rather than from its own request, which is what makes card 0
+    // free.
+    renderBriefCover(d);
     var heroLag = el('hero-lag');
     if (heroLag) {
       heroLag.textContent = duration(d.feedLagMs);

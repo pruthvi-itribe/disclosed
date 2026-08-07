@@ -1,6 +1,7 @@
 import { PAGE_SCRIPT } from '../page-script';
 import { SCRIPT_ADMIN } from './script-admin';
 import { SCRIPT_BASE } from './script-base';
+import { SCRIPT_BRIEF } from './script-brief';
 import { SCRIPT_CELLS } from './script-cells';
 import { SCRIPT_COMPANY } from './script-company';
 import { SCRIPT_FEED } from './script-feed';
@@ -9,7 +10,7 @@ import { SCRIPT_SUGGEST } from './script-suggest';
 import { SCRIPT_VIEWS } from './script-views';
 
 /**
- * The client script is eight strings joined into one function, and these are
+ * The client script is nine strings joined into one function, and these are
  * the properties that make that safe to keep doing.
  *
  * `page.spec.ts` already proves the JOINED result parses as JavaScript, which
@@ -22,6 +23,9 @@ const FRAGMENTS: ReadonlyArray<readonly [string, string]> = [
   ['script-base', SCRIPT_BASE],
   ['script-cells', SCRIPT_CELLS],
   ['script-feed', SCRIPT_FEED],
+  // After `script-feed`, because the deck's every string reaches the DOM
+  // through `writeClaim` and `safeHref` and nothing else.
+  ['script-brief', SCRIPT_BRIEF],
   ['script-company', SCRIPT_COMPANY],
   ['script-admin', SCRIPT_ADMIN],
   ['script-poll', SCRIPT_POLL],
