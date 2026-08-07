@@ -6,6 +6,7 @@ import {
   bseDateParam,
   BseClient,
   MAX_PAGES,
+  BSE_SCRIP_HEADER_PATH,
 } from './bse.client';
 
 const NOW = new Date('2026-08-07T02:00:00.000Z');
@@ -175,5 +176,41 @@ describe('BseClient.fetchDay', () => {
       'newer',
       'older',
     ]);
+  });
+});
+
+describe('BseClient.isinForScrip', () => {
+  afterEach(() => nock.cleanAll());
+
+  const header = (body: Record<string, unknown>) =>
+    nock(BSE_API_HOST).get(BSE_SCRIP_HEADER_PATH).query(true).reply(200, body);
+
+  it('reads the ISIN the announcement feed omits', async () => {
+    header({ ISIN: 'INE216A01030' });
+    expect(await client().isinForScrip(500825)).toBe('INE216A01030');
+  });
+
+  it('normalises case and surrounding space', async () => {
+    header({ ISIN: '  ine216a01030 ' });
+    expect(await client().isinForScrip(500825)).toBe('INE216A01030');
+  });
+
+  it.each([
+    ['a blank value', { ISIN: '   ' }],
+    ['a truncated identifier', { ISIN: 'INE216' }],
+    ['a non-string', { ISIN: 12345 }],
+    ['no ISIN field', { COName: 'x' }],
+    ['an empty body', {}],
+  ])('returns null for %s rather than a partial key', async (_l, body) => {
+    // A short string would become a company key that matches far too much,
+    // which is worse than falling back to the company name.
+    header(body);
+    expect(await client().isinForScrip(500825)).toBeNull();
+  });
+
+  it('returns null instead of throwing when the lookup fails', async () => {
+    // One unresolvable company must not abandon a whole day's matching.
+    nock(BSE_API_HOST).get(BSE_SCRIP_HEADER_PATH).query(true).reply(500);
+    expect(await client().isinForScrip(500825)).toBeNull();
   });
 });

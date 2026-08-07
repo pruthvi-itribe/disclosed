@@ -7,6 +7,9 @@ export const BSE_API_HOST = 'https://api.bseindia.com';
 export const BSE_ANNOUNCEMENTS_PATH =
   '/BseIndiaAPI/api/AnnSubCategoryGetData/w';
 
+/** Carries the ISIN, which the announcement feed does not. */
+export const BSE_SCRIP_HEADER_PATH = '/BseIndiaAPI/api/ComHeadernew/w';
+
 /**
  * BSE answers without a cookie handshake, unlike NSE.
  *
@@ -117,6 +120,35 @@ export class BseClient {
         // complete.
         insecureHTTPParser: true,
       });
+  }
+
+  /**
+   * The ISIN for a scrip code, or null.
+   *
+   * A SEPARATE REQUEST BECAUSE THE ANNOUNCEMENT FEED HAS NO ISIN IN IT — only
+   * SCRIP_CD and a company long name. That absence is the whole reason a
+   * cross-exchange join needs this call: name matching failed on 3 of 11 rows
+   * in the first sample, and the join has to be better than that before any
+   * duplicate is suppressed on the strength of it.
+   *
+   * Returns null rather than throwing. A scrip whose ISIN cannot be resolved
+   * falls back to name matching, which is worse but is not nothing; a throw
+   * here would abandon the whole report over one company.
+   */
+  async isinForScrip(scripCode: number): Promise<string | null> {
+    try {
+      const response = await this.http.get<unknown>(BSE_SCRIP_HEADER_PATH, {
+        params: { quotetype: 'EQ', scripcode: scripCode, seriesid: '' },
+      });
+      const isin: unknown = (response.data as { ISIN?: unknown })?.ISIN;
+      if (typeof isin !== 'string') return null;
+      const trimmed = isin.trim().toUpperCase();
+      // An ISIN is 12 characters. Anything else is not one, and a short string
+      // would silently become a company key that matches too much.
+      return /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(trimmed) ? trimmed : null;
+    } catch {
+      return null;
+    }
   }
 
   /** One page. Exposed so the drain and any probe share exactly one request shape. */

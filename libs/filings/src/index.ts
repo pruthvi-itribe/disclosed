@@ -58,6 +58,16 @@ export * from './nse/nse.mapper';
 export * from './source-adapter.interface';
 export * from './nse/nse.adapter';
 export * from './nse/attachment.fetcher';
+// The BSE shadow lane. Deliberately its own record type, its own collection and
+// its own completeness proof — see bse.schema.ts for why it does not merge into
+// `filings` until the duplicate rate has been measured rather than assumed.
+export * from './bse/bse.types';
+export * from './bse/bse-date';
+export * from './bse/bse.mapper';
+export * from './bse/bse.client';
+export * from './bse/bse.schema';
+export * from './bse/bse.repository';
+export * from './bse/cross-exchange-match';
 export * from './pdf/pdf-text';
 export * from './pdf/parse-route';
 export * from './pdf/docling-client';
