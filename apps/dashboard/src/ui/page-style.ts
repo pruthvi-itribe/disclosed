@@ -533,7 +533,40 @@ td.grp { white-space: nowrap; }
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 14px; padding: 16px 18px;
   transition: border-color .12s ease, transform .12s ease;
+  /* A FLOOR, NOT A MATCH, and the distinction is the whole design. Stretching
+     every card to its row's tallest (align-items default) turns a one-line
+     record date into a mostly-empty box beside an eleven-claim results card.
+     A floor instead lifts only the shortest cards, so the rhythm is regular
+     without anything being padded to fill a neighbour's space.
+
+     Measured at 1440px before this: heights ran 118px to 350px, a 3.0x spread
+     with up to 198px of ragged gap in one row. The middle was already tight —
+     p25 240, p75 293 — so only the tails needed moving.
+
+     170px, and the value sits on an edge found by sweeping it against the live
+     feed. Dead space is the height between a card's last line and its footer:
+
+       floor    spread   worst row gap   worst dead   cards over 40px dead
+       none      2.5x        139px          29px            0
+       150px     2.0x        133px          29px            0
+       170px     1.7x        116px          40px            0
+       196px     1.5x         90px          66px            3
+
+     A floor up to ~150px is FREE — it lifts short cards without opening any
+     void, because their own content already reaches that far. Past 170px it
+     stops being free: at 196 three cards carry 66px of nothing above their
+     footer, and empty space inside a bounded box reads as broken in a way a
+     gap between boxes never does. So the floor stops where the void starts,
+     and the last of the raggedness is left alone deliberately. */
+  min-height: 170px;
+  display: flex;
+  flex-direction: column;
 }
+/* The footer sits at the bottom of its own card rather than floating under the
+   last line. It does NOT align across a row — cards are different heights and
+   this does not change that — but it does mean the space a floor adds appears
+   as one gap in a predictable place instead of the card ending early. */
+.card .cardfoot { margin-top: auto; }
 .card:hover { border-color: #3a4553; }
 /* A filing that said nothing verifiable is drawn quieter, not dropped.
    Pretending it is as substantial as a results card would be a lie told in

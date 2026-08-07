@@ -837,12 +837,20 @@ export const PAGE_SCRIPT = `
     row.appendChild(cell);
   }
 
-  // How many claims a card shows before it stops. Four, because a card is a
-  // glance and TRANSRAILL's presentation yields eleven — printing all of them
-  // rebuilds the wall of text the feed exists to replace. The rest are one
-  // click away, and the count is stated so nothing looks complete when it is
-  // not.
-  var CARD_CLAIMS = 4;
+  // How many claims a card shows before it stops.
+  //
+  // THREE, AND THE NUMBER IS ABOUT THE GRID RATHER THAN THE CARD. A card is a
+  // glance and TRANSRAILL's presentation yields eleven, so some cap was always
+  // needed — but the cap also decides how ragged a row of cards looks, and
+  // measured at four the feed ran 118px to 350px, a 3.0x spread leaving up to
+  // 198px of empty space beside a short card.
+  //
+  // The middle of that distribution is already tight: p25 240px, p75 293px. It
+  // is the tails that do the damage, so the cap pulls the top one in and a
+  // min-height on the card lifts the bottom one. Three is where the two meet
+  // without either padding a one-line card into a mostly-empty box or hiding a
+  // fourth fact somebody would have read.
+  var CARD_CLAIMS = 3;
 
   /**
    * The lines a card leads with, best first.
