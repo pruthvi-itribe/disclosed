@@ -148,6 +148,24 @@ export type ClaimDiscardReason =
    * that had started doing the first.
    */
   | 'period-not-in-context'
+  /**
+   * The claim states a movement — up, down, grew, declined — that the sentence
+   * it was read from does not print.
+   *
+   * KEPT APART from `number-not-in-span` for the reason `period-not-in-context`
+   * is: the figure is usually real and the direction is ours, and folding the
+   * two together would hide a model that had started deriving movement from
+   * table columns. Measured over 3,461 stored claims, 86 (2.5%) do exactly
+   * that — "Q1 revenue INR 8,936 Mn, up 20.7% YoY" against a slide that reads
+   * "Revenue at INR 8,936 Mn; 20.7% YoY".
+   *
+   * A PARAPHRASE IS NOT AN INVENTION. "up" for the document's "growth of" is
+   * accepted, and so is a printed arrow or a signed percentage. What is refused
+   * is a direction the document never stated in any form, because computing one
+   * from two of its numbers is the arithmetic `results-line.ts` exists to
+   * forbid.
+   */
+  | 'direction-not-in-span'
   /** Predictive, advisory or valuation framing. */
   | 'advisory-language'
   /** The claim is about a person. */

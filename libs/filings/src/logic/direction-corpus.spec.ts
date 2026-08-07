@@ -1,4 +1,8 @@
-import { claimDirection, type ClaimDirection } from './claim-direction';
+import {
+  claimDirection,
+  unprintedMovement,
+  type ClaimDirection,
+} from './claim-direction';
 import corpus from './__fixtures__/claim-direction-corpus.json';
 
 /**
@@ -161,5 +165,61 @@ describe('every tag is checkable against the document', () => {
       }
       expect(claim.span).toContain(reading.evidence);
     }
+  });
+});
+
+/**
+ * THE SIZE OF THE HOLE THE GATE NOW CLOSES.
+ *
+ * These claims are already stored and already published. Nothing here purges
+ * them — this suite MEASURES what the new rule would refuse, so the decision to
+ * leave the collection alone is a decision somebody made against a number
+ * rather than an omission. The rule applies from now on, at acceptance.
+ */
+describe('what the direction rule would have refused', () => {
+  const flagged = claims.filter(
+    (claim) => unprintedMovement(claim.text, claim.span) !== null,
+  );
+
+  it('refuses 86 of the 3,461 stored claims — 2.5%', () => {
+    expect(flagged).toHaveLength(86);
+    expect(Number(((flagged.length / claims.length) * 100).toFixed(1))).toBe(
+      2.5,
+    );
+  });
+
+  it('touches 53 filings, of which 7 would keep no claim at all', () => {
+    // The number that decides whether this is a discard or a downgrade. Seven
+    // filings out of 1,169 would go silent, and every one of them says its
+    // figures moved on the strength of a table the document never labelled.
+    const perFiling = new Map<number, { total: number; flagged: number }>();
+    for (const claim of claims) {
+      const row = perFiling.get(claim.seqId) ?? { total: 0, flagged: 0 };
+      row.total += 1;
+      if (unprintedMovement(claim.text, claim.span) !== null) row.flagged += 1;
+      perFiling.set(claim.seqId, row);
+    }
+    const touched = [...perFiling.values()].filter((row) => row.flagged > 0);
+    expect(touched).toHaveLength(53);
+    expect(touched.filter((row) => row.flagged === row.total)).toHaveLength(7);
+  });
+
+  it('refuses the direction and not the paraphrase', () => {
+    // THE LINE, ASSERTED AS A RATIO. Requiring the claim's exact word to be in
+    // the span — the eight commonest, below — flags 567 claims (16.4%), and
+    // reading them, nearly all are honest paraphrase: "growth of 15.1%"
+    // written as "up 15.1%". This rule flags 86, so 481 true claims survive a
+    // reading that would have refused them over a synonym.
+    const exactWord = claims.filter((claim) => {
+      const words = claim.text.toLowerCase().match(/\b[a-z-]+\b/g) ?? [];
+      const span = claim.span.toLowerCase();
+      return words.some(
+        (word) =>
+          /^(up|down|rose|fell|grew|growth|increased|declined)$/.test(word) &&
+          !span.includes(word),
+      );
+    });
+    expect(exactWord).toHaveLength(567);
+    expect(flagged.length).toBeLessThan(exactWord.length / 4);
   });
 });

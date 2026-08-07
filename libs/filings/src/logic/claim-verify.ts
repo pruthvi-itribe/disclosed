@@ -1,6 +1,6 @@
 import { hasAmbiguityKeyword } from './ambiguity';
 import { advisoryHitIn, individualHitIn } from './claim-advisory';
-import { claimDirection } from './claim-direction';
+import { claimDirection, unprintedMovement } from './claim-direction';
 import { unsupportedNumbers } from './claim-numbers';
 import { PERIOD_CONTEXT_CHARS, supportPeriods } from './claim-period';
 import { findVerbatimSpan, MIN_SPAN_CHARS } from './claim-span';
@@ -216,6 +216,24 @@ function checkOne(
       'number-not-in-span',
       text,
       `states ${unsupported.join(', ')}, which the quoted source does not`,
+    );
+  }
+
+  // THE MOVEMENT, span-scoped like the figures above it. `unsupportedNumbers`
+  // checks the digits and says nothing about the verb between them, so
+  // "revenue INR 8,936 Mn, up 20.7% YoY" passed every check against a slide
+  // reading "Revenue at INR 8,936 Mn; 20.7% YoY" — real sentence, real
+  // figures, and the word `up` supplied by the model out of two numbers it
+  // compared. That is the arithmetic `results-line.ts` refuses, arriving
+  // through the claim lane instead of the results one.
+  //
+  // 86 of 3,461 stored claims (2.5%) are in that state today.
+  const movement = unprintedMovement(text, match.evidence);
+  if (movement !== null) {
+    return discard(
+      'direction-not-in-span',
+      text,
+      `states "${movement}", which the quoted source does not print`,
     );
   }
 

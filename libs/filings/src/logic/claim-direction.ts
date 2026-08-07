@@ -10,7 +10,7 @@
  * true sentence badly and cannot publish anything false. A DIRECTION is not
  * like that. "Revenue up 20%" asserts something about the world, and a model
  * asked to compress a filing will assert one the document never made: measured
- * over the live collection, 82 of 3,461 stored claims (2.4%) carry a movement
+ * over the live collection, 86 of 3,461 stored claims (2.5%) carry a movement
  * word in the extractor's compressed `text` that the matched span does not
  * print, almost all of them a direction read off an unlabelled table row.
  *
@@ -23,8 +23,8 @@
  * WHY A MAGNITUDE IS REQUIRED
  * ================================================================
  *
- * A direction word alone tags 30.2% of claims; a direction word plus a printed
- * `%`/`bps` tags 23.3%. The 6.9 points bought by the magnitude requirement are
+ * A direction word alone tags 1,044 claims (30.2%); a direction word plus a
+ * printed `%`/`bps` tags 803 (23.2%). The 7 points bought by the magnitude are
  * the difference between BIOCON's "supports future growth" — aspiration, no
  * figure, refused — and CLEDUCATE's "grew 34.7%", which the document printed
  * and can be checked. The floor is not a failure: `unrated` is the honest
@@ -57,7 +57,7 @@ export type ClaimDirection =
   | 'contraction'
   /** The document printed both, in the same span. */
   | 'mixed'
-  /** The document printed no checkable movement. The honest floor: 76.7%. */
+  /** The document printed no checkable movement. The honest floor: 76.8%. */
   | 'unrated';
 
 export const CLAIM_DIRECTIONS: readonly ClaimDirection[] = [
@@ -240,4 +240,115 @@ export function claimDirection(span: string): DirectionReading {
   const start = Math.min(...decisive.map((hit) => hit.start));
   const end = Math.max(...decisive.map((hit) => hit.end));
   return { direction, evidence: text.slice(start, end) };
+}
+
+/**
+ * ================================================================
+ * THE GATE'S VOCABULARY, WHICH IS NOT THE TAG'S
+ * ================================================================
+ *
+ * `claimDirection` asks what the document printed. `unprintedMovement` asks
+ * whether the CLAIM states a movement the document did not — and answering yes
+ * discards a claim, so the two sides are deliberately asymmetric:
+ *
+ *   SAYS_*  what counts as the claim asserting a movement. Narrow. It excludes
+ *           `expansion`/`expanded`, which name a PROJECT far more often than a
+ *           movement ("Weak Nitric Acid III expansion of 200 KTPA"), and
+ *           `higher`/`lower`, which are usually about a level.
+ *   PRINTS_* what counts as the document having printed one. Wide, because a
+ *           false negative here discards a true claim. It admits the same words
+ *           with any ending, the same words with the PDF's spaces missing, and
+ *           the marks a table prints instead of a word.
+ *
+ * Measured over the 3,461 stored claims: the strictest reading — the claim's
+ * exact direction word must appear in the span — flags 567 (16.4%), and reading
+ * them shows almost all are honest paraphrase ("growth of 15.1%" -> "up
+ * 15.1%"). This rule flags 86 (2.5%), and reading THOSE shows about nine in ten
+ * are a direction the model computed from an unlabelled table row.
+ */
+
+/** What a CLAIM asserting a movement looks like. */
+const SAYS_UP =
+  /\b(?:up|upward\w*|rose|rise[sn]?|rising|grew|grown|grow(?:s|ing|th)?|increase[sd]?|increasing|improve[sd]?|improving|improvement|gain(?:s|ed)?|surg\w+|jump\w*|climb\w*|doubled|tripled|lift(?:s|ed|ing)?|uplift\w*)\b/i;
+
+const SAYS_DOWN =
+  /\b(?:down|downward\w*|fell|fall(?:s|ing)?|declin\w*|decreas\w*|drop(?:s|ped|ping)?|reduce[sd]?|reducing|reduction|de-?grow\w*|de-?grew|slip(?:s|ped)?|shrank|shrunk|halved)\b/i;
+
+/**
+ * What ELSE counts as the SPAN having printed a movement. Never used on a
+ * claim. Three kinds of thing:
+ *
+ * 1. `higher` / `lower`, word-bounded. Deliberately not in `SAYS_*`, because a
+ *    claim saying "on higher finance costs" is describing a level rather than
+ *    asserting a move; a span saying "lower by about 12%" (CHAMBLFERT) is
+ *    printing one.
+ * 2. UNBOUNDED stems, because PDF extraction routinely loses the spaces:
+ *    "ThesegmentrevenuedeclinedmainlyduetocontinuedchallengesintheMedTech" is a
+ *    real BLUESTARCO span and the document printed "declined" inside it. Every
+ *    unbounded stem here was checked against ordinary English for collisions,
+ *    and the list is shorter than it first was because of one: `gain` matched
+ *    "as against" in WALCHANNAG's span and quietly excused the exact claim this
+ *    gate exists to refuse. `up` and `down` are absent for the same reason —
+ *    `group` contains one and `downstream` the other.
+ * 3. The marks a table prints instead of a word: an arrow, or a signed
+ *    percentage. PACEDIGITK's span is "Rs. 5,554 Mn ↑ 51.3% YoY",
+ *    NAVINFLUOR's is "SALES Rs. 1,045.1 Cr +44% YoY", GODREJAGRO's is
+ *    "-14%". Those ARE the document stating a direction, and refusing a claim
+ *    over the filer's typographic choice would be the mistake
+ *    `claim-numbers.ts` refuses to make about where a comma sits.
+ */
+const PRINTS_UP =
+  /\bhigher\b|upward|rising|grew|grown|growth|growing|increase|increasing|improve|improving|improvement|expan|doubled|tripled|surged|surging|climbed|jumped|gained|uplift|[↑▲⇡]|\+\s?\d/i;
+
+const PRINTS_DOWN =
+  /\blower\b|downward|de-?grow|de-?grew|declin|decreas|dropped|dropping|reduce|reducing|reduction|contracted|slipped|shrank|shrunk|halved|fallen|falling|[↓▼⇣]|(?:^|[\s(|])-\s?\d/i;
+
+/** The first word by which a claim asserts a movement, or null. */
+const assertedWord = (text: string, pattern: RegExp): string | null => {
+  const found = pattern.exec(text);
+  return found === null ? null : found[0].toLowerCase();
+};
+
+/**
+ * The movement word a claim states that its own span does not print, or null.
+ *
+ * THE HOLE THIS CLOSES. `claim-span.ts` checks the sentence is in the document
+ * and `claim-numbers.ts` checks the figures are in the sentence; neither looks
+ * at direction VERBS, so "Q1 revenue INR 8,936 Mn, up 20.7% YoY" passed both
+ * against a slide reading "Revenue at INR 8,936 Mn; 20.7% YoY". The percentage
+ * is real, the sentence is real, and the word `up` is ours. Deriving it means
+ * comparing two of the document's numbers, which is precisely the operation
+ * `results-line.ts` refuses — a competitor's transposed EBITDA margin about a
+ * named listed company is what that refusal is written on.
+ *
+ * Returns the offending word rather than a boolean so the discard reads
+ * "states 'up', which the quoted source does not print", which is reviewable.
+ *
+ * NEVER THROWS. Only the IDIOM traps are stripped, not the second-derivative
+ * ones: SUNDROP's span does print "decline", so a claim may repeat it even
+ * though the TAG refuses to call the figure a contraction.
+ */
+export function unprintedMovement(
+  claimText: string,
+  span: string,
+): string | null {
+  if (typeof claimText !== 'string' || typeof span !== 'string') return null;
+
+  const text = blankTraps(collapse(claimText), IDIOM_TRAPS);
+  const printed = blankTraps(collapse(span), IDIOM_TRAPS);
+
+  const up = assertedWord(text, SAYS_UP);
+  if (up !== null && !(SAYS_UP.test(printed) || PRINTS_UP.test(printed))) {
+    return up;
+  }
+
+  const down = assertedWord(text, SAYS_DOWN);
+  if (
+    down !== null &&
+    !(SAYS_DOWN.test(printed) || PRINTS_DOWN.test(printed))
+  ) {
+    return down;
+  }
+
+  return null;
 }

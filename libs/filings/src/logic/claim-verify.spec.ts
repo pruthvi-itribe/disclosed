@@ -21,6 +21,10 @@ const DOCUMENT = [
   'completion of due diligence.',
   'Mr. Rajesh Kumar has been appointed as Chief Financial Officer.',
   'A civil suit has been filed before the Bombay High Court against the Company.',
+  // Two real shapes, from IKS and KIMS: a slide that prints the percentage and
+  // no direction, and a sentence that prints the direction as a noun.
+  'Revenue at INR 8,936 Mn; 20.7% YoY',
+  'Consolidated revenue stood at Rs. 39,308 Mn for FY 26, showing a growth of 28.2%.',
 ].join('\n');
 
 const claim = (overrides: Partial<ProposedClaim> = {}): ProposedClaim => ({
@@ -89,6 +93,23 @@ describe('verifyClaims — what it accepts', () => {
     const { claims } = verify([claim()]);
     expect(claims[0].direction).toBe('unrated');
     expect(claims[0].directionEvidence).toBeNull();
+  });
+
+  it('accepts a movement the span states in its own words', () => {
+    // KIMS, real: the claim says "up 28.2%" and the document says "a growth of
+    // 28.2%". A paraphrase is not an invention, and a gate that refused this
+    // would refuse most of the true claims in the collection — the strictest
+    // reading, where the claim's exact word must be in the span, flags 616 of
+    // 3,461 claims and nearly all of them are this.
+    const { claims, discards } = verify([
+      claim({
+        span: 'Consolidated revenue stood at Rs. 39,308 Mn for FY 26, showing a growth of 28.2%.',
+        text: 'FY26 consolidated revenue Rs 39,308 Mn, up 28.2%',
+        kind: 'operational',
+      }),
+    ]);
+    expect(discards).toEqual([]);
+    expect(claims).toHaveLength(1);
   });
 
   it('stores the DOCUMENT’s bytes as the span, not the extractor’s', () => {
@@ -233,6 +254,44 @@ describe('verifyClaims — the fiscal period', () => {
     expect(claims).toEqual([]);
     expect(discards[0].reason).toBe<ClaimDiscardReason>('number-not-in-span');
     expect(discards[0].detail).toContain('27');
+  });
+});
+
+describe('verifyClaims — a movement the document did not print', () => {
+  it('discards a direction the model computed rather than read', () => {
+    // IKS, real, and the hole this closes: the sentence is in the document,
+    // the figure is in the sentence, and the word `up` is ours — arrived at by
+    // comparing two of the document's numbers, which is the operation
+    // `results-line.ts` refuses. It passed every other check in this file.
+    const { claims, discards } = verify([
+      claim({
+        span: 'Revenue at INR 8,936 Mn; 20.7% YoY',
+        text: 'Q1 revenue INR 8,936 Mn, up 20.7% YoY',
+        kind: 'operational',
+      }),
+    ]);
+    expect(claims).toEqual([]);
+    expect(discards[0].reason).toBe<ClaimDiscardReason>(
+      'direction-not-in-span',
+    );
+    // NAMED, so a refusal can be read rather than counted.
+    expect(discards[0].detail).toContain('"up"');
+  });
+
+  it('keeps the movement rule apart from the figure rule', () => {
+    // Both are span-scoped and both are about what the sentence supports, but
+    // attributing a real figure to a movement the document never described and
+    // inventing a figure outright are different errors with different
+    // remedies. One count for both would hide a model that had started doing
+    // the first.
+    const reason = verify([
+      claim({
+        span: 'Revenue at INR 8,936 Mn; 20.7% YoY',
+        text: 'Q1 revenue INR 8,936 Mn, up 20.7% YoY',
+        kind: 'operational',
+      }),
+    ]).discards[0].reason;
+    expect(reason).not.toBe<ClaimDiscardReason>('number-not-in-span');
   });
 });
 

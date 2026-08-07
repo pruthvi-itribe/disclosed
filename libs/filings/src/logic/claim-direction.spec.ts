@@ -1,6 +1,7 @@
 import {
   claimDirection,
   CLAIM_DIRECTIONS,
+  unprintedMovement,
   type ClaimDirection,
 } from './claim-direction';
 
@@ -256,5 +257,137 @@ describe('claimDirection — the contract', () => {
       claimDirection('The group holds 12% of the downstream joint venture')
         .direction,
     ).toBe<ClaimDirection>('unrated');
+  });
+});
+
+/**
+ * THE GATE, not the tag.
+ *
+ * A different question from `claimDirection` and a different vocabulary, and
+ * the pairs below are all real: the claim's `text` and the `span` it was
+ * accepted against, both from the live collection.
+ *
+ * The tag asks "what did the document print". This asks "does the claim state a
+ * movement the document did NOT print" — and answering yes is a discard, so it
+ * must be generous about what counts as the document printing one and strict
+ * about what counts as the claim stating one.
+ */
+describe('unprintedMovement — the claim states what the span does not', () => {
+  it.each([
+    [
+      'IKS — the slide printed the percentage and no direction at all',
+      'Q1 FY27 revenue INR 8,936 Mn, up 20.7% YoY',
+      'Revenue at INR 8,936 Mn; 20.7% YoY',
+      'up',
+    ],
+    [
+      'HMVL — four unlabelled columns, and the model said which way',
+      'HMVL consolidated PAT rose 113% YoY to INR 56 crore in Q1FY27',
+      'PAT 1 26 56 113% 63 -12%',
+      'rose',
+    ],
+    [
+      'WALCHANNAG — two figures and "as against": the comparison is ours',
+      'Operating income Rs.278.11 Cr. in FY26, up from Rs.262.09 Cr. in FY25.',
+      'The operating income of the company stood at Rs.278.11 Cr. in FY26 as against Rs.262.09 Cr. in FY25',
+      'up',
+    ],
+    [
+      'CDSL — the same shape downwards',
+      'Stand-alone net profit INR144 cr, down from INR152 cr YoY.',
+      'The stand-alone net profit for June 2026 quarter is achieved at INR144 crores as against INR152 crores for the similar quarter during the previous year.',
+      'down',
+    ],
+    [
+      'CANTABIL — SSG is same-store growth to a reader and nothing to the gate',
+      'Same store growth 4.04% in Q1 FY27',
+      'SSG for the quarter stood at 4.04%',
+      'growth',
+    ],
+  ])('%s', (_why, text, span, word) => {
+    expect(unprintedMovement(text, span)).toBe(word);
+  });
+});
+
+describe('unprintedMovement — what a claim may still say', () => {
+  it.each([
+    [
+      'KIMS — "up" for the span\'s "growth of": a paraphrase, not an invention',
+      'Consolidated revenue Rs 39,308 Mn in FY26, up 28.2% from Rs 30,670 Mn in FY25',
+      'Our consolidated revenue stood at Rs. 39,308 Mn for FY 26 compared to Rs. 30,670 Mn in FY 25, showing a growth of 28.2%.',
+    ],
+    [
+      'PAISALO — "up" for "surging"',
+      'Disbursements stood at Rs 17,309 Mn in Q1FY27, up 128% YoY',
+      'Disbursements stood at Rs 17,309 Mn in Q1FY27, surging 128% YoY on the back of steady credit demand across key segments',
+    ],
+    [
+      'ARIS — "rose" for "increasing"',
+      'Asphalt revenue rose to INR 529 Mn in Q1-FY27 from INR 299 Mn in Q4-FY26',
+      'Asphalt business continued to witness strong traction, with revenue increasing to INR 529 Mn in Q1-FY27 from INR 299 Mn in Q4-FY26.',
+    ],
+    [
+      'AMANTA — "down" for "declining"',
+      'Q1FY27 PAT ₹3.3 cr, down 5.6% YoY on higher finance costs; PAT margin 4.8%.',
+      'PAT for Q1FY27 stood at INR 3.3 cr, declining 5.6% YoY from INR 3.5 cr, primarily due to higher finance costs on account of new Solar Term Loan, resulting in a PAT margin of 4.8%.',
+    ],
+    [
+      'PACEDIGITK — the document printed an arrow instead of a word',
+      'Q1 FY27 revenue from operations Rs 5,554 mn, up 51.3% YoY',
+      'Rs. 5,554 Mn ↑ 51.3% YoY Revenue from operations',
+    ],
+    [
+      'NAVINFLUOR — the document printed a plus sign',
+      'Q1 FY27 consolidated sales Rs. 1,045.1 Cr, up 44% YoY',
+      'SALES Rs. 1,045.1 Cr +44% YoY+11% QoQ',
+    ],
+    [
+      'GODREJAGRO — the document printed a minus sign',
+      'Q1 FY27 consolidated PAT down 14% YoY to 128 crore',
+      'Profit after tax (PAT) | 126 | 149 | -15% | 128 | 149 | -14%',
+    ],
+    [
+      'BLUESTARCO — the PDF lost the spaces, not the word',
+      'Segment revenue declined on continued MedTech challenges.',
+      'ThesegmentrevenuedeclinedmainlyduetocontinuedchallengesintheMedTech business.',
+    ],
+    [
+      'SUNDROP — the span really does print "decline", so the claim may say it',
+      'Spreads decline moderates from -10% in Q4FY26 to -3% in Q1FY27.',
+      'the overall rate of decline is moderating sequentially from -10% in Q4 FY26 to -3% in Q1 FY 27.',
+    ],
+    [
+      'ASTERDM — "up to" is not a movement on either side',
+      'Acquiring up to additional 12% equity stake in United CIIGMA Institute of Medical Sciences via put option exercise.',
+      'Acquisition of up to an additional 12% equity stake in United CIIGMA Institute of Medical Sciences Private Limited (UCIMSPL) through exercise of the put option by the Promoter/Promoter Group of UCIMSPL.',
+    ],
+    [
+      'ERIS — a drawn-down loan is a facility, not a fall',
+      'Eris Lifesciences drew down a working capital term loan of ₹64,40,00,000 from Axis Bank to meet short-term liabilities.',
+      'the Company has drawn down a working capital term loan amounting to ₹64,40,00,000/- from Axis Bank Limited to meet other short term liabilities',
+    ],
+    [
+      'GNFC — an "expansion" is a project here, not a movement of a figure',
+      'Executing Weak Nitric Acid III expansion of 200 KTPA at Bharuch.',
+      '3. Weak Nitric Acid –III –Bharuch 200 KTPA',
+    ],
+    [
+      'BIOCON — a claim with no movement in it at all',
+      'strengthened regional supply network through local capabilities',
+      'Regional supply network strengthened through local capabilities and strategic partnerships',
+    ],
+  ])('%s', (_why, text, span) => {
+    expect(unprintedMovement(text, span)).toBeNull();
+  });
+
+  it.each([
+    ['', ''],
+    ['   ', 'Revenue up 16% YoY'],
+    [null, null],
+    [42, undefined],
+  ])('answers null for %p / %p rather than throwing', (text, span) => {
+    expect(
+      unprintedMovement(text as unknown as string, span as unknown as string),
+    ).toBeNull();
   });
 });
