@@ -10,9 +10,11 @@
  * true sentence badly and cannot publish anything false. A DIRECTION is not
  * like that. "Revenue up 20%" asserts something about the world, and a model
  * asked to compress a filing will assert one the document never made: measured
- * over the live collection, 86 of 3,461 stored claims (2.5%) carry a movement
- * word in the extractor's compressed `text` that the matched span does not
- * print, almost all of them a direction read off an unlabelled table row.
+ * over the collection as it stood on 2026-08-08, 86 of 3,461 stored claims
+ * (2.5%) carried a movement word in the extractor's compressed `text` that the
+ * matched span does not print, almost all of them a direction read off an
+ * unlabelled table row. They were purged; `unprintedMovement` below stops the
+ * next one.
  *
  * So the tag is derived from the SPAN — the document's own bytes, already
  * matched character for character by `claim-span.ts` — and never from the
@@ -263,8 +265,8 @@ export function claimDirection(span: string): DirectionReading {
  * Measured over the 3,461 stored claims: the strictest reading — the claim's
  * exact direction word must appear in the span — flags 567 (16.4%), and reading
  * them shows almost all are honest paraphrase ("growth of 15.1%" -> "up
- * 15.1%"). This rule flags 86 (2.5%), and reading THOSE shows about nine in ten
- * are a direction the model computed from an unlabelled table row.
+ * 15.1%"). This rule flagged 86 (2.5%), and reading THOSE shows about nine in
+ * ten are a direction the model computed from an unlabelled table row.
  */
 
 /** What a CLAIM asserting a movement looks like. */

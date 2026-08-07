@@ -155,9 +155,10 @@ export type ClaimDiscardReason =
    * KEPT APART from `number-not-in-span` for the reason `period-not-in-context`
    * is: the figure is usually real and the direction is ours, and folding the
    * two together would hide a model that had started deriving movement from
-   * table columns. Measured over 3,461 stored claims, 86 (2.5%) do exactly
-   * that — "Q1 revenue INR 8,936 Mn, up 20.7% YoY" against a slide that reads
-   * "Revenue at INR 8,936 Mn; 20.7% YoY".
+   * table columns. Measured over the 3,461 claims stored before this reason
+   * existed, 86 (2.5%) did exactly that — "Q1 revenue INR 8,936 Mn, up 20.7%
+   * YoY" against a slide that reads "Revenue at INR 8,936 Mn; 20.7% YoY" — and
+   * all 86 were purged rather than left on the page.
    *
    * A PARAPHRASE IS NOT AN INVENTION. "up" for the document's "growth of" is
    * accepted, and so is a printed arrow or a signed percentage. What is refused

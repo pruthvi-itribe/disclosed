@@ -46,6 +46,7 @@
     "claims:topics": "ts-node -r tsconfig-paths/register tools/claims/classify-topics.ts",
     "claims:direction": "ts-node -r tsconfig-paths/register tools/claims/classify-direction.ts",
     "claims:purge-shared": "ts-node -r tsconfig-paths/register tools/claims/purge-shared-page-claims.ts",
+    "claims:purge-direction": "ts-node -r tsconfig-paths/register tools/claims/purge-unprinted-direction.ts",
     "claims:mute": "ts-node -r tsconfig-paths/register tools/claims/measure-topic-mute.ts"
   },
   "keywords": [],

@@ -227,7 +227,9 @@ function checkOne(
   // compared. That is the arithmetic `results-line.ts` refuses, arriving
   // through the claim lane instead of the results one.
   //
-  // 86 of 3,461 stored claims (2.5%) are in that state today.
+  // 86 of the 3,461 claims stored before this check existed were in that
+  // state; `tools/claims/purge-unprinted-direction.ts` took them off the
+  // dashboard on 2026-08-08, so the collection now holds none.
   const movement = unprintedMovement(text, match.evidence);
   if (movement !== null) {
     return discard(

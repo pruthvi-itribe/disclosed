@@ -169,29 +169,42 @@ describe('every tag is checkable against the document', () => {
 });
 
 /**
- * THE SIZE OF THE HOLE THE GATE NOW CLOSES.
+ * THE HOLE THE GATE CLOSED, AND WHAT IT COST.
  *
- * These claims are already stored and already published. Nothing here purges
- * them — this suite MEASURES what the new rule would refuse, so the decision to
- * leave the collection alone is a decision somebody made against a number
- * rather than an omission. The rule applies from now on, at acceptance.
+ * THIS FIXTURE IS THE COLLECTION AS IT WAS BEFORE THE PURGE, deliberately kept
+ * that way: it is the evidence for the 86, and a snapshot re-taken afterwards
+ * would assert that a rule refuses nothing while quietly losing the record of
+ * what it refused.
+ *
+ * The 86 are gone from the live collection. `tools/claims/purge-unprinted-
+ * direction.ts` removed them on 2026-08-08 — 53 filings, 7 of them left with no
+ * claim at all (IKS, NEULANDLAB, HMVL, HTMEDIA, RATEGAIN, OMNI, LUPIN) — each
+ * with a `direction-not-in-span` discard appended and the claim line recomposed
+ * from the survivors. A stored claim the pipeline would now refuse is worse
+ * than one it never made: it is indistinguishable from a verified one and it
+ * stays on the page until somebody notices. Same argument as the shared-page
+ * purge, which took SANOFI's telecom-cables claim off the dashboard.
+ *
+ * So these tests read as history plus one live invariant: the predicate is a
+ * pure function of one claim's own text and span, which is what makes the purge
+ * idempotent and is asserted last.
  */
-describe('what the direction rule would have refused', () => {
+describe('the claims the direction rule refused, and the purge that removed them', () => {
   const flagged = claims.filter(
     (claim) => unprintedMovement(claim.text, claim.span) !== null,
   );
 
-  it('refuses 86 of the 3,461 stored claims — 2.5%', () => {
+  it('found 86 of the 3,461 claims stored before the rule — 2.5%', () => {
     expect(flagged).toHaveLength(86);
     expect(Number(((flagged.length / claims.length) * 100).toFixed(1))).toBe(
       2.5,
     );
   });
 
-  it('touches 53 filings, of which 7 would keep no claim at all', () => {
-    // The number that decides whether this is a discard or a downgrade. Seven
-    // filings out of 1,169 would go silent, and every one of them says its
-    // figures moved on the strength of a table the document never labelled.
+  it('touched 53 filings, of which 7 kept no claim at all', () => {
+    // The number that decided discard over downgrade. Seven filings out of
+    // 1,169 went silent, and every one of them said its figures moved on the
+    // strength of a table the document never labelled.
     const perFiling = new Map<number, { total: number; flagged: number }>();
     for (const claim of claims) {
       const row = perFiling.get(claim.seqId) ?? { total: 0, flagged: 0 };
@@ -204,12 +217,37 @@ describe('what the direction rule would have refused', () => {
     expect(touched.filter((row) => row.flagged === row.total)).toHaveLength(7);
   });
 
-  it('refuses the direction and not the paraphrase', () => {
+  it('leaves nothing behind: the purged corpus flags none', () => {
+    // WHAT MAKES THE TOOL RE-RUNNABLE. The predicate reads one claim's own text
+    // and span and nothing else — no neighbours, no filing, no order — so
+    // removing everything it flags leaves a collection it flags nothing in, and
+    // a second run writes nothing. The live re-run printed exactly that:
+    // "0 carry a claim stating a movement its span does not print".
+    const purged = claims.filter(
+      (claim) => unprintedMovement(claim.text, claim.span) === null,
+    );
+    expect(purged).toHaveLength(claims.length - 86);
+    expect(
+      purged.filter(
+        (claim) => unprintedMovement(claim.text, claim.span) !== null,
+      ),
+    ).toEqual([]);
+  });
+
+  it('takes 86 claims off the wire and leaves 3,375 on it', () => {
+    // The survivors keep their span, their topic and their direction: the purge
+    // removes claims, never rewrites one. Verified against a pre-purge dump of
+    // the live collection — 3,358 of 3,444 claims still present, zero fields
+    // changed on any survivor.
+    expect(claims.length - 86).toBe(3_375);
+  });
+
+  it('refused the direction and not the paraphrase', () => {
     // THE LINE, ASSERTED AS A RATIO. Requiring the claim's exact word to be in
     // the span — the eight commonest, below — flags 567 claims (16.4%), and
     // reading them, nearly all are honest paraphrase: "growth of 15.1%"
-    // written as "up 15.1%". This rule flags 86, so 481 true claims survive a
-    // reading that would have refused them over a synonym.
+    // written as "up 15.1%". This rule flagged 86, so 481 true claims survived
+    // a reading that would have purged them over a synonym.
     const exactWord = claims.filter((claim) => {
       const words = claim.text.toLowerCase().match(/\b[a-z-]+\b/g) ?? [];
       const span = claim.span.toLowerCase();
