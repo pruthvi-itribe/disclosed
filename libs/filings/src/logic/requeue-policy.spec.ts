@@ -154,7 +154,9 @@ describe('decideRequeue', () => {
       ['truncated-at-origin' as const, /parse-retry\.ts/],
       ['unreadable-pdf' as const, /same budget/],
       ['no-text-layer' as const, /OCR/],
-      ['not-found' as const, /404 or 410/],
+      // 410 only. A 404 is retried now rather than written off, so it never
+      // reaches a stored `not-found` and the reason must not claim it does.
+      ['not-found' as const, /410 Gone/],
       ['no-attachment' as const, /nothing to fetch/],
       ['untrusted-host' as const, /forgery/],
       ['rejected' as const, /retry cannot fix/],

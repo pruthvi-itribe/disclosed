@@ -37,13 +37,36 @@ export const DEFAULT_RETRY_MAX_MS = 3_600_000;
  * unhappy about request rate, and both clear on their own. 408 is a server-side
  * timeout. Everything else in the 4xx range is a statement about the request,
  * which will not improve by being repeated.
+ *
+ * 404 IS IN HERE, AND IT IS THE ONE ENTRY THAT LOOKS WRONG. The announcement
+ * feed and the archive host are not the same system, and the feed wins the
+ * race: NSE publishes the row, and the PDF lands on `nsearchives` seconds to
+ * minutes later. A 404 asked in that gap is the archive saying "not yet".
+ *
+ * This was measured, not reasoned about. BRITANNIA's investor presentation
+ * (seqId 106730232) was disseminated at 01:42:54Z, answered 404 on the single
+ * attempt the previous policy allowed, and was written off as `unparseable`
+ * for good. The same URL answered 200 with 4,439,475 bytes when asked again —
+ * a whole investor presentation discarded because we asked once, too early.
+ *
+ * The cost of being wrong in this direction is bounded and the cost of being
+ * wrong in the other is not: an unnecessary retry spends at most the attempt
+ * budget and then lands in `failed`, where it is visible and requeueable,
+ * while a premature terminal state deletes a filing from the product silently.
  */
 export const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([
-  401, 403, 408, 425, 429,
+  401, 403, 404, 408, 425, 429,
 ]);
 
-/** Statuses that mean the exchange does not hold the document. */
-export const NOT_FOUND_STATUSES: ReadonlySet<number> = new Set([404, 410]);
+/**
+ * Statuses that mean the exchange does not hold the document.
+ *
+ * 410 alone. Gone is the origin stating the document EXISTED and will not come
+ * back, which is a different and much stronger claim than 404's "I do not have
+ * this" — strong enough to act on without spending the attempt budget to hear
+ * it five times.
+ */
+export const NOT_FOUND_STATUSES: ReadonlySet<number> = new Set([410]);
 
 export type FailureVerdict =
   /** Try again later. */

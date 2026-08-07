@@ -158,9 +158,13 @@ const UNCHANGED_HANDLING: Readonly<
     'the document parsed and carries no text: it is a raster scan, and this ' +
     'deployment has no OCR parser configured (DOCLING_URL is unset), so a ' +
     're-read measures the same zero characters',
+  // 404 no longer reaches this state — it is retried, because the archive host
+  // lags the announcement feed and an early 404 means "not yet". Only 410
+  // lands here now: Gone is the origin saying the document existed and will
+  // not return, which no amount of re-asking changes.
   'not-found':
-    'the exchange answered about the request with a 404 or 410, which is a ' +
-    'statement about what it holds and not about what this pipeline can read',
+    'the exchange answered 410 Gone, which is a statement that the document ' +
+    'existed and will not return, not one about what this pipeline can read',
   rejected:
     'the exchange refused the request in a way a retry cannot fix; nothing ' +
     'about how this pipeline asks has changed',

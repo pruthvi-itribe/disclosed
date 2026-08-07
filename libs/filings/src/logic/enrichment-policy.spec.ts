@@ -28,18 +28,36 @@ describe('classifyFetchFailure', () => {
     ['a service outage', 503],
     ['an origin timeout', 504],
     ['a bare 500', 500],
+    // MEASURED, not assumed. BRITANNIA's investor presentation (seqId
+    // 106730232) was disseminated at 01:42:54Z and answered 404 on the single
+    // attempt the old policy allowed. The same URL answered 200 with 4,439,475
+    // bytes when asked again later: NSE publishes the announcement row before
+    // the file finishes landing on the archive host, so an early 404 says
+    // "not yet", not "not ever".
+    ['an archive that has not received the file yet', 404],
   ])('retries %s', (_label, status) => {
     expect(classifyFetchFailure(status)).toEqual({ kind: 'retry' });
   });
 
   it.each([
-    ['a missing document', 404],
+    // 410 is the ONE status that survives as terminal, and deliberately: Gone
+    // is the origin stating the document existed and will not come back, which
+    // is a different claim from 404's "I do not have this". Retrying it would
+    // spend the whole attempt budget to be told the same thing five times.
     ['a removed document', 410],
   ])('gives up on %s as not-found', (_label, status) => {
     expect(classifyFetchFailure(status)).toEqual({
       kind: 'terminal',
       reason: 'not-found',
     });
+  });
+
+  it('retries a 404 until the attempt budget is spent, rather than at once', () => {
+    // The guarantee this fix exists for: a filing whose PDF is slow to appear
+    // must not be discarded by the first look. The budget is what bounds it.
+    expect(classifyFetchFailure(404)).toEqual({ kind: 'retry' });
+    expect(RETRYABLE_STATUSES.has(404)).toBe(true);
+    expect(NOT_FOUND_STATUSES.has(404)).toBe(false);
   });
 
   it.each([

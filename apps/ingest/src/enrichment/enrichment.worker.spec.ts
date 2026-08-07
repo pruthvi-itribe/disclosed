@@ -584,7 +584,6 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
   );
 
   it.each([
-    [404, 'not-found'],
     [410, 'not-found'],
     [400, 'rejected'],
     [451, 'rejected'],
@@ -597,10 +596,26 @@ describe('EnrichmentWorker — terminal states that are never retried', () => {
     expect(onlyRecorded(repository).unparseableReason).toBe(reason);
   });
 
+  it('schedules another attempt for HTTP 404 rather than giving up', async () => {
+    // 404 is the archive host lagging the announcement feed, not a verdict on
+    // the document. BRITANNIA's investor presentation was written off by the
+    // old policy and the same URL served 4,439,475 bytes when asked again.
+    const { worker, repository } = harness({
+      fetch: { outcome: 'failed', status: 404, message: 'Request failed 404' },
+    });
+
+    const tick = await worker.tick(NOW);
+    expect(tick.unparseable).toBe(0);
+
+    const recorded = onlyRecorded(repository);
+    expect(recorded.state).not.toBe('unparseable');
+    expect(recorded.nextAttemptAt).not.toBeNull();
+  });
+
   it('never leaves a terminal filing carrying a next attempt time', async () => {
     for (const fetch of [
       { outcome: 'oversized', bytes: null, advertised: false } as const,
-      { outcome: 'failed', status: 404, message: 'gone' } as const,
+      { outcome: 'failed', status: 410, message: 'gone' } as const,
     ]) {
       const { worker, repository } = harness({ fetch });
       await worker.tick(NOW);
