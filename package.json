@@ -44,6 +44,7 @@
     "search:indexes": "ts-node -r tsconfig-paths/register tools/search/build-search-indexes.ts",
     "test:e2e": "playwright test",
     "claims:topics": "ts-node -r tsconfig-paths/register tools/claims/classify-topics.ts",
+    "claims:purge-shared": "ts-node -r tsconfig-paths/register tools/claims/purge-shared-page-claims.ts",
     "claims:mute": "ts-node -r tsconfig-paths/register tools/claims/measure-topic-mute.ts"
   },
   "keywords": [],
