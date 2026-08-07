@@ -1,8 +1,9 @@
 import type { Filing } from '../filing.types';
 import { isLegallyBlocked } from './legal-block';
+import { companyIdentitiesIn, SHARED_PAGE_MIN_IDENTITIES } from './shared-page';
 
 /**
- * Which filings are read for insights, and the two reasons one is not.
+ * Which filings are read for insights, and the three reasons one is not.
  *
  * ================================================================
  * THIS WAS A CATEGORY ALLOWLIST, AND THE ALLOWLIST WAS THE BUG
@@ -29,10 +30,10 @@ import { isLegallyBlocked } from './legal-block';
  * notice.
  *
  * ================================================================
- * WHAT REPLACED IT, AND WHY THESE TWO TESTS CANNOT HIDE THE SAME GAP
+ * WHAT REPLACED IT, AND WHY THESE TESTS CANNOT HIDE THE SAME GAP
  * ================================================================
  *
- * Two tests, and NEITHER LOOKS AT THE CATEGORY:
+ * Three tests, and NONE OF THEM LOOKS AT THE CATEGORY:
  *
  *   1. **Legal exposure.** Not a cost control and never was. A litigation,
  *      enforcement or insolvency filing must not reach an extractor at all,
@@ -40,6 +41,12 @@ import { isLegallyBlocked } from './legal-block';
  *      action is for nothing to be drafted. `legal-block.ts` owns it.
  *   2. **The document is a covering letter.** A structural property of the bytes
  *      in hand, measured in characters.
+ *   3. **The document is a page several companies share.** Also a property of
+ *      the bytes, and the only one of the three that is about ATTRIBUTION rather
+ *      than about content: a newspaper page carries other companies' notices
+ *      beside the filer's, and the verbatim gate cannot tell whose sentence it
+ *      matched. `shared-page.ts` owns it, and names the claim that shipped
+ *      wrong before it existed.
  *
  * The distinction that matters: **a test on the document cannot hide a
  * category.** If NSE invents `Quarterly Results Summary` tomorrow, it is read —
@@ -106,7 +113,16 @@ export type CoverageSkipReason =
   /** Litigation, enforcement, insolvency or fraud. A safety refusal. */
   | 'legal-exposure'
   /** The document is too short to be more than a covering letter. */
-  | 'covering-letter';
+  | 'covering-letter'
+  /**
+   * The document is a page several companies share. An attribution refusal.
+   *
+   * The verbatim gate proves a sentence is IN the document and says nothing
+   * about whose sentence it is; on a newspaper page those come apart. See
+   * `shared-page.ts` for the measurement and for the one that already shipped
+   * wrong.
+   */
+  | 'shared-page';
 
 export type ClaimEligibility =
   | { readonly eligible: true }
@@ -149,6 +165,19 @@ export function claimEligibility(
     return not(
       'covering-letter',
       `the document is ${documentText.length} characters, which is a covering letter`,
+    );
+  }
+
+  // LAST, because it is the most expensive test to run and the only one that can
+  // be wrong in the direction of losing a real filing. The two above are about
+  // whether there is anything to read; this one is about whether what is read
+  // can be attributed to the company whose name would go on it.
+  const identities = companyIdentitiesIn(documentText);
+  if (identities.size >= SHARED_PAGE_MIN_IDENTITIES) {
+    return not(
+      'shared-page',
+      `the document names ${identities.size} companies, so a sentence in it ` +
+        'cannot be attributed to this filer',
     );
   }
 

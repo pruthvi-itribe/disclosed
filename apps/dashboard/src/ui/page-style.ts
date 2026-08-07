@@ -605,10 +605,20 @@ td.grp { white-space: nowrap; }
 
 .stated { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.45; }
 
+/* ONE LINE, AND THE CATEGORY IS WHAT GIVES. This wrapped, and it wrapped worst
+   on the longest category NSE publishes — "Analysts/Institutional Investor
+   Meet/Con. Call Updates" is 47 characters and pushed Source onto a second row
+   by itself, which in a stretched grid takes 30px off every other card in that
+   row to make space for one card's overflow.
+
+   The badge and the two buttons are fixed-size and must never shrink or move;
+   the category is prose and can lose its tail to an ellipsis, because it is
+   also the one thing here a reader can recover — it is repeated in the row's
+   detail and carried in this element's own title attribute. */
 .cardfoot {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
   margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line);
-  font-size: 11.5px;
+  font-size: 11px;
 }
 /* A quiet card's footer is drawn without its rule, but it is still pushed to
    the bottom — 'margin-top: 8px' here used to override the 'auto' above, which
@@ -618,12 +628,27 @@ td.grp { white-space: nowrap; }
    two did not. The 8px separation moves to padding, where it cannot compete
    with the push. */
 .card.quiet .cardfoot { margin-top: auto; padding-top: 8px; border-top-color: transparent; }
-.cardcat { color: var(--muted); }
-.grow { flex: 1 1 auto; }
+/* The only element in the footer allowed to lose width. 'min-width: 0' is what
+   makes that possible at all — a flex item's default minimum is its content, so
+   without it the category refuses to shrink and pushes the buttons out instead
+   of truncating. */
+.cardcat {
+  color: var(--muted);
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.grow { flex: 1 1 auto; min-width: 0; }
+/* Never shrink, never wrap: these are the two controls the card exists to
+   offer, and a half-width "Sourc…" is worse than a shorter category. */
+.tier, .copy, .srclink { flex: 0 0 auto; }
+/* The badge carries a 4px top margin so it clears the text above it in a table
+   row. In a footer it has no text above it, and the margin only pushes it off
+   the line its neighbours sit on. */
+.cardfoot .tier { margin-top: 0; }
 .copy, .srclink {
   background: transparent; border: 1px solid var(--line); border-radius: 7px;
-  color: var(--muted); font: inherit; font-size: 11.5px;
-  padding: 4px 11px; cursor: pointer; text-decoration: none;
+  color: var(--muted); font: inherit; font-size: 11px;
+  padding: 4px 10px; cursor: pointer; text-decoration: none; white-space: nowrap;
 }
 .copy:hover, .srclink:hover { color: var(--text); border-color: var(--muted); text-decoration: none; }
 

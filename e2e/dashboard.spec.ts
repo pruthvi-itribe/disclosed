@@ -507,6 +507,40 @@ test.describe('the feed layout', () => {
     expect(worstSpaceBelow).toBeLessThanOrEqual(20);
   });
 
+  test('keeps every card footer on one line', async ({ page }) => {
+    // The badge, the category and the two buttons. This wrapped on the longest
+    // category NSE publishes — "Analysts/Institutional Investor Meet/Con. Call
+    // Updates" is 47 characters and pushed Source onto a row by itself, which
+    // in a stretched grid takes the extra height off every other card in that
+    // row. The category truncates instead; it is the only part a reader can
+    // recover, from the element's own title.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const tallest = await page.evaluate(() =>
+      Math.max(
+        0,
+        ...[...document.querySelectorAll('#feed [data-ui="card-foot"]')].map(
+          (foot) => foot.getBoundingClientRect().height,
+        ),
+      ),
+    );
+    // One row of controls plus the footer's own top padding. A wrap doubles it.
+    expect(tallest).toBeLessThan(50);
+
+    // Copy and Source keep their full labels at every width.
+    for (const width of [1600, 1280, 900, 620]) {
+      await page.setViewportSize({ width, height: 900 });
+      const clipped = await page.evaluate(() =>
+        [...document.querySelectorAll('#feed .copy, #feed .srclink')].filter(
+          (control) => control.scrollWidth > control.clientWidth + 1,
+        ).length,
+      );
+      expect([width, clipped]).toEqual([width, 0]);
+    }
+  });
+
   test('keeps every card header on one line', async ({ page }) => {
     // A long company name pushed the timestamp onto a second row, so cards in
     // the same grid row started at different heights for no visible reason.

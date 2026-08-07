@@ -134,6 +134,9 @@ export const SCRIPT_FEED = `
     // pretending it is as substantial as a results card would be a lie told in
     // CSS.
     card.className = 'card' + (lines.length === 0 ? ' quiet' : '');
+    // NAMED, so a person can point at it. Cards repeat, so the name is a
+    // data attribute rather than an id — see the component index in page.ts.
+    card.setAttribute('data-ui', 'card');
     // A STABLE IDENTITY FOR A NODE THAT IS REBUILT EVERY FOUR SECONDS. The feed
     // repaints on every poll, so "the first card with an expander" names a
     // different card before and after a click — which is a trap for a test and
@@ -143,6 +146,7 @@ export const SCRIPT_FEED = `
 
     var head = document.createElement('header');
     head.className = 'cardhead';
+    head.setAttribute('data-ui', 'card-head');
 
     var who = document.createElement('div');
     who.className = 'who';
@@ -189,6 +193,7 @@ export const SCRIPT_FEED = `
       var shown = isOpen ? lines.length : CARD_CLAIMS;
       var list = document.createElement('ul');
       list.className = 'insights';
+      list.setAttribute('data-ui', 'card-claims');
       for (var i = 0; i < lines.length && i < shown; i++) {
         var li = document.createElement('li');
         writeClaim(li, lines[i]);
@@ -225,22 +230,30 @@ export const SCRIPT_FEED = `
       // The exchange's own sentence. Not a claim and never dressed as one.
       var said = document.createElement('p');
       said.className = 'stated';
+      said.setAttribute('data-ui', 'card-outcome');
       said.textContent = f.outcome;
       card.appendChild(said);
     }
 
     var foot = document.createElement('footer');
     foot.className = 'cardfoot';
+    foot.setAttribute('data-ui', 'card-foot');
 
     var tier = document.createElement('span');
     tier.className = 'tier tier-' + f.confidenceTier;
+    tier.setAttribute('data-ui', 'card-tier');
     tier.textContent = f.confidenceTierLabel;
     tier.title = describe(TIER_TITLE, f.confidenceTier);
     foot.appendChild(tier);
 
     var cat = document.createElement('span');
     cat.className = 'cardcat';
+    cat.setAttribute('data-ui', 'card-category');
     cat.textContent = f.category;
+    // The footer is one line and this is the element that truncates in it, so
+    // the whole category has to stay reachable somewhere. NSE's longest is
+    // 'Analysts/Institutional Investor Meet/Con. Call Updates'.
+    cat.title = f.category;
     foot.appendChild(cat);
 
     var spacer = document.createElement('span');

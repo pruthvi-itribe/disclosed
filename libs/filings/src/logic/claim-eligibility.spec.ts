@@ -67,7 +67,7 @@ describe('claimEligibility', () => {
     });
   });
 
-  describe('the two tests that remain, and what each is for', () => {
+  describe('the tests that remain, and what each is for', () => {
     it('refuses a filing with legal exposure BEFORE any model sees it', () => {
       // NOT a cost control and never was. The cheapest way to be sure nothing is
       // drafted about a regulatory action is for nothing to be drafted.
@@ -120,6 +120,43 @@ describe('claimEligibility', () => {
       );
       if (verdict.eligible) throw new Error('expected a refusal');
       expect(verdict.skip).toBe('legal-exposure');
+    });
+  });
+
+  describe('a page several companies share', () => {
+    const cin = (n: number): string =>
+      `L24239MH1956PLC${String(n).padStart(6, '0')}`;
+    const page = (companies: number): string =>
+      'NOTICE OF POSTAL BALLOT. '.padEnd(2_000, ' ') +
+      Array.from({ length: companies }, (_, at) => `CIN: ${cin(at)} `).join(
+        ' ',
+      );
+
+    it('refuses one, so no claim is attributed to the wrong filer', () => {
+      const verdict = claimEligibility(filing('General Updates'), page(4));
+      if (verdict.eligible) throw new Error('expected a refusal');
+      expect(verdict.skip).toBe('shared-page');
+      expect(verdict.reason).toContain('4 companies');
+    });
+
+    it('reads a filing that merely names a subsidiary', () => {
+      expect(
+        claimEligibility(filing('Investor Presentation'), page(2)),
+      ).toEqual({ eligible: true });
+    });
+
+    it('is checked AFTER the length test, so a stub says it is a stub', () => {
+      // A 300-character covering letter that happens to list four group CINs is
+      // empty before it is ambiguous, and the count that matters is the one an
+      // operator can act on. Nothing is lost either way — both refuse — but
+      // "shared-page" is a claim about attribution and should only be made
+      // about a document there was something to attribute.
+      const verdict = claimEligibility(
+        filing('General Updates'),
+        `short. ${cin(1)} ${cin(2)} ${cin(3)} ${cin(4)}`,
+      );
+      if (verdict.eligible) throw new Error('expected a refusal');
+      expect(verdict.skip).toBe('covering-letter');
     });
   });
 

@@ -26,6 +26,7 @@ export * from './logic/claim-advisory';
 export * from './logic/claim-numbers';
 export * from './logic/claim-period';
 export * from './logic/claim-eligibility';
+export * from './logic/shared-page';
 export * from './logic/category-group';
 export * from './logic/filing-outcome';
 export * from './logic/confidence-tier';

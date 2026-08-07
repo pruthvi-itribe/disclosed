@@ -54,7 +54,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <style>${PAGE_STYLE}</style>
 </head>
 <body>
-<header class="topbar">
+<header class="topbar" data-ui="top-bar">
   <div class="brand">
     <span class="mark">tur<span class="dotmark">ret</span></span>
   </div>
@@ -72,9 +72,9 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <div id="alert" class="alert" hidden></div>
 
 <!-- ============================ FEED ============================ -->
-<section id="view-feed" class="view" role="tabpanel" aria-labelledby="tab-feed">
+<section id="view-feed" data-ui="view-feed" class="view" role="tabpanel" aria-labelledby="tab-feed">
 
-  <div class="hero">
+  <div class="hero" data-ui="feed-hero">
     <div class="herostat">
       <div id="hero-today" class="herovalue">—</div>
       <div class="herolabel">filings today</div>
@@ -97,12 +97,12 @@ export const renderDashboardPage = (): string => `<!doctype html>
     57% of everything filed, and making them recede is the most informative
     thing colour does here.
   -->
-  <div class="daybar">
+  <div class="daybar" data-ui="day-bar">
     <div id="day-mix" class="mix"></div>
     <div id="day-sentence" class="daysentence"></div>
   </div>
 
-  <div class="feedbar">
+  <div class="feedbar" data-ui="feed-controls">
     <!--
       A COMBOBOX, spelled out in ARIA rather than left as a styled input.
 
@@ -117,7 +117,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
       createElement and textContent, because a company name is exchange-supplied
       text and this page has one absolute rule about that.
     -->
-    <div class="searchbox">
+    <div class="searchbox" data-ui="search">
       <input id="symbol" type="search" placeholder="Search a company, a category, or what was said…"
              autocomplete="off" spellcheck="false"
              role="combobox" aria-expanded="false" aria-autocomplete="list"
@@ -168,7 +168,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
     </label>
   </div>
 
-  <div id="feed" class="feed"></div>
+  <div id="feed" class="feed" data-ui="feed"></div>
   <div class="feedfoot">
     <span id="feed-info" class="muted"></span>
     <button id="feed-more" type="button" class="more">Load more</button>
@@ -191,10 +191,10 @@ export const renderDashboardPage = (): string => `<!doctype html>
   wrote the rule: a claim about thirty days of data, made by a database holding
   four, is the most confident lie the system is capable of.
 -->
-<section id="view-company" class="view" role="tabpanel" hidden>
+<section id="view-company" data-ui="view-company" class="view" role="tabpanel" hidden>
   <button id="company-back" class="back" type="button">Back to feed</button>
 
-  <div class="cohead">
+  <div class="cohead" data-ui="company-head">
     <div class="coident">
       <span id="co-symbol" class="cosym"></span>
       <span id="co-name" class="coname"></span>
@@ -219,9 +219,9 @@ export const renderDashboardPage = (): string => `<!doctype html>
   </div>
 
   <h2 class="bucket">Filing timeline</h2>
-  <div id="co-strip" class="strip"></div>
+  <div id="co-strip" class="strip" data-ui="company-timeline"></div>
 
-  <div id="co-mix-wrap" hidden>
+  <div id="co-mix-wrap" data-ui="company-group-mix" hidden>
     <h2 class="bucket">What they file</h2>
     <div id="co-mix" class="mix"></div>
     <div id="co-mix-legend" class="mixlegend"></div>
@@ -231,18 +231,18 @@ export const renderDashboardPage = (): string => `<!doctype html>
        they say" is the claims inside it, and the two disagree constantly: a
        Board Meeting Outcome is governance paperwork that declares a dividend.
        Both bars, or neither answers the question a reader arrived with. -->
-  <div id="co-topics-wrap" hidden>
+  <div id="co-topics-wrap" data-ui="company-topic-mix" hidden>
     <h2 class="bucket">What they say</h2>
     <div id="co-topics" class="mix"></div>
     <div id="co-topics-legend" class="mixlegend"></div>
   </div>
 
   <h2 class="bucket">Filings</h2>
-  <div id="company-feed" class="feed"></div>
+  <div id="company-feed" class="feed" data-ui="company-feed"></div>
 </section>
 
 <!-- ============================ ADMIN =========================== -->
-<section id="view-admin" class="view" role="tabpanel" aria-labelledby="tab-admin" hidden>
+<section id="view-admin" data-ui="view-admin" class="view" role="tabpanel" aria-labelledby="tab-admin" hidden>
 
   <section class="stats">
     <div class="stat">
