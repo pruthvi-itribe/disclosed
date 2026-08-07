@@ -1,4 +1,5 @@
 import { RESULTS_STATEMENT_PATTERN } from '../logic/results-eligibility';
+import { forStructuralTest } from '../logic/structural-text';
 import {
   basisMarkersIn,
   BASIS_HEADING_REACH,
@@ -184,9 +185,19 @@ export interface ParseRouteDecision {
  * worth the expensive parser from the 11.85% in the category.
  */
 export function looksLikeResultsStatement(documentText: string): boolean {
+  // THE SAME PROJECTION `results-eligibility.ts` READS THROUGH, and sharing it
+  // is the point rather than a convenience. These two ask the same question at
+  // two moments — "should this document get the layout parser" and "is this
+  // document worth extracting results from" — and when they disagreed the
+  // failure was circular: a document whose cheap text is mangled was refused
+  // for having no row labels AND denied the parser that would have unmangled
+  // it. GKENERGY sat in exactly that loop, and `hasUsableTextLayer` could not
+  // rescue it either, because that test counts non-space characters and 22,708
+  // characters of garbage passes it.
+  const structural = forStructuralTest(documentText);
   return (
-    RESULTS_STATEMENT_PATTERN.test(documentText) &&
-    basisMarkersIn(documentText).length > 0
+    RESULTS_STATEMENT_PATTERN.test(structural) &&
+    basisMarkersIn(structural).length > 0
   );
 }
 

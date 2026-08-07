@@ -1,6 +1,7 @@
 import type { Filing } from '../filing.types';
 import { isLegallyBlocked } from './legal-block';
 import { basisMarkersIn } from './results-basis';
+import { forStructuralTest } from './structural-text';
 
 /**
  * Which filings are worth asking a model to read a results table out of.
@@ -133,7 +134,18 @@ export function resultsEligibility(
     );
   }
 
-  if (!RESULTS_STATEMENT_PATTERN.test(documentText)) {
+  // READ THROUGH THE STRUCTURAL PROJECTION, not the raw text. `pdf-parse`
+  // renders some documents one word per line, and this test then answers "no
+  // row labels" about a filing whose first table says `Total income`. GKENERGY
+  // (seqId 106730500) is the measured case: 22,708 characters, 1,495 " \n"
+  // pairs, two complete Regulation 33 statements, refused. 19 of the 124
+  // filings carrying this refusal become eligible on whitespace alone.
+  //
+  // Only the boolean test is projected. `basisMarkersIn` below reads the STORED
+  // text on purpose — it returns character offsets that `governingBasis` then
+  // measures reach against, and offsets taken from a normalised string would
+  // point into a document that does not exist.
+  if (!RESULTS_STATEMENT_PATTERN.test(forStructuralTest(documentText))) {
     return not("the document states none of a results statement's row labels");
   }
 
