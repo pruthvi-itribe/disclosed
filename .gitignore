@@ -7,3 +7,5 @@ data/corpus/
 .superpowers/
 .idea/
 .vscode/
+test-results/
+playwright-report/
