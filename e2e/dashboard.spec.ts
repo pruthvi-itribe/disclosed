@@ -153,20 +153,20 @@ test.describe('the card', () => {
 });
 
 test.describe('the group chips', () => {
-  test('filter the feed and stay in step with the Admin select', async ({
+  test('are gone from the feed, leaving the group filter to Admin', async ({
     page,
   }) => {
     await page.goto('/');
     await expect(page.locator('#live-text')).not.toHaveText('connecting');
 
-    await page.locator('.chip[data-group="results"]').click();
-    await expect(page.locator('.chip[data-group="results"]')).toHaveClass(
-      /active/,
-    );
-
-    // Two controls over one filter. If they can disagree, one of them is lying.
+    // THE FEED'S GROUP CHIPS ARE GONE. They were a worse version of the topic
+    // row beside them — measured over the whole collection, topic `financial`
+    // finds 368 filings against group `results` 152 — and two rows carrying a
+    // chip named "Results" one line apart, returning different sets, is a trap
+    // rather than a second axis. The group filter lives in Admin now.
+    await expect(page.locator('#view-feed .chip[data-group]')).toHaveCount(0);
     await page.locator('#tab-admin').click();
-    await expect(page.locator('#group')).toHaveValue('results');
+    await expect(page.locator('#group')).toBeVisible();
   });
 });
 

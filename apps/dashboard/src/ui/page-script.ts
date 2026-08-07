@@ -2547,27 +2547,31 @@ export const PAGE_SCRIPT = `
 
   // --------------------------------------------------------------- chips ----
   // The group filter, twice: chips in the feed and a select in Admin. They
-  // write the SAME state and re-read each other, so a group picked in one is
-  // reflected in the other — two controls for one filter that disagreed would
-  // be worse than one control in the wrong place.
+  // write the SAME state and re-read each other.
+  //
+  // THE FEED'S GROUP CHIPS ARE GONE and only Admin's select remains, so this
+  // now keeps one control in step rather than two. The chips were removed
+  // because they were a worse version of the topic row beside them: measured
+  // over the whole collection, topic 'financial' finds 368 filings against
+  // group 'results' 152, 'acquisition' 129 against 'mna' 31. NSE's category
+  // names the document TYPE, and one results announcement arrives as a board
+  // outcome, a press release and a presentation — three groups, one event.
+  //
+  // Written to survive the element being absent rather than assuming it,
+  // because this runs on every filter change and a missing node here would
+  // throw inside the refresh path and freeze the whole page.
   function syncChips() {
-    var chips = el('chips').getElementsByClassName('chip');
-    for (var i = 0; i < chips.length; i++) {
-      var mine = chips[i].getAttribute('data-group') === state.group;
-      chips[i].className = 'chip' + (mine ? ' active' : '');
+    var box = el('chips');
+    if (box !== null) {
+      var chips = box.getElementsByClassName('chip');
+      for (var i = 0; i < chips.length; i++) {
+        var mine = chips[i].getAttribute('data-group') === state.group;
+        chips[i].className = 'chip' + (mine ? ' active' : '');
+      }
     }
-    el('group').value = state.group;
+    var select = el('group');
+    if (select !== null) select.value = state.group;
   }
-  el('chips').addEventListener('click', function (event) {
-    var target = event.target;
-    if (!target || !target.getAttribute) return;
-    var group = target.getAttribute('data-group');
-    if (group === null) return;
-    state.group = group;
-    state.offset = 0;
-    syncChips();
-    refresh(true);
-  });
 
   // The topic row: the same control shape as the group chips, over a different
   // question. Kept as its own state and its own sync so the two rows can be set

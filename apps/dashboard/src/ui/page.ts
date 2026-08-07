@@ -124,20 +124,6 @@ export const renderDashboardPage = (): string => `<!doctype html>
              aria-controls="suggest" aria-label="Search filings">
       <ul id="suggest" class="suggest" role="listbox" aria-label="Suggestions" hidden></ul>
     </div>
-    <div id="chips" class="chips">
-      <button class="chip active" type="button" data-group="">Everything</button>
-      <button class="chip" type="button" data-group="results">Results</button>
-      <button class="chip" type="button" data-group="narrative">Narrative</button>
-      <button class="chip" type="button" data-group="orders">Orders</button>
-      <button class="chip" type="button" data-group="mna">M&amp;A</button>
-      <button class="chip" type="button" data-group="ratings">Ratings</button>
-      <button class="chip" type="button" data-group="capital">Capital</button>
-      <button class="chip" type="button" data-group="governance">Governance</button>
-      <button class="chip" type="button" data-group="legal">Legal</button>
-      <button class="chip" type="button" data-group="verification">Verification</button>
-      <button class="chip" type="button" data-group="routine">Routine</button>
-      <button class="chip" type="button" data-group="other">Other</button>
-    </div>
     <!--
       TOPIC CHIPS, a second row and a different question from the one above.
       The group chips ask what KIND of filing this is, which is NSE's taxonomy;
@@ -148,13 +134,25 @@ export const renderDashboardPage = (): string => `<!doctype html>
       kind called 'operational'.
     -->
     <!--
-      LABELS DELIBERATELY DIFFERENT FROM THE GROUP ROW ABOVE. Both rows would
-      otherwise carry a chip reading "Results", "Orders" and "M&A" meaning
-      different things one line apart — the group row means what KIND of filing
-      NSE calls this, and this row means what its claims are about.
+      ONE ROW OF FILTERS, and it is the TOPIC axis rather than NSE's category
+      groups. There were two rows and twenty chips, four of which were pairs
+      sharing a name one line apart — "Results" above "Results", "Orders" above
+      "Orders" — meaning different things and returning different sets.
+
+      Measured over the whole collection, the topic wins every one of those
+      pairs outright: topic 'financial' finds 368 filings against group
+      'results' 152, 'acquisition' 129 against 'mna' 31, 'orders' 48 against 22.
+      The reason is structural. NSE's category names the DOCUMENT TYPE, and a
+      company reporting results files an Outcome of Board Meeting AND a press
+      release AND a presentation — three different groups, one event. The topic
+      follows what was said, so it catches all three.
+
+      The group filter is not gone: it is a select in Admin, where the question
+      "what kind of document is this" belongs to whoever is inspecting the
+      pipeline rather than reading the news.
     -->
     <div id="topics" class="chips topics">
-      <button class="chip active" type="button" data-topic="">Any topic</button>
+      <button class="chip active" type="button" data-topic="">Everything</button>
       <button class="chip" type="button" data-topic="financial">Financials</button>
       <button class="chip" type="button" data-topic="dividend">Dividends</button>
       <button class="chip" type="button" data-topic="orders">Order wins</button>
