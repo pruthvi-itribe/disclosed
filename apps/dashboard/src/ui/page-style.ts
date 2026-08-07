@@ -710,13 +710,40 @@ button.sym:hover { color: var(--accent); }
 /* --- the group mix ------------------------------------------------------ */
 .mix { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
 .mixseg { min-width: 2px; }
-.mixlegend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+/* The bottom margin is what separates one bar's legend from the next bar's
+   heading. Two distributions now stack here — what they file, then what they
+   say — and without it the legend of the first sits 4px under the title of the
+   second and reads as belonging to it. */
+.mixlegend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
 .mixitem { display: flex; align-items: center; gap: 6px; }
 .mixdot { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
 
 .g-results { background: var(--results, #fcd34d); }
 .g-narrative, .g-orders, .g-mna, .g-ratings, .g-capital, .g-legal, .g-verification, .g-other { background: var(--accent); }
 .g-routine, .g-governance { background: var(--line); }
+
+/* THE TOPIC MIX TAKES DISTINCT HUES WHERE THE GROUP MIX TAKES THREE, and the
+   two are answering different questions rather than disagreeing about colour.
+
+   The filing strip's rule — "three meanings, not eleven, because eleven hues
+   need a legend and a legend defeats a glance" — holds for a strip of squares
+   a reader scans without stopping. This bar HAS a legend, sits under a heading
+   that says what it is, and every segment carries its count in a title. It is
+   read deliberately, so it can afford a vocabulary.
+
+   Ordered by how loudly a reader wants to see the topic: money in, money out,
+   and growth get warm saturated hues; the paperwork recedes. 'other' takes the
+   panel line colour, which is the same "this is not news" signal the routine
+   groups take above. */
+.t-financial { background: var(--results, #fcd34d); }
+.t-dividend { background: #4ade80; }
+.t-orders { background: #38bdf8; }
+.t-acquisition { background: #c084fc; }
+.t-capacity { background: #fb923c; }
+.t-product { background: #22d3ee; }
+.t-ratings { background: #f472b6; }
+.t-governance { background: #64748b; }
+.t-other { background: var(--line); }
 
 #company-feed { margin-top: 10px; }
 /* On a page headed GODREJCP, repeating "GODREJCP Godrej Consumer Products

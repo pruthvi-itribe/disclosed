@@ -296,6 +296,41 @@ test.describe('the company page', () => {
     expect(shown).toBe(filings >= 5);
   });
 
+  test('draws the topic mix on the claims, not on the filings', async ({
+    page,
+  }) => {
+    // THE TWO BARS ANSWER DIFFERENT QUESTIONS and are floored on different
+    // units, which is why this is not the group-mix test with a new selector.
+    // "What they file" counts filings; "what they say" counts the claims inside
+    // them, and the counts are only loosely related — CAPACITE holds 23 claims
+    // across 2 filings, so a filing floor would hide the company with the most
+    // to say. Measured over the 547 companies holding a claim, 257 clear four
+    // claims against 128 that clear five filings.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await page.locator('#feed .card button.sym').first().click();
+    await expect(page.locator('#co-symbol')).not.toBeEmpty();
+
+    const claims = await page
+      .locator('#company-feed .insights li')
+      .count()
+      .catch(() => 0);
+    const shown = await page.locator('#co-topics-wrap').isVisible();
+    // The cards cap what they DISPLAY at two claims apiece, so the count above
+    // is a floor on the real total rather than the total. It can therefore only
+    // prove the bar should be there, never that it should not.
+    if (claims >= 4) expect(shown).toBe(true);
+
+    if (!shown) return;
+    const segments = page.locator('#co-topics .mixseg');
+    await expect(segments).not.toHaveCount(0);
+    // Every segment names its topic and its count, so the colour never has to
+    // be decoded from the legend alone.
+    await expect(segments.first()).toHaveAttribute('title', /claim\(s\)/);
+    // At most three entries, because a legend the width of the bar is a table.
+    expect(await page.locator('#co-topics-legend .mixitem').count()).toBeLessThanOrEqual(3);
+  });
+
   test('does not repeat the company identity on every card', async ({
     page,
   }) => {

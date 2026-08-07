@@ -990,6 +990,10 @@ function toEnrichmentView(
       text: claim.text,
       span: claim.span,
       kind: claim.kind,
+      // The field the topic filter already queries, now also sent. Without it
+      // the page could filter BY topic and not show what the topics were, so a
+      // company's mix came back as one segment reading "Everything else".
+      topic: claim.topic ?? null,
       // Nullish-coalesced rather than read directly: every claim stored before
       // the period rule existed carries no such field, and `undefined` reaching
       // the page would render as the string "undefined" beside a real quote.

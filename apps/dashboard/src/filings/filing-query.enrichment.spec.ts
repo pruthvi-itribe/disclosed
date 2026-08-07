@@ -424,11 +424,45 @@ describe('the claim lane', () => {
     // Every stored field survives, plus `echo`, which the page computes across
     // the response: a claim whose fact an earlier item already stated for this
     // company is marked rather than removed. A single filing can echo nothing.
-    expect(view.claims).toEqual([{ ...CLAIM, echo: false }]);
+    //
+    // `topic` is null and not absent because this fixture stores none, which is
+    // what a claim written before the classifier existed looks like. The page
+    // draws it as "everything else" and must be able to tell that from a claim
+    // the rules genuinely could not name.
+    expect(view.claims).toEqual([{ ...CLAIM, echo: false, topic: null }]);
     // The document's own line break survives the round trip, because the span
     // is what a reviewer checks against the source.
     expect(view.claims[0].span).toContain('\n');
     expect(view.claimsProposed).toBe(1);
+  });
+
+  it('sends the topic it already filters on', async () => {
+    // THE FILTER AND THE PICTURE MUST COME FROM ONE FIELD. The topic query has
+    // always run against `enrichment.claims.topic`; the view did not send it,
+    // so a page could ask for dividends and could not say how much of a company
+    // was dividends. The company page's mix bar read "Everything else: 31" for
+    // a company whose claims carry five different topics.
+    await seed([
+      [
+        1,
+        enrichment({
+          claims: [
+            { ...CLAIM, topic: 'financial' },
+            {
+              ...CLAIM,
+              text: 'declared an interim dividend of Rs 5 per share',
+              topic: 'dividend',
+            },
+          ],
+        }),
+      ],
+    ]);
+
+    const { items } = await page();
+    expect(items[0].enrichment.claims.map((claim) => claim.topic)).toEqual([
+      'financial',
+      'dividend',
+    ]);
   });
 
   it('shows every discard with the rule that refused it', async () => {

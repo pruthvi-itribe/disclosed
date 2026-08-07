@@ -227,6 +227,16 @@ export const renderDashboardPage = (): string => `<!doctype html>
     <div id="co-mix-legend" class="mixlegend"></div>
   </div>
 
+  <!-- The other axis. "What they file" is the document's category and "what
+       they say" is the claims inside it, and the two disagree constantly: a
+       Board Meeting Outcome is governance paperwork that declares a dividend.
+       Both bars, or neither answers the question a reader arrived with. -->
+  <div id="co-topics-wrap" hidden>
+    <h2 class="bucket">What they say</h2>
+    <div id="co-topics" class="mix"></div>
+    <div id="co-topics-legend" class="mixlegend"></div>
+  </div>
+
   <h2 class="bucket">Filings</h2>
   <div id="company-feed" class="feed"></div>
 </section>

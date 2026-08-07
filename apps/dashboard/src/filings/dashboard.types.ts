@@ -165,6 +165,18 @@ export interface ClaimView {
   readonly span: string;
   readonly kind: string;
   /**
+   * What the claim is ABOUT, as `claim-topic.ts` files it.
+   *
+   * A DIFFERENT AXIS FROM `kind`, and both are here because both are true of
+   * one claim: "Q1 revenue up 20.7% YoY" is `operational` in shape and
+   * `financial` in topic. The server already filters on this field; sending it
+   * is what lets the page draw a company's mix without asking nine times.
+   *
+   * Null for a claim stored before the classifier existed. Not `other` — that
+   * is a verdict, and "never classified" is the absence of one.
+   */
+  readonly topic: string | null;
+  /**
    * The verbatim heading that stated the claim's fiscal period, when the period
    * came from outside the sentence. Null otherwise, which is the usual case.
    *

@@ -223,6 +223,115 @@ export const SCRIPT_COMPANY = `
     }
   }
 
+  // The reader-facing name for each topic, and the same words the filter chips
+  // use. A company page that called it "acquisition" beside a chip that says
+  // "Deals" would be two names for one thing on one screen.
+  var TOPIC_LABEL = {
+    financial: 'Financials',
+    dividend: 'Dividends',
+    orders: 'Order wins',
+    acquisition: 'Deals',
+    capacity: 'Capacity',
+    product: 'Product',
+    ratings: 'Ratings',
+    governance: 'Governance',
+    other: 'Everything else'
+  };
+
+  /**
+   * Claims below which a company's topic mix is not drawn.
+   *
+   * FOUR CLAIMS, NOT FIVE FILINGS, and the different unit is the point rather
+   * than an oversight. MIN_DISTRIBUTION_FILINGS guards a bar whose
+   * observations ARE filings; this one's observations are claims, and the two
+   * counts are only loosely related — CAPACITE has 23 claims across 2 filings
+   * and would be suppressed by a filing floor while having more to say than
+   * almost anyone.
+   *
+   * Measured over the 547 companies holding at least one claim:
+   *
+   *     floor   companies drawn   of those, showing 2+ topics
+   *       1           547                  64%
+   *       2           466                  75%
+   *       3           368                  84%
+   *       4           257                  90%
+   *       5           222                  92%
+   *
+   * Four is where the curve flattens: 3 to 4 buys six points and 4 to 5 buys
+   * two. It also draws the bar for 257 companies where the filing floor draws
+   * the one above it for 128, so the newer bar is the one more readers see.
+   *
+   * A SINGLE-COLOUR BAR IS NOT THE FAILURE HERE, which is why the floor sits on
+   * count and not on diversity. "Every one of these nine claims is financial"
+   * is a true and useful thing to learn about a company. "This company's one
+   * claim was financial" is not a distribution at all.
+   */
+  var MIN_TOPIC_CLAIMS = 4;
+
+  /**
+   * What a company actually said, as one bar.
+   *
+   * The same shape as renderMix one axis over, and deliberately not shared
+   * with it: that one counts filings by a field on the filing, this one counts
+   * claims by a field on each claim, and a parameterised version would take a
+   * getter, a labeller and a class prefix to save eleven lines.
+   */
+  function renderTopics(bar, legend, items) {
+    bar.textContent = '';
+    legend.textContent = '';
+
+    var counts = {};
+    var order = [];
+    var total = 0;
+    for (var i = 0; i < items.length; i++) {
+      var claims = (items[i].enrichment && items[i].enrichment.claims) || [];
+      for (var c = 0; c < claims.length; c++) {
+        // A claim stored before the classifier existed carries no topic. It is
+        // counted under the topic that means "nothing in particular" rather
+        // than dropped, so the bar's segments still add up to the claim count
+        // the rest of the page shows.
+        var topic = claims[c].topic || 'other';
+        if (!Object.prototype.hasOwnProperty.call(counts, topic)) {
+          counts[topic] = 0;
+          order.push(topic);
+        }
+        counts[topic] += 1;
+        total += 1;
+      }
+    }
+    if (total < MIN_TOPIC_CLAIMS) return false;
+
+    order.sort(function (a, b) {
+      // Ties broken by name, so a repaint four seconds from now cannot reorder
+      // two equal segments and make the bar appear to move on its own.
+      if (counts[b] !== counts[a]) return counts[b] - counts[a];
+      return a < b ? -1 : 1;
+    });
+
+    for (var j = 0; j < order.length; j++) {
+      var name = order[j];
+      var label = describe(TOPIC_LABEL, name);
+      var seg = document.createElement('div');
+      seg.className = 'mixseg t-' + name;
+      seg.style.flexGrow = String(counts[name]);
+      seg.title = label + ': ' + counts[name] + ' claim(s)';
+      bar.appendChild(seg);
+
+      if (j < 3) {
+        var item = document.createElement('span');
+        item.className = 'mixitem';
+        var swatch = document.createElement('span');
+        swatch.className = 'mixdot t-' + name;
+        item.appendChild(swatch);
+        var text = document.createElement('span');
+        text.textContent = label + ' ' + counts[name];
+        item.appendChild(text);
+        legend.appendChild(item);
+      }
+    }
+    return true;
+  }
+
   function renderCompany(items, meta) {
     if (state.company === null) return;
 
@@ -273,6 +382,18 @@ export const SCRIPT_COMPANY = `
     if (!mixWrap.hidden) {
       renderMix(el('co-mix'), el('co-mix-legend'), items);
     }
+
+    // DRAWN FIRST, HIDDEN AFTER, because only the renderer can count the claims
+    // — they are nested inside the filings and the floor is on their total, not
+    // on anything renderCompany already holds. It returns whether it drew
+    // anything rather than having the floor written down in two places.
+    var topicsWrap = el('co-topics-wrap');
+    var drewTopics = renderTopics(
+      el('co-topics'),
+      el('co-topics-legend'),
+      items,
+    );
+    topicsWrap.hidden = !drewTopics;
 
     renderFeedInto(el('company-feed'), items, meta, false);
   }
