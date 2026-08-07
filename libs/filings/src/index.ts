@@ -81,3 +81,5 @@ export * from './persistence/filing.schema';
 export * from './persistence/filing.repository';
 export * from './persistence/enrichment.repository';
 export * from './logic/alert-window';
+export * from './bse/bse-scrip.schema';
+export * from './bse/bse-scrip.resolver';

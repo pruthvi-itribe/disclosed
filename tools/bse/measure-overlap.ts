@@ -24,7 +24,10 @@ import {
   BseAnnouncementSchema,
   BseClient,
   BseRepository,
+  BseScripResolver,
+  BseScripSchema,
   bestMatch,
+  type BseScrip,
   FilingSchema,
   isinCompanyKey,
   matchAcrossExchanges,
@@ -95,23 +98,41 @@ async function main(): Promise<void> {
     }
   }
 
-  // The ISIN a scrip resolves to, looked up once per company rather than once
-  // per announcement: a busy company files a dozen times a day and the lookup
-  // is a request to the exchange.
+  // The ISIN a scrip resolves to, CACHED IN MONGO rather than re-fetched.
+  //
+  // The first version of this loop asked BSE for every distinct scrip on every
+  // run. Two days of announcements span 1,217 companies, which at this
+  // codebase's exchange pacing is 16.2 minutes of requests — paid again in
+  // full every time anybody wanted the number this tool prints. A scrip's ISIN
+  // changes about as often as a company restructures its equity, so it is
+  // fetched once and kept.
+  const scripCodes = [...new Set(collected.map((a) => a.scripCode))];
   process.stdout.write(
-    `\n--- resolving ISINs for ${
-      new Set(collected.map((a) => a.scripCode)).size
-    } scrip code(s) ---\n`,
+    `\n--- resolving ISINs for ${scripCodes.length} scrip code(s) ---\n`,
   );
-  const isinFor = new Map<number, string | null>();
-  for (const scrip of new Set(collected.map((a) => a.scripCode))) {
-    isinFor.set(scrip, await client.isinForScrip(scrip));
-    await new Promise((resolve) =>
-      setTimeout(resolve, config.enrichmentRequestDelayMs),
-    );
-  }
-  const resolved = [...isinFor.values()].filter((v) => v !== null).length;
-  process.stdout.write(`resolved ${resolved} of ${isinFor.size}\n`);
+
+  const resolver = new BseScripResolver(
+    mongoose.model<BseScrip>('BseScrip', BseScripSchema),
+    client,
+    config.enrichmentRequestDelayMs,
+  );
+  await resolver.assertIndexes();
+
+  let lastReport = 0;
+  const { isins: isinFor, stats } = await resolver.resolve(
+    scripCodes,
+    (done, total) => {
+      // Every fiftieth, so a sixteen-minute first pass is neither silent nor
+      // a thousand lines of noise.
+      if (done - lastReport < 50 && done !== total) return;
+      lastReport = done;
+      process.stdout.write(`  fetched ${done}/${total}\n`);
+    },
+  );
+  process.stdout.write(
+    `cached ${stats.cached}, fetched ${stats.fetched}, ` +
+      `unresolvable ${stats.unresolved}\n`,
+  );
 
   process.stdout.write('\n--- matching against what NSE already gave us ---\n');
   const tally: Record<string, number> = {
