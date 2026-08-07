@@ -87,4 +87,5 @@ export * from './logic/alert-window';
 export * from './bse/bse-scrip.schema';
 export * from './bse/bse-scrip.resolver';
 export * from './logic/claim-topic';
+export * from './logic/claim-direction';
 export * from './logic/claim-fact';
