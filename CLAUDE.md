@@ -1,0 +1,89 @@
+# Turret — project instructions
+
+An NSE/BSE corporate-filings pipeline. Every published claim is matched
+character-for-character against a verbatim span of the source document; a claim
+that cannot be checked is a claim that does not ship.
+
+## Karpathy guidelines (how code gets written here)
+
+These override any habit of writing more, sooner, or cleverer.
+
+1. **Think before coding.** State the problem, the assumption, and the smallest
+   change that solves it — in the commit message or a comment — before writing
+   the change. If two readings of a request differ materially, say so and pick
+   one explicitly.
+2. **Simplicity first.** The minimum code that solves the actual problem. No
+   speculative generality, no abstraction with one caller, no configuration for
+   a case that has never occurred. A parameterised helper that saves eleven
+   lines is worse than the eleven lines.
+3. **Surgical changes.** Touch only what the task needs. Match the surrounding
+   style. A diff that "also tidied" three unrelated things is three unreviewed
+   changes hiding in a reviewed one.
+4. **No unrequested features.** Scope is the deliverable. Ideas discovered
+   mid-task become task-list entries, not code.
+5. **Prove it works.** Run the tests, run the browser, read the output. "Should
+   work" is not a state of the world. A number in a comment or commit message
+   must come from a measurement that actually ran — this repo's comments cite
+   measured distributions, and a guessed number poisons that record.
+6. **Measure before deciding.** Thresholds, floors and bounds are placed by
+   sweeping real data, and the sweep is written into the comment beside the
+   constant so the next editor re-measures instead of re-guessing.
+7. **Fail loudly.** No silent fallbacks, no swallowed errors, no defaults that
+   hide an absence. "Nothing was found" and "nothing was looked for" are
+   different facts and must not render the same.
+8. **Boring and explicit beats clever.** Prefer the obvious loop over the smart
+   one-liner. Delete dead code rather than commenting it out.
+9. **Small units.** Functions under ~50 code lines, files under 800 total.
+   When a function is a pipeline of stages, name the stages.
+10. **When stuck, surface it.** Say what was tried and what is unknown rather
+    than papering over with a plausible-looking guess.
+
+## Non-negotiable invariants
+
+- **The verbatim gate.** Nothing reaches a reader that was not string-matched
+  against the source document. No derived arithmetic (no computed margins or
+  growth rates the filing did not print).
+- **Attribution before publication.** A span being *in* a document does not
+  make it *about* the filer — see `shared-page.ts`. Multi-company documents are
+  refused, not guessed at.
+- **IST is server-owned.** UTC+05:30, day rolls at 18:30 UTC. The browser never
+  formats a timestamp.
+- **Exchange text is untrusted.** No `innerHTML`, ever; DOM via
+  `createElement`/`textContent`; links only through `safeHref`.
+- **The dashboard is self-contained.** No CDN, no external request, no web
+  font. Inline everything.
+- **Fail open on categories.** Never key a fail-closed gate on a category name
+  NSE controls (`claim-eligibility.ts` records why).
+
+## Sharp edges (each has shipped a real breakage)
+
+- `apps/dashboard/src/ui/script/*.ts` and `page-style.ts` are **TypeScript
+  template literals**: a backtick or `${` inside the string body — including in
+  a comment — is consumed by the compiler and breaks the page while serving
+  200. `script-fragments.spec.ts` guards this; keep fragments free of both.
+- Client-script regexes need **doubled backslashes** (`\\d`), because the
+  template literal eats single ones. The served page is what must be asserted,
+  not the source.
+- Python edit scripts must **assert the anchor exists before writing**; a
+  replace that matched nothing "succeeds" silently.
+- Playwright locators re-resolve on the repaint every 4s: pin cards by
+  `data-seq`, never by position.
+- Mongo array fields: `$elemMatch` for existence, never `$ne: null` (matches
+  empty arrays).
+
+## Commands
+
+- `npm test` — Jest, no network, ~10s. `npx tsc --noEmit -p tsconfig.json`,
+  `npm run lint`.
+- `npm run test:e2e` / `npx playwright test` — needs the dashboard running;
+  `DASHBOARD_URL` overrides the default `http://127.0.0.1:7717`.
+- `npm run start:dashboard` (port from `DASHBOARD_PORT`, default 7717).
+- Component names for the UI: `docs/ui-components.md`.
+
+## Conventions
+
+- Comments explain **why**, cite measurements, and are kept truthful when the
+  measurement changes — a stale number is corrected, not deleted.
+- One logical change per commit; the commit message carries the evidence.
+- Tools in `tools/` are measurement/backfill scripts: no model calls unless
+  stated, report-then-skip rather than silently fetching.
