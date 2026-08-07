@@ -854,7 +854,16 @@ export const PAGE_SCRIPT = `
     var lines = [];
     if (e.resultsLine) lines.push(e.resultsLine);
     var claims = e.claims || [];
-    for (var i = 0; i < claims.length; i++) lines.push(claims[i].text);
+    for (var i = 0; i < claims.length; i++) {
+      // ECHOES ARE SKIPPED, not dropped. The server marks a claim whose fact an
+      // earlier card in this same response already stated for this company —
+      // DHARMAJ filed a presentation and a press release a minute apart, both
+      // saying revenue grew 5% in Q1FY27, and the grid puts them side by side.
+      // The claim is still in the payload with its span and still shown in the
+      // detail view; it just stops being one of the card's headlines.
+      if (claims[i].echo === true) continue;
+      lines.push(claims[i].text);
+    }
     return lines;
   }
 

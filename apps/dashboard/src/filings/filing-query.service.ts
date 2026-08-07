@@ -17,6 +17,7 @@ import {
   CONFIDENCE_TIER_LABEL,
   formatRupees,
   MAPPED_GROUP_CATEGORIES,
+  FactsSeen,
   type CategoryGroup,
   type ClaimTopic,
   type Filing,
@@ -167,6 +168,48 @@ const DISPLAY_PROJECTION = {
 interface GroupedCount<TKey> {
   readonly _id: TKey;
   readonly count: number;
+}
+
+/**
+ * Marks a claim that repeats a fact an EARLIER item in this page already made.
+ *
+ * A company reporting a quarter files it more than once. DHARMAJ filed an
+ * investor presentation and a press release a minute apart, one saying
+ * "Revenue growth of 5% YOY in Q1FY27" and the other "Revenue grew 5% YOY in
+ * Q1FY27." Both are true and both were matched against their own source
+ * document; printing both tells a reader one thing twice, and the grid layout
+ * puts them side by side where it is unmissable.
+ *
+ * MARKED, NOT REMOVED. The claim stays in the response with its span, its topic
+ * and its kind, because it is real evidence for the filing it came from and the
+ * detail view must still show it. Only the feed's headline treatment changes.
+ *
+ * SCOPED TO THE PAGE, deliberately. What counts as a repeat is "something the
+ * reader has just been shown", which is a property of the view rather than of
+ * the filing — the same claim on page two of a different filter is the first
+ * time that reader has seen it. Persisting the verdict would make it a fact
+ * about the document, which it is not.
+ *
+ * Items arrive newest first, so the NEWEST telling keeps the claim and the
+ * older restatement is the echo. That is the right way round: a company that
+ * restates a figure in a later document is usually confirming or correcting it.
+ */
+function markEchoedClaims(items: readonly FilingView[]): FilingView[] {
+  const seen = new FactsSeen();
+  return items.map((item) => {
+    const claims = item.enrichment?.claims;
+    if (claims === undefined || claims.length === 0) return item;
+    return {
+      ...item,
+      enrichment: {
+        ...item.enrichment,
+        claims: claims.map((claim) => ({
+          ...claim,
+          echo: seen.addAndCheck(item.symbol, claim.text),
+        })),
+      },
+    } as FilingView;
+  });
 }
 
 /**
@@ -415,7 +458,9 @@ export class FilingQueryService {
       this.filings.countDocuments(filter).exec(),
     ]);
 
-    const items = docs.map((doc) => this.toView(doc as unknown as Filing));
+    const items = markEchoedClaims(
+      docs.map((doc) => this.toView(doc as unknown as Filing)),
+    );
 
     return {
       items,

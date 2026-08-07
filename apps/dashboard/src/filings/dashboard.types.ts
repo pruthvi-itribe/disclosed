@@ -152,6 +152,15 @@ export interface ResultsDiscardView {
 /** One published claim and the sentence it was read from. */
 export interface ClaimView {
   readonly text: string;
+  /**
+   * True when an EARLIER item in the same response already stated this fact
+   * for this company — a presentation and a press release covering one quarter.
+   *
+   * Computed per response, not stored: what counts as a repeat is what the
+   * reader has just been shown, which is a property of the view. The claim is
+   * marked and never removed, because it is real evidence for its own filing.
+   */
+  readonly echo?: boolean;
   /** The verbatim source sentence. This is what makes the claim checkable. */
   readonly span: string;
   readonly kind: string;

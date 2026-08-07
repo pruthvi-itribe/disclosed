@@ -421,7 +421,10 @@ describe('the claim lane', () => {
     expect(view.claimLine).toBe(
       'SWIGGY: TARGETS ₹10,000 CR ADJUSTED EBITDA BY FY31',
     );
-    expect(view.claims).toEqual([CLAIM]);
+    // Every stored field survives, plus `echo`, which the page computes across
+    // the response: a claim whose fact an earlier item already stated for this
+    // company is marked rather than removed. A single filing can echo nothing.
+    expect(view.claims).toEqual([{ ...CLAIM, echo: false }]);
     // The document's own line break survives the round trip, because the span
     // is what a reviewer checks against the source.
     expect(view.claims[0].span).toContain('\n');
@@ -584,5 +587,94 @@ describe('the results view on a filing row', () => {
       { key: 'basis-not-determinable', count: 1 },
       { key: 'no-results', count: 1 },
     ]);
+  });
+});
+
+describe('echoed claims', () => {
+  const withClaim = (text: string): FilingEnrichment =>
+    enrichment({
+      claims: [
+        { text, span: text, kind: 'operational', periodSpan: null },
+      ] as FilingEnrichment['claims'],
+    });
+
+  it('marks a repeat of a fact the same company already stated', async () => {
+    // DHARMAJ filed an investor presentation and a press release a minute
+    // apart, both saying revenue grew 5% in Q1FY27. Both are true and both were
+    // matched against their own source document; printing both tells a reader
+    // one thing twice, and the grid layout puts them side by side.
+    await model.insertMany([
+      {
+        ...makeFiling(2, {
+          symbol: 'DHARMAJ',
+          disseminatedAt: new Date('2026-08-05T06:00:00.000Z'),
+        }),
+        enrichment: withClaim('Revenue growth of 5% YOY in Q1FY27'),
+      },
+      {
+        ...makeFiling(1, {
+          symbol: 'DHARMAJ',
+          disseminatedAt: new Date('2026-08-05T05:59:00.000Z'),
+        }),
+        enrichment: withClaim('Revenue grew 5% YOY in Q1FY27.'),
+      },
+    ]);
+
+    const { items } = await page();
+    // Newest first, so the newest telling keeps the claim and the older
+    // restatement is the echo — a company restating a figure in a later
+    // document is usually confirming or correcting it.
+    expect(items[0].enrichment.claims[0].echo).toBe(false);
+    expect(items[1].enrichment.claims[0].echo).toBe(true);
+  });
+
+  it('never marks an echo across two different companies', async () => {
+    // Two firms can report the same revenue in the same quarter. Collapsing
+    // those would hide one company's results entirely, which is a far worse
+    // failure than showing a fact twice.
+    await model.insertMany([
+      {
+        ...makeFiling(2, {
+          symbol: 'ACME',
+          disseminatedAt: new Date('2026-08-05T06:00:00.000Z'),
+        }),
+        enrichment: withClaim('Q1 revenue Rs 1,089 Cr, up 2.3% YoY'),
+      },
+      {
+        ...makeFiling(1, {
+          symbol: 'OTHER',
+          disseminatedAt: new Date('2026-08-05T05:59:00.000Z'),
+        }),
+        enrichment: withClaim('Q1 revenue Rs 1,089 Cr, up 2.3% YoY'),
+      },
+    ]);
+
+    const { items } = await page();
+    expect(items[0].enrichment.claims[0].echo).toBe(false);
+    expect(items[1].enrichment.claims[0].echo).toBe(false);
+  });
+
+  it('leaves an unquantified claim alone however often it repeats', async () => {
+    // The empty figure set is shared by every qualitative claim in the
+    // collection, so treating it as a match would fold a company's whole
+    // narrative output into one line.
+    await model.insertMany([
+      {
+        ...makeFiling(2, {
+          disseminatedAt: new Date('2026-08-05T06:00:00.000Z'),
+        }),
+        enrichment: withClaim('Commissioned the plant'),
+      },
+      {
+        ...makeFiling(1, {
+          disseminatedAt: new Date('2026-08-05T05:59:00.000Z'),
+        }),
+        enrichment: withClaim('Commissioned the plant'),
+      },
+    ]);
+
+    const { items } = await page();
+    expect(items[0].enrichment.claims[0].echo).toBe(false);
+    expect(items[1].enrichment.claims[0].echo).toBe(false);
   });
 });
