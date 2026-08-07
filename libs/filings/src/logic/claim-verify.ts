@@ -3,6 +3,7 @@ import { advisoryHitIn, individualHitIn } from './claim-advisory';
 import { unsupportedNumbers } from './claim-numbers';
 import { PERIOD_CONTEXT_CHARS, supportPeriods } from './claim-period';
 import { findVerbatimSpan, MIN_SPAN_CHARS } from './claim-span';
+import { claimTopic } from './claim-topic';
 import {
   CLAIM_KIND_RANK,
   type ClaimDiscard,
@@ -242,6 +243,28 @@ function checkOne(
     text,
     span: match.evidence,
     kind: claim.kind,
+    // FILED AT THE MOMENT IT IS ACCEPTED, not by a tool run afterwards.
+    //
+    // `claim-topic.ts` is pure and costs nothing, so the only reason it was
+    // ever a backfill is that it arrived after the claims did — and leaving it
+    // there made the dashboard's topic filter quietly lossy. The filter is a
+    // Mongo query against the STORED field, so a claim without one is not
+    // merely unfiled, it is UNFINDABLE.
+    //
+    // Measured 2026-08-07 against the live collection: 396 of 2,793 stored
+    // claims carried no topic, and the count read 398 twenty minutes later and
+    // 399 twenty minutes after that — the gap grows with every filing enriched
+    // until somebody remembers to run a script, which is not a property a
+    // filter may have.
+    //
+    // Running the classifier over those 396 says 188 of them (47.4%) would
+    // receive a NAMED topic, so it is not a tail of unclassifiable text: MRF's
+    // "Shareholders approved final dividend of Rs. 229 per share" is
+    // `dividend` and absent from the dividend filter, POWERINDIA's "Secured
+    // first BESS order for 165 MW / 330 MWh" is `orders`, and 114 are
+    // `financial`. Those are the loudest filings in the collection, missing
+    // from the one control a reader has for finding them.
+    topic: claimTopic(text),
     periodSpan: period.evidence,
   };
 }

@@ -87,9 +87,12 @@ export interface VerifiedClaim {
   /**
    * What the claim is about, derived from its text.
    *
-   * Optional because the whole stored collection predates it, and a reader of
-   * an older claim must be able to tell "not classified yet" from "classified
-   * as nothing in particular" — which is what `other` means and this does not.
+   * SET BY `verifyClaims` ON EVERY CLAIM IT ACCEPTS, so anything this pipeline
+   * writes from now on carries one. Still optional, and the option is about
+   * READING rather than writing: claims stored before the classifier existed
+   * have none, and a reader of one must be able to tell "not classified yet"
+   * from "classified as nothing in particular" — which is what `other` means
+   * and an absent field does not.
    */
   readonly topic?: ClaimTopic;
   /**

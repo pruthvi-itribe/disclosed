@@ -134,15 +134,15 @@ const isRoutineMechanics = (text: string): boolean =>
  * reader who sees a claim filed under `dividend` in the dashboard and cannot
  * find it on the wire has been told two different things by one system.
  *
- * The derivation is not a fallback for old data, it is the ordinary case.
- * `verifyClaims` does not set `topic`; only the backfill tool does, so every
- * claim enriched since it last ran carries none — 374 of the 2,771 stored
- * claims at the time of writing, and that number grows with every filing until
- * the tool is next run. Every claim the worker composes a wire line from
- * therefore arrives here unfiled, and a predicate that read the stored field
- * alone would mute nothing in production while passing every test.
- * `claimTopic` is the same pure function the backfill calls, so the two answers
- * agree by construction.
+ * The derivation IS now a fallback for old data, and it was not always: when
+ * this was written `verifyClaims` did not set `topic` and only the backfill
+ * tool did, so every claim the worker composed a wire line from arrived here
+ * unfiled and a predicate reading the stored field alone would have muted
+ * nothing in production while passing every test. `verifyClaims` sets it at
+ * acceptance now, which closes that hole at the source — see `claim-verify.ts`
+ * — and the fallback stays because claims stored before the classifier existed
+ * still reach this function. `claimTopic` is the same pure function both other
+ * callers use, so all three answers agree by construction.
  */
 export const topicOnWire = (claim: VerifiedClaim): ClaimTopic =>
   claim.topic ?? claimTopic(claim.text);

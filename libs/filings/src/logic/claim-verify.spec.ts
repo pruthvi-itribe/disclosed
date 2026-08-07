@@ -46,6 +46,28 @@ describe('verifyClaims — what it accepts', () => {
     );
   });
 
+  it('files every accepted claim under a topic', () => {
+    // NOT A BACKFILL. The dashboard's topic filter is a Mongo query against
+    // this stored field, so a claim that reaches the collection without one is
+    // not merely unfiled — it cannot be found by the filter at all, and 396 of
+    // 2,793 stored claims were in exactly that state before this moved here.
+    const { claims } = verify([
+      claim({
+        span: 'goal to build a ₹10,000 Cr. Adjusted EBITDA business by FY31',
+        text: 'targets ₹10,000 Cr adjusted EBITDA by FY31',
+        kind: 'target',
+      }),
+    ]);
+    expect(claims[0].topic).toBe('financial');
+  });
+
+  it('gives a claim it cannot place the topic that says so', () => {
+    // `other` and an absent field mean different things — "nothing in
+    // particular" against "never classified" — and only the first is a verdict.
+    const { claims } = verify([claim()]);
+    expect(claims[0].topic).toBe('other');
+  });
+
   it('stores the DOCUMENT’s bytes as the span, not the extractor’s', () => {
     // The extractor normalised the line break; what is stored and shown must be
     // what the filing actually says.
