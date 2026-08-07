@@ -93,10 +93,37 @@ export const PAGE_SCRIPT = `
     category: 'the summary restated the category and nothing more, so the outcome is the category'
   };
 
+  // How long the box waits after the last keystroke before asking.
+  //
+  // 140ms, which is under the ~200ms a fluent typist spends per character, so a
+  // reader typing 'britannia' straight through issues ONE request rather than
+  // nine. It is also short enough to be invisible: a suggestion list that
+  // appears 140ms after you stop typing reads as instant, and one that appears
+  // after 400ms reads as slow. The server is not what this protects - a
+  // suggestion costs it no database read at all - it is the request per
+  // character that a shared loopback box does not need.
+  var SUGGEST_DEBOUNCE_MS = 140;
+
+  // Shortest query that is asked about at all. The server applies the same
+  // floor and would answer an empty list anyway; this is the round trip that
+  // does not have to happen. Measured there: one character matches 87 of 954
+  // companies on average, which is a list rather than a suggestion.
+  var SUGGEST_MIN = 2;
+
   var state = {
     limit: DEFAULT_LIMIT,
     offset: 0,
+    // The two halves of the search box, and they are NOT the same filter.
+    // 'symbol' is exact and is set only when a reader PICKS a company from the
+    // list; 'q' is free text and is what they typed when they did not. A reader
+    // who chose BRITANNIA wants Britannia, not every filing that mentions it.
+    q: '',
     symbol: '',
+    // The suggestion currently applied, so editing the box can undo exactly
+    // what picking it did and nothing else. Without this, typing after picking
+    // a category would either leave the category filter stuck on or clear a
+    // category the reader had set from the Admin panel instead.
+    picked: null,
     category: '',
     group: '',
     tier: '',
@@ -105,7 +132,30 @@ export const PAGE_SCRIPT = `
     refusal: '',
     highestSeen: null,
     ticks: 0,
-    failures: 0
+    failures: 0,
+    // 'feed' is the product, 'admin' is the instrument panel. Which one is
+    // showing changes nothing about what is fetched — both views read the same
+    // rows from the same request, so switching tabs costs no round trip and a
+    // filter set in one is honoured by the other.
+    view: 'feed',
+    // ON BY DEFAULT, and it is the single most consequential default on the
+    // page. Roughly three filings in five say nothing a reader would want —
+    // a notice of a board meeting, a newspaper publication, a change of
+    // registered office — and a feed that opens on all of them reads as noise
+    // no matter how well each row is drawn. This maps to the 'verified' tier,
+    // which is exactly "a span of the source document was matched", so the
+    // default is not a guess about what is interesting: it is the set the
+    // pipeline can stand behind.
+    onlyInsights: true,
+    // Which cards a reader has opened, by seqId.
+    //
+    // KEPT IN STATE BECAUSE THE FEED REPAINTS EVERY FOUR SECONDS. The first
+    // version held the expansion in the DOM, which meant opening a card and
+    // watching it close itself on the next poll — worse than a card that never
+    // opened, because the reader loses their place and cannot tell whether they
+    // misclicked. Anything a reader does to this page has to outlive the
+    // refresh that is the whole reason the page is live.
+    expanded: {}
   };
 
   // A lookup that cannot be walked into the prototype chain. The keys come from
@@ -250,6 +300,19 @@ export const PAGE_SCRIPT = `
     lag.textContent = duration(d.feedLagMs);
     lag.className = 'value ' + lagClass(d.feedLagMs);
     setText('generated', 'updated ' + d.generatedAtIst + ' IST');
+
+    // The feed's three numbers, which are NOT the eight above them. Admin asks
+    // "is the pipeline healthy"; the feed asks "is there anything to read". So
+    // the cursor, the stored total and the parse backlog stay in Admin, and
+    // what surfaces here is how much arrived, how much of it said something,
+    // and how long since the last one — the last of those being the only
+    // honest way to tell a quiet market from a stopped pipeline.
+    setText('hero-today', groupInt(d.todayCount));
+    var heroLag = el('hero-lag');
+    if (heroLag) {
+      heroLag.textContent = duration(d.feedLagMs);
+      heroLag.className = 'herovalue ' + lagClass(d.feedLagMs);
+    }
   }
 
   // Every one of these builds its nodes with createElement and textContent.
@@ -449,6 +512,76 @@ export const PAGE_SCRIPT = `
     detailItem(box, 'Disseminated', f.disseminatedAtIst + ' IST · ingested +' + duration(f.pipelineLagMs));
     detailItem(box, 'Sequence', f.seqId);
 
+    // THE EVIDENCE, which used to sit under the claim line on the row itself.
+    //
+    // Each accepted claim's source sentence, so the line can be checked against
+    // the document without leaving the page. The period heading is shown BESIDE
+    // its sentence rather than merged into it: they are two quotes from two
+    // places in the document, and running them together would forge a sentence.
+    var accepted = e.claims || [];
+    for (var ci = 0; ci < accepted.length; ci++) {
+      detailItem(
+        box,
+        accepted[ci].kind,
+        '"' + String(accepted[ci].span).replace(/\\s+/g, ' ').trim() + '"',
+        'quote',
+      );
+      if (accepted[ci].periodSpan) {
+        detailItem(
+          box,
+          'period from',
+          '"' +
+            String(accepted[ci].periodSpan).replace(/\\s+/g, ' ').trim() +
+            '"',
+          'quote',
+        );
+      }
+    }
+
+    // The two quotes a results line rests on: the statement heading that fixed
+    // consolidated against standalone, and the column dates that made the
+    // comparison year-on-year. A reader who cannot see those two cannot check
+    // the line — the figures are cells, and a cell means nothing without them.
+    if (e.results) {
+      detailItem(
+        box,
+        'results basis',
+        '"' + String(e.results.basisSpan).replace(/\\s+/g, ' ').trim() + '"',
+        'quote',
+      );
+      detailItem(
+        box,
+        e.results.period + ' vs ' + e.results.priorPeriod,
+        '"' + String(e.results.columnsSpan).replace(/\\s+/g, ' ').trim() + '"',
+        'quote',
+      );
+      var figures = e.results.figures || [];
+      for (var fi = 0; fi < figures.length; fi++) {
+        detailItem(
+          box,
+          figures[fi].metric,
+          '"' + String(figures[fi].span).replace(/\\s+/g, ' ').trim() + '"',
+          'quote',
+        );
+      }
+    }
+
+    var resultsDropped = e.resultsDiscards || [];
+    if (resultsDropped.length) {
+      var rcounts = {};
+      for (var rr = 0; rr < resultsDropped.length; rr++) {
+        var rreason = resultsDropped[rr].reason;
+        rcounts[rreason] = (rcounts[rreason] || 0) + 1;
+      }
+      var rparts = [];
+      for (var rk in rcounts) {
+        if (Object.prototype.hasOwnProperty.call(rcounts, rk)) {
+          rparts.push(rcounts[rk] + ' × ' + rk);
+        }
+      }
+      detailItem(box, 'Results refused', rparts.join(', '), 'refused');
+    }
+
     // What the gate threw away, and why. This is the honest half of the
     // precision claim: a row showing three verified claims and nothing else
     // hides that nine were proposed.
@@ -529,78 +662,20 @@ export const PAGE_SCRIPT = `
       cell.appendChild(claim);
     }
 
-    // Each accepted claim's source sentence, so the line can be checked against
-    // the document without leaving the row.
-    var claims = e.claims || [];
-    for (var c = 0; c < claims.length; c++) {
-      var quote = document.createElement('div');
-      quote.className = 'claimspan';
-      quote.textContent = '"' + String(claims[c].span).replace(/\s+/g, ' ').trim() + '"';
-      quote.title = claims[c].kind;
-      cell.appendChild(quote);
-      // The heading the claim's quarter was read from, when it came from
-      // outside the sentence. Shown BESIDE the sentence rather than merged into
-      // it, because they are two separate quotes from two places in the
-      // document and running them together would forge a sentence.
-      if (claims[c].periodSpan) {
-        var period = document.createElement('div');
-        period.className = 'claimspan periodspan';
-        period.textContent = 'period: "' + String(claims[c].periodSpan).replace(/\s+/g, ' ').trim() + '"';
-        cell.appendChild(period);
-      }
-    }
-
-    // The two quotes a results line rests on: the statement heading that fixed
-    // consolidated against standalone, and the column dates that made the
-    // comparison year-on-year. Shown because a reader who cannot see those two
-    // cannot check the line - the figures themselves are cells, and a cell
-    // means nothing without them.
-    if (e.results) {
-      var basis = document.createElement('div');
-      basis.className = 'claimspan periodspan';
-      basis.textContent = 'basis: "' + String(e.results.basisSpan).replace(/\s+/g, ' ').trim() + '"';
-      cell.appendChild(basis);
-      var cols = document.createElement('div');
-      cols.className = 'claimspan periodspan';
-      cols.textContent = e.results.period + ' vs ' + e.results.priorPeriod + ': "' + String(e.results.columnsSpan).replace(/\s+/g, ' ').trim() + '"';
-      cell.appendChild(cols);
-      var figs = e.results.figures || [];
-      for (var rf = 0; rf < figs.length; rf++) {
-        var frow = document.createElement('div');
-        frow.className = 'claimspan';
-        frow.textContent = '"' + String(figs[rf].span).replace(/\s+/g, ' ').trim() + '"';
-        frow.title = figs[rf].metric;
-        cell.appendChild(frow);
-      }
-    }
-
-    var rdropped = e.resultsDiscards || [];
-    if (rdropped.length > 0) {
-      var rbox = document.createElement('div');
-      rbox.className = 'discards';
-      for (var rd = 0; rd < rdropped.length; rd++) {
-        var rt = tag(rdropped[rd].reason, 'refusal' + (state.refusal === rdropped[rd].reason ? ' active' : ''), pickRefusal(rdropped[rd].reason));
-        rt.title = rdropped[rd].detail + ' - ' + rdropped[rd].metric;
-        rbox.appendChild(rt);
-        rbox.appendChild(document.createTextNode(' '));
-      }
-      cell.appendChild(rbox);
-    }
-
-    // A refusal is a value, never a blank. This is the row that says a model
-    // proposed something and the gate threw it away, and what it threw away.
-    var dropped = e.claimDiscards || [];
-    if (dropped.length > 0) {
-      var box = document.createElement('div');
-      box.className = 'discards';
-      for (var d = 0; d < dropped.length; d++) {
-        var t = tag(dropped[d].reason, 'refusal' + (state.refusal === dropped[d].reason ? ' active' : ''), pickRefusal(dropped[d].reason));
-        t.title = dropped[d].detail + ' - "' + dropped[d].claim + '"';
-        box.appendChild(t);
-        box.appendChild(document.createTextNode(' '));
-      }
-      cell.appendChild(box);
-    }
+    // EVERY QUOTE, EVERY FIGURE ROW AND EVERY DISCARD MOVED TO THE DETAIL ROW.
+    //
+    // They were all here, stacked under the claim line, and on a filing with
+    // nine accepted claims that is nine source sentences, their period
+    // headings, the results basis, the column dates, a row per figure and two
+    // lists of refusal tags — in one table cell. IGPL's investor presentation
+    // rendered as a wall of quoted PDF text with the three-claim wire line
+    // buried at the top of it.
+    //
+    // The evidence is not less important for moving. It is what makes a claim
+    // checkable, and it is one click away rather than gone. But it answers
+    // "how do I verify this", which is asked about ONE filing after stopping
+    // on it, and putting it in the scan view meant the scan view could not be
+    // scanned.
 
     // THE MODEL SUMMARY, THE FILE LIST, THE DERIVED CONTEXT, THE EXCHANGE'S OWN
     // SENTENCE AND THE LAG ALL MOVED TO THE DETAIL ROW.
@@ -751,6 +826,271 @@ export const PAGE_SCRIPT = `
     }
 
     row.appendChild(cell);
+  }
+
+  // How many claims a card shows before it stops. Four, because a card is a
+  // glance and TRANSRAILL's presentation yields eleven — printing all of them
+  // rebuilds the wall of text the feed exists to replace. The rest are one
+  // click away, and the count is stated so nothing looks complete when it is
+  // not.
+  var CARD_CLAIMS = 4;
+
+  /**
+   * The lines a card leads with, best first.
+   *
+   * RESULTS BEAT CLAIMS. On the day a company reports, its numbers ARE the
+   * event and everything else it said that morning is context.
+   */
+  function insightLines(e) {
+    var lines = [];
+    if (e.resultsLine) lines.push(e.resultsLine);
+    var claims = e.claims || [];
+    for (var i = 0; i < claims.length; i++) lines.push(claims[i].text);
+    return lines;
+  }
+
+  function feedCard(f) {
+    var e = f.enrichment || {};
+    var lines = insightLines(e);
+
+    var card = document.createElement('article');
+    // A filing that said nothing verifiable is drawn quieter rather than
+    // dropped. The toggle above decides whether it is here at all; once it is,
+    // pretending it is as substantial as a results card would be a lie told in
+    // CSS.
+    card.className = 'card' + (lines.length === 0 ? ' quiet' : '');
+    // A STABLE IDENTITY FOR A NODE THAT IS REBUILT EVERY FOUR SECONDS. The feed
+    // repaints on every poll, so "the first card with an expander" names a
+    // different card before and after a click — which is a trap for a test and
+    // would be one for any future deep link to a filing. The seqId is the one
+    // value that identifies this card across repaints.
+    card.setAttribute('data-seq', String(f.seqId));
+
+    var head = document.createElement('header');
+    head.className = 'cardhead';
+
+    var who = document.createElement('div');
+    who.className = 'who';
+    var sym = document.createElement('span');
+    sym.className = 'sym';
+    sym.textContent = f.symbol;
+    who.appendChild(sym);
+    var name = document.createElement('span');
+    name.className = 'coname';
+    name.textContent = f.companyName;
+    who.appendChild(name);
+    head.appendChild(who);
+
+    var meta = document.createElement('div');
+    meta.className = 'cardmeta';
+    var when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = relativeTime(f.disseminatedAt);
+    when.title = f.disseminatedAtIst + ' IST';
+    meta.appendChild(when);
+    meta.appendChild(tag(f.categoryGroupLabel, 'group ' + f.categoryGroup, pickGroup(f.categoryGroup)));
+    head.appendChild(meta);
+    card.appendChild(head);
+
+    if (lines.length > 0) {
+      var isOpen = Object.prototype.hasOwnProperty.call(
+        state.expanded,
+        String(f.seqId),
+      );
+      var shown = isOpen ? lines.length : CARD_CLAIMS;
+      var list = document.createElement('ul');
+      list.className = 'insights';
+      for (var i = 0; i < lines.length && i < shown; i++) {
+        var li = document.createElement('li');
+        li.textContent = lines[i];
+        list.appendChild(li);
+      }
+      card.appendChild(list);
+      if (lines.length > CARD_CLAIMS && !isOpen) {
+        // EXPANDS RATHER THAN ANNOUNCES. '+ 6 more' as dead text tells a reader
+        // the card is hiding something and gives them nowhere to go; the whole
+        // reason the card stops at four is that eleven is a wall, and the
+        // reason it says so is that silently truncating would make a partial
+        // card look complete.
+        var more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'andmore';
+        more.textContent = '+ ' + (lines.length - CARD_CLAIMS) + ' more';
+        more.onclick = (function (seqId, rest, list, button) {
+          return function (event) {
+            event.stopPropagation();
+            // Recorded in state FIRST, so the repaint four seconds from now
+            // draws the card open rather than undoing this.
+            state.expanded[String(seqId)] = true;
+            for (var k = 0; k < rest.length; k++) {
+              var extra = document.createElement('li');
+              extra.textContent = rest[k];
+              list.appendChild(extra);
+            }
+            button.remove();
+          };
+        })(f.seqId, lines.slice(CARD_CLAIMS), list, more);
+        card.appendChild(more);
+      }
+    } else {
+      // The exchange's own sentence. Not a claim and never dressed as one.
+      var said = document.createElement('p');
+      said.className = 'stated';
+      said.textContent = f.outcome;
+      card.appendChild(said);
+    }
+
+    var foot = document.createElement('footer');
+    foot.className = 'cardfoot';
+
+    var tier = document.createElement('span');
+    tier.className = 'tier tier-' + f.confidenceTier;
+    tier.textContent = f.confidenceTierLabel;
+    tier.title = describe(TIER_TITLE, f.confidenceTier);
+    foot.appendChild(tier);
+
+    var cat = document.createElement('span');
+    cat.className = 'cardcat';
+    cat.textContent = f.category;
+    foot.appendChild(cat);
+
+    var spacer = document.createElement('span');
+    spacer.className = 'grow';
+    foot.appendChild(spacer);
+
+    // COPY, because the thing a reader does with a line like this is send it to
+    // somebody. Writing the claims rather than the rendered card: what belongs
+    // in a message is what the company said, not our layout.
+    if (lines.length > 0) {
+      var copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'copy';
+      copy.textContent = 'Copy';
+      copy.onclick = (function (text, button) {
+        return function (event) {
+          event.stopPropagation();
+          // Guarded: the clipboard API is absent on an insecure origin, and a
+          // dashboard served over plain http to a colleague must not throw.
+          if (!navigator.clipboard) { button.textContent = 'no clipboard'; return; }
+          navigator.clipboard.writeText(text).then(function () {
+            button.textContent = 'Copied';
+            window.setTimeout(function () { button.textContent = 'Copy'; }, 1500);
+          }, function () { button.textContent = 'failed'; });
+        };
+      })(f.symbol + ': ' + lines.join('\\n' + f.symbol + ': '), copy);
+      foot.appendChild(copy);
+    }
+
+    var href = safeHref(f.attachmentUrl);
+    if (href) {
+      var link = document.createElement('a');
+      link.href = href;
+      link.rel = 'noopener noreferrer nofollow';
+      link.target = '_blank';
+      link.className = 'srclink';
+      link.textContent = 'Source';
+      foot.appendChild(link);
+    }
+
+    card.appendChild(foot);
+    return card;
+  }
+
+  /**
+   * The feed.
+   *
+   * Grouped by how long ago, because a reader scanning a market day thinks in
+   * "what just happened" and "what I have already seen", not in timestamps.
+   */
+  function feedBucket(iso) {
+    var ms = Date.now() - Date.parse(iso);
+    if (isNaN(ms)) return 'Earlier';
+    if (ms < 30 * 60 * 1000) return 'Just now';
+    if (ms < 4 * 60 * 60 * 1000) return 'Earlier today';
+    if (ms < 24 * 60 * 60 * 1000) return 'Today';
+    if (ms < 48 * 60 * 60 * 1000) return 'Yesterday';
+    return 'Earlier';
+  }
+
+  // Why the feed is empty, in the most specific words the page can honestly
+  // manage. Reads only state, so it says nothing it cannot support.
+  function emptyHint() {
+    var picked = state.picked;
+
+    if (state.onlyInsights) {
+      if (picked && picked.kind === 'company') {
+        return picked.head + ' has ' + groupInt(picked.filings)
+          + ' filing(s), and none of them carries a claim matched against the source document.'
+          + ' Untick the filter above to see them.';
+      }
+      return 'Only filings with a claim matched against the source document are shown.'
+        + ' Untick the filter above to see everything that arrived.';
+    }
+
+    if (state.q) return 'Nothing said ' + state.q + '. Try fewer words, or clear the search.';
+    if (state.symbol) return 'Nothing stored for ' + state.symbol + ' under these filters.';
+    return 'Try a different group, or clear the search.';
+  }
+
+  function renderFeed(items, meta) {
+    var feed = el('feed');
+    if (!feed) return;
+    feed.textContent = '';
+
+    var withInsight = 0;
+    for (var n = 0; n < items.length; n++) {
+      if (insightLines(items[n].enrichment || {}).length > 0) withInsight += 1;
+    }
+    setText('hero-insights', groupInt(withInsight));
+
+    if (items.length === 0) {
+      var none = document.createElement('div');
+      none.className = 'emptyfeed';
+      var title = document.createElement('div');
+      title.className = 'emptytitle';
+      title.textContent = state.onlyInsights
+        ? 'Nothing verifiable yet'
+        : 'No filings match';
+      none.appendChild(title);
+      var hint = document.createElement('div');
+      hint.className = 'emptyhint';
+      // Names the filter that is hiding things rather than leaving a reader to
+      // wonder whether the market is quiet or the page is broken.
+      // NAMES THE FILTER THAT IS HIDING THINGS, and where it can, names the
+      // number too.
+      //
+      // A reader who picked a company out of the suggestion list - so they KNOW
+      // it exists, they were just looking at its filing count - and then got an
+      // empty feed has to be able to tell "this company has said nothing
+      // verifiable" from "the box does not work". With the insight filter on by
+      // default the first is much the commoner, and the suggestion they picked
+      // already told us how many filings there are, so the page can say it
+      // rather than leaving them to work it out.
+      hint.textContent = emptyHint();
+      none.appendChild(hint);
+      feed.appendChild(none);
+      setText('feed-info', '');
+      el('feed-more').hidden = true;
+      return;
+    }
+
+    var bucket = null;
+    for (var i = 0; i < items.length; i++) {
+      var f = items[i];
+      var label = feedBucket(f.disseminatedAt);
+      if (label !== bucket) {
+        bucket = label;
+        var head = document.createElement('h2');
+        head.className = 'bucket';
+        head.textContent = label;
+        feed.appendChild(head);
+      }
+      feed.appendChild(feedCard(f));
+    }
+
+    var shown = meta.offset + meta.returned;
+    setText('feed-info', shown + ' of ' + groupInt(meta.total));
+    el('feed-more').hidden = !meta.hasMore;
   }
 
   function renderFilings(items, meta) {
@@ -1222,6 +1562,17 @@ export const PAGE_SCRIPT = `
 
   function query() {
     var parts = ['limit=' + state.limit, 'offset=' + state.offset];
+    // The feed's "said something" toggle IS the verified tier. Expressed here
+    // rather than as a separate parameter because the server already filters on
+    // exactly this set, and inventing a second name for it would be two ways to
+    // ask one question — which is how the two views start disagreeing.
+    if (state.onlyInsights && !state.tier) parts.push('tier=verified');
+    // BOTH ARE SENT, and they are not the same question. 'q' is ranked free
+    // text over the text index; 'symbol' is an exact match. Only one is ever
+    // set at a time - picking a company clears the query and typing clears the
+    // pick - but the server ANDs them if both arrive, which is the harmless
+    // reading of a state this page does not produce.
+    if (state.q) parts.push('q=' + encodeURIComponent(state.q));
     if (state.symbol) parts.push('symbol=' + encodeURIComponent(state.symbol));
     if (state.category) parts.push('category=' + encodeURIComponent(state.category));
     if (state.group) parts.push('group=' + encodeURIComponent(state.group));
@@ -1236,7 +1587,14 @@ export const PAGE_SCRIPT = `
     var slow = force === true || state.ticks % SLOW_EVERY === 0;
     var jobs = [
       getJson('api/summary').then(function (b) { renderSummary(b.data); }),
-      getJson(query()).then(function (b) { renderFilings(b.data, b.meta); })
+      getJson(query()).then(function (b) {
+        // BOTH VIEWS, FROM ONE REQUEST. Rendering only the visible one would
+        // save a few milliseconds of DOM work and cost a tab switch a round
+        // trip — and the two would then be able to disagree, which is the one
+        // thing a page showing the same rows twice must never do.
+        renderFeed(b.data, b.meta);
+        renderFilings(b.data, b.meta);
+      })
     ];
     if (slow) {
       jobs.push(getJson('api/categories').then(function (b) { renderCategories(b.data); }));
@@ -1271,7 +1629,11 @@ export const PAGE_SCRIPT = `
   }
 
   function applyFilters() {
-    state.symbol = el('symbol').value.trim();
+    // DELIBERATELY DOES NOT READ '#symbol'. It used to, and that was the whole
+    // search: the box's text was the exact-symbol filter. It now drives two
+    // different filters depending on whether a suggestion was picked, so it has
+    // its own handlers - and a stray read here would overwrite 'state.symbol'
+    // with the display text of a category every time a select changed.
     state.category = el('category').value;
     state.group = el('group').value;
     state.tier = el('tier').value;
@@ -1279,13 +1641,12 @@ export const PAGE_SCRIPT = `
     state.amount = el('amount').value;
     state.limit = Number(el('limit').value) || DEFAULT_LIMIT;
     state.offset = 0;
+    // Admin's select and the feed's chips are two controls over one filter.
+    // Whichever moved, both must show the same answer afterwards.
+    syncChips();
     refresh(true);
   }
 
-  el('symbol').addEventListener('change', applyFilters);
-  el('symbol').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') applyFilters();
-  });
   el('category').addEventListener('change', applyFilters);
   el('group').addEventListener('change', applyFilters);
   el('tier').addEventListener('change', applyFilters);
@@ -1299,7 +1660,16 @@ export const PAGE_SCRIPT = `
     el('tier').value = '';
     el('state').value = '';
     el('amount').value = '';
+    // Cleared through the same three fields the search box owns, rather than
+    // by emptying the input and hoping: 'symbol' and 'q' are state, not markup,
+    // and a Clear that left one of them set would leave the feed filtered by a
+    // control that now looks empty.
+    state.symbol = '';
+    state.q = '';
+    state.picked = null;
     state.refusal = '';
+    closeSuggest();
+    renderSearchNote();
     renderRefusalChip();
     applyFilters();
   });
@@ -1313,6 +1683,486 @@ export const PAGE_SCRIPT = `
   });
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) refresh(true);
+  });
+
+  // ---------------------------------------------------------- type-ahead ----
+  //
+  // A combobox over 'api/suggest'. Three things make it safe to fire while
+  // somebody is typing, and all three are here rather than on the server:
+  //
+  //   1. It is DEBOUNCED, so a word is one request and not nine.
+  //   2. Every response carries the sequence number of the request that asked
+  //      for it, and a stale one is dropped. fetch does not promise ordering.
+  //   3. Every node is built with createElement and textContent. A company
+  //      name is exchange-supplied text that reached this page through an
+  //      unauthenticated database, and this list renders more of it, closer
+  //      together, than anything else on the page.
+
+  var suggestState = {
+    // What is currently in the list, in the order it is drawn, so the arrow
+    // keys and a click both resolve to the same thing by index.
+    items: [],
+    active: -1,
+    open: false,
+    timer: null,
+    // Monotonic, and this is the bug it exists for: responses do not arrive in
+    // the order the requests were sent. Typing 'brit' and then 'britannia' can
+    // land 'brit''s slower answer last and leave the reader looking at
+    // suggestions for a word they have already typed past - which reads as the
+    // box being wrong rather than late.
+    seq: 0
+  };
+
+  function closeSuggest() {
+    var box = el('suggest');
+    if (box) box.hidden = true;
+    suggestState.open = false;
+    suggestState.active = -1;
+    var input = el('symbol');
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  }
+
+  // THE ONE HIGHLIGHT, for the mouse and the keyboard alike.
+  //
+  // Deliberately not a ':hover' rule. The arrow keys move a highlight without
+  // moving the pointer, so a hover rule would light up whichever row the mouse
+  // is resting over AS WELL as the one Enter would pick - two highlighted rows,
+  // one of them lying about what the next keypress does.
+  //
+  // 'aria-activedescendant' is what makes this announceable: DOM focus never
+  // leaves the input (it must not - the reader is still typing), so the
+  // highlight is only a colour unless the input names the option it is on.
+  function highlight(index) {
+    var options = el('suggest').getElementsByClassName('sopt');
+    for (var i = 0; i < options.length; i++) {
+      var mine = i === index;
+      options[i].className = 'sopt' + (mine ? ' active' : '');
+      options[i].setAttribute('aria-selected', mine ? 'true' : 'false');
+    }
+    suggestState.active = index;
+
+    var input = el('symbol');
+    if (index < 0 || !options[index]) {
+      input.removeAttribute('aria-activedescendant');
+      return;
+    }
+    input.setAttribute('aria-activedescendant', options[index].id);
+    // A list can be taller than its own box. A reader arrowing past the bottom
+    // must not be highlighting a row they cannot see.
+    if (options[index].scrollIntoView) {
+      options[index].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // Wraps at both ends, because the list is at most eleven rows: walking off
+  // the bottom round to the top is faster than reversing, and there is never
+  // enough of it to get lost in.
+  function moveActive(delta) {
+    var n = suggestState.items.length;
+    if (!suggestState.open || n === 0) return;
+    var next = suggestState.active + delta;
+    if (next < 0) next = n - 1;
+    if (next >= n) next = 0;
+    highlight(next);
+  }
+
+  function suggestHeading(box, label) {
+    var li = document.createElement('li');
+    li.className = 'sgroup';
+    // Presentational, so it is not one of the options the arrow keys walk. A
+    // listbox whose headings are arrowable makes Enter do nothing on a third
+    // of its rows.
+    li.setAttribute('role', 'presentation');
+    li.textContent = label;
+    box.appendChild(li);
+  }
+
+  function suggestOption(box, index, item) {
+    var li = document.createElement('li');
+    li.className = 'sopt';
+    li.id = 'suggest-opt-' + index;
+    li.setAttribute('role', 'option');
+    li.setAttribute('aria-selected', 'false');
+    li.setAttribute('data-index', String(index));
+
+    var head = document.createElement('span');
+    head.className = 'ssym';
+    head.textContent = item.head;
+    li.appendChild(head);
+
+    if (item.name) {
+      var name = document.createElement('span');
+      name.className = 'sname';
+      name.textContent = item.name;
+      li.appendChild(name);
+    }
+
+    // How many filings there are behind this row. It is the cheapest possible
+    // answer to "is this the one I meant" when two companies both complete
+    // what the reader typed.
+    var n = document.createElement('span');
+    n.className = 'scount';
+    n.textContent = groupInt(item.filings);
+    li.appendChild(n);
+
+    box.appendChild(li);
+  }
+
+  function pushSuggestions(box, items, label, rows, build) {
+    if (!rows || rows.length === 0) return;
+    suggestHeading(box, label);
+    for (var i = 0; i < rows.length; i++) {
+      var item = build(rows[i]);
+      items.push(item);
+      suggestOption(box, items.length - 1, item);
+    }
+  }
+
+  function renderSuggest(data) {
+    var box = el('suggest');
+    clear(box);
+
+    var items = [];
+
+    // THE ORDER IS THE SERVER'S RANKING, not a preference expressed twice.
+    // Companies lead because a company is what the box is for; groups come
+    // last because there are eleven of them and a row of chips for them sits
+    // directly underneath.
+    pushSuggestions(box, items, 'Companies', data.companies, function (row) {
+      return {
+        kind: 'company',
+        value: row.symbol,
+        head: row.symbol,
+        name: row.companyName,
+        filings: row.filings
+      };
+    });
+    pushSuggestions(box, items, 'Categories', data.categories, function (row) {
+      return {
+        kind: 'category',
+        value: row.category,
+        head: row.category,
+        name: '',
+        filings: row.filings
+      };
+    });
+    pushSuggestions(box, items, 'Groups', data.groups, function (row) {
+      return {
+        kind: 'group',
+        value: row.group,
+        head: row.label,
+        name: '',
+        filings: row.filings
+      };
+    });
+
+    suggestState.items = items;
+
+    if (items.length === 0) {
+      // Hidden rather than showing "no matches". The box also searches free
+      // text, so a query with no company behind it is an ordinary thing to be
+      // typing - saying "nothing found" mid-word would be wrong as often as it
+      // was right.
+      closeSuggest();
+      return;
+    }
+
+    box.hidden = false;
+    suggestState.open = true;
+    el('symbol').setAttribute('aria-expanded', 'true');
+    // NOTHING IS HIGHLIGHTED until the reader presses a key. Pre-selecting the
+    // first row is how a search box quietly applies a filter nobody chose: the
+    // reader types a phrase, presses Enter to search for it, and gets one
+    // company instead. Enter with no highlight searches what was typed.
+    highlight(-1);
+  }
+
+  function requestSuggestions() {
+    var typed = el('symbol').value.trim();
+    if (typed.length < SUGGEST_MIN) {
+      closeSuggest();
+      return;
+    }
+
+    suggestState.seq += 1;
+    var mine = suggestState.seq;
+
+    getJson('api/suggest?q=' + encodeURIComponent(typed))
+      .then(function (body) {
+        if (mine !== suggestState.seq) return;
+        renderSuggest(body.data);
+      })
+      .catch(function () {
+        // DELIBERATELY SILENT, unlike every other fetch on this page.
+        //
+        // A failed suggestion costs the reader nothing - the box still searches
+        // on Enter and the feed is unaffected - and the alternative is a red
+        // banner over the feed because a keystroke raced a restart. That would
+        // be the page reporting its own timing as a fault. The live dot and the
+        // four-second poll are what say the server is down, and they say it
+        // whether anybody is typing or not.
+        if (mine === suggestState.seq) closeSuggest();
+      });
+  }
+
+  function scheduleSuggestions() {
+    if (suggestState.timer !== null) window.clearTimeout(suggestState.timer);
+    suggestState.timer = window.setTimeout(function () {
+      suggestState.timer = null;
+      requestSuggestions();
+    }, SUGGEST_DEBOUNCE_MS);
+  }
+
+  // Undoes exactly what picking a suggestion did, and nothing else. A blanket
+  // reset here would clear a category the reader had chosen from the Admin
+  // panel, which the search box has no business touching.
+  function undoPicked() {
+    var picked = state.picked;
+    if (!picked) return;
+    if (picked.kind === 'company') state.symbol = '';
+    if (picked.kind === 'category') {
+      state.category = '';
+      el('category').value = '';
+    }
+    if (picked.kind === 'group') {
+      state.group = '';
+      syncChips();
+    }
+    state.picked = null;
+  }
+
+  function applySuggestion(index) {
+    var item = suggestState.items[index];
+    if (!item) return;
+
+    undoPicked();
+    // Each kind applies the EXACT filter it names, never a better-ranked fuzzy
+    // one. That is the whole reason the list distinguishes three kinds: picking
+    // "Stock split" from it is 'category=Stock split', not a text search for
+    // two common words that also matches every broking company.
+    if (item.kind === 'company') {
+      state.symbol = item.value;
+    } else if (item.kind === 'category') {
+      state.category = item.value;
+      el('category').value = item.value;
+    } else {
+      state.group = item.value;
+      syncChips();
+    }
+
+    state.picked = item;
+    state.q = '';
+    state.offset = 0;
+    el('symbol').value = item.head;
+    closeSuggest();
+    renderSearchNote();
+    refresh(true);
+  }
+
+  // Enter with nothing highlighted: search what was typed.
+  function submitSearch() {
+    undoPicked();
+    state.q = el('symbol').value.trim();
+    state.offset = 0;
+    closeSuggest();
+    renderSearchNote();
+    refresh(true);
+  }
+
+  function clearSearch() {
+    undoPicked();
+    state.q = '';
+    state.offset = 0;
+    el('symbol').value = '';
+    closeSuggest();
+    renderSearchNote();
+    refresh(true);
+  }
+
+  // WHAT THE BOX IS CURRENTLY DOING, in words, with a way out.
+  //
+  // Picking BRITANNIA puts 'BRITANNIA' in the box, which looks identical to
+  // having typed it - and the two do different things. This line is what tells
+  // a reader which of them is in force, and it is the only affordance for
+  // undoing a pick without deleting the text by hand.
+  function renderSearchNote() {
+    var note = el('search-note');
+    if (!note) return;
+    clear(note);
+
+    var picked = state.picked;
+    var label = null;
+    if (picked && picked.kind === 'company') {
+      label = 'Every filing by ' + picked.value;
+    } else if (picked && picked.kind === 'category') {
+      label = 'Category: ' + picked.value;
+    } else if (picked && picked.kind === 'group') {
+      label = 'Group: ' + picked.head;
+    } else if (state.q) {
+      label = 'Searching for ' + state.q;
+    }
+
+    if (label === null) {
+      note.hidden = true;
+      return;
+    }
+
+    // textContent, like everything else: a category is NSE's text and the query
+    // is the reader's, and neither is markup.
+    note.appendChild(document.createTextNode(label));
+    var undo = document.createElement('button');
+    undo.type = 'button';
+    undo.className = 'clearq';
+    undo.textContent = 'clear';
+    undo.addEventListener('click', clearSearch);
+    note.appendChild(undo);
+    note.hidden = false;
+  }
+
+  el('symbol').addEventListener('input', function () {
+    // Typing invalidates a pick. A reader editing 'BRITANNIA' back down to
+    // 'BRIT' has stopped asking for Britannia specifically, and leaving the
+    // exact symbol filter on would show them Britannia's filings for a word
+    // that no longer says Britannia.
+    if (state.picked) {
+      undoPicked();
+      renderSearchNote();
+    }
+    scheduleSuggestions();
+  });
+
+  el('symbol').addEventListener('keydown', function (event) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      // Reopens a list the reader dismissed, rather than doing nothing. Escape
+      // is for getting the list out of the way; ArrowDown is for asking it back.
+      if (!suggestState.open) requestSuggestions();
+      else moveActive(1);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveActive(-1);
+      return;
+    }
+    if (event.key === 'Escape') {
+      // preventDefault ONLY while the list is open. A type=search input clears
+      // itself on Escape in some browsers, and that is the right behaviour for
+      // an empty-handed Escape - it just must not also happen on the press that
+      // was meant to dismiss the list.
+      if (suggestState.open) {
+        event.preventDefault();
+        closeSuggest();
+      }
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (suggestState.open && suggestState.active >= 0) {
+        applySuggestion(suggestState.active);
+      } else {
+        submitSearch();
+      }
+      return;
+    }
+    if (event.key === 'Tab') closeSuggest();
+  });
+
+  // Closing on blur is what makes a click anywhere else dismiss the list. The
+  // mousedown handler below is what stops it dismissing the list before a click
+  // ON the list has landed.
+  el('symbol').addEventListener('blur', closeSuggest);
+
+  function optionIndexAt(node, root) {
+    while (node && node !== root) {
+      if (node.getAttribute && node.getAttribute('data-index') !== null) {
+        return Number(node.getAttribute('data-index'));
+      }
+      node = node.parentNode;
+    }
+    return -1;
+  }
+
+  el('suggest').addEventListener('mousedown', function (event) {
+    // Without this the input blurs first, the blur handler closes the list, and
+    // the click lands on nothing. A suggestion you can see and cannot click is
+    // worse than no suggestion.
+    event.preventDefault();
+  });
+
+  el('suggest').addEventListener('click', function (event) {
+    var index = optionIndexAt(event.target, event.currentTarget);
+    if (index >= 0) applySuggestion(index);
+  });
+
+  // The pointer moves the SAME highlight the arrow keys move, so there is only
+  // ever one row claiming to be what Enter will pick.
+  el('suggest').addEventListener('mouseover', function (event) {
+    var index = optionIndexAt(event.target, event.currentTarget);
+    if (index >= 0 && index !== suggestState.active) highlight(index);
+  });
+
+  // ---------------------------------------------------------------- tabs ----
+  function showView(name) {
+    state.view = name;
+    el('view-feed').hidden = name !== 'feed';
+    el('view-admin').hidden = name !== 'admin';
+    el('tab-feed').className = 'tab' + (name === 'feed' ? ' active' : '');
+    el('tab-admin').className = 'tab' + (name === 'admin' ? ' active' : '');
+    el('tab-feed').setAttribute('aria-selected', String(name === 'feed'));
+    el('tab-admin').setAttribute('aria-selected', String(name === 'admin'));
+  }
+  el('tab-feed').addEventListener('click', function () { showView('feed'); });
+  el('tab-admin').addEventListener('click', function () { showView('admin'); });
+
+  // --------------------------------------------------------------- chips ----
+  // The group filter, twice: chips in the feed and a select in Admin. They
+  // write the SAME state and re-read each other, so a group picked in one is
+  // reflected in the other — two controls for one filter that disagreed would
+  // be worse than one control in the wrong place.
+  function syncChips() {
+    var chips = el('chips').getElementsByClassName('chip');
+    for (var i = 0; i < chips.length; i++) {
+      var mine = chips[i].getAttribute('data-group') === state.group;
+      chips[i].className = 'chip' + (mine ? ' active' : '');
+    }
+    el('group').value = state.group;
+  }
+  el('chips').addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.getAttribute) return;
+    var group = target.getAttribute('data-group');
+    if (group === null) return;
+    state.group = group;
+    state.offset = 0;
+    syncChips();
+    refresh(true);
+  });
+
+  el('only-insights').addEventListener('change', function (event) {
+    state.onlyInsights = event.target.checked;
+    state.offset = 0;
+    refresh(true);
+  });
+
+  // The feed pages by GROWING rather than replacing, because a feed a reader is
+  // part-way down must not jump to the top to show them more.
+  el('feed-more').addEventListener('click', function () {
+    state.limit = Math.min(200, state.limit + 25);
+    el('limit').value = String(state.limit);
+    refresh(true);
+  });
+
+  // '/' focuses the search from anywhere, unless something is already being
+  // typed into.
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== '/' || event.metaKey || event.ctrlKey) return;
+    var active = document.activeElement;
+    var tag = active && active.tagName ? active.tagName.toLowerCase() : '';
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+    event.preventDefault();
+    el('symbol').focus();
   });
 
   setLive('', 'connecting');

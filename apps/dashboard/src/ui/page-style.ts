@@ -136,6 +136,10 @@ tr.detail td { padding: 0 12px 12px; background: rgba(88, 166, 255, 0.04); }
 /* The one line in the box that no span was matched against keeps saying so. */
 .ditem.unverified .dlabel, .ditem.unverified .dvalue { color: var(--muted); font-style: italic; }
 .ditem.refused .dvalue { font-family: var(--mono); font-size: 11px; }
+/* A quoted source sentence. Spans the box rather than sharing a column, because
+   these are whole sentences of PDF text and a 280px column would shred them. */
+.ditem.quote { grid-column: 1 / -1; align-items: flex-start; }
+.ditem.quote .dvalue { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
 td.sym { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
 td.cat { color: var(--muted); font-size: 12px; max-width: 210px; }
 td.sum { min-width: 260px; }
@@ -362,4 +366,211 @@ td.grp { white-space: nowrap; }
  * quietly yield fewer figures.
  */
 .tag.fallback { color: var(--warn); border-color: rgba(210, 153, 34, 0.35); }
+
+/* ==========================================================================
+   FEED — the product view.
+   Everything above this line dresses the instrument panel. This dresses the
+   thing a reader came for, and the whole design rule is one sentence: the
+   sentence a company said must be the largest, highest-contrast element on the
+   screen, and every label around it must be quieter than it.
+   ========================================================================== */
+
+.topbar {
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.topbar .brand { flex: 0 0 auto; }
+.topbar .status { margin-left: auto; }
+
+.tabs { display: flex; gap: 4px; }
+.tab {
+  background: transparent; color: var(--muted); border: 0;
+  font: inherit; font-weight: 550; cursor: pointer;
+  padding: 6px 14px; border-radius: 999px;
+}
+.tab:hover { color: var(--text); background: var(--panel); }
+.tab.active { color: var(--bg); background: var(--text); }
+
+.view[hidden] { display: none; }
+
+/* --- hero ---------------------------------------------------------------- */
+.hero { display: flex; gap: 40px; flex-wrap: wrap; margin-bottom: 22px; }
+.herovalue {
+  font-size: 40px; font-weight: 680; letter-spacing: -0.03em; line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.herovalue.accent { color: var(--ok); }
+.herovalue.stale { color: var(--warn); }
+.herovalue.down { color: var(--bad); }
+.herolabel { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+/* --- controls ------------------------------------------------------------ */
+.feedbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+#symbol {
+  width: 100%;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 14px; font: inherit;
+}
+#symbol:focus { outline: none; border-color: var(--accent); }
+
+/*
+ * THE TYPE-AHEAD.
+ *
+ * position:relative on the wrapper and absolute on the list, so the list
+ * OVERLAYS the chips below it instead of pushing them down. That is not
+ * cosmetic: the chips are a filter a reader may be about to use, and a control
+ * row that jumps 200px down the page every time somebody types is a control row
+ * that gets misclicked.
+ *
+ * z-index above the cards for the same reason, and a solid background rather
+ * than a translucent one — a suggestion list you can read the feed through is a
+ * list you cannot read.
+ */
+.searchbox { position: relative; max-width: 420px; }
+
+.suggest {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+  margin: 0; padding: 5px 0; list-style: none;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  max-height: 340px; overflow-y: auto;
+}
+.suggest[hidden] { display: none; }
+
+/* A heading inside the list. role="presentation", so it is not arrowable —
+   and styled so it is obviously not a row you can pick. */
+.sgroup {
+  padding: 7px 12px 3px; color: var(--muted);
+  font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase;
+}
+
+.sopt {
+  display: flex; align-items: baseline; gap: 9px;
+  padding: 6px 12px; cursor: pointer; min-width: 0;
+}
+/*
+ * ONE HIGHLIGHT CLASS FOR MOUSE AND KEYBOARD, and it is deliberately not
+ * :hover. The arrow keys move a highlight without moving the pointer, so a
+ * hover rule would light up whichever row the mouse happens to be resting over
+ * as WELL as the one Enter would actually pick — two highlighted rows, one of
+ * which is lying about what the next keypress does.
+ */
+.sopt.active { background: rgba(88, 166, 255, 0.16); }
+.ssym { font-weight: 650; font-size: 13px; white-space: nowrap; }
+.sname {
+  color: var(--muted); font-size: 12px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The filing count, right-aligned. It is how a reader tells two companies whose
+   names both complete what they typed apart. */
+.scount {
+  margin-left: auto; flex: 0 0 auto;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+
+/* What a picked suggestion applied, and how to undo it. Shown only when the
+   search box is actually filtering something, so it costs nothing the rest of
+   the time. */
+.searchnote { color: var(--muted); font-size: 12px; }
+.searchnote[hidden] { display: none; }
+.searchnote .clearq {
+  background: none; border: 0; padding: 0 0 0 8px;
+  color: var(--accent); font: inherit; font-size: 12px; cursor: pointer;
+}
+.searchnote .clearq:hover { text-decoration: underline; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  background: var(--panel); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 5px 13px; font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.chip:hover { color: var(--text); border-color: var(--muted); }
+.chip.active { background: var(--accent); border-color: var(--accent); color: #06101f; font-weight: 600; }
+
+.onlyinsights { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
+.onlyinsights input { accent-color: var(--accent); }
+
+/* --- the feed ------------------------------------------------------------ */
+.feed { display: flex; flex-direction: column; gap: 10px; }
+
+.bucket {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted); font-weight: 600;
+  margin: 18px 0 2px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.bucket:first-child { margin-top: 0; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 14px; padding: 16px 18px;
+  transition: border-color .12s ease, transform .12s ease;
+}
+.card:hover { border-color: #3a4553; }
+/* A filing that said nothing verifiable is drawn quieter, not dropped.
+   Pretending it is as substantial as a results card would be a lie told in
+   CSS — so it recedes, and stays readable. */
+.card.quiet { background: transparent; padding: 11px 18px; }
+.card.quiet .sym { font-size: 14px; }
+
+.cardhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.who { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.sym { font-size: 17px; font-weight: 680; letter-spacing: -0.01em; }
+.coname { color: var(--muted); font-size: 12.5px; }
+.cardmeta { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* THE HERO. Bigger than the company name, brighter than everything else. */
+.insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.insights li {
+  font-size: 15.5px; line-height: 1.45; font-weight: 480;
+  padding-left: 14px; position: relative;
+}
+.insights li::before {
+  content: ""; position: absolute; left: 0; top: .62em;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.andmore {
+  background: transparent; border: 0; color: var(--accent);
+  font: inherit; font-size: 12px; cursor: pointer;
+  margin-top: 8px; padding: 2px 0 2px 14px; text-align: left;
+}
+.andmore:hover { text-decoration: underline; }
+
+.stated { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.45; }
+
+.cardfoot {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line);
+  font-size: 11.5px;
+}
+.card.quiet .cardfoot { margin-top: 8px; padding-top: 8px; border-top-color: transparent; }
+.cardcat { color: var(--muted); }
+.grow { flex: 1 1 auto; }
+.copy, .srclink {
+  background: transparent; border: 1px solid var(--line); border-radius: 7px;
+  color: var(--muted); font: inherit; font-size: 11.5px;
+  padding: 4px 11px; cursor: pointer; text-decoration: none;
+}
+.copy:hover, .srclink:hover { color: var(--text); border-color: var(--muted); text-decoration: none; }
+
+.feedfoot { display: flex; align-items: center; gap: 14px; margin-top: 22px; }
+.more {
+  background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 20px; font: inherit; cursor: pointer;
+}
+.more:hover { border-color: var(--muted); }
+.more[hidden] { display: none; }
+
+.emptyfeed { padding: 56px 20px; text-align: center; }
+.emptytitle { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+.emptyhint { color: var(--muted); font-size: 13px; max-width: 460px; margin: 0 auto; line-height: 1.5; }
+
+@media (max-width: 640px) {
+  .hero { gap: 26px; }
+  .herovalue { font-size: 30px; }
+  .cardmeta { margin-left: 0; width: 100%; }
+}
 `;

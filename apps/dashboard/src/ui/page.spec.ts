@@ -70,6 +70,8 @@ describe('renderDashboardPage — content', () => {
     'stat-outcome',
     'stat-outcome-note',
     'symbol',
+    'suggest',
+    'search-note',
     'category',
     'group',
     'tier',
