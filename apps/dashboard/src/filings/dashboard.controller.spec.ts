@@ -9,6 +9,9 @@ import {
   MAX_LIMIT,
 } from './dashboard.controller';
 import type { FilingQueryService, RecentQuery } from './filing-query.service';
+import type { CompanyDirectory } from '../search/company-directory';
+import type { DirectorySnapshot } from '../search/directory.types';
+import { companyTerms, searchTerms } from '../search/search-terms';
 import type { EnrichmentSummaryView, SummaryView } from './dashboard.types';
 
 const SUMMARY: SummaryView = {
@@ -62,6 +65,35 @@ const ENRICHMENT_SUMMARY: EnrichmentSummaryView = {
   generatedAtIst: '2026-08-05 23:32:54',
 };
 
+/**
+ * A directory the type-ahead can be asked about without a database.
+ *
+ * The directory's own suite proves what its two reads cost against a real
+ * mongod; this file is about the HTTP layer, so here it is a value.
+ */
+const SNAPSHOT: DirectorySnapshot = {
+  companies: [
+    {
+      symbol: 'BRITANNIA',
+      companyName: 'Britannia Industries Limited',
+      filings: 9,
+      terms: companyTerms('BRITANNIA', 'Britannia Industries Limited'),
+    },
+  ],
+  categories: [
+    { category: 'Stock split', filings: 12, terms: searchTerms('Stock split') },
+  ],
+  groups: [
+    {
+      group: 'results',
+      label: 'Results',
+      filings: 89,
+      terms: searchTerms('Results'),
+    },
+  ],
+  builtAt: new Date('2026-08-07T06:00:00.000Z'),
+};
+
 /** What each stub method was last called with, so argument mapping is assertable. */
 interface Calls {
   recent: RecentQuery[];
@@ -106,7 +138,11 @@ beforeEach(() => {
     getEnrichmentSummary: async () => ENRICHMENT_SUMMARY,
   } as unknown as FilingQueryService;
 
-  controller = new DashboardController(service);
+  const directory = {
+    snapshot: async () => SNAPSHOT,
+  } as unknown as CompanyDirectory;
+
+  controller = new DashboardController(service, directory);
 });
 
 describe('DashboardController — routes', () => {
@@ -117,6 +153,7 @@ describe('DashboardController — routes', () => {
     'getCategories',
     'getDaily',
     'getEnrichment',
+    'getSuggestions',
   ] as const;
 
   it.each(HANDLERS)('exposes %s as a GET, never a write verb', (name) => {
@@ -141,6 +178,57 @@ describe('DashboardController — routes', () => {
     expect(pathOf('getCategories')).toBe('api/categories');
     expect(pathOf('getDaily')).toBe('api/daily');
     expect(pathOf('getEnrichment')).toBe('api/enrichment');
+    expect(pathOf('getSuggestions')).toBe('api/suggest');
+  });
+});
+
+describe('DashboardController — suggestions', () => {
+  it('answers a query from the directory, in an envelope like everything else', async () => {
+    const { data } = await controller.getSuggestions({ q: 'brit' });
+
+    expect(data.companies).toEqual([
+      {
+        symbol: 'BRITANNIA',
+        companyName: 'Britannia Industries Limited',
+        filings: 9,
+      },
+    ]);
+  });
+
+  it('offers a category and a group too, so one box serves all three filters', async () => {
+    const { data } = await controller.getSuggestions({ q: 'stock split' });
+
+    expect(data.categories).toEqual([{ category: 'Stock split', filings: 12 }]);
+    expect(
+      (await controller.getSuggestions({ q: 'results' })).data.groups,
+    ).toEqual([{ group: 'results', label: 'Results', filings: 89 }]);
+  });
+
+  it('answers an absent query with an empty list rather than a 400', async () => {
+    // The page debounces, so a cleared box can race its own timer. A red error
+    // banner because a reader pressed backspace would be the dashboard
+    // reporting its own timing as a fault.
+    const { data } = await controller.getSuggestions({});
+
+    expect(data.companies).toEqual([]);
+    expect(data.builtAtIst).toContain('2026-08-07');
+  });
+
+  it('still refuses a query given twice or as an object', async () => {
+    // The one thing it does NOT forgive. A bracketed key arrives as an object
+    // and is the shape a NoSQL-injection attempt takes; see `readSingle`.
+    await expect(
+      controller.getSuggestions({ q: ['a', 'b'] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.getSuggestions({ q: { $ne: null } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses a query longer than a company name could be', async () => {
+    await expect(
+      controller.getSuggestions({ q: 'x'.repeat(129) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 

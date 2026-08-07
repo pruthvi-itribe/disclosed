@@ -7,6 +7,8 @@ import { loadDashboardConfig } from './config/configuration';
 import { DashboardController } from './filings/dashboard.controller';
 import { FilingQueryService } from './filings/filing-query.service';
 import type { FilingReadModel } from './filings/filing-read.model';
+import { CompanyDirectory } from './search/company-directory';
+import { symbolsMatching } from './search/suggest';
 
 /** The mongoose model name; the collection itself is named by the schema. */
 export const FILING_MODEL = 'Filing';
@@ -96,17 +98,37 @@ export const FILING_MODEL = 'Filing';
   controllers: [DashboardController],
   providers: [
     {
-      provide: FilingQueryService,
+      // The type-ahead's data source, and a SINGLETON on purpose: it holds one
+      // cached snapshot of the collection's distinct companies, and the whole
+      // reason a keystroke costs no database read is that every request shares
+      // it. A per-request instance would rebuild it per keystroke, which is the
+      // exact behaviour it exists to avoid.
+      provide: CompanyDirectory,
       inject: [getModelToken(FILING_MODEL)],
+      useFactory: (model: Model<FilingDocument>) =>
+        new CompanyDirectory(model satisfies FilingReadModel),
+    },
+    {
+      provide: FilingQueryService,
+      inject: [getModelToken(FILING_MODEL), CompanyDirectory],
       // The widening to `FilingReadModel` happens HERE, at the one point the
       // full model exists, so nothing downstream is ever handed a writable
       // handle. `() => new Date()` is injected rather than called inside the
       // service so the IST-day and lag arithmetic is testable against a fixed
       // clock.
-      useFactory: (model: Model<FilingDocument>) =>
+      //
+      // The third argument is the PREFIX HALF OF SEARCH. A text index matches
+      // whole words, so `brit` matches nothing; the directory answers prefixes
+      // from memory. It is wired as a closure rather than as a constructor
+      // dependency so `FilingQueryService` still depends on a read handle and a
+      // clock and nothing else — and so the fallback is visibly a composition
+      // decision made here rather than a behaviour hidden inside the service.
+      useFactory: (model: Model<FilingDocument>, directory: CompanyDirectory) =>
         new FilingQueryService(
           model satisfies FilingReadModel,
           () => new Date(),
+          async (query: string) =>
+            symbolsMatching(await directory.snapshot(), query),
         ),
     },
   ],

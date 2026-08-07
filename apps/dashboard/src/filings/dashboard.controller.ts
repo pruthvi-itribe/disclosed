@@ -7,12 +7,15 @@ import {
   type RawQuery,
 } from '../http/query-params';
 import { renderDashboardPage } from '../ui/page';
+import { CompanyDirectory } from '../search/company-directory';
+import { suggestFrom } from '../search/suggest';
 import type {
   CategoryCount,
   DailyCount,
   EnrichmentSummaryView,
   FilingView,
   PageMeta,
+  SuggestionsView,
   SummaryView,
 } from './dashboard.types';
 import {
@@ -57,7 +60,10 @@ export const MAX_DAYS = 366;
  */
 @Controller()
 export class DashboardController {
-  constructor(private readonly filings: FilingQueryService) {}
+  constructor(
+    private readonly filings: FilingQueryService,
+    private readonly directory: CompanyDirectory,
+  ) {}
 
   /**
    * The dashboard page itself: one self-contained HTML document with its CSS
@@ -84,7 +90,7 @@ export class DashboardController {
   /**
    * Recent filings, newest first, paginated and filterable.
    *
-   * Query: `limit`, `offset`, `symbol`, `category`, `state`, `amount`,
+   * Query: `q`, `limit`, `offset`, `symbol`, `category`, `state`, `amount`,
    * `claim`, `refusal`. Anything unparseable is a 400 rather than a silently applied
    * default — a filter that quietly did nothing is indistinguishable from one
    * that matched everything, and on the refusal filters that difference is the
@@ -106,6 +112,14 @@ export class DashboardController {
         min: 0,
         max: MAX_OFFSET,
       }),
+      // Free text, and DELIBERATELY NOT ALLOWLISTED like the filters below it.
+      // This one is meant to be arbitrary: it is a reader's own words. What
+      // makes that safe is that it never becomes a Mongo operator or a regex —
+      // `search-terms.ts` decomposes it into letters and digits and reassembles
+      // it, so there is nothing to escape. `readFilter` still bounds its length,
+      // because a query longer than 128 characters is a paste or an attack and
+      // is never a company.
+      q: readFilter('q', query),
       symbol: readFilter('symbol', query),
       category: readFilter('category', query),
       state: readEnum('state', query, ENRICHMENT_STATES),
@@ -121,6 +135,32 @@ export class DashboardController {
     });
 
     return okWith(page.items, page.meta);
+  }
+
+  /**
+   * What the reader might be typing: companies, categories and groups.
+   *
+   * THE ONLY ROUTE HERE A BROWSER CALLS WHILE SOMEBODY IS TYPING, which decides
+   * everything about it. It touches the database on NO request in the ordinary
+   * case: the answer comes from a snapshot the directory refreshes on a clock,
+   * so a reader holding a key down costs zero reads rather than one per
+   * character. See `search/company-directory.ts` for the two covered index scans
+   * behind that snapshot and what they were measured at.
+   *
+   * A `@Get` with one query parameter and no state, like every other route on
+   * this controller. It is a search box, not a session.
+   */
+  @Get('api/suggest')
+  @Header('Cache-Control', 'no-store')
+  async getSuggestions(
+    @Query() query: RawQuery,
+  ): Promise<ApiEnvelope<SuggestionsView>> {
+    const snapshot = await this.directory.snapshot();
+    // An absent `q` is answered as an empty suggestion list rather than a 400.
+    // The page debounces and can race a cleared box against its own timer, and
+    // a red error banner because a reader deleted what they typed would be the
+    // dashboard reporting its own timing as a fault.
+    return ok(suggestFrom(snapshot, readFilter('q', query) ?? ''));
   }
 
   /**

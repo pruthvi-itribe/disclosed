@@ -355,3 +355,57 @@ export interface PageMeta {
   readonly returned: number;
   readonly hasMore: boolean;
 }
+
+/**
+ * ================================================================
+ * TYPE-AHEAD
+ * ================================================================
+ *
+ * What the search box offers as a reader types. Three kinds, because a reader
+ * typing into one box means one of three things and the page must not guess:
+ * `britannia` names a COMPANY, `stock split` names a CATEGORY, and `results`
+ * names a GROUP. Each suggestion carries the exact filter it applies, so
+ * picking one is a precise query rather than a better-ranked fuzzy one.
+ *
+ * `filings` is on every row because it is the cheapest possible answer to "is
+ * this the one I meant". Two companies whose names both complete `solar` are
+ * told apart by which of them the reader has been seeing in the feed.
+ */
+
+/** One company the reader may have meant. Applies `symbol=`, matched exactly. */
+export interface CompanySuggestion {
+  readonly symbol: string;
+  readonly companyName: string;
+  readonly filings: number;
+}
+
+/** One NSE category. Applies `category=`, matched exactly. */
+export interface CategorySuggestion {
+  readonly category: string;
+  readonly filings: number;
+}
+
+/** One reader-facing group. Applies `group=`, which is an allowlisted enum. */
+export interface GroupSuggestion {
+  readonly group: string;
+  readonly label: string;
+  readonly filings: number;
+}
+
+/**
+ * A whole type-ahead response.
+ *
+ * `builtAtIst` is the DIRECTORY's build time, not this request's. The list is
+ * served from a snapshot refreshed on a timer rather than rebuilt per keystroke
+ * — see `search/company-directory.ts` — and a reader whose brand-new company is
+ * missing deserves to be able to see why rather than conclude the box is
+ * broken.
+ */
+export interface SuggestionsView {
+  readonly companies: readonly CompanySuggestion[];
+  readonly categories: readonly CategorySuggestion[];
+  readonly groups: readonly GroupSuggestion[];
+  readonly builtAtIst: string;
+  /** Distinct companies the directory holds, whatever this query matched. */
+  readonly companiesKnown: number;
+}

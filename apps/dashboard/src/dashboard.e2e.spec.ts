@@ -72,6 +72,15 @@ beforeAll(async () => {
   origin = await app.getUrl();
 
   model = app.get<Model<FilingDocument>>(getModelToken(FILING_MODEL));
+
+  // BUILT HERE, BY THE TEST, because the application will not build them: the
+  // module sets `autoIndex: false` so a viewer can never alter the collection,
+  // including its indexes. In production the ingest process owns that (see
+  // `tools/search/build-search-indexes.ts`); here the test has to stand in for
+  // it, and `api/filings?q=` is a MongoServerError without the text index —
+  // which is exactly the failure this asserts is wired up.
+  await model.syncIndexes();
+
   await model.insertMany([
     makeFiling(101, '2026-08-05T04:58:18.000Z', 'General Updates'),
     makeFiling(102, '2026-08-05T05:10:00.000Z', 'Board Meeting'),
@@ -225,5 +234,107 @@ describe('dashboard over HTTP — read-only', () => {
   it('binds loopback only', async () => {
     // The dashboard is an unauthenticated view of an unauthenticated database.
     expect(origin.startsWith('http://127.0.0.1:')).toBe(true);
+  });
+});
+
+/**
+ * The search and the type-ahead, over real HTTP against a real mongod.
+ *
+ * This is the only place the whole path is exercised end to end: the text index
+ * the schema declares, the `$text` filter, the ranked aggregation, the directory
+ * singleton the module wires, and the envelope on the wire. Every one of those
+ * has its own unit suite; none of them proves that the module put them together.
+ */
+describe('dashboard over HTTP — search', () => {
+  it('finds a filing by the company NAME, which is the whole point', async () => {
+    const { status, body } = await get<Envelope<FilingView[], PageMeta>>(
+      '/api/filings?q=reliance',
+    );
+
+    expect(status).toBe(200);
+    expect(body.data).toHaveLength(3);
+    expect(body.meta.total).toBe(3);
+  });
+
+  it('finds a filing by its category', async () => {
+    const { body } = await get<Envelope<FilingView[], PageMeta>>(
+      '/api/filings?q=board%20meeting',
+    );
+
+    expect(body.data.map((row) => row.category)).toContain('Board Meeting');
+  });
+
+  it('resolves a PREFIX through the directory the module wired in', async () => {
+    // `reli` is not a word in any filing, so the text index cannot match it.
+    // That it works at all is the proof that the module handed the query
+    // service a resolver backed by the company directory.
+    const { body } = await get<Envelope<FilingView[], PageMeta>>(
+      '/api/filings?q=reli',
+    );
+
+    expect(body.meta.total).toBe(3);
+  });
+
+  it('returns an empty page for a query nothing matches, not a 500', async () => {
+    const { status, body } = await get<Envelope<FilingView[], PageMeta>>(
+      '/api/filings?q=zzzqqq',
+    );
+
+    expect(status).toBe(200);
+    expect(body.data).toEqual([]);
+    expect(body.meta.total).toBe(0);
+  });
+
+  it('cannot be turned into a Mongo operator by the query string', async () => {
+    // `readSingle` refuses the object a bracketed key parses to, and the
+    // tokeniser cannot emit an operator character even for a value that passes.
+    expect((await get<Envelope<unknown>>('/api/filings?q[$ne]=x')).status).toBe(
+      400,
+    );
+    expect(
+      (await get<Envelope<FilingView[], PageMeta>>('/api/filings?q=%24where'))
+        .status,
+    ).toBe(200);
+  });
+});
+
+describe('dashboard over HTTP — type-ahead', () => {
+  it('suggests the company a reader is part-way through typing', async () => {
+    const { status, body } = await get<
+      Envelope<{
+        companies: { symbol: string; companyName: string; filings: number }[];
+        companiesKnown: number;
+      }>
+    >('/api/suggest?q=reli');
+
+    expect(status).toBe(200);
+    expect(body.data.companies).toEqual([
+      {
+        symbol: 'RELIANCE',
+        companyName: 'Reliance Industries Limited',
+        filings: 3,
+      },
+    ]);
+    expect(body.data.companiesKnown).toBe(1);
+  });
+
+  it('serves the same answer repeatedly without asking the database again', async () => {
+    // The directory is a module singleton; if it were per-request this would
+    // rebuild the snapshot on every keystroke, which is the behaviour the whole
+    // design exists to avoid. Asserted here as a stable `builtAtIst`, which
+    // only changes when a rebuild actually happened.
+    const first =
+      await get<Envelope<{ builtAtIst: string }>>('/api/suggest?q=rel');
+    const second = await get<Envelope<{ builtAtIst: string }>>(
+      '/api/suggest?q=reli',
+    );
+
+    expect(second.body.data.builtAtIst).toBe(first.body.data.builtAtIst);
+  });
+
+  it('sends the type-ahead uncached, like every other route here', async () => {
+    const response = await fetch(`${origin}/api/suggest?q=rel`);
+
+    expect(response.headers.get('cache-control')).toBe('no-store');
   });
 });
