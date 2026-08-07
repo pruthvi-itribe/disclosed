@@ -2,6 +2,12 @@ module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
   testRegex: '.*\\.spec\\.ts$',
+  // `e2e/` is Playwright's, and it uses the same `.spec.ts` suffix. Without
+  // this Jest picks those files up, fails on the `@playwright/test` import, and
+  // reports a broken suite for a suite that is not its own. Kept as an ignore
+  // rather than by renaming the files, because `.spec.ts` is what both runners
+  // and every editor integration expect.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/e2e/'],
   transform: { '^.+\\.(t|j)s$': 'ts-jest' },
   collectCoverageFrom: ['apps/**/*.(t|j)s', 'libs/**/*.(t|j)s'],
   coverageDirectory: './coverage',
