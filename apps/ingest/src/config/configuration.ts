@@ -17,6 +17,11 @@ import {
   type ClaimEffortLevel,
   type ClaimProviderName,
 } from '@app/filings/llm/claim-provider';
+// Same reason as the import above: `claim-verify.ts` is pure logic with no
+// mongoose and no HTTP client, so the extraction budget is imported rather
+// than restated. A literal here is what let the config say 3 while the
+// constant said otherwise.
+import { MAX_CLAIMS_EXTRACTED } from '@app/filings/logic/claim-verify';
 
 export interface IngestConfig {
   readonly mongoUri: string;
@@ -224,9 +229,17 @@ export const CONFIG_DEFAULTS = {
   // in 0.185 s and the 39.7-second one is 19.6 MB.
   ENRICH_MAX_BYTES: 67_108_864,
   CONTEXT_WINDOW_DAYS: 30,
-  // Three claims is what the wire format carries before a line stops being
-  // readable at a glance, and each extra one is another chance to be wrong.
-  CLAIM_MAX_CLAIMS: 3,
+  // HOW MANY CLAIMS ARE EXTRACTED AND STORED — not how many reach a reader.
+  // The wire line takes `MAX_CLAIMS_ON_WIRE` of these; this is the document's
+  // budget, and it is the constant rather than a literal so the two cannot
+  // drift the way they did before.
+  //
+  // It was 3, matching the wire line, and that was the whole defect: the
+  // prompt asked a forty-slide deck for three facts. Re-reading LUPIN's
+  // presentation with the split in place took it from 3 proposals to 12 and
+  // from one published line to three, and BRITANNIA's deck from nothing at all
+  // to operating profit, PBT and General Trade growth.
+  CLAIM_MAX_CLAIMS: MAX_CLAIMS_EXTRACTED,
   // Raised from 24,000 after measuring what the extra characters buy. The old
   // value was set against a model context that no longer binds — the configured
   // model carries 1,048,576 tokens — and 24,000 characters cut every investor

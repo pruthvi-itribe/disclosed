@@ -1,4 +1,6 @@
 import { CLAIM_TIMEOUT_MS } from '@app/filings/llm/claim-provider';
+import { MAX_CLAIMS_ON_WIRE } from '@app/filings/logic/claim-line';
+import { MAX_CLAIMS_EXTRACTED } from '@app/filings/logic/claim-verify';
 import {
   claimApiKeyOf,
   CONFIG_DEFAULTS,
@@ -455,7 +457,12 @@ describe('the notable-claim settings', () => {
     expect(config.claimsEnabled).toBe(true);
     expect(config.claimModel).toBe('claude-opus-5');
     expect(config.claimEffort).toBe('medium');
-    expect(config.claimMaxClaims).toBe(3);
+    // The EXTRACTION budget, not the wire line's. Asserted against the
+    // constant rather than a literal: a literal here is exactly what let the
+    // config hold 3 while `claim-verify.ts` had moved on, so the prompt kept
+    // asking a forty-slide deck for three facts.
+    expect(config.claimMaxClaims).toBe(MAX_CLAIMS_EXTRACTED);
+    expect(config.claimMaxClaims).toBeGreaterThan(MAX_CLAIMS_ON_WIRE);
     // No key is a supported state: the worker keeps reading documents and every
     // eligible filing records `extractor-unavailable` instead of a claim.
     expect(config.anthropicApiKey).toBe('');
