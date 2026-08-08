@@ -26,15 +26,22 @@ export const BRAND = 'Disclosed';
  * A FULL STOP, IN THE ACCENT COLOUR. "Turret" was split into two coloured
  * halves, which does not transfer — "disclos/ed" cuts a word nobody reads in
  * two parts, and the name's whole value is that it is a plain English verb. So
- * the accent moves off the letters and onto a terminating dot: *disclosed.* is
+ * the accent moves off the letters and onto a terminating dot: *Disclosed.* is
  * the sentence this product is, and the CSS class that colours it has been
  * called `.dotmark` since before there was a dot.
  *
- * Held as data rather than derived from `BRAND`, because where an accent falls
- * is a decision about a specific word and a formula that happened to work for
- * one name would put the colour in the wrong place on the next.
+ * A CAPITAL D, EVERYWHERE. The mark was set lowercase, which is the house style
+ * of a certain kind of developer tool and is wrong for this one: the name is a
+ * proper noun in the footer, in the title bar and in every sentence of copy, and
+ * a header that spelled it `disclosed` made the product's own name look like a
+ * file name beside its own prose. One spelling, and it is this one.
+ *
+ * The word is `BRAND` itself, so the two cannot drift. The accent is held as
+ * data rather than derived, because where an accent falls is a decision about a
+ * specific word and a formula that happened to work for one name would put the
+ * colour in the wrong place on the next.
  */
-export const BRAND_MARK = { word: 'disclosed', accent: '.' } as const;
+export const BRAND_MARK = { word: BRAND, accent: '.' } as const;
 
 /**
  * What the product does, in the words the title bar and the landing page use.

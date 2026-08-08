@@ -11,13 +11,16 @@ import { renderDashboardPage } from './page';
 describe('the brand constant', () => {
   it('names the product, and sets its wordmark to the same word', () => {
     expect(BRAND).toBe('Disclosed');
-    // Lowercase, because the header sets the mark lowercase. A capital here
-    // would render the name twice in two cases on one line.
-    expect(BRAND_MARK.word).toBe(BRAND.toLowerCase());
+    // THE SAME SPELLING, CASE INCLUDED. The mark used to be set lowercase, so
+    // the header said `disclosed` while every sentence beneath it said
+    // `Disclosed` — the product's own name looking like a file name beside its
+    // own prose. One capital D, in one constant.
+    expect(BRAND_MARK.word).toBe(BRAND);
+    expect(BRAND_MARK.word.startsWith('D')).toBe(true);
     // The accent is punctuation set AFTER the word, never a slice of it: the
     // name is a plain English verb and cutting it in two is the one thing the
     // mark must not do.
-    expect(BRAND.toLowerCase()).not.toContain(BRAND_MARK.accent);
+    expect(BRAND).not.toContain(BRAND_MARK.accent);
   });
 
   it('is the only spelling of the name in the dashboard page', () => {
