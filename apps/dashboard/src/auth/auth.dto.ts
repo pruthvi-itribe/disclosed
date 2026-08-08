@@ -2,7 +2,7 @@ import { IsString, MaxLength } from 'class-validator';
 import { MAX_EMAIL_LENGTH, MAX_PASSWORD_LENGTH } from '@app/accounts';
 
 /**
- * The two JSON bodies this application accepts, and the decorators that make
+ * The three JSON bodies this application accepts, and the decorators that make
  * them safe.
  *
  * `@IsString()` ON EVERY FIELD IS LOAD-BEARING, NOT DECORATIVE. Without it,
@@ -25,6 +25,28 @@ export class CredentialsDto {
   @IsString()
   @MaxLength(MAX_PASSWORD_LENGTH)
   password!: string;
+}
+
+/**
+ * The longest ID token accepted.
+ *
+ * A Firebase ID token is a three-part RS256 JWT and runs about 900-1,200
+ * characters; 4,096 is generous by three or four times and still bounds what an
+ * unauthenticated caller can make the verifier parse. It sits under the 4 KB
+ * body limit `dashboard.module.ts` mounts, so an oversized token is refused by
+ * the body parser first and by this second — two bounds, neither redundant,
+ * because they fail at different layers with different messages.
+ */
+export const MAX_ID_TOKEN_LENGTH = 4_096;
+
+export class FirebaseTokenDto {
+  // `@IsString()` for the same reason as every other field here: without it
+  // `{"idToken": {"$gt": ""}}` arrives as an object, and an object reaching a
+  // JWT parser is at best a 500 and at worst an argument about what `split('.')`
+  // does to something that is not a string.
+  @IsString()
+  @MaxLength(MAX_ID_TOKEN_LENGTH)
+  idToken!: string;
 }
 
 export class ChangePasswordDto {

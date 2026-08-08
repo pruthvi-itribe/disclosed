@@ -29,9 +29,13 @@ import { FilingSchema, type FilingDocument } from '@app/filings';
 import { ApiErrorFilter } from './auth/api-error';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
+import { AUTH_CONFIG, FIREBASE_SIGN_IN } from './auth/auth.tokens';
+import { FirebaseSignInService } from './auth/firebase-sign-in';
+import { AdminSdkVerifier } from './auth/firebase-verifier';
 import { OriginGuard, SessionGuard } from './auth/session.guard';
 import { SessionService } from './auth/session.service';
 import { WatchlistController } from './auth/watchlist.controller';
+import type { AuthConfig } from './config/auth-config';
 import { loadDashboardConfig } from './config/configuration';
 import { DashboardController } from './filings/dashboard.controller';
 import { FilingQueryService } from './filings/filing-query.service';
@@ -262,6 +266,37 @@ export const FILING_MODEL = 'Filing';
           config.getOrThrow<number>('sessionTtlDays'),
           () => new Date(),
         ),
+    },
+    {
+      provide: AUTH_CONFIG,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        config.getOrThrow<AuthConfig>('auth'),
+    },
+    {
+      /**
+       * THE FIREBASE HALF, OR NOTHING AT ALL.
+       *
+       * Null is a configured state rather than a wiring failure — see
+       * `auth.tokens.ts`. The factory constructs the Admin SDK verifier only
+       * when a project is actually configured, which is what lets this branch
+       * boot with no Firebase keys and what stops `AUTH_MODE=local` from
+       * leaving a live token-exchange route on a host that turned it off.
+       *
+       * CONSTRUCTED AT BOOT, NOT ON FIRST USE. A project id that Firebase
+       * rejects should appear in the startup log rather than as a 500 the first
+       * person to press "Continue with Google" discovers.
+       */
+      provide: FIREBASE_SIGN_IN,
+      inject: [AUTH_CONFIG, UserRepository],
+      useFactory: (auth: AuthConfig, users: UserRepository) =>
+        auth.firebase === null
+          ? null
+          : new FirebaseSignInService(
+              new AdminSdkVerifier(auth.firebase),
+              users,
+              () => new Date(),
+            ),
     },
     // Both guards and the filter are referenced by class in `@UseGuards` /
     // `@UseFilters`, which Nest instantiates from their own metadata. They are

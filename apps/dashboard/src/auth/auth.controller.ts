@@ -4,6 +4,7 @@ import {
   Get,
   Header,
   HttpCode,
+  Inject,
   Post,
   Req,
   Res,
@@ -20,11 +21,19 @@ import {
   UserRepository,
   WatchlistRepository,
 } from '@app/accounts';
+import type { AuthConfig } from '../config/auth-config';
 import { ok, type ApiEnvelope } from '../http/envelope';
 import { FilingQueryService } from '../filings/filing-query.service';
-import { ApiErrorFilter } from './api-error';
+import { ApiError, ApiErrorFilter } from './api-error';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, CredentialsDto } from './auth.dto';
+import {
+  ChangePasswordDto,
+  CredentialsDto,
+  FirebaseTokenDto,
+} from './auth.dto';
+import { AUTH_CONFIG, FIREBASE_SIGN_IN } from './auth.tokens';
+import type { FirebaseSignInService } from './firebase-sign-in';
+import { authNotConfigured } from './firebase-verifier';
 import { OriginGuard, SessionGuard, type AuthedRequest } from './session.guard';
 import { SessionService } from './session.service';
 import { SkipEveryLimit, SkipWatchlistLimit } from './throttle';
@@ -91,7 +100,57 @@ export class AuthController {
     private readonly users: UserRepository,
     private readonly watchlists: WatchlistRepository,
     private readonly filings: FilingQueryService,
+    @Inject(AUTH_CONFIG) private readonly authConfig: AuthConfig,
+    @Inject(FIREBASE_SIGN_IN)
+    private readonly firebase: FirebaseSignInService | null,
   ) {}
+
+  /**
+   * Signs in a browser that has already proved who it is to Firebase.
+   *
+   * ================================================================
+   * FIREBASE IS IDENTITY. THE SESSION IS STILL OURS.
+   * ================================================================
+   *
+   * What comes in is a short-lived Google-signed ID token. What goes back is the
+   * same opaque, revocable, `HttpOnly` cookie every other sign-in on this
+   * application has ever set, pointing at a row in OUR sessions collection. The
+   * ID token is verified, used once to decide which user this is, and dropped —
+   * it is never stored, never refreshed and never presented to anything else.
+   *
+   * That is what keeps "log me out everywhere" working, keeps a session
+   * revocable from our own database, and keeps every downstream guard unable to
+   * tell which provider a session came from.
+   *
+   * Origin-guarded and throttled by the same two auth buckets as the password
+   * routes, because it is the same door.
+   */
+  @Post('auth/firebase')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(OriginGuard)
+  @HttpCode(200)
+  async firebaseSignIn(
+    @Body() body: FirebaseTokenDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ApiEnvelope<{ signedIn: true; email: string }>> {
+    if (this.firebase === null) {
+      // Two different situations, and the message distinguishes them because
+      // both are operator-facing rather than attacker-facing: the keys are
+      // missing, or this host runs the in-house path on purpose.
+      throw this.authConfig.mode === 'firebase'
+        ? authNotConfigured(this.authConfig.missing)
+        : new ApiError(
+            'FIREBASE_DISABLED',
+            'This server signs in with an email address and a password.',
+            409,
+          );
+    }
+
+    const user = await this.firebase.signIn(body.idToken);
+    await this.sessions.open(user.id, request, response);
+    return ok({ signedIn: true as const, email: user.email });
+  }
 
   /**
    * Registers and signs the user straight in.
@@ -108,6 +167,7 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<ApiEnvelope<{ signedIn: true; email: string }>> {
+    this.requireLocalMode();
     const user = await this.auth.register(body.email, body.password);
     await this.sessions.open(user.id, request, response);
     return ok({ signedIn: true as const, email: user.email });
@@ -128,9 +188,38 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<ApiEnvelope<{ signedIn: true; email: string }>> {
+    this.requireLocalMode();
     const user = await this.auth.signIn(body.email, body.password);
     await this.sessions.open(user.id, request, response);
     return ok({ signedIn: true as const, email: user.email });
+  }
+
+  /**
+   * DORMANT, NOT DELETED, and this method is the whole of the dormancy.
+   *
+   * The in-house password path — argon2id, the persisted per-account backoff,
+   * the one-message enumeration-resistant failure — is untouched and complete.
+   * On a host running Firebase it simply has no open door, because two live
+   * credential paths to one account is two attack surfaces and one of them
+   * would never be watched.
+   *
+   * A 409 rather than a 404: the route exists and the caller is not wrong about
+   * that, the server is configured the other way. It names the alternative,
+   * because the person who sees this is an operator or a stale browser tab.
+   *
+   * `logout`, `logout-all` and `api/me` are deliberately NOT gated. They operate
+   * on a session that already exists, and a session is provider-agnostic; a
+   * mode flip must never strand a signed-in reader with no way to sign out.
+   * `auth/password` gates itself: a Firebase account has no password hash, and
+   * `AuthService.changePassword` refuses on that rather than on the mode.
+   */
+  private requireLocalMode(): void {
+    if (this.authConfig.mode === 'local') return;
+    throw new ApiError(
+      'LOCAL_AUTH_DISABLED',
+      'This server signs in with Google. Use the sign-in page.',
+      409,
+    );
   }
 
   /** Ends this session and clears the cookie. */
