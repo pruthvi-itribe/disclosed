@@ -900,6 +900,12 @@ button.sym:hover { color: var(--accent); }
   font-size: 10.5px; font-weight: 700; line-height: 15px; min-width: 15px;
   text-align: center;
 }
+/* 'display: inline-block' above beats the UA stylesheet's
+   '[hidden] { display: none }', so 'setUnread' hid the badge and the badge
+   stayed on screen reading 0 — the exact furniture the rule above says it must
+   never be. Found on a rendered page; the string test could only see that the
+   script set '.hidden', which it did. */
+.tabcount[hidden] { display: none; }
 .tab.active .tabcount { background: var(--bg); color: var(--text); }
 
 /* THE STAR IS DRAWN, NOT TYPED.

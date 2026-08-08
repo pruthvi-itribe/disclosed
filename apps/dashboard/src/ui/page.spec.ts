@@ -1644,6 +1644,10 @@ describe('renderDashboardPage — the account', () => {
 
     it('hides the unread badge at zero rather than drawing a 0', () => {
       expect(SCRIPT_ACCOUNT).toContain('badge.hidden = n === 0');
+      // AND THE CSS HAS TO LET IT. '.tabcount' sets 'display: inline-block',
+      // which beats the UA stylesheet's '[hidden]' rule — so the script hid the
+      // badge and the badge stayed on screen reading 0.
+      expect(html).toContain('.tabcount[hidden] { display: none; }');
     });
   });
 
