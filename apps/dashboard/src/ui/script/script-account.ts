@@ -316,6 +316,19 @@ export const SCRIPT_ACCOUNT = `
     var note = el('watch-feed-note');
     var rows = meta && meta.watching ? meta.watching : [];
 
+    // THE STARS FOLLOW THE ROSTER, and they have to be told before it is drawn.
+    // state.watched was last filled by loadWatchlist() at page load, and the
+    // response in hand is the newer fact - so a watchlist that changed anywhere
+    // but on this page (a second tab, a reload-less session) would otherwise
+    // draw a row for a company whose own star said 'Watch'. Rebuilt rather than
+    // patched, because this list is the whole watchlist and not a delta.
+    var known = {};
+    for (var w = 0; w < rows.length; w++) known[rows[w].symbol] = true;
+    state.watched = known;
+    // state.me is set before this tab can be reached: applyMe is what unhides
+    // it, and every poll of this route carries the session it checked.
+    applyWatchCounts({ used: rows.length, cap: state.me.watchCap });
+
     clear(roster);
     for (var i = 0; i < rows.length; i++) roster.appendChild(watchRow(rows[i]));
 

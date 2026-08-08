@@ -1612,6 +1612,12 @@ describe('renderDashboardPage — the account', () => {
       );
     });
 
+    it('takes the star state from the roster it is about to draw', () => {
+      // A row whose own star reads "Watch" is the page disagreeing with itself.
+      // state.watched is filled once at page load; this response is newer.
+      expect(SCRIPT_ACCOUNT).toContain('state.watched = known');
+    });
+
     it('hides the whole watchlist chrome when there is no watchlist', () => {
       // Two headings and a note over an empty list is a page that looks broken
       // rather than one that has nothing yet to show.
