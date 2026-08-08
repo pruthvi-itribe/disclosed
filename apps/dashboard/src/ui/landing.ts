@@ -3,8 +3,6 @@ import { LANDING_STYLE } from './landing-style';
 import { BRAND_FAVICON_LINK, BRAND_LOGO, BRAND_LOGO_STYLE } from './logo';
 import {
   SAMPLE_CARDS,
-  SAMPLE_DISCARD,
-  WORKED_EXAMPLE,
   type SampleCard,
   type SampleClaim,
 } from './landing-samples';
@@ -29,6 +27,23 @@ import {
  * invented — briefly, a plausible figure beside a real ticker on a marketing
  * page is `results-line.ts`'s APOLLOTYRE failure with none of the pipeline's
  * defences in front of it.
+ *
+ * ================================================================
+ * IT IS WRITTEN FOR SOMEBODY WHO HAS NEVER READ A FILING
+ * ================================================================
+ *
+ * NOT ONE WORD OF THIS PROJECT'S VOCABULARY REACHES THE READER. No spans, no
+ * claims, no gates, no verbatim, no pipeline steps, no example of something the
+ * system refused — every one of those is a word we invented for ourselves, and a
+ * stranger who has to learn it before the promise makes sense has been handed
+ * the work this page exists to do. `landing.spec.ts` holds that as a test over
+ * the page's visible text, because the vocabulary is right there in the module
+ * comments and it leaks into copy the moment somebody edits quickly.
+ *
+ * The trust story did not go anywhere; it changed language. "Every claim matched
+ * character for character against a span" is now "the exact line from the
+ * document, in the company's own words" — the same guarantee, said in the way a
+ * reader would repeat it to somebody else.
  *
  * ================================================================
  * NO SCRIPT, AND THAT IS THE SECURITY POSTURE
@@ -89,11 +104,16 @@ const DIRECTION_GLYPH: Readonly<Record<string, string>> = {
   mixed: '◆',
 };
 
-/** Spelled out for a reader who cannot see the glyph. Describes the DOCUMENT. */
+/**
+ * Spelled out for a reader who cannot see the glyph. Describes the DOCUMENT.
+ *
+ * "The document reported" rather than "printed direction": these are read aloud
+ * to a stranger, and the sentence has to work without the rest of this page.
+ */
 const DIRECTION_LABEL: Readonly<Record<string, string>> = {
-  expansion: 'increase printed',
-  contraction: 'decrease printed',
-  mixed: 'both printed',
+  expansion: 'the document reported an increase',
+  contraction: 'the document reported a decrease',
+  mixed: 'the document reported both',
 };
 
 /**
@@ -129,7 +149,7 @@ const renderClaim = (claim: SampleClaim): string => {
 
   return `      <li>${glyph}${writeClaim(claim.text)}
         <div class="span">
-          <span class="spanlabel">matched in the filing</span>
+          <span class="spanlabel">the company's own words</span>
           <span class="spantext">&ldquo;${escapeHtml(claim.span)}&rdquo;</span>
         </div>
       </li>`;
@@ -171,9 +191,9 @@ ${card.claims.map(renderClaim).join('\n')}
  * was wrong by a factor of 7.6.
  *
  * So the three are INVARIANTS — properties of how the system is built, true on
- * every day it runs, checkable by anyone who signs in and looks. "Zero figures
- * we calculate" is not a boast about volume; it is the verbatim gate, stated as
- * a number.
+ * every day it runs, checkable by anyone who signs in and looks. "Zero numbers
+ * we work out ourselves" is not a boast about volume; it is the rule this
+ * product is built on, said in the reader's words rather than in ours.
  */
 const STATS: ReadonlyArray<{
   value: string;
@@ -183,19 +203,19 @@ const STATS: ReadonlyArray<{
 }> = [
   {
     value: 'NSE + BSE',
-    label: 'both exchanges, all session',
-    note: 'Announcements are polled as they are disseminated, and the same filing arriving on both is recognised as one.',
+    label: 'both exchanges, all day',
+    note: 'We watch announcements as companies file them, and a document filed on both exchanges shows up once rather than twice.',
   },
   {
     value: '100%',
     accent: true,
-    label: 'of published claims quote the filing',
-    note: 'Every claim is matched character for character against a span of the source document. One that cannot be matched is discarded, not softened.',
+    label: 'of what you read is quoted from the document',
+    note: 'Under every line is the sentence it came from, word for word. If we cannot show you where a sentence came from, we do not show you the sentence.',
   },
   {
     value: '0',
-    label: 'figures calculated by us',
-    note: 'No margins, no growth rates, no ratios. If the filing did not print the number, you will not read it here.',
+    label: 'numbers we work out ourselves',
+    note: 'No margins, no growth rates, no ratios. If the company did not print the number, you will not read it here.',
   },
 ];
 
@@ -206,23 +226,46 @@ const renderStat = (stat: (typeof STATS)[number]): string => `
         <div class="statnote">${escapeHtml(stat.note)}</div>
       </div>`;
 
+/**
+ * What a reader gets, in the order they would ask for it.
+ *
+ * THE THREE ARE BENEFITS, NOT STAGES, and the list is unnumbered for that
+ * reason: a numbered list promises an order, and there is none here. Each one is
+ * a sentence a reader could repeat to somebody else, which is the test this copy
+ * has to pass and the old "how it works" section did not.
+ */
+const GETS: ReadonlyArray<{ head: string; body: string }> = [
+  {
+    head: 'Everything, as it arrives',
+    body: 'Both exchanges, all through the trading day. Nothing to refresh and nothing to go looking for.',
+  },
+  {
+    head: 'The exact line, every time',
+    body: "Under everything we show you is the sentence it came from, in the company's own words. You never have to take our word for it.",
+  },
+  {
+    head: 'Only the companies you care about',
+    body: 'Follow a company and everything it files collects in one place, in plain English, in the order it happened.',
+  },
+];
+
 /** The things this product refuses to do, said before anyone signs up. */
 const NEVERS: ReadonlyArray<{ head: string; body: string }> = [
   {
-    head: 'No ratings, targets or recommendations.',
-    body: `${BRAND} reports what documents say and shows you where they say it. It does not have a view on a company or its shares.`,
+    head: 'We never tell you what to buy.',
+    body: `${BRAND} shows you what a company said and where it said it. It has no view on the company or on its shares, and it never will.`,
   },
   {
-    head: 'No calculated figures.',
-    body: 'A margin derived from two numbers in a filing is a number the filing never printed, and nothing downstream can tell a right one from a wrong one.',
+    head: 'We never do the maths for you.',
+    body: 'A margin worked out from two numbers in a document is a number the company never published, and there is no way for you to check it.',
   },
   {
-    head: 'No sentiment.',
-    body: 'A movement mark follows the figure, never the company. A falling default rate points down and is good news; the claim beside it is what you read.',
+    head: 'An arrow follows the number, not the company.',
+    body: 'A falling bad-loan figure points down, and that is good news. The words beside the arrow are what you read.',
   },
   {
-    head: 'No guessing at a shared document.',
-    body: 'A filing that covers several companies is refused rather than attributed to one of them.',
+    head: 'One document, one company.',
+    body: 'If a filing covers several companies at once, we leave it out rather than guess which one it was about.',
   },
 ];
 
@@ -241,7 +284,7 @@ export const renderLandingPage = (): string => `<!doctype html>
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
 <title>${BRAND} — ${BRAND_TAGLINE}</title>
-<meta name="description" content="Every claim matched, character for character, against the filing it came from. Indian corporate announcements from NSE and BSE.">
+<meta name="description" content="See what Indian companies told the exchange today, with the exact line from the document under everything you read.">
 <!-- The icon travels in the attribute; nothing is fetched. See logo.ts. -->
 ${BRAND_FAVICON_LINK}
 <style>${LANDING_STYLE}${BRAND_LOGO_STYLE}</style>
@@ -260,17 +303,20 @@ ${BRAND_FAVICON_LINK}
 
 <!-- ============================= HERO ============================== -->
 <!--
-  THE HEADLINE MAKES ONE CLAIM AND IT IS A FALSIFIABLE ONE. Not "the fastest",
-  not "AI-powered", not a number nobody can check — a statement about method
-  that anybody who signs in can test against any card on the feed.
+  THE HEADLINE SAYS ONE FALSIFIABLE THING, IN THE READER'S WORDS. Not "the
+  fastest", not "AI-powered", not a number nobody can check — and not this
+  project's own vocabulary either. Nobody outside this repository knows what a
+  span or a verbatim gate is, and a stranger who has to learn a word before the
+  promise makes sense has been asked to do the work the page exists to do.
+  Everything below says what a reader gets and what they can check.
 -->
 <section class="wrap hero">
-  <h1 class="h1">What Indian companies <em>disclosed</em> today.</h1>
+  <h1 class="h1">See what companies <em>actually told</em> the exchange.</h1>
   <p class="lede">
-    Corporate filings from NSE and BSE, read as they land — and
-    <strong>every claim matched, character for character, against a span of the
-    document it came from</strong>. A claim that cannot be checked is a claim
-    that does not ship.
+    Every listed company in India has to tell the exchange when something
+    happens — results, a big order, a change at the top. We read those documents
+    as they arrive and show you what the company said, <strong>with the exact
+    line from the document underneath. Never our opinion.</strong>
   </p>
   <div class="cta">
     <a class="go" href="/auth" data-ui="signin-hero">Sign in or create an account</a>
@@ -284,11 +330,11 @@ ${BRAND_FAVICON_LINK}
 <!-- ============================ EXAMPLES =========================== -->
 <section class="wrap band">
   <p class="eyebrow">What a day looks like</p>
-  <h2 class="h2">The card is the claim, and the claim quotes the filing.</h2>
+  <h2 class="h2">The company's own words, under every line.</h2>
   <p class="body">
-    Each card is one filing. The lines are what the company said; underneath each
-    one is the sentence from the document that it was matched against, so you can
-    check it without taking anyone's word for it.
+    Each card is one document a company filed. The lines are what the company
+    said, and under each one is the sentence it came from — so you can check it
+    yourself in a second, without taking anyone's word for it.
   </p>
 
   <!--
@@ -300,9 +346,9 @@ ${BRAND_FAVICON_LINK}
   <div class="examplenote" data-ui="sample-notice">
     <div>
       <strong>These are examples, not filings.</strong>
-      The companies, figures and quoted sentences below are invented to show the
-      shape of a card. Signed-out visitors read no data from this service at all
-      — sign in to see what was actually filed today.
+      The companies, figures and quoted sentences below are made up, to show what
+      a card looks like. You are not signed in, so this page shows you nothing
+      from our records — sign in to see what companies actually filed today.
     </div>
   </div>
 
@@ -310,82 +356,34 @@ ${BRAND_FAVICON_LINK}
   </div>
 </section>
 
-<!-- ============================== PROOF ============================ -->
+<!-- ============================ WHAT YOU GET ======================= -->
+<!--
+  WHAT REPLACED THE PIPELINE DIAGRAM. This band used to be three numbered steps
+  describing how the system works internally, ending in an example of something
+  the system threw away. It was the most honest section on the page and the one
+  written entirely for us: a stranger deciding whether to sign up does not need
+  to know what happens between the exchange and the screen, only what they get
+  and what they can check. The honesty moved into the three reasons below and
+  into the limits under them, in words nobody has to learn.
+-->
 <section class="wrap band">
-  <p class="eyebrow">How a claim gets published</p>
-  <h2 class="h2">Three steps, and the third one is the product.</h2>
+  <p class="eyebrow">Why people use it</p>
+  <h2 class="h2">Read the day in five minutes, not fifty documents.</h2>
 
-  <ol class="steps" data-ui="how-it-works">
-    <li class="step">
-      <span class="stepnum">1</span>
-      <div>
-        <div class="steptitle">The filing arrives</div>
-        <div class="stepbody">
-          An announcement is disseminated by the exchange. The attachment — usually
-          a PDF — is fetched and read into text.
-        </div>
-      </div>
-    </li>
-    <li class="step">
-      <span class="stepnum">2</span>
-      <div>
-        <div class="steptitle">A claim is proposed, and a span is looked for</div>
-        <div class="stepbody">
-          A model reads the document and proposes what it says. Each proposal is
-          then searched for in the document itself, character for character.
-        </div>
-      </div>
-    </li>
-    <li class="step">
-      <span class="stepnum">3</span>
-      <div>
-        <div class="steptitle">Whatever was not found is thrown away</div>
-        <div class="stepbody">
-          Not flagged, not shown with a warning, not published at lower
-          confidence. Discarded — and kept, with the rule that refused it, so the
-          gate can be audited rather than trusted.
-        </div>
-      </div>
-    </li>
-  </ol>
-
-  <p class="body" style="margin-top:22px">
-    <strong>This is what step two looks like.</strong>
-    The claim on the left of the card above, and the sentence in the document
-    that admitted it:
-  </p>
-
-  <div class="card" style="margin-top:14px">
-    <span class="exbadge">Example</span>
-    <ul class="insights">
-${renderClaim(WORKED_EXAMPLE)}
-    </ul>
-  </div>
-
-  <!--
-    THE DENOMINATOR, AND IT IS THE LEAST MARKETING-SHAPED THING ON THIS PAGE.
-    Three verified cards and nothing else hides that a fourth claim was proposed
-    and refused. The precision claim means nothing without this, so it is on the
-    landing page rather than in a methodology note nobody opens.
-  -->
-  <p class="body" style="margin-top:26px">
-    <strong>And this is what step three looks like.</strong>
-    The same document also produced this, and it is not on the card:
-  </p>
-
-  <div class="discard" data-ui="sample-discard">
-    <div class="discardline">${escapeHtml(SAMPLE_DISCARD.text)}</div>
-    <div class="discardwhy">
-      <code>${escapeHtml(SAMPLE_DISCARD.reason)}</code>
-      &nbsp;${escapeHtml(SAMPLE_DISCARD.why)}
-    </div>
-  </div>
+  <ul class="gets" data-ui="what-you-get">
+${GETS.map(
+  (get) => `    <li class="get">
+      <div class="gettitle">${escapeHtml(get.head)}</div>
+      <div class="getbody">${escapeHtml(get.body)}</div>
+    </li>`,
+).join('\n')}
+  </ul>
 </section>
 
 <!-- =========================== NEVER DOES ========================== -->
 <section class="wrap band">
-  <p class="eyebrow">What it will not do</p>
-  <h2 class="h2">The limits are the point, so they are on the front page.</h2>
+  <p class="eyebrow">Where we stop</p>
+  <h2 class="h2">Four things we will never do.</h2>
 
   <ul class="nevers">
 ${NEVERS.map(
@@ -399,9 +397,9 @@ ${NEVERS.map(
 <!-- ============================== CLOSE ============================ -->
 <section class="wrap">
   <div class="close">
-    <h2 class="h2">See what was filed today.</h2>
+    <h2 class="h2">See what companies said today.</h2>
     <p class="body">
-      Sign in with Google, or with an email address and a password. Pick the
+      Sign in with Google, or with an email address and a password. Follow the
       companies you care about and everything they file collects in one place.
     </p>
     <div class="cta">

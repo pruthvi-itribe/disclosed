@@ -144,26 +144,14 @@ export const SAMPLE_CARDS: readonly SampleCard[] = [
   },
 ];
 
-/**
- * The claim and the span the "how it works" section walks through.
- *
- * Drawn from the first card rather than invented again, so the page cannot end
- * up demonstrating a claim it does not also show — and so a reader who scrolls
- * back up recognises it.
+/*
+ * WHAT USED TO BE HERE, AND WHY IT IS NOT. Two more exports fed a "how it works"
+ * section on the landing page: a worked example, and a claim the verify step
+ * threw away with the reason it gave (`span-not-found`). Both were honest and
+ * both were written for us — a stranger deciding whether to sign up cannot read
+ * a refusal reason without first learning what a span is. The section is gone,
+ * so its data is deleted rather than left for a future reader to wonder about.
+ * The argument the discard existed to make — that a precision claim is worth
+ * nothing without its denominator — is one this repository still owes its
+ * readers somewhere they will understand it.
  */
-export const WORKED_EXAMPLE = SAMPLE_CARDS[0].claims[0];
-
-/**
- * A claim the gate threw away, and the reason.
- *
- * SHOWN ON PURPOSE, and it is the least marketing-shaped decision on this page.
- * The precision claim is only meaningful with its denominator: a landing page
- * showing three verified cards and nothing else hides that a fourth was
- * proposed and refused. The refusal reason is one `claim-verify.ts` actually
- * emits.
- */
-export const SAMPLE_DISCARD = {
-  text: 'Management expects margins to improve through the second half',
-  reason: 'span-not-found',
-  why: 'The model proposed it. No sentence in the document said it, so it was discarded rather than published.',
-} as const;

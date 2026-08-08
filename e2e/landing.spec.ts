@@ -33,39 +33,64 @@ test.describe('signed out', () => {
     await page.goto('/');
 
     await expect(page.locator('h1.h1')).toContainText(
-      'What Indian companies disclosed today',
+      'See what companies actually told the exchange',
     );
     await expect(page.locator('[data-ui="sample-notice"]')).toContainText(
       'These are examples, not filings.',
     );
     await expect(page.locator('[data-ui="sample-card"]')).toHaveCount(3);
-    // Each card carries its own label, so a screenshot of one still says so.
-    await expect(page.locator('.exbadge')).toHaveCount(4);
+    // One badge per card, and no others: a screenshot of one card still says so.
+    await expect(page.locator('.exbadge')).toHaveCount(3);
     expect(errors).toEqual([]);
   });
 
-  test('shows each sample claim with the span it was matched against', async ({
-    page,
-  }) => {
-    // The point of the page. A card without its span is a headline, and every
-    // product in this space ships headlines.
+  test('shows every line with the sentence it came from', async ({ page }) => {
+    // The point of the page. A line without the document's own words under it
+    // is a headline, and every product in this space ships headlines.
     await page.goto('/');
 
-    const spans = page.locator('[data-ui="sample-card"] .span');
-    expect(await spans.count()).toBeGreaterThan(0);
-    await expect(spans.first()).toContainText('matched in the filing');
+    const quotes = page.locator('[data-ui="sample-card"] .span');
+    expect(await quotes.count()).toBeGreaterThan(0);
+    await expect(quotes.first()).toContainText("the company's own words");
   });
 
-  test('shows a claim the gate threw away, with the reason', async ({
+  test("says nothing to a reader in this project's own vocabulary", async ({
     page,
   }) => {
-    // The denominator. Three verified cards and nothing else hides that a
-    // fourth was proposed and refused.
+    // The Jest suite asserts this against the rendered string. This asserts it
+    // against what a browser actually lays out, which is the thing a stranger
+    // reads — and it is the check that would catch copy arriving from somewhere
+    // other than landing.ts.
     await page.goto('/');
 
-    await expect(page.locator('[data-ui="sample-discard"]')).toContainText(
-      'span-not-found',
+    const words = await page.locator('body').innerText();
+
+    for (const ours of ['span', 'claim', 'verbatim', 'gate', 'pipeline']) {
+      expect([ours, new RegExp(`\\b${ours}\\b`, 'i').test(words)]).toEqual([
+        ours,
+        false,
+      ]);
+    }
+  });
+
+  test('draws the logo, and takes its icon from the document', async ({
+    page,
+  }) => {
+    // The mark is inline SVG that inherits its colour from the text around it —
+    // a string test cannot tell drawn from merely present, and a browser can.
+    await page.goto('/');
+
+    const mark = page.locator('[data-ui="brand-logo"] svg.logomark');
+    await expect(mark).toBeVisible();
+    expect(await mark.boundingBox()).not.toBeNull();
+    await expect(page.locator('[data-ui="brand-logo"]')).toContainText(
+      'Disclosed.',
     );
+
+    const icon = await page
+      .locator('link[rel="icon"]')
+      .getAttribute('href', { timeout: 5000 });
+    expect(icon?.startsWith('data:image/svg+xml,')).toBe(true);
   });
 
   test('performs no read: nothing from the collection reaches the page', async ({
@@ -131,9 +156,11 @@ test.describe('signed out', () => {
   }) => {
     await page.goto('/');
 
-    const hrefs = await page.locator('a').evaluateAll((nodes) =>
-      nodes.map((node) => (node as HTMLAnchorElement).getAttribute('href')),
-    );
+    const hrefs = await page
+      .locator('a')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => (node as HTMLAnchorElement).getAttribute('href')),
+      );
     expect([...new Set(hrefs)]).toEqual(['/auth']);
 
     await page.locator('[data-ui="signin-hero"]').click();

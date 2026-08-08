@@ -255,34 +255,19 @@ a:hover { text-decoration: underline; }
   color: var(--muted); white-space: nowrap;
 }
 
-/* -------------------------------------------------------------- proof ---- */
-/* The three steps, as one numbered column. Numbered because the order is the
-   argument: the span is matched BEFORE anything is published, not audited
-   afterwards. */
-.steps { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 2px; border-radius: 14px; overflow: hidden; background: var(--line); border: 1px solid var(--line); }
-.step { background: var(--bg); padding: 18px 20px; display: flex; gap: 14px; align-items: flex-start; }
-.stepnum {
-  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
-  border: 1px solid var(--line); background: var(--panel);
-  font-family: var(--mono); font-size: 12px; font-weight: 640;
-  display: flex; align-items: center; justify-content: center; color: var(--muted);
-}
-.steptitle { font-weight: 600; font-size: 15.5px; }
-.stepbody { color: var(--muted); font-size: 14px; margin-top: 3px; line-height: 1.5; }
+/* -------------------------------------------------------- what you get --- */
+/* One hairline-separated column, the same object the stats block above is —
+   these three sit under a heading the stats do not have, so they reuse the
+   geometry rather than introducing a second kind of list.
 
-/* The discarded claim. Struck through, in the refusal colour, with the reason
-   the gate gave. */
-.discard {
-  margin-top: 16px; padding: 14px 16px;
-  border: 1px dashed rgba(248, 81, 73, .45); border-radius: 12px;
-  background: rgba(248, 81, 73, .05);
-}
-.discardline { color: var(--muted); text-decoration: line-through; font-size: 15px; }
-.discardwhy { margin-top: 7px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
-.discardwhy code {
-  font-family: var(--mono); font-size: 12px; color: var(--bad);
-  border: 1px solid rgba(248, 81, 73, .3); border-radius: 5px; padding: 1px 5px;
-}
+   UNNUMBERED, and that is the difference from what this replaced. The section
+   here used to be three numbered steps through the pipeline, and a number
+   promises an order the reader has to follow. These are three reasons; any one
+   of them is a whole answer on its own. */
+.gets { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 2px; border-radius: 14px; overflow: hidden; background: var(--line); border: 1px solid var(--line); }
+.get { background: var(--bg); padding: 18px 20px; }
+.gettitle { font-weight: 600; font-size: 15.5px; }
+.getbody { color: var(--muted); font-size: 14px; margin-top: 3px; line-height: 1.5; }
 
 /* --------------------------------------------------------- never does ---- */
 .nevers { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 10px; }

@@ -1,6 +1,6 @@
 import { BRAND, BRAND_DOMAIN } from './brand';
 import { escapeHtml, renderLandingPage } from './landing';
-import { SAMPLE_CARDS, SAMPLE_DISCARD } from './landing-samples';
+import { SAMPLE_CARDS } from './landing-samples';
 import { BRAND_FAVICON_LINK, BRAND_LOGO } from './logo';
 
 /**
@@ -14,6 +14,68 @@ import { BRAND_FAVICON_LINK, BRAND_LOGO } from './logo';
  */
 
 const html = renderLandingPage();
+
+/**
+ * Everything a visitor can actually read: tags stripped, entities resolved for
+ * the two this page produces, whitespace collapsed.
+ *
+ * ATTRIBUTES ARE NOT COPY. `data-ui="claim-direction"` is a test hook and
+ * `class="span"` is a stylesheet's business; neither is read by anybody. What is
+ * asserted below is the text a stranger sees.
+ */
+const visibleText = html
+  // The stylesheet's own text is not copy, and it is full of this project's
+  // vocabulary in its comments. Drop the element, then the tags.
+  .replace(/<style>[\s\S]*?<\/style>/g, ' ')
+  .replace(/<!--[\s\S]*?-->/g, ' ')
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/&#39;/g, "'")
+  .replace(/&amp;/g, '&')
+  .replace(/\s+/g, ' ');
+
+describe('it is written for somebody who has never read a filing', () => {
+  /**
+   * The words this project uses for itself, none of which a reader knows.
+   *
+   * Each one was on this page before: "every claim matched against a span", "the
+   * verbatim gate", three numbered pipeline steps, an exhibit of a proposal the
+   * gate discarded. They are the correct words INSIDE this repository and they
+   * are the wrong words on the one page a stranger meets first, because every
+   * one of them asks the reader to learn something before the promise means
+   * anything. The guarantee is unchanged — see the copy tests below — and it is
+   * now made in words nobody has to be taught.
+   */
+  const OURS = [
+    'span',
+    'spans',
+    'claim',
+    'claims',
+    'verbatim',
+    'gate',
+    'gated',
+    'pipeline',
+    'discarded',
+    'character for character',
+  ];
+
+  it.each(OURS)('does not say "%s" to a reader', (word) => {
+    expect(visibleText).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+  });
+
+  it('shows no numbered walk through how the system works', () => {
+    // The three steps and the refused-proposal exhibit are gone, not renamed.
+    expect(html).not.toContain('data-ui="how-it-works"');
+    expect(html).not.toContain('data-ui="sample-discard"');
+    expect(html).not.toContain('span-not-found');
+  });
+
+  it('leads with what the reader gets rather than with how it is built', () => {
+    expect(html).toContain('data-ui="what-you-get"');
+    expect(visibleText).toContain(
+      'See what companies actually told the exchange.',
+    );
+  });
+});
 
 describe('the landing page is self-contained', () => {
   it('references no external host at all', () => {
@@ -95,13 +157,16 @@ describe('nobody can mistake an example for a filing', () => {
     // So a screenshot of ONE card still carries its own disclaimer.
     const badges = html.split('class="exbadge"').length - 1;
 
-    // Three cards plus the worked example in the proof section.
-    expect(badges).toBe(SAMPLE_CARDS.length + 1);
+    // One per card, and no others: the worked example that carried the fourth
+    // badge went with the "how it works" section it illustrated.
+    expect(badges).toBe(SAMPLE_CARDS.length);
   });
 
-  it('says signed-out visitors read no data', () => {
-    expect(html).toContain(
-      'Signed-out visitors read no data from this service',
+  it('says a signed-out visitor is shown nothing from the records', () => {
+    // The same promise the old copy made in our words ("signed-out visitors
+    // read no data from this service"), in the reader's.
+    expect(visibleText).toContain(
+      'this page shows you nothing from our records',
     );
   });
 
@@ -133,32 +198,36 @@ describe('the three numbers are invariants, not measurements', () => {
     // wrong by a factor of 7.6. These three are properties of how the system is
     // built, true on every day it runs.
     expect(html).toContain('NSE + BSE');
-    expect(html).toContain('figures calculated by us');
+    expect(html).toContain('numbers we work out ourselves');
     expect(html).not.toMatch(/\d[\d,]*\s+filings (held|stored|covered)/i);
     expect(html).not.toMatch(/as of \d/i);
   });
 
-  it('states the verbatim gate as the headline claim', () => {
-    expect(html.replace(/\s+/g, ' ')).toContain(
-      'every claim matched, character for character, against a span of the document it came from',
+  it("makes the promise the product is built on, in the reader's words", () => {
+    // THE SAME GUARANTEE THE OLD COPY MADE. It used to read "every claim
+    // matched, character for character, against a span of the document it came
+    // from", which is this repository talking to itself. The promise is
+    // unchanged; the sentence is one a reader can repeat.
+    const prose = html.replace(/\s+/g, ' ');
+
+    expect(prose).toContain(
+      'with the exact line from the document underneath. Never our opinion.',
     );
+    expect(prose).toContain('Under every line is the sentence it came from');
   });
 });
 
 describe('it states the limits before anyone signs up', () => {
   it('says it publishes no rating', () => {
-    expect(html).toContain('No ratings, targets or recommendations.');
+    expect(html).toContain('We never tell you what to buy.');
     expect(html).toContain(
-      `${BRAND} reports what documents say and shows you where they say it.`,
+      `${BRAND} shows you what a company said and where it said it.`,
     );
   });
 
-  it('shows a claim the gate threw away, with the reason', () => {
-    // THE DENOMINATOR. Three verified cards and nothing else hides that a
-    // fourth was proposed and refused, and the precision claim means nothing
-    // without it.
-    expect(html).toContain(escapeHtml(SAMPLE_DISCARD.text));
-    expect(html).toContain(SAMPLE_DISCARD.reason);
+  it('says it works no number out for you', () => {
+    expect(html).toContain('We never do the maths for you.');
+    expect(html).toContain('No margins, no growth rates, no ratios.');
   });
 
   it('carries the not-advice line and the IST note', () => {
@@ -226,7 +295,7 @@ describe('the marks follow the figure, never the company', () => {
 
     expect(falling?.text).toContain('declined');
     expect(html).toContain(
-      'A falling default rate points down and is good news',
+      'A falling bad-loan figure points down, and that is good news.',
     );
   });
 });
