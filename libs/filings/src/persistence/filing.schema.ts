@@ -7,6 +7,8 @@ export type FilingDocument = Filing &
     enrichment?: FilingEnrichment;
     /** When a backfill sweep last re-read this filing. See below. */
     backfilledAt?: Date | null;
+    /** BSE's industry for this company, when NSE printed none. See below. */
+    bseIndustry?: string | null;
   };
 
 /**
@@ -242,6 +244,26 @@ export const FilingSchema = new Schema<FilingDocument>(
      * `tools/enrichment/backfill-enrichment.ts`.
      */
     backfilledAt: { type: Date, default: null },
+    /**
+     * BSE's industry for this company, and BSE's alone.
+     *
+     * A SEPARATE FIELD RATHER THAN A FILL-IN OF `industry`, which is the whole
+     * design. `industry` is NSE's `smIndustry` verbatim and is the answer to
+     * "what did NSE's feed say"; writing another exchange's classification into
+     * it would destroy that answer irreversibly, on a collection where 767 of
+     * 1,289 companies would have been rewritten. Two fields keep "NSE said
+     * nothing" and "BSE said Civil Construction" as the two different facts
+     * they are, and the view marks which one a reader is looking at.
+     *
+     * WITHOUT A DEFAULT, for the reason `enrichment` above states: the poller
+     * never writes this, so absence means "no BSE lookup has run for this
+     * company" and an explicit null means "it ran and BSE had no industry
+     * either". `tools/company/measure-industry-source.ts` is the only writer.
+     *
+     * NOT INDEXED. Nothing queries on it — it is read through the display
+     * projection of a filing already selected by date or symbol.
+     */
+    bseIndustry: { type: String, required: false },
   },
   { collection: 'filings', versionKey: false },
 );

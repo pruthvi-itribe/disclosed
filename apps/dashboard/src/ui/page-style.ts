@@ -703,6 +703,14 @@ td.grp { white-space: nowrap; }
   font-family: var(--sans); font-size: 12px; letter-spacing: 0;
   padding: 2px 10px; border-radius: 999px;
 }
+/* WHOSE CLASSIFICATION IT IS, when it is not NSE's. Smaller and muted, because
+   it qualifies the word beside it rather than competing with it — and it is
+   drawn only on the 357 companies whose industry came from BSE's scrip header,
+   so an unmarked chip still reads exactly as it always has. */
+#co-industry .tagfrom {
+  margin-left: 6px; font-size: 9.5px; letter-spacing: .08em;
+  text-transform: uppercase; opacity: .65;
+}
 .cocoverage { margin-left: auto; color: var(--muted); font-size: 12px; }
 
 /* The symbol on a card is the way into the company page. Styled as text, not

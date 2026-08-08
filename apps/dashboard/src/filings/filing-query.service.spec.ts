@@ -585,6 +585,72 @@ describe('FilingQueryService — the filing view', () => {
 
     expect(view.attachmentUrl).toBeNull();
     expect(view.industry).toBeNull();
+    // NEITHER EXCHANGE HAS ONE, which is a third state and not the BSE one.
+    expect(view.industrySource).toBeNull();
+  });
+});
+
+/**
+ * Which exchange classified the company.
+ *
+ * NSE's feed printed an industry for 522 of the 1,289 companies held. BSE's
+ * scrip header covers a further 357, on a different vocabulary — so the view
+ * has to answer both "what is it" and "who said so", and the second question
+ * only exists because the answers to the first are not interchangeable.
+ */
+describe('FilingQueryService — industry source', () => {
+  const firstView = async () =>
+    (await service.getRecent({ limit: 1, offset: 0 })).items[0];
+
+  it("marks NSE's own string as NSE's", async () => {
+    await seed([makeFiling(7, { industry: 'Computers - Software' })]);
+
+    const view = await firstView();
+
+    expect(view.industry).toBe('Computers - Software');
+    expect(view.industrySource).toBe('nse');
+  });
+
+  it("falls back to BSE's, and says so", async () => {
+    await model.create({
+      ...makeFiling(7, { industry: null }),
+      bseIndustry: 'Civil Construction',
+    });
+
+    const view = await firstView();
+
+    expect(view.industry).toBe('Civil Construction');
+    expect(view.industrySource).toBe('bse');
+  });
+
+  it("never shows BSE's over NSE's when both are stored", async () => {
+    // THE ONE THAT WOULD BE A QUIET EDIT OF THE RECORD. A company whose chip has
+    // always read "Airconditioners" must not start reading "Consumer Durables"
+    // on the day a BSE lookup ran over it.
+    await model.create({
+      ...makeFiling(7, { industry: 'Airconditioners' }),
+      bseIndustry: 'Consumer Durables',
+    });
+
+    const view = await firstView();
+
+    expect(view.industry).toBe('Airconditioners');
+    expect(view.industrySource).toBe('nse');
+  });
+
+  it('leaves the source null when BSE was asked and had nothing either', async () => {
+    // An explicit null means the lookup ran and BSE had no industry; an absent
+    // field means no lookup has run. Both draw no chip, and the tool that wrote
+    // the null is the only thing that can tell them apart.
+    await model.create({
+      ...makeFiling(7, { industry: null }),
+      bseIndustry: null,
+    });
+
+    const view = await firstView();
+
+    expect(view.industry).toBeNull();
+    expect(view.industrySource).toBeNull();
   });
 });
 

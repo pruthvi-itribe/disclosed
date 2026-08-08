@@ -131,6 +131,7 @@ across the four-second repaint.
 | `company-back` | back to the feed |
 | `company-head` | ticker, name, industry tag, coverage line |
 | `co-symbol` / `co-name` / `co-industry` / `co-coverage` | the identity, and what the numbers were computed over |
+| `co-industry-source` (`data-ui`) | the mark inside `co-industry` naming the exchange that classified it. **Drawn only when the value came from BSE** — an unmarked chip is NSE's own string |
 | `co-filings` / `co-verified` / `co-last` | filings held · verified · last filed |
 | `company-figures` (`co-figures-wrap`) | **the numbers, as printed** — the filing's own results table. **Hidden when there is none** |
 | `co-figures` | the blocks. `company-figure-block` is one table, `company-figure` one row |

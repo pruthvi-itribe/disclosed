@@ -35,6 +35,7 @@ import type {
   EnrichmentSummaryView,
   EnrichmentView,
   FilingView,
+  IndustrySource,
   PageMeta,
   SummaryView,
 } from './dashboard.types';
@@ -183,6 +184,10 @@ const DISPLAY_PROJECTION = {
   symbol: 1,
   companyName: 1,
   industry: 1,
+  // The fallback for the 767 companies of 1,289 NSE printed no industry for.
+  // Projected beside `industry` rather than instead of it: `toView` needs both
+  // to say which exchange the chip is quoting.
+  bseIndustry: 1,
   category: 1,
   summary: 1,
   attachmentUrl: 1,
@@ -191,6 +196,27 @@ const DISPLAY_PROJECTION = {
   ingestedAt: 1,
   enrichment: 1,
 } as const;
+
+/**
+ * Which exchange classified the industry the view is about to show.
+ *
+ * THREE STATES, AND THE THIRD IS NOT THE SECOND. `null` means neither exchange
+ * has an industry for this company — 410 of the 1,289 in the collection, after
+ * the BSE sweep — and the chip stays hidden for it exactly as it did before.
+ * That is a different fact from "BSE has one", and a single nullable string
+ * would have rendered them the same.
+ *
+ * READ OFF WHICH FIELD CARRIED THE VALUE rather than stored beside it. There is
+ * one place a filing's industry is chosen and this is it, so the mark cannot
+ * drift out of step with the string it describes.
+ */
+const industrySourceOf = (doc: {
+  industry: string | null;
+  bseIndustry?: string | null;
+}): IndustrySource | null => {
+  if (doc.industry !== null && doc.industry !== undefined) return 'nse';
+  return doc.bseIndustry ? 'bse' : null;
+};
 
 /** The shape a grouped count comes back as, whatever the group key is. */
 interface GroupedCount<TKey> {
@@ -1015,7 +1041,12 @@ export class FilingQueryService {
    * that formatted these itself would show every filing five and a half hours
    * early and look completely normal doing it.
    */
-  private toView(doc: Filing & { enrichment?: FilingEnrichment }): FilingView {
+  private toView(
+    doc: Filing & {
+      enrichment?: FilingEnrichment;
+      bseIndustry?: string | null;
+    },
+  ): FilingView {
     const disseminatedAt = new Date(instantMs(doc.disseminatedAt));
 
     // DERIVED HERE, FROM FIELDS THE POLLER ALWAYS WRITES. `category` and
@@ -1041,7 +1072,12 @@ export class FilingQueryService {
       seqId: doc.seqId,
       symbol: doc.symbol,
       companyName: doc.companyName,
-      industry: doc.industry ?? null,
+      // NSE'S FIRST, ALWAYS, AND BSE'S ONLY WHERE NSE PRINTED NOTHING. The two
+      // exchanges classify on different vocabularies, so a company that has an
+      // NSE industry must keep showing it — a chip that changed wording on the
+      // day a BSE lookup ran would be us editing the record.
+      industry: doc.industry ?? doc.bseIndustry ?? null,
+      industrySource: industrySourceOf(doc),
       category: doc.category,
       summary: doc.summary,
       attachmentUrl: doc.attachmentUrl ?? null,

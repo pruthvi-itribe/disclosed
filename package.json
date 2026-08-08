@@ -50,7 +50,8 @@
     "claims:purge-direction": "ts-node -r tsconfig-paths/register tools/claims/purge-unprinted-direction.ts",
     "claims:mute": "ts-node -r tsconfig-paths/register tools/claims/measure-topic-mute.ts",
     "watch:cap": "ts-node -r tsconfig-paths/register tools/accounts/measure-watch-cap.ts",
-    "company:sections": "ts-node -r tsconfig-paths/register tools/company/measure-reader-sections.ts"
+    "company:sections": "ts-node -r tsconfig-paths/register tools/company/measure-reader-sections.ts",
+    "company:industry": "ts-node -r tsconfig-paths/register tools/company/measure-industry-source.ts"
   },
   "keywords": [],
   "author": "",

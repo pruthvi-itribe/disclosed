@@ -597,13 +597,34 @@ export const SCRIPT_COMPANY = `
     setText('co-symbol', state.company);
     setText('co-name', items.length > 0 ? items[0].companyName : '');
 
-    // Industry appears ONLY when it is known. It is null on 58.2% of filings,
-    // so it can never be a structural element — a page whose third line reads
-    // "Industry: —" on six companies in ten looks broken rather than honest.
+    // Industry appears ONLY when it is known, and it still often is not: NSE
+    // printed one for 522 of the 1,289 companies held, BSE's scrip header
+    // covers a further 357, and 410 have neither. So it can never be a
+    // structural element — a page whose third line reads "Industry: —" on three
+    // companies in ten looks broken rather than honest.
+    //
+    // AND IT SAYS WHOSE CLASSIFICATION IT IS. The two exchanges use different
+    // vocabularies for the same company, so a BSE-sourced value carries a mark;
+    // an unmarked chip is NSE's own string, which is what every chip on this
+    // page was before the BSE lookup existed.
     var industry = items.length > 0 ? items[0].industry : null;
+    var industrySource = items.length > 0 ? items[0].industrySource : null;
     var industryTag = el('co-industry');
     industryTag.hidden = !industry;
-    if (industry) industryTag.textContent = industry;
+    clear(industryTag);
+    if (industry) {
+      industryTag.appendChild(document.createTextNode(industry));
+      industryTag.title =
+        'Industry as classified by ' +
+        (industrySource === 'bse' ? 'BSE' : 'NSE');
+      if (industrySource === 'bse') {
+        var from = document.createElement('span');
+        from.className = 'tagfrom';
+        from.setAttribute('data-ui', 'co-industry-source');
+        from.textContent = 'BSE';
+        industryTag.appendChild(from);
+      }
+    }
 
     // The watch control, hidden exactly the way the industry tag above it is.
     // Absent when signed out for the same reason the card's star is: a

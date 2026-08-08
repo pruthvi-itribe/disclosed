@@ -214,3 +214,64 @@ describe('BseClient.isinForScrip', () => {
     expect(await client().isinForScrip(500825)).toBeNull();
   });
 });
+
+describe('BseClient.industryForScrip', () => {
+  afterEach(() => nock.cleanAll());
+
+  const header = (body: Record<string, unknown>) =>
+    nock(BSE_API_HOST).get(BSE_SCRIP_HEADER_PATH).query(true).reply(200, body);
+
+  it('reads the industry NSE left null on 767 of 1,289 companies', async () => {
+    // The real payload for scrip 519003, trimmed to the keys this reads.
+    header({
+      ISIN: 'INE537F01012',
+      Industry: 'Other Agricultural Products',
+      Sector: 'Fast Moving Consumer Goods',
+    });
+    expect(await client().industryForScrip(519003)).toBe(
+      'Other Agricultural Products',
+    );
+  });
+
+  it('takes Industry rather than the broader Sector beside it', async () => {
+    // Four levels of one taxonomy arrive together. `Industry` is the one at
+    // NSE's grain, and handing a reader "Financial Services" where the chip
+    // used to say "Housing Finance Company" is a quieter statement dressed as
+    // the same one.
+    header({
+      Industry: 'Housing Finance Company',
+      Sector: 'Financial Services',
+    });
+    expect(await client().industryForScrip(544176)).toBe(
+      'Housing Finance Company',
+    );
+  });
+
+  it('leaves the value exactly as BSE printed it', async () => {
+    // NOT MAPPED ONTO NSE'S VOCABULARY. The two exchanges classify differently
+    // and a translation table between them would be our invention rather than
+    // either exchange's fact.
+    header({ Industry: 'Non Banking Financial Company (NBFC)' });
+    expect(await client().industryForScrip(508954)).toBe(
+      'Non Banking Financial Company (NBFC)',
+    );
+  });
+
+  it.each([
+    [
+      'a blank string, which is how BSE spells unclassified',
+      { Industry: '  ' },
+    ],
+    ['a non-string', { Industry: 7 }],
+    ['no Industry field', { ISIN: 'INE537F01012' }],
+    ['an empty body', {}],
+  ])('returns null for %s rather than an empty chip', async (_label, body) => {
+    header(body);
+    expect(await client().industryForScrip(519003)).toBeNull();
+  });
+
+  it('returns null instead of throwing when the lookup fails', async () => {
+    nock(BSE_API_HOST).get(BSE_SCRIP_HEADER_PATH).query(true).reply(500);
+    expect(await client().industryForScrip(519003)).toBeNull();
+  });
+});

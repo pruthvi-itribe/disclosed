@@ -783,6 +783,22 @@ describe('renderDashboardPage — the company page a reader gets', () => {
     expect(PAGE_STYLE).not.toContain('.stripday');
   });
 
+  it('names the exchange when the industry is not NSE’s', () => {
+    // NSE printed an industry for 522 of the 1,289 companies held; BSE's scrip
+    // header covers a further 357, on its own vocabulary. Both are shown and
+    // the reader is never left to infer which — the two exchanges word the same
+    // company differently, and presenting BSE's string unmarked is a quiet edit
+    // of the record.
+    expect(SCRIPT_COMPANY).toContain('items[0].industrySource');
+    expect(SCRIPT_COMPANY).toContain("from.textContent = 'BSE'");
+    expect(SCRIPT_COMPANY).toContain("'Industry as classified by '");
+    // Through textContent and a real element, like everything else on this
+    // page: the value is an exchange's string and the mark sits beside it
+    // rather than being concatenated into it.
+    expect(SCRIPT_COMPANY).toContain('document.createTextNode(industry)');
+    expect(SCRIPT_COMPANY).not.toContain('innerHTML');
+  });
+
   it('keeps one quiet coverage line, and it says what over', () => {
     // The only thing left on the page about the shape of OUR holdings. Every
     // number under it is computed over this window, and most companies here

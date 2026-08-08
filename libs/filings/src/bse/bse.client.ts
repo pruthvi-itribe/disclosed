@@ -123,6 +123,63 @@ export class BseClient {
   }
 
   /**
+   * The scrip header, whole, or null if the request failed.
+   *
+   * ONE REQUEST SHAPE FOR TWO READERS, for the reason `fetchPage` gives: the
+   * ISIN and the industry come out of the same BSE endpoint, and two copies of
+   * the same GET is two places for the params to drift apart.
+   *
+   * Typed as an index of unknowns rather than as the payload. BSE serves thirty
+   * keys here — SecurityId, FaceVal, EPS, PE, Sector, IGroup and the rest — and
+   * this repo reads two of them; declaring the other twenty-eight would be
+   * asserting a shape nothing checks and nothing uses.
+   */
+  private async scripHeader(
+    scripCode: number,
+  ): Promise<Record<string, unknown> | null> {
+    const response = await this.http.get<unknown>(BSE_SCRIP_HEADER_PATH, {
+      params: { quotetype: 'EQ', scripcode: scripCode, seriesid: '' },
+    });
+    const body: unknown = response.data;
+    return typeof body === 'object' && body !== null
+      ? (body as Record<string, unknown>)
+      : null;
+  }
+
+  /**
+   * BSE's industry for a scrip code, as BSE prints it, or null.
+   *
+   * WHY THIS FIELD AND NOT ONE OF ITS FOUR NEIGHBOURS. The header carries
+   * `Industry`, `Sector`, `IGroup` and `ISubGroup`, which are four levels of one
+   * taxonomy: for scrip 519003 they read "Other Agricultural Products", "Fast
+   * Moving Consumer Goods", "Agricultural Food & other Products" and "Other
+   * Agricultural Products". `Industry` is the one at NSE's grain — NSE's own
+   * `smIndustry` says "Airconditioners" and "Computers - Software" — so it is
+   * the only one that can stand in the same chip without the reader being
+   * silently handed a broader statement than the one that was there before.
+   *
+   * NOT NORMALISED, NOT MAPPED ONTO NSE'S VOCABULARY. The two exchanges classify
+   * differently and a translation table between them would be our invention
+   * rather than either exchange's fact. What ships is BSE's string, marked as
+   * BSE's — see `industrySource` on the filing view.
+   *
+   * Returns null rather than throwing, for the same reason `isinForScrip` does.
+   */
+  async industryForScrip(scripCode: number): Promise<string | null> {
+    try {
+      const industry: unknown = (await this.scripHeader(scripCode))?.Industry;
+      if (typeof industry !== 'string') return null;
+      const trimmed = industry.trim();
+      // BLANK IS THE COMMON ABSENCE HERE, not a missing key: BSE answers an
+      // unclassified scrip with '' rather than by omitting the field, and an
+      // empty chip is the failure this whole task is about.
+      return trimmed === '' ? null : trimmed;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * The ISIN for a scrip code, or null.
    *
    * A SEPARATE REQUEST BECAUSE THE ANNOUNCEMENT FEED HAS NO ISIN IN IT — only
@@ -137,10 +194,7 @@ export class BseClient {
    */
   async isinForScrip(scripCode: number): Promise<string | null> {
     try {
-      const response = await this.http.get<unknown>(BSE_SCRIP_HEADER_PATH, {
-        params: { quotetype: 'EQ', scripcode: scripCode, seriesid: '' },
-      });
-      const isin: unknown = (response.data as { ISIN?: unknown })?.ISIN;
+      const isin: unknown = (await this.scripHeader(scripCode))?.ISIN;
       if (typeof isin !== 'string') return null;
       const trimmed = isin.trim().toUpperCase();
       // An ISIN is 12 characters. Anything else is not one, and a short string

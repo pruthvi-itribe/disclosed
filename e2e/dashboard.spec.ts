@@ -353,6 +353,47 @@ test.describe('the company page', () => {
     await expect(page.locator('#co-mix-wrap')).toHaveCount(0);
   });
 
+  test('shows a BSE-sourced industry, and says it is BSE’s', async ({
+    page,
+  }) => {
+    // MOTHERSON is one of the 357 companies NSE printed no industry for and
+    // BSE's scrip header classifies as "Auto Components & Equipments" (measured
+    // 2026-08-09 with `npm run company:industry`). Before the BSE lookup its
+    // chip was hidden, which was honest and was happening on 767 of 1,289.
+    const errors = watchConsole(page);
+    await openCompany(page, 'MOTHERSON');
+
+    const chip = page.locator('#co-industry');
+    await expect(chip).toBeVisible();
+    await expect(chip).toContainText('Auto Components & Equipments');
+    // THE MARK IS THE POINT. The two exchanges word the same company
+    // differently, so a BSE string shown unmarked would be a quiet edit of the
+    // record. The attribution is on the chip as well as in it, because a mark
+    // beside a word is not a sentence a reader has to already understand.
+    await expect(chip.locator('[data-ui="co-industry-source"]')).toHaveText(
+      'BSE',
+    );
+    await expect(chip).toHaveAttribute('title', 'Industry as classified by BSE');
+    expect(errors).toEqual([]);
+  });
+
+  test('leaves an NSE-sourced industry unmarked, as it always was', async ({
+    page,
+  }) => {
+    // ECLERX carries NSE's own `smIndustry`. NSE's value is preferred whenever
+    // there is one and no mark is drawn: an unmarked chip means what every chip
+    // on this page meant before the BSE lookup existed.
+    const errors = watchConsole(page);
+    await openCompany(page, 'ECLERX');
+
+    const chip = page.locator('#co-industry');
+    await expect(chip).toBeVisible();
+    await expect(chip).toHaveText('Computers - Software');
+    await expect(chip.locator('[data-ui="co-industry-source"]')).toHaveCount(0);
+    await expect(chip).toHaveAttribute('title', 'Industry as classified by NSE');
+    expect(errors).toEqual([]);
+  });
+
   test('prints the figures a results table carried, and computes none', async ({
     page,
   }) => {

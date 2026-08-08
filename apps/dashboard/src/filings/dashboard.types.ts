@@ -285,12 +285,26 @@ export interface ClaimDiscardView {
   readonly detail: string;
 }
 
+/**
+ * Which exchange classified a company's industry.
+ *
+ * NSE's feed carries `smIndustry` on the filing itself and prints one for 522
+ * of the 1,289 companies in the collection; BSE's scrip header carries its own
+ * classification, on a different vocabulary, for a further 357 of the rest.
+ * Both are shown, and which is which is never left to the reader to infer —
+ * the two exchanges disagree on wording for the same company and presenting
+ * BSE's string as NSE's would be a quiet edit of the record.
+ */
+export type IndustrySource = 'nse' | 'bse';
+
 /** One filing, as the recent-filings table shows it. */
 export interface FilingView {
   readonly seqId: number;
   readonly symbol: string;
   readonly companyName: string;
   readonly industry: string | null;
+  /** Who said so. Null exactly when `industry` is null. */
+  readonly industrySource: IndustrySource | null;
   readonly category: string;
   readonly summary: string;
   /** Exchange-supplied source document. Never rendered as a link unhandled — see `ui/page-script.ts`. */
