@@ -533,12 +533,30 @@ ${BRAND_FAVICON_LINK}
   Copy and Source, same createElement/textContent/safeHref discipline — a
   second card renderer would be a second place for exchange text to reach the
   DOM.
+
+  IT OPENS WITH THE WATCHLIST, NOT WITH THE FEED, and that ordering is a fix
+  rather than a preference. The feed below is the newest 'limit' filings ACROSS
+  the whole watchlist, so a company that files less often than its neighbours
+  contributes no card — and while the roster did not exist, that company had no
+  row anywhere on the page and watching it looked broken rather than quiet.
+  'watch-roster' lists every watched company whatever the feed holds, and
+  'watch-feed-note' states in numbers what the feed below is leaving out.
 -->
 <section id="view-watching" data-ui="view-watching" class="view" role="tabpanel" aria-labelledby="tab-watching" hidden>
   <div class="watchhead" data-ui="watching-head">
-    <h2 class="bucket" style="margin:0">What the companies you watch have said</h2>
+    <h2 class="bucket" style="margin:0">Companies you watch</h2>
     <span id="watch-count" class="watchcount"></span>
   </div>
+  <p id="watch-roster-note" class="sectionnote" data-ui="watching-roster-note">
+    Every company you watch is here, the quiet ones included, with when it last
+    filed anything held in this collection. The star takes one off the list.
+  </p>
+  <ul id="watch-roster" class="roster" data-ui="watching-roster"></ul>
+
+  <div id="watch-feed-head" class="watchhead" data-ui="watching-feed-head">
+    <h2 class="bucket" style="margin:0">What they have said</h2>
+  </div>
+  <p id="watch-feed-note" class="sectionnote" data-ui="watching-feed-note" hidden></p>
   <div id="watch-empty" class="watchempty" hidden></div>
   <div id="watch-feed" class="feed" data-ui="watching-feed"></div>
 </section>

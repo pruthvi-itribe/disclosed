@@ -31,10 +31,6 @@ export const SCRIPT_ACCOUNT = `
     return Object.prototype.hasOwnProperty.call(state.watched, symbol);
   }
 
-  function watchedCount() {
-    return Object.keys(state.watched).length;
-  }
-
   // ---------------------------------------------------------- the star ----
 
   // The words and the ARIA, set together so the two can never disagree.
@@ -104,6 +100,12 @@ export const SCRIPT_ACCOUNT = `
         applyWatchCounts(body.meta);
         paintWatchButtons();
         clearError();
+        // A star pressed ON THE ROSTER removes the row it sits in, and only a
+        // poll redraws that list - so without this the reader watches a company
+        // they have just unwatched sit in their watchlist for up to four
+        // seconds. Asking for the repaint the poll would have done is cheaper,
+        // and safer, than teaching this function to edit a list the poll owns.
+        if (state.view === 'watching') refresh(true);
       })
       .catch(function (err) {
         // WATCHLIST_FULL and UNKNOWN_SYMBOL are the two a reader has to see,
@@ -247,12 +249,85 @@ export const SCRIPT_ACCOUNT = `
       });
   }
 
+  // ONE LINE FOR ONE WATCHED COMPANY, whether or not it has filed lately.
+  //
+  // The row exists to answer "is this watch working", so it carries the four
+  // things that answer it: the ticker, the name, when the company last filed
+  // anything held here, and the star that takes it off the list.
+  function watchRow(row) {
+    var li = document.createElement('li');
+    li.className = 'rosterrow';
+    li.setAttribute('data-ui', 'watching-row');
+    li.setAttribute('data-symbol', row.symbol);
+
+    // The same way into the company page the feed card's ticker is - a
+    // watchlist whose rows are dead ends is a list you cannot act on.
+    var sym = document.createElement('button');
+    sym.type = 'button';
+    sym.className = 'sym';
+    sym.textContent = row.symbol;
+    sym.title = 'All filings from ' + row.symbol;
+    sym.onclick = (function (symbol) {
+      return function () { openCompany(symbol); };
+    })(row.symbol);
+    li.appendChild(sym);
+
+    var name = document.createElement('span');
+    name.className = 'rostername';
+    name.textContent = row.companyName;
+    // The name truncates in a narrow row and vanishes below 560px, so the whole
+    // of it stays reachable rather than being merely absent.
+    name.title = row.companyName;
+    li.appendChild(name);
+
+    var when = document.createElement('span');
+    when.className = 'rosterwhen';
+    if (row.lastFiledAt) {
+      when.textContent = 'last filed ' + relativeTime(row.lastFiledAt);
+      when.title = row.lastFiledAtIst + ' IST';
+    } else {
+      // NOT 'never filed'. This collection is a window on the exchange's
+      // output, not the whole of it, and the honest sentence is about what is
+      // held here rather than about what the company has ever done.
+      when.textContent = 'nothing yet in our window';
+    }
+    li.appendChild(when);
+
+    var star = watchButton(row.symbol);
+    if (star) li.appendChild(star);
+    return li;
+  }
+
+  // THE WATCHLIST FIRST, THEN WHAT IT SAID.
+  //
+  // 'items' is a page of FILINGS - the newest meta.limit of them across the
+  // whole watchlist - and it is not the watchlist. A company that files less
+  // often than its neighbours contributes no card to it, and while this view
+  // drew nothing but that page, such a company had no row anywhere and its
+  // reader could not tell a working watch from a broken one. So the roster is
+  // drawn from meta.watching, which is every watched company unpaged.
+  //
+  // Drawn from meta rather than from state.watched because state.watched holds
+  // only symbols; a row has to name a company and say when it last spoke.
   function renderWatching(items, meta) {
     var empty = el('watch-empty');
     var feed = el('watch-feed');
+    var roster = el('watch-roster');
+    var note = el('watch-feed-note');
+    var rows = meta && meta.watching ? meta.watching : [];
 
-    if (watchedCount() === 0) {
+    clear(roster);
+    for (var i = 0; i < rows.length; i++) roster.appendChild(watchRow(rows[i]));
+
+    // Everything above the feed belongs to the watchlist and is hidden with it,
+    // so an empty view is one sentence rather than two headings over nothing.
+    roster.hidden = rows.length === 0;
+    el('watch-roster-note').hidden = rows.length === 0;
+    el('watch-feed-head').hidden = rows.length === 0;
+
+    if (rows.length === 0) {
       feed.textContent = '';
+      note.hidden = true;
       clear(empty);
       var head = document.createElement('strong');
       head.textContent = 'You are not watching anything yet';
@@ -265,21 +340,34 @@ export const SCRIPT_ACCOUNT = `
     }
 
     if (items.length === 0) {
+      // A DIFFERENT SENTENCE FROM THE ONE ABOVE, and now it can be a stronger
+      // one: the roster is on screen, so the reader can see the watches exist
+      // and this only has to say what is missing.
       feed.textContent = '';
+      note.hidden = true;
       clear(empty);
       var quiet = document.createElement('strong');
-      quiet.textContent = 'Nothing yet from the ' + watchedCount() + ' companies you watch';
+      quiet.textContent = 'None of the ' + rows.length + ' companies above has filed anything we hold';
       empty.appendChild(quiet);
-      // "Nothing was found" and "nothing was looked for" must not read the
-      // same, so this says which companies were asked about.
       empty.appendChild(document.createTextNode(
-        'This collection holds no filings from them. It fills as they file.'
+        'The watches are working - they are listed above. This fills the moment one of them files.'
       ));
       empty.hidden = false;
       return;
     }
 
     empty.hidden = true;
+    // SAYS WHAT IT IS LEAVING OUT, IN NUMBERS. The feed below is the newest
+    // meta.limit filings across the whole watchlist, and that cut used to be
+    // silent: a reader whose company was past it saw a short list and no reason
+    // for it. The roster above is complete whatever this says, which is the
+    // half of the sentence that matters.
+    note.hidden = false;
+    note.textContent = meta.hasMore
+      ? 'The newest ' + groupInt(meta.returned) + ' of ' + groupInt(meta.total)
+        + ' filings from these companies. The list above is complete; this one is not.'
+      : 'All ' + groupInt(meta.total) + ' filings from these companies.';
+
     // THE SAME RENDERER THE FEED USES, unchanged. Results lines, claim lines,
     // quiet cards, Copy and Source all arrive with the createElement /
     // textContent / safeHref discipline already on them, and a second card

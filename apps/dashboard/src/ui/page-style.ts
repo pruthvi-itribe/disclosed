@@ -985,10 +985,41 @@ button.sym:hover { color: var(--accent); }
    stays silent lets someone lock themselves out and never learn why. */
 .authnote { color: var(--muted); font-size: 11.5px; margin-top: 14px; line-height: 1.5; }
 
-/* The Watching view is the feed grid with its own empty state; the cards are
-   drawn by the same renderer, so it needs no card rules of its own. */
+/* The Watching view is the watchlist, then the feed grid with its own empty
+   state; the cards are drawn by the same renderer, so it needs no card rules of
+   its own. */
 .watchhead { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+/* 'display: flex' above beats the UA stylesheet's '[hidden] { display: none }',
+   so the attribute has to be restated or the head shows over an empty list. */
+.watchhead[hidden] { display: none; }
 .watchcount { color: var(--muted); font-size: 12.5px; }
 .watchempty { padding: 48px 20px; text-align: center; color: var(--muted); max-width: 520px; margin: 0 auto; line-height: 1.6; }
 .watchempty strong { color: var(--text); display: block; font-size: 16px; margin-bottom: 8px; }
+
+/* THE WATCHLIST ITSELF: one line per company, never a card.
+
+   The question this list answers is "is this company still being watched, and
+   has it said anything" — fifty of those fit on a screen as lines and do not
+   as cards. It is also why it is a list and not the card grid reused: a card
+   is built around a filing, and the rows that matter most here are the
+   companies that have no recent filing to build one from. */
+.roster {
+  list-style: none; margin: 0 0 28px; padding: 0;
+  display: grid; gap: 1px;
+  background: var(--line); border: 1px solid var(--line);
+  border-radius: 10px; overflow: hidden;
+}
+.roster[hidden] { display: none; }
+.rosterrow { display: flex; align-items: center; gap: 12px; background: var(--panel); padding: 9px 12px; }
+.rosterrow button.sym { flex: 0 0 auto; font-size: 14px; }
+/* The name yields the row's spare width and truncates; the ticker and the two
+   controls never do, because they are what the row is for. */
+.rostername { flex: 1 1 auto; min-width: 0; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rosterwhen { flex: 0 0 auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.rosterrow .watch { flex: 0 0 auto; }
+@media (max-width: 560px) {
+  /* The name is the first thing to go: the ticker identifies the company and
+     "last filed 3h ago" is the answer the reader came for. */
+  .rostername { display: none; }
+}
 `;

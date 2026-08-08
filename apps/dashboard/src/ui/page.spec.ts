@@ -142,6 +142,10 @@ describe('renderDashboardPage — content', () => {
     'tab-watching-count',
     'view-watching',
     'watch-count',
+    'watch-roster-note',
+    'watch-roster',
+    'watch-feed-head',
+    'watch-feed-note',
     'watch-empty',
     'watch-feed',
     'co-watch',
@@ -1573,7 +1577,51 @@ describe('renderDashboardPage — the account', () => {
 
     it('distinguishes "watching nothing" from "they have filed nothing"', () => {
       expect(SCRIPT_ACCOUNT).toContain('You are not watching anything yet');
-      expect(SCRIPT_ACCOUNT).toContain('Nothing yet from the ');
+      expect(SCRIPT_ACCOUNT).toContain(
+        "'None of the ' + rows.length + ' companies above has filed anything we hold'",
+      );
+    });
+
+    it('opens with the watchlist itself, not with the page of filings', () => {
+      // THE BUG THIS VIEW SHIPPED WITH. `items` is the newest `limit` filings
+      // across the whole watchlist, so a company quieter than its neighbours
+      // contributed no card — and with nothing else on the view, a reader had
+      // no way to tell a working watch from a broken one.
+      expect(html).toContain('id="watch-roster"');
+      expect(SCRIPT_ACCOUNT).toContain('meta && meta.watching ? meta.watching');
+      expect(SCRIPT_ACCOUNT).toContain('roster.appendChild(watchRow(rows[i]))');
+    });
+
+    it('gives a quiet company a row that says when it last spoke', () => {
+      expect(SCRIPT_ACCOUNT).toContain(
+        "'last filed ' + relativeTime(row.lastFiledAt)",
+      );
+      // An absence renders as an absence, never as a date nobody filed on.
+      expect(SCRIPT_ACCOUNT).toContain('nothing yet in our window');
+    });
+
+    it('states the narrowing in numbers instead of showing a short list', () => {
+      expect(SCRIPT_ACCOUNT).toContain(
+        "'The newest ' + groupInt(meta.returned)",
+      );
+      expect(SCRIPT_ACCOUNT).toContain(
+        'The list above is complete; this one is not.',
+      );
+      expect(SCRIPT_ACCOUNT).toContain(
+        "'All ' + groupInt(meta.total) + ' filings from these companies.'",
+      );
+    });
+
+    it('hides the whole watchlist chrome when there is no watchlist', () => {
+      // Two headings and a note over an empty list is a page that looks broken
+      // rather than one that has nothing yet to show.
+      expect(SCRIPT_ACCOUNT).toContain('roster.hidden = rows.length === 0');
+      expect(SCRIPT_ACCOUNT).toContain(
+        "el('watch-feed-head').hidden = rows.length === 0",
+      );
+      // '.watchhead' sets display:flex, which beats the UA's [hidden] rule.
+      expect(html).toContain('.watchhead[hidden] { display: none; }');
+      expect(html).toContain('.roster[hidden] { display: none; }');
     });
 
     it('polls with a session only while its own tab is open', () => {
