@@ -3,6 +3,13 @@ import { Test } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { Model } from 'mongoose';
+import {
+  mintSessionToken,
+  SESSION_COOKIE,
+  SessionRepository,
+  sessionExpiry,
+  UserRepository,
+} from '@app/accounts';
 import type { Filing, FilingDocument } from '@app/filings';
 import { DashboardModule, FILING_MODEL } from './dashboard.module';
 import type {
@@ -50,10 +57,42 @@ const makeFiling = (seqId: number, at: string, category: string): Filing => ({
   ingestedAt: new Date(new Date(at).getTime() + 5_000),
 });
 
+/**
+ * The session cookie the suite signs in with, set once in `beforeAll`.
+ *
+ * EVERY FILING ROUTE IS BEHIND THE SESSION NOW, so a suite about what those
+ * routes return has to be signed in to ask. It registers a real user through
+ * the real route rather than forging a cookie or stubbing the guard: the guard,
+ * the session lookup and the cookie parser are all part of the wiring this file
+ * exists to exercise, and a bypass would exercise the bypass.
+ *
+ * `AUTH_MODE` is unset here, and unset follows the keys — no Firebase keys in a
+ * Jest environment, so this boots in `local` mode and the register route is
+ * live. That is the same arrangement the browser suite uses, and it is the ONLY
+ * way in either of them has.
+ */
+let cookie = '';
+
+const signedInHeaders = (): Record<string, string> =>
+  cookie === '' ? {} : { Cookie: cookie };
+
 const get = async <T>(path: string): Promise<{ status: number; body: T }> => {
-  const response = await fetch(`${origin}${path}`);
+  const response = await fetch(`${origin}${path}`, {
+    headers: signedInHeaders(),
+  });
   return { status: response.status, body: (await response.json()) as T };
 };
+
+/** The same request with no cookie at all, for the tests about the gate. */
+const getAnonymously = async (
+  path: string,
+): Promise<{ status: number; body: unknown }> => {
+  const response = await fetch(`${origin}${path}`);
+  return { status: response.status, body: await response.json() };
+};
+
+const getPage = (path = '/'): Promise<Response> =>
+  fetch(`${origin}${path}`, { headers: signedInHeaders() });
 
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
@@ -86,6 +125,32 @@ beforeAll(async () => {
     makeFiling(102, '2026-08-05T05:10:00.000Z', 'Board Meeting'),
     makeFiling(103, '2026-08-05T06:20:00.000Z', 'General Updates'),
   ]);
+
+  // THE WAY IN, MINTED THROUGH THE CONTAINER RATHER THAN OVER HTTP.
+  //
+  // Not because a bypass is convenient — because `POST api/auth/register` is
+  // Origin-guarded against `PUBLIC_ORIGIN`, which has to be known before the
+  // module compiles, and this suite deliberately takes whatever port
+  // `listen(0)` gives it. The sibling `auth.e2e.spec.ts` pins a port precisely
+  // so it can exercise that guard, and it does.
+  //
+  // WHAT IS STILL EXERCISED HERE IS EVERYTHING THIS SUITE IS ABOUT: a real user
+  // row, a real session row, the real cookie, and on every request below the
+  // real `SessionGuard` doing a real indexed lookup. Nothing about the gate is
+  // stubbed; only the registration round trip another suite owns is skipped.
+  const users = app.get(UserRepository);
+  const sessions = app.get(SessionRepository);
+  const user = await users.create(
+    'wiring@turret.test',
+    // Never verified: this suite never signs in, it arrives holding a session.
+    // A real argon2 hash here would cost 19 MiB and ~50 ms for nothing.
+    '$argon2id$never-verified',
+    new Date(),
+  );
+  const minted = mintSessionToken();
+  const at = new Date();
+  await sessions.create(minted.tokenHash, user!.id, at, sessionExpiry(at, 30));
+  cookie = `${SESSION_COOKIE}=${minted.token}`;
 }, 90_000);
 
 // Generously timed on purpose. Closing a listening Nest app, disconnecting
@@ -100,7 +165,7 @@ afterAll(async () => {
 
 describe('dashboard over HTTP — the page', () => {
   it('serves HTML at the root', async () => {
-    const response = await fetch(`${origin}/`);
+    const response = await getPage();
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
@@ -108,13 +173,91 @@ describe('dashboard over HTTP — the page', () => {
   });
 
   it('sends the page uncached, so a redeploy is not served stale client code', async () => {
-    const response = await fetch(`${origin}/`);
-
-    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect((await getPage()).headers.get('cache-control')).toBe('no-store');
   });
 
   it('serves a page that references no external host', async () => {
-    expect(await (await fetch(`${origin}/`)).text()).not.toMatch(/https?:\/\//);
+    expect(await (await getPage()).text()).not.toMatch(/https?:\/\//);
+  });
+});
+
+/**
+ * THE GATE, over real HTTP.
+ *
+ * The founder's decision is that there is no access without sign-in, and this
+ * is the only place it can be checked as a property of the SERVER rather than
+ * of the client. `dashboard.controller.spec.ts` reads the guard off the route
+ * metadata, which proves the decorator is present; this proves the process
+ * actually refuses.
+ */
+describe('dashboard over HTTP — no access without sign-in', () => {
+  const GATED = [
+    '/api/summary',
+    '/api/filings?limit=1',
+    '/api/suggest?q=rel',
+    '/api/enrichment',
+    '/api/categories',
+    '/api/daily?days=3',
+  ];
+
+  it.each(GATED)('refuses %s with a 401 when signed out', async (path) => {
+    const { status, body } = await getAnonymously(path);
+
+    expect(status).toBe(401);
+    // An envelope, like every other refusal on this origin — otherwise the
+    // page reports "a body that is not a success envelope" for an expired
+    // session, which reads as a broken deploy.
+    expect(body).toMatchObject({
+      success: false,
+      error: { code: 'UNAUTHENTICATED' },
+    });
+  });
+
+  it.each(GATED)('answers %s once signed in', async (path) => {
+    expect((await get<unknown>(path)).status).toBe(200);
+  });
+
+  it('serves the landing page, not the dashboard, to a signed-out visitor', async () => {
+    const html = await (await fetch(`${origin}/`)).text();
+
+    expect(html).toContain('These are examples, not filings.');
+    // The tell: the dashboard's admin table. A landing page that shipped the
+    // app's markup with the data blanked would pass a weaker assertion.
+    expect(html).not.toContain('<table>');
+    expect(html).not.toContain('<script');
+  });
+
+  it('leaks no filing to a signed-out visitor, anywhere in the document', async () => {
+    // The collection holds exactly one company. If any part of the landing path
+    // ever reads it, this is where it shows up.
+    const html = await (await fetch(`${origin}/`)).text();
+
+    expect(html).not.toContain('RELIANCE');
+    expect(html).not.toContain('Reliance Industries');
+  });
+
+  it('leaves health open, because a monitor has no credential', async () => {
+    const { status, body } = await getAnonymously('/api/health');
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ success: true, data: { status: 'ok' } });
+  });
+
+  it('leaves the sign-in page open, because gating it is a lockout', async () => {
+    const response = await fetch(`${origin}/auth`, { redirect: 'manual' });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('id="auth-form"');
+  });
+
+  it('sends a signed-in browser away from the sign-in page', async () => {
+    const response = await fetch(`${origin}/auth`, {
+      headers: signedInHeaders(),
+      redirect: 'manual',
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/');
   });
 });
 
@@ -333,7 +476,9 @@ describe('dashboard over HTTP — type-ahead', () => {
   });
 
   it('sends the type-ahead uncached, like every other route here', async () => {
-    const response = await fetch(`${origin}/api/suggest?q=rel`);
+    const response = await fetch(`${origin}/api/suggest?q=rel`, {
+      headers: signedInHeaders(),
+    });
 
     expect(response.headers.get('cache-control')).toBe('no-store');
   });

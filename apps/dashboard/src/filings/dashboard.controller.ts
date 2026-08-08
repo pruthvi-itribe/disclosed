@@ -1,12 +1,30 @@
-import { Controller, Get, Header, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Inject,
+  Query,
+  Req,
+  Res,
+  UseFilters,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { ok, okWith, type ApiEnvelope } from '../http/envelope';
 import { CLAIM_TOPICS } from '@app/filings';
+import { ApiErrorFilter } from '../auth/api-error';
+import { AUTH_CONFIG } from '../auth/auth.tokens';
+import { SessionGuard } from '../auth/session.guard';
+import { SessionService } from '../auth/session.service';
+import type { AuthConfig } from '../config/auth-config';
 import {
   readBoundedInteger,
   readEnum,
   readFilter,
   type RawQuery,
 } from '../http/query-params';
+import { renderAuthPage } from '../ui/auth-page';
+import { renderLandingPage } from '../ui/landing';
 import { renderDashboardPage } from '../ui/page';
 import { CompanyDirectory } from '../search/company-directory';
 import { suggestFrom } from '../search/suggest';
@@ -64,32 +82,119 @@ export const MAX_DAYS = 366;
  * to read methods (`filing-read.model.ts`), so a write route would not compile
  * anyway — but the absence is stated here too, because this file is where
  * someone would add one.
+ *
+ * ================================================================
+ * EVERY ROUTE THAT READS A FILING IS BEHIND THE SESSION
+ * ================================================================
+ *
+ * This controller used to be entirely public, on the argument that it was a
+ * loopback view of a local database. It is not that any more: it is a product
+ * with accounts, and the founder's decision is that there is NO ACCESS WITHOUT
+ * SIGN-IN. So `@UseGuards(SessionGuard)` sits on every route below that touches
+ * `filings`, and the three that do not are the three exceptions, each named
+ * here so an addition has to argue with this list:
+ *
+ *   - `GET /` decides which page to serve and reads no filing either way.
+ *   - `GET /auth` is the sign-in page. Gating the way in is a lockout.
+ *   - `GET /api/health` answers whether this process is up, and nothing else.
+ *     Nine bytes, no database, no collection named. A monitor must not need a
+ *     credential, and a liveness probe that needs the database is a probe that
+ *     reports the database.
+ *
+ * `GET /api/me` is also public and lives on `AuthController`; it answers
+ * `{signedIn: false}` rather than 401 for the reason stated there.
+ *
+ * THE FILTER IS NEW ON THIS CONTROLLER. Without it the guard's 401 serialises as
+ * Nest's bare shape while every other refusal on the origin is an envelope, and
+ * the page's `getJson` would report "a body that is not a success envelope" for
+ * an expired session. Existing 400s keep their status and their message; they
+ * gain the envelope, which is what the page was already parsing on every other
+ * route.
  */
 @Controller()
+@UseFilters(ApiErrorFilter)
 export class DashboardController {
   constructor(
     private readonly filings: FilingQueryService,
     private readonly directory: CompanyDirectory,
+    private readonly sessions: SessionService,
+    @Inject(AUTH_CONFIG) private readonly authConfig: AuthConfig,
   ) {}
 
   /**
-   * The dashboard page itself: one self-contained HTML document with its CSS
-   * and JavaScript inline. No CDN, no external font, no build step.
+   * The front door, and the one route whose answer depends on who is asking.
    *
-   * `no-store` because the page polls the JSON routes for everything that
-   * changes; a cached shell that outlives a deploy would poll them with stale
-   * client code.
+   * Signed in: the dashboard — one self-contained HTML document with its CSS and
+   * JavaScript inline, no CDN, no external font, no build step.
+   *
+   * Signed out: the landing page, which is a constant and performs no read at
+   * all. Not a trimmed dashboard, not the feed with the data blanked: a
+   * different document with no client code and nothing to fetch. That is what
+   * makes "signed-out visitors read nothing" a property of the routing table
+   * rather than a promise about what the client asks for.
+   *
+   * NOT `SessionGuard`. The guard's job is to refuse and this route's job is to
+   * answer — the same split `api/me` makes. A 401 here would mean an anonymous
+   * visitor's first impression of this product is a JSON error body.
+   *
+   * `no-store` on both. The dashboard polls the JSON routes and a cached shell
+   * outliving a deploy would poll them with stale client code; the landing page
+   * shares the URL with the dashboard, and a cached landing page would be served
+   * to the same person one second after they signed in.
    */
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
   @Header('Cache-Control', 'no-store')
-  getPage(): string {
-    return renderDashboardPage();
+  async getPage(@Req() request: Request): Promise<string> {
+    const who = await this.sessions.resolve(request);
+    return who === null ? renderLandingPage() : renderDashboardPage();
+  }
+
+  /**
+   * The sign-in page. Public, necessarily.
+   *
+   * Redirects a signed-in browser to the app rather than showing it a form it
+   * does not need — which is also the honest answer to somebody who followed a
+   * stale link from a second tab.
+   *
+   * Rendered from the resolved `AuthConfig`, so a `local` host ships no Firebase
+   * code and a host whose keys have not arrived says which ones are missing. See
+   * `ui/auth-page.ts` for the CDN relaxation this page carries and its bounds.
+   */
+  @Get('auth')
+  @Header('Cache-Control', 'no-store')
+  async getAuthPage(
+    @Req() request: Request,
+    @Res() response: Response,
+  ): Promise<void> {
+    if ((await this.sessions.resolve(request)) !== null) {
+      response.redirect(302, '/');
+      return;
+    }
+
+    response
+      .type('text/html; charset=utf-8')
+      .send(renderAuthPage(this.authConfig));
+  }
+
+  /**
+   * Whether this process is up. The one unauthenticated JSON route.
+   *
+   * TOUCHES NO DATABASE AND NAMES NOTHING. A liveness probe that reads mongo
+   * reports the database rather than the process, and one that returns a build
+   * string or a collection count is reconnaissance available to anyone who can
+   * reach the port. It answers that the HTTP server is answering.
+   */
+  @Get('api/health')
+  @Header('Cache-Control', 'no-store')
+  getHealth(): ApiEnvelope<{ status: 'ok' }> {
+    return ok({ status: 'ok' as const });
   }
 
   /** Headline stats: totals, today's IST count, the cursor, and feed lag. */
   @Get('api/summary')
   @Header('Cache-Control', 'no-store')
+  @UseGuards(SessionGuard)
   async getSummary(): Promise<ApiEnvelope<SummaryView>> {
     return ok(await this.filings.getSummary());
   }
@@ -105,6 +210,7 @@ export class DashboardController {
    */
   @Get('api/filings')
   @Header('Cache-Control', 'no-store')
+  @UseGuards(SessionGuard)
   async getFilings(
     @Query() query: RawQuery,
   ): Promise<ApiEnvelope<readonly FilingView[], PageMeta>> {
@@ -162,6 +268,7 @@ export class DashboardController {
    */
   @Get('api/suggest')
   @Header('Cache-Control', 'no-store')
+  @UseGuards(SessionGuard)
   async getSuggestions(
     @Query() query: RawQuery,
   ): Promise<ApiEnvelope<SuggestionsView>> {
@@ -182,6 +289,7 @@ export class DashboardController {
    */
   @Get('api/enrichment')
   @Header('Cache-Control', 'no-store')
+  @UseGuards(SessionGuard)
   async getEnrichment(): Promise<ApiEnvelope<EnrichmentSummaryView>> {
     return ok(await this.filings.getEnrichmentSummary());
   }
@@ -189,6 +297,7 @@ export class DashboardController {
   /** Category breakdown across the whole collection, largest first. */
   @Get('api/categories')
   @Header('Cache-Control', 'no-store')
+  @UseGuards(SessionGuard)
   async getCategories(
     @Query() query: RawQuery,
   ): Promise<ApiEnvelope<readonly CategoryCount[]>> {
@@ -206,6 +315,7 @@ export class DashboardController {
   /** Filings per IST day for the last `days` days, oldest first, zero-filled. */
   @Get('api/daily')
   @Header('Cache-Control', 'no-store')
+  @UseGuards(SessionGuard)
   async getDaily(
     @Query() query: RawQuery,
   ): Promise<ApiEnvelope<readonly DailyCount[]>> {

@@ -1,5 +1,12 @@
 import { BadRequestException, RequestMethod } from '@nestjs/common';
-import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import {
+  GUARDS_METADATA,
+  METHOD_METADATA,
+  PATH_METADATA,
+} from '@nestjs/common/constants';
+import type { Request } from 'express';
+import { SessionGuard } from '../auth/session.guard';
+import type { SessionService, Signedin } from '../auth/session.service';
 import {
   DEFAULT_CATEGORY_LIMIT,
   DEFAULT_DAYS,
@@ -13,6 +20,32 @@ import type { CompanyDirectory } from '../search/company-directory';
 import type { DirectorySnapshot } from '../search/directory.types';
 import { companyTerms, searchTerms } from '../search/search-terms';
 import type { EnrichmentSummaryView, SummaryView } from './dashboard.types';
+
+/** Flipped by the front-door tests to choose which document `GET /` returns. */
+let signedIn = true;
+
+const SIGNED_IN: Signedin = {
+  userId: 'u1',
+  email: 'asha@example.com',
+  sessionId: 's1',
+  lastSeenWatchlistAt: null,
+};
+
+/**
+ * The guards Nest would apply to one handler.
+ *
+ * READ OFF THE METADATA rather than by calling the handler and seeing whether
+ * it throws. A guard is applied by the framework BEFORE the handler runs, so a
+ * unit test that calls the method directly proves nothing about whether the
+ * route is protected — it would pass just as happily on an unguarded one.
+ */
+const guardsOn = (handler: string): unknown[] =>
+  (Reflect.getMetadata(
+    GUARDS_METADATA,
+    (DashboardController.prototype as unknown as Record<string, object>)[
+      handler
+    ],
+  ) as unknown[] | undefined) ?? [];
 
 const SUMMARY: SummaryView = {
   totalFilings: 1005,
@@ -144,7 +177,17 @@ beforeEach(() => {
     snapshot: async () => SNAPSHOT,
   } as unknown as CompanyDirectory;
 
-  controller = new DashboardController(service, directory);
+  // The two the gate added. `resolve` is what `GET /` branches on, so the
+  // stub is switchable: `signedIn` decides which document that route returns.
+  const sessions = {
+    resolve: async () => (signedIn ? SIGNED_IN : null),
+  } as unknown as SessionService;
+
+  controller = new DashboardController(service, directory, sessions, {
+    mode: 'local',
+    firebase: null,
+    missing: [],
+  });
 });
 
 describe('DashboardController — routes', () => {
@@ -234,12 +277,72 @@ describe('DashboardController — suggestions', () => {
   });
 });
 
-describe('DashboardController — page', () => {
-  it('returns the self-contained HTML document', () => {
-    const html = controller.getPage();
+describe('DashboardController — the front door', () => {
+  const ask = (): Promise<string> => controller.getPage({} as Request);
+
+  it('returns the self-contained dashboard to somebody signed in', async () => {
+    signedIn = true;
+    const html = await ask();
 
     expect(html.startsWith('<!doctype html>')).toBe(true);
     expect(html).toContain('<table>');
+  });
+
+  it('returns the landing page to somebody signed out', async () => {
+    // ONE ROUTE, TWO DOCUMENTS. Not a trimmed dashboard and not the feed with
+    // its data blanked — a different document with no client code and nothing
+    // to fetch, which is what makes "signed-out visitors read nothing" a
+    // property of the routing table rather than of what the client asks for.
+    signedIn = false;
+    const html = await ask();
+
+    expect(html.startsWith('<!doctype html>')).toBe(true);
+    expect(html).toContain('These are examples, not filings.');
+    expect(html).not.toContain('<table>');
+  });
+
+  it('never answers the front door with a 401', () => {
+    // The guard's job is to refuse and this route's job is to answer. A 401
+    // here would make an anonymous visitor's first impression of this product a
+    // JSON error body.
+    expect(guardsOn('getPage')).toEqual([]);
+  });
+});
+
+describe('DashboardController — the gate', () => {
+  const READ_ROUTES = [
+    'getSummary',
+    'getFilings',
+    'getSuggestions',
+    'getEnrichment',
+    'getCategories',
+    'getDaily',
+  ];
+
+  it.each(READ_ROUTES)('puts %s behind the session', (handler) => {
+    // THE LIST IS THE POINT. A route added to this controller without the guard
+    // is a filing route open to the world, and nothing else on the origin would
+    // notice.
+    expect(guardsOn(handler)).toEqual([SessionGuard]);
+  });
+
+  it('leaves exactly three routes open, and health is one of them', () => {
+    expect(guardsOn('getAuthPage')).toEqual([]);
+    expect(guardsOn('getHealth')).toEqual([]);
+    expect(controller.getHealth()).toEqual({
+      success: true,
+      data: { status: 'ok' },
+      error: null,
+      meta: null,
+    });
+  });
+
+  it('tells a health check nothing about the database', () => {
+    // A liveness probe that returns a build string or a collection count is
+    // reconnaissance available to anyone who can reach the port.
+    expect(JSON.stringify(controller.getHealth())).not.toMatch(
+      /mongo|filings|version|\d{4}-\d{2}-\d{2}/i,
+    );
   });
 });
 
