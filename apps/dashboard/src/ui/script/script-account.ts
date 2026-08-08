@@ -1,6 +1,9 @@
 /**
- * The account: who this browser is, the sign-in panel, the watch star, and the
+ * The account: who this browser is, the watch star, signing out, and the
  * Watching view.
+ *
+ * NO SIGN-IN PANEL. It used to hold one; the gate made it unreachable and it
+ * was removed rather than left green — see the "signing out" section below.
  *
  * A FRAGMENT, NOT A MODULE. This is client-side ES5 source held as a string
  * and concatenated into one IIFE by `page-script.ts`; the pieces share that
@@ -17,11 +20,6 @@
  */
 export const SCRIPT_ACCOUNT = `
   // ------------------------------------------------------------ account ----
-
-  // Which form the panel is showing. Not read off the DOM: the button labels
-  // are copy and the mode is behaviour, and reading one from the other is how
-  // a rewording starts registering people who meant to sign in.
-  var authMode = 'login';
 
   function signedIn() {
     return state.me !== null && state.me.signedIn === true;
@@ -136,37 +134,32 @@ export const SCRIPT_ACCOUNT = `
 
   function applyMe(me) {
     state.me = me;
-    var here = signedIn();
 
-    el('signin').hidden = here;
-    el('signout').hidden = !here;
-    if (here) el('signout').textContent = 'Sign out';
-    el('tab-watching').hidden = !here;
-    setUnread(here ? me.unread : 0);
-
-    if (here) {
-      applyWatchCounts({ used: me.watchCount, cap: me.watchCap });
-      loadWatchlist();
+    if (!signedIn()) {
+      // NOT A STATE THIS DOCUMENT CAN BE IN ANY MORE, so it is not repainted
+      // into one. Every read here is behind the session and the front door
+      // serves a signed-out browser the landing page, so the only way to be
+      // here without a session is to have lost one mid-visit - and the honest
+      // answer to that is to ask the server again rather than to redraw this
+      // page as a signed-out version of itself that cannot load a single row.
+      //
+      // Reloading also takes the watchlist with it. The old code emptied the
+      // Watching view by hand so a signed-out reader's cards would not sit
+      // hidden in the DOM on a shared machine; replacing the whole document is
+      // a stronger version of the same guarantee.
+      if (!state.signedOut) {
+        state.signedOut = true;
+        window.location.reload();
+      }
       return;
     }
 
-    // Signed out: forget the watchlist, EMPTY the Watching view, and leave it
-    // if that is where the reader was.
-    //
-    // Emptied rather than merely hidden. A hidden section keeps its nodes, so
-    // the cards of a signed-out reader's watchlist would sit in the document
-    // with their stars still on them — invisible, still in the DOM, and still
-    // that person's data on a shared machine.
-    state.watched = {};
-    el('watch-feed').textContent = '';
-    clear(el('watch-empty'));
-    el('watch-empty').hidden = true;
-    setText('watch-count', '');
-    paintWatchButtons();
-    if (state.view === 'watching') {
-      showView('feed');
-      refresh(true);
-    }
+    el('signout').hidden = false;
+    el('signout').textContent = 'Sign out';
+    el('tab-watching').hidden = false;
+    setUnread(me.unread);
+    applyWatchCounts({ used: me.watchCount, cap: me.watchCap });
+    loadWatchlist();
   }
 
   function refreshMe() {
@@ -196,77 +189,29 @@ export const SCRIPT_ACCOUNT = `
       });
   }
 
-  // -------------------------------------------------------- the panel ----
-
-  function openAuth(mode) {
-    authMode = mode;
-    var registering = mode === 'register';
-    setText('auth-title', registering ? 'Create an account' : 'Sign in');
-    setText('auth-lead', registering
-      ? 'Twelve characters or more. No rules about capitals or symbols - length is what matters.'
-      : 'Watch companies and see what they said, in one place.');
-    setText('auth-go', registering ? 'Create account' : 'Sign in');
-    setText('auth-alt', registering ? 'I already have an account' : 'Create an account');
-    // The password manager needs to be told which of the two this is, or it
-    // offers a saved password on a signup form and no generator on either.
-    el('auth-password').setAttribute('autocomplete', registering ? 'new-password' : 'current-password');
-    setText('auth-error', '');
-    el('auth-back').hidden = false;
-    el('auth-email').focus();
-  }
-
-  function closeAuth() {
-    el('auth-back').hidden = true;
-    el('auth-password').value = '';
-    setText('auth-error', '');
-  }
-
-  el('signin').addEventListener('click', function () { openAuth('login'); });
-  el('auth-close').addEventListener('click', closeAuth);
-  el('auth-alt').addEventListener('click', function () {
-    openAuth(authMode === 'register' ? 'login' : 'register');
-  });
-  el('auth-back').addEventListener('click', function (event) {
-    if (event.target === el('auth-back')) closeAuth();
-  });
-  document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape' && !el('auth-back').hidden) closeAuth();
-  });
-
-  el('auth-form').addEventListener('submit', function (event) {
-    // MUST NOT SUBMIT NATIVELY. A native POST navigates away from a page whose
-    // whole design is one document, and the reader lands on a JSON body.
-    event.preventDefault();
-    var go = el('auth-go');
-    go.disabled = true;
-    setText('auth-error', '');
-    postJson(
-      authMode === 'register' ? 'api/auth/register' : 'api/auth/login',
-      'POST',
-      { email: el('auth-email').value, password: el('auth-password').value }
-    )
-      .then(function () {
-        closeAuth();
-        return refreshMe();
-      })
-      .catch(function (err) {
-        // textContent, never a markup string, and the server's own message: the login
-        // failure is deliberately identical for a wrong password and an unknown
-        // address, and rewriting it here would be this page inventing a
-        // distinction the server refused to make.
-        setText('auth-error', err && err.message ? err.message : 'That did not work.');
-      })
-      .then(function () {
-        go.disabled = false;
-      });
-  });
+  // ---------------------------------------------------- signing out ----
+  //
+  // THE PANEL THAT USED TO LIVE HERE IS GONE. It was a modal inside this
+  // document with two inputs, a mode toggle and a submit that posted to
+  // api/auth - and every line of it became unreachable when the front door
+  // started serving a signed-out browser the landing page instead of this one.
+  // The sign-in surface is '/auth' now, built from the resolved AUTH_MODE.
+  // Two sign-in forms on one origin is two places for auth UI to drift, and
+  // only one of them would have been the one anybody used.
 
   el('signout').addEventListener('click', function () {
     postJson('api/auth/logout', 'POST', undefined)
+      .then(function () {
+        // RELOADS RATHER THAN REPAINTING. Every read on this page is behind the
+        // session now, so a signed-out reader left on this document watches
+        // every poll fail. The server answers the front door with the landing
+        // page, so the honest thing to do with a session that just ended is ask
+        // it again.
+        state.signedOut = true;
+        window.location.reload();
+      })
       .catch(function (err) {
         showError(err && err.message ? err.message : 'Could not sign out.');
-      })
-      .then(function () {
         return refreshMe();
       });
   });
@@ -290,9 +235,10 @@ export const SCRIPT_ACCOUNT = `
       })
       .catch(function (err) {
         if (!fresh()) return;
-        // A SESSION THAT ENDED UNDER AN OPEN TAB IS NOT A PAGE ERROR. Put the
-        // reader back where they can act - the feed, with the header offering
-        // Sign in - rather than painting a red banner every four seconds.
+        // A SESSION THAT ENDED UNDER AN OPEN TAB IS NOT A PAGE ERROR, and it
+        // is no longer survivable either: every read on this page is behind
+        // the session, so there is no view left to put the reader back on.
+        // applyMe reloads, and the server answers with the landing page.
         if (err && err.status === 401) {
           applyMe({ signedIn: false });
           return;

@@ -136,19 +136,15 @@ export const SCRIPT_BASE = `
     // default is not a guess about what is interesting: it is the set the
     // pipeline can stand behind.
     onlyInsights: true,
-    // Which cards a reader has opened, by seqId.
+    // 'expanded' USED TO LIVE HERE, and its removal is the point of the focus
+    // card. It recorded which cards a reader had grown in place, purely so the
+    // four-second repaint would redraw them grown — state kept to make a layout
+    // survive a poll. The dialog is outside '#feed' and no poll touches it, so
+    // there is nothing to remember.
     //
-    // KEPT IN STATE BECAUSE THE FEED REPAINTS EVERY FOUR SECONDS. The first
-    // version held the expansion in the DOM, which meant opening a card and
-    // watching it close itself on the next poll — worse than a card that never
-    // opened, because the reader loses their place and cannot tell whether they
-    // misclicked. Anything a reader does to this page has to outlive the
-    // refresh that is the whole reason the page is live.
-    expanded: {},
-    // The company whose page is open, or null. In 'state' for the same reason
-    // 'expanded' is: the page repaints every four seconds, and a view that
-    // forgot which company it was showing would snap back to the feed under a
-    // reader mid-scroll.
+    // The company whose page is open, or null. In 'state' because the page
+    // repaints every four seconds, and a view that forgot which company it was
+    // showing would snap back to the feed under a reader mid-scroll.
     company: null,
     // What the reader asked the claims to be ABOUT. Empty means any. A separate
     // axis from 'group', which is what KIND of filing NSE says it is.
@@ -160,12 +156,18 @@ export const SCRIPT_BASE = `
     me: null,
     // WHICH COMPANIES THIS READER WATCHES, keyed by SYMBOL and not by seqId.
     //
-    // IN STATE FOR THE REASON 'expanded' IS. The feed repaints every four
+    // IN STATE FOR THE REASON 'company' IS. The feed repaints every four
     // seconds and no DOM node survives a poll, so a star that lived in the DOM
     // would un-fill itself under the reader's cursor. Keyed by symbol because
     // one company files repeatedly and the star belongs to the company, not to
     // the filing that happens to be on screen.
     watched: {},
+    // LATCHED ONCE, so a 401 reloads the page exactly once. Every read is
+    // behind the session, so an expired one fails several polls at the same
+    // instant; without this each of them would call reload() and the reader
+    // would watch the page restart in a loop rather than land on the landing
+    // page. A reload loop is the one failure worse than a stale page.
+    signedOut: false,
     // Monotonic id of the LATEST refresh, for the same bug the suggest box
     // already guards against: fetch does not promise ordering. The filings
     // callback decides which view to draw by reading state at RESPONSE time,
@@ -287,7 +289,13 @@ export const SCRIPT_BASE = `
       .then(function (res) {
         if (!res.ok) {
           return res.text().then(function (body) {
-            throw new Error(path + ' returned ' + res.status + ': ' + body.slice(0, 200));
+            var failure = new Error(path + ' returned ' + res.status + ': ' + body.slice(0, 200));
+            // CARRIED, so a caller can branch on it. Every read on this page is
+            // now behind the session, and a 401 is not a failure to report - it
+            // is a session that ended under an open tab, which the poll answers
+            // by reloading into the landing page.
+            failure.status = res.status;
+            throw failure;
           });
         }
         return res.json();

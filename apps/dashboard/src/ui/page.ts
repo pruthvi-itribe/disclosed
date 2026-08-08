@@ -2,6 +2,7 @@ import { BRAND, BRAND_MARK, BRAND_TAGLINE } from './brand';
 import { PAGE_SCRIPT } from './page-script';
 import { PAGE_STYLE } from './page-style';
 import { PAGE_STYLE_BRIEF } from './page-style-brief';
+import { PAGE_STYLE_FOCUS } from './page-style-focus';
 
 /**
  * The dashboard page: one self-contained HTML document, in two views.
@@ -54,11 +55,12 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <meta name="referrer" content="no-referrer">
 <title>${BRAND} — ${BRAND_TAGLINE}</title>
 <!--
-  TWO STYLESHEETS, ONE STYLE ELEMENT. The Brief's rules are a self-contained
-  layout for one view and page-style.ts is already past this project's
-  800-line file ceiling, so they file separately and are concatenated here.
+  THREE STYLESHEETS, ONE STYLE ELEMENT. The Brief's rules and the focus card's
+  are each a self-contained layout for one surface, and page-style.ts is already
+  past this project's 800-line file ceiling, so they file separately and are
+  concatenated here.
 -->
-<style>${PAGE_STYLE}${PAGE_STYLE_BRIEF}</style>
+<style>${PAGE_STYLE}${PAGE_STYLE_BRIEF}${PAGE_STYLE_FOCUS}</style>
 </head>
 <body>
 <header class="topbar" data-ui="top-bar">
@@ -80,16 +82,18 @@ export const renderDashboardPage = (): string => `<!doctype html>
   </nav>
   <!--
     A SIBLING OF nav.tabs, NOT A CHILD OF IT. A non-tab child of a
-    role="tablist" is an ARIA violation, so these share the tab's styling by
-    class and take none of its role. '.topbar .status' carries
-    'margin-left: auto', so this slots in with no CSS layout change.
+    role="tablist" is an ARIA violation, so this shares the tab's styling by
+    class and takes none of its role. '.topbar .status' carries
+    'margin-left: auto', so it slots in with no CSS layout change.
 
-    BOTH START HIDDEN. Until api/me answers, this page does not know which of
-    the two states is true, and a header that flickers between "Sign in" and an
-    address on every load is a page that looks broken while working.
+    THERE IS NO "SIGN IN" BUTTON HERE ANY MORE, and its absence is the gate.
+    A signed-out browser never receives this document — the front door serves
+    the landing page instead — so the only account action reachable from here
+    is signing out. It starts hidden because until api/me answers, this page
+    does not know the address to put on it, and a header that fills in on the
+    first poll is quieter than one that flickers.
   -->
   <div class="account" data-ui="account">
-    <button id="signin" class="tab" type="button" hidden>Sign in</button>
     <button id="signout" class="tab" type="button" hidden></button>
   </div>
   <div class="status">
@@ -579,47 +583,62 @@ export const renderDashboardPage = (): string => `<!doctype html>
   </main>
 </section>
 
-<!-- ========================== SIGN IN =========================== -->
+<!-- ========================= FOCUS CARD ========================= -->
 <!--
-  A MODAL PANEL INSIDE THIS DOCUMENT, not a second served page: another HTML
-  document would duplicate the whole inline-CSS shell for two input fields.
+  ONE CARD, FULL SIZE, WITH EVERYTHING IT HAS.
 
-  The form MUST NOT SUBMIT NATIVELY. A native POST navigates away from a page
-  whose whole design is one document, so the script calls preventDefault and
-  posts the JSON itself.
+  It replaces the inline "+ N more" expansion. That control grew the card in
+  place, which pushed every other card in its grid row down, reflowed the feed
+  under whoever clicked it, and still could not show the one thing a reader
+  stops on a card to see — the sentence in the document each claim was matched
+  against. Those spans lived in the Admin table's detail row, which is a
+  different view for a different person.
 
-  The autocomplete attributes are a SECURITY CONTROL, not a convenience:
-  omitting them stops a password manager offering to generate and store a
-  password, and people who cannot store a password pick a worse one.
+  THE SHELL IS EMPTY, like every other view here. The dialog's contents are
+  built by the script with createElement and textContent for one absolute
+  reason: a claim, a company name and a quoted span are all exchange-derived
+  text.
+
+  OUTSIDE #feed ON PURPOSE. The feed rebuilds itself every four seconds and no
+  node inside it survives a poll; a dialog rendered into the card it came from
+  would close itself under the reader mid-read.
 -->
-<div id="auth-back" class="authback" hidden>
-  <div class="authpanel" data-ui="auth-panel" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-    <h2 id="auth-title">Sign in</h2>
-    <div id="auth-lead" class="authlead">Watch companies and see what they said, in one place.</div>
-    <form id="auth-form">
-      <label for="auth-email">Email</label>
-      <input id="auth-email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" required>
-      <label for="auth-password">Password</label>
-      <input id="auth-password" type="password" autocomplete="current-password" required>
-      <div class="authrow">
-        <button id="auth-go" class="authgo" type="submit">Sign in</button>
-        <button id="auth-alt" class="authalt" type="button">Create an account</button>
-        <span style="flex:1 1 auto"></span>
-        <button id="auth-close" class="authclose" type="button">Close</button>
+<div id="focus-back" class="focusback" data-ui="focus-back" hidden>
+  <div id="focus" class="focuscard" data-ui="focus-card"
+       role="dialog" aria-modal="true" aria-labelledby="focus-symbol">
+    <header class="focushead">
+      <div class="who">
+        <span id="focus-symbol" class="sym"></span>
+        <span id="focus-name" class="coname"></span>
       </div>
-    </form>
-    <div id="auth-error" class="autherr"></div>
-    <!--
-      SAID OUT LOUD, because it is true and because the alternative is worse. A
-      reset link needs email, email needs a verified sending domain, and that
-      domain is the same one the TLS certificate needs — so on a loopback
-      deployment reset is not a cost trade-off, it is not possible. What is not
-      acceptable is a reset link that quietly does nothing, or a page that stays
-      silent while somebody locks themselves out.
-    -->
-    <div class="authnote">No password reset yet — message the operator and it will be reset by hand.</div>
+      <span id="focus-when" class="when"></span>
+      <!-- The X. A real button with a real accessible name: a bare glyph is
+           unreachable to a screen reader and unhittable with a thumb. -->
+      <button id="focus-close" class="focusclose" type="button" aria-label="Close">
+        <span aria-hidden="true">&times;</span>
+      </button>
+    </header>
+    <div id="focus-body" class="focusbody"></div>
+    <footer id="focus-foot" class="focusfoot"></footer>
   </div>
 </div>
+
+<!-- ========================== SIGN IN =========================== -->
+<!--
+  THERE IS NO SIGN-IN PANEL ON THIS PAGE ANY MORE, and the empty space is the
+  point rather than an omission.
+
+  It was a modal inside this document: two inputs, a mode toggle and a form that
+  posted to api/auth. Every part of it is now unreachable, because a browser
+  with no session never receives this document — the front door answers a
+  signed-out visitor with the landing page. Leaving it would be a second sign-in
+  form on one origin, kept green by tests, drifting away from the one people
+  actually use.
+
+  The sign-in surface is '/auth', built from the resolved AUTH_MODE: Google plus
+  a password form, or the in-house password form, or an honest panel naming the
+  environment variables that have not been set. See 'ui/auth-page.ts'.
+-->
 
 
 <script>${PAGE_SCRIPT}</script>

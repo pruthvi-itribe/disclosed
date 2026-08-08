@@ -46,7 +46,15 @@ body {
 /* Every band shares one measure, so nothing on the page is ragged against
    anything else. 1080px rather than the app's 1680: this is prose and cards
    read at prose width, not at dashboard width. */
-.wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+/* LONGHANDS, NOT THE SHORTHAND, and this cost a real bug. '.wrap' and '.band'
+   are used together on one element, so two 'padding' shorthands collided: the
+   media query at the bottom re-declared '.wrap { padding: 0 32px }' and wiped
+   '.band''s 72px top padding, collapsing every section break on screens wider
+   than 700px to nothing. Longhands cannot do that to each other. */
+.wrap {
+  width: 100%; max-width: 1080px; margin: 0 auto;
+  padding-left: 20px; padding-right: 20px;
+}
 .muted { color: var(--muted); }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 a { color: var(--accent); text-decoration: none; }
@@ -81,7 +89,7 @@ a:hover { text-decoration: underline; }
 .go.ghost:hover { border-color: var(--muted); filter: none; }
 
 /* --------------------------------------------------------------- hero ---- */
-.hero { padding: 44px 0 8px; }
+.hero { padding-top: 44px; padding-bottom: 8px; }
 .h1 {
   margin: 0;
   /* Fluid rather than stepped. The headline is the one element whose size at
@@ -125,7 +133,7 @@ a:hover { text-decoration: underline; }
 .statnote { margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 
 /* ------------------------------------------------------------- bands ----- */
-.band { padding: 52px 0 0; }
+.band { padding-top: 52px; }
 .band:last-of-type { padding-bottom: 60px; }
 .eyebrow {
   font-size: 11px; text-transform: uppercase; letter-spacing: .13em;
@@ -158,6 +166,13 @@ a:hover { text-decoration: underline; }
   border-radius: 14px; padding: 16px 18px;
   display: flex; flex-direction: column;
   position: relative;
+  /* MEASURED, NOT DECORATIVE. A grid item's default minimum is its CONTENT
+     width, so the results line below — one monospaced row set 'nowrap' — made
+     the column as wide as the longest filing rather than as wide as the phone.
+     At 390px the document scrolled 243px sideways, which 'e2e/landing.spec.ts'
+     caught. 'min-width: 0' is what lets the item shrink and lets the results
+     line's own 'overflow-x' do the scrolling instead of the page. */
+  min-width: 0;
 }
 /* The badge sits ON the card rather than beside it, so a screenshot of one card
    carries its own disclaimer. */
@@ -167,14 +182,21 @@ a:hover { text-decoration: underline; }
   font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
   padding: 3px 8px; border-radius: 0 0 6px 6px;
 }
-.cardhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; padding-right: 74px; }
-.who { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1 1 auto; }
-.sym { font-size: 17px; font-weight: 680; letter-spacing: -0.01em; }
-.coname {
-  color: var(--muted); font-size: 12.5px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+/* WRAPS RATHER THAN TRUNCATES, unlike the feed's version of this row, and the
+   difference is the column width. In the app a card sits in a 400px grid
+   column and the name is one of sixty on screen, so an ellipsis is the right
+   trade. Here there are three cards, each one is an argument, and
+   "Northfield Steel Works Limited" rendered as "North…" makes the example look
+   like a bug rather than like a filing. The time drops to its own line when the
+   name needs the room. */
+.cardhead {
+  display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap;
+  margin-bottom: 10px; padding-right: 74px;
 }
-.when { color: var(--muted); font-size: 12px; white-space: nowrap; margin-left: auto; }
+.who { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1 1 auto; flex-wrap: wrap; }
+.sym { font-size: 17px; font-weight: 680; letter-spacing: -0.01em; }
+.coname { color: var(--muted); font-size: 12.5px; min-width: 0; }
+.when { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
 .resultsline {
   font-family: var(--mono); font-size: 13px; line-height: 1.5;
@@ -185,7 +207,16 @@ a:hover { text-decoration: underline; }
 }
 
 .insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
-.insights li { font-size: 15.5px; line-height: 1.45; font-weight: 480; padding-left: 14px; position: relative; }
+.insights { min-width: 0; }
+/* A quoted span from a PDF can carry a token with no break opportunity in it —
+   a URL, a scrip code, a run of digits — and one of those in a 390px column
+   widens the column rather than wrapping. 'anywhere' is the only value that
+   breaks mid-token as a last resort. */
+.insights li {
+  font-size: 15.5px; line-height: 1.45; font-weight: 480;
+  padding-left: 14px; position: relative;
+  min-width: 0; overflow-wrap: anywhere;
+}
 .insights li::before {
   content: ""; position: absolute; left: 0; top: .62em;
   width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
@@ -288,7 +319,7 @@ footer.foot {
   .stats { grid-template-columns: repeat(3, 1fr); }
   .hero { padding-top: 64px; }
   .band { padding-top: 72px; }
-  .wrap { padding: 0 32px; }
+  .wrap { padding-left: 32px; padding-right: 32px; }
 }
 @media (min-width: 940px) {
   .cards { grid-template-columns: repeat(3, 1fr); align-items: start; }

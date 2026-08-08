@@ -251,44 +251,37 @@ export const SCRIPT_FEED = `
     card.appendChild(head);
 
     if (lines.length > 0) {
-      var isOpen = Object.prototype.hasOwnProperty.call(
-        state.expanded,
-        String(f.seqId),
-      );
-      var shown = isOpen ? lines.length : CARD_CLAIMS;
       var list = document.createElement('ul');
       list.className = 'insights';
       list.setAttribute('data-ui', 'card-claims');
-      for (var i = 0; i < lines.length && i < shown; i++) {
+      for (var i = 0; i < lines.length && i < CARD_CLAIMS; i++) {
         var li = document.createElement('li');
         writeInsight(li, lines[i]);
         list.appendChild(li);
       }
       card.appendChild(list);
-      if (lines.length > CARD_CLAIMS && !isOpen) {
-        // EXPANDS RATHER THAN ANNOUNCES. '+ 6 more' as dead text tells a reader
-        // the card is hiding something and gives them nowhere to go; the whole
-        // reason the card stops at two is that eleven is a wall, and the
-        // reason it says so is that silently truncating would make a partial
-        // card look complete.
+      if (lines.length > CARD_CLAIMS) {
+        // OPENS THE FOCUS CARD RATHER THAN GROWING THIS ONE. It used to append
+        // the rest of the claims here and remove itself, which pushed every
+        // other card in the grid row down and reflowed the feed under whoever
+        // clicked it. It also could not show what a reader who stops on a card
+        // actually wants: the sentence in the document each claim was matched
+        // against.
+        //
+        // IT STILL SAYS HOW MANY. Silently truncating would make a partial card
+        // look complete, and the count is what tells a reader the click is
+        // worth making.
         var more = document.createElement('button');
         more.type = 'button';
         more.className = 'andmore';
+        more.setAttribute('data-ui', 'card-more');
         more.textContent = '+ ' + (lines.length - CARD_CLAIMS) + ' more';
-        more.onclick = (function (seqId, rest, list, button) {
+        more.onclick = (function (filing) {
           return function (event) {
             event.stopPropagation();
-            // Recorded in state FIRST, so the repaint four seconds from now
-            // draws the card open rather than undoing this.
-            state.expanded[String(seqId)] = true;
-            for (var k = 0; k < rest.length; k++) {
-              var extra = document.createElement('li');
-              writeInsight(extra, rest[k]);
-              list.appendChild(extra);
-            }
-            button.remove();
+            openFocus(filing);
           };
-        })(f.seqId, lines.slice(CARD_CLAIMS), list, more);
+        })(f);
         card.appendChild(more);
       }
     } else {
@@ -368,6 +361,43 @@ export const SCRIPT_FEED = `
     }
 
     card.appendChild(foot);
+
+    // THE WHOLE CARD OPENS, and the affordance is the cursor rather than a
+    // control. A permanent "expand" button on every card would be chrome on the
+    // densest surface in the product, and the card already carries four
+    // controls of its own.
+    //
+    // A CLICK THAT LANDED ON ONE OF THOSE IS NOT A CLICK ON THE CARD. The
+    // symbol, the star and Copy each stop propagation already; the Source link
+    // does not and must not, because swallowing a click on a link is how a link
+    // stops being one. So the test is on the target rather than on the
+    // bubbling, which also means a control added later needs no ceremony.
+    card.className += ' openable';
+    // KEYBOARD REACHABLE. A div with a click handler is operable by mouse only,
+    // and everything in this dialog is otherwise unreachable without one.
+    // The honest cost, stated: a focusable element containing focusable
+    // children is a compromise. The alternative — a fifth button on every card
+    // — is chrome, and leaving it mouse-only is not an option.
+    card.tabIndex = 0;
+    card.setAttribute('aria-haspopup', 'dialog');
+    card.setAttribute('aria-label', 'Open everything ' + f.symbol + ' filed');
+    card.onclick = (function (filing) {
+      return function (event) {
+        if (event.target && event.target.closest &&
+            event.target.closest('a, button')) return;
+        openFocus(filing);
+      };
+    })(f);
+    card.onkeydown = (function (filing) {
+      return function (event) {
+        // Enter only. Space scrolls a page, and stealing it from a container
+        // the reader is tabbing through is worse than not handling it.
+        if (event.key !== 'Enter' || event.target !== event.currentTarget) return;
+        event.preventDefault();
+        openFocus(filing);
+      };
+    })(f);
+
     return card;
   }
 

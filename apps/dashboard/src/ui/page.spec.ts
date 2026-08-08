@@ -6,9 +6,12 @@ import { BRAND } from './brand';
 import { renderDashboardPage } from './page';
 import { PAGE_STYLE } from './page-style';
 import { PAGE_STYLE_BRIEF } from './page-style-brief';
+import { PAGE_STYLE_FOCUS } from './page-style-focus';
 import { SCRIPT_ACCOUNT } from './script/script-account';
 import { SCRIPT_BASE } from './script/script-base';
 import { SCRIPT_BRIEF } from './script/script-brief';
+import { SCRIPT_FEED } from './script/script-feed';
+import { SCRIPT_FOCUS } from './script/script-focus';
 import { SCRIPT_POLL } from './script/script-poll';
 
 /**
@@ -116,7 +119,6 @@ describe('renderDashboardPage — content', () => {
     'brief-end-line',
     'brief-to-feed',
     'brief-empty',
-    'signin',
     'signout',
     'tab-watching',
     'tab-watching-count',
@@ -125,17 +127,26 @@ describe('renderDashboardPage — content', () => {
     'watch-empty',
     'watch-feed',
     'co-watch',
-    'auth-back',
-    'auth-form',
-    'auth-email',
-    'auth-password',
-    'auth-go',
-    'auth-alt',
-    'auth-close',
-    'auth-error',
-    'auth-title',
-    'auth-lead',
+    // The focus card's shell. Filled by the script; empty in the markup.
+    'focus-back',
+    'focus',
+    'focus-symbol',
+    'focus-name',
+    'focus-when',
+    'focus-close',
+    'focus-body',
+    'focus-foot',
   ] as const;
+
+  it('carries no sign-in panel of its own', () => {
+    // REMOVED, NOT HIDDEN. The front door serves a signed-out browser the
+    // landing page, so a modal inside this document was unreachable code kept
+    // green by this very list. The sign-in surface is `/auth`; two sign-in
+    // forms on one origin is two places for auth UI to drift.
+    for (const gone of ['auth-back', 'auth-form', 'auth-email', 'signin']) {
+      expect(html).not.toContain(`id="${gone}"`);
+    }
+  });
 
   it.each(REQUIRED_IDS)('carries the #%s the script writes into', (id) => {
     // The script addresses these by id and would fail silently against a
@@ -1072,15 +1083,14 @@ describe('renderDashboardPage — the account', () => {
         html.indexOf('<nav class="tabs"'),
         html.indexOf('</nav>'),
       );
-      expect(tablist).not.toContain('id="signin"');
+      expect(tablist).not.toContain('id="signout"');
       expect(html).toContain('<div class="account" data-ui="account">');
     });
 
-    it('starts both header buttons hidden, so the header cannot flicker', () => {
-      // Until api/me answers, the page does not know which of the two states
-      // is true. Drawing either through that gap is a header that changes
-      // under the reader on every load.
-      expect(html).toMatch(/id="signin"[^>]*hidden/);
+    it('starts the sign-out button hidden, so the header cannot flicker', () => {
+      // Until api/me answers, the page does not know the address to put on it,
+      // and a header that fills in on the first poll is quieter than one that
+      // changes under the reader.
       expect(html).toMatch(/id="signout"[^>]*hidden/);
     });
 
@@ -1138,45 +1148,32 @@ describe('renderDashboardPage — the account', () => {
     });
   });
 
-  describe('the sign-in panel', () => {
-    it('is a panel in this document rather than a second served page', () => {
-      // A second HTML document would duplicate the whole inline-CSS shell for
-      // two input fields.
-      expect(html).toContain('id="auth-back"');
-      expect(html).toContain('role="dialog"');
+  describe('signing out', () => {
+    it('reloads rather than repainting this document as signed out', () => {
+      // Every read here is behind the session, so a signed-out reader left on
+      // this page watches every poll fail. The server answers the front door
+      // with the landing page, so the honest thing to do with a session that
+      // just ended is ask it again.
+      expect(SCRIPT_ACCOUNT).toContain('window.location.reload()');
     });
 
-    it('never submits natively', () => {
-      // A native POST navigates away from a page whose whole design is one
-      // document, and the reader lands on a JSON body.
-      expect(SCRIPT_ACCOUNT).toContain('event.preventDefault();');
+    it('latches the reload, so a dead session cannot loop the page', () => {
+      // Several polls fail at the same instant when a session expires. Without
+      // the latch each of them calls reload() and the reader watches the page
+      // restart repeatedly — the one failure worse than a stale page.
+      expect(SCRIPT_BASE).toContain('signedOut: false');
+      expect(SCRIPT_ACCOUNT).toContain('if (!state.signedOut)');
+      expect(SCRIPT_POLL).toContain('err.status === 401 && !state.signedOut');
     });
 
-    it('lets a password manager do its job', () => {
-      expect(html).toContain('autocomplete="email"');
-      expect(html).toContain('autocomplete="current-password"');
-      expect(SCRIPT_ACCOUNT).toContain(
-        "registering ? 'new-password' : 'current-password'",
-      );
-    });
-
-    it('says in plain words that there is no self-serve reset yet', () => {
-      // A reset link that quietly does nothing, or a page that stays silent
-      // while somebody locks themselves out, are both worse than saying so.
-      expect(html).toContain(
-        'No password reset yet — message the operator and it will be reset by hand.',
-      );
-    });
-
-    it('writes the error line with textContent, never innerHTML', () => {
-      expect(SCRIPT_ACCOUNT).toContain("setText('auth-error'");
+    it('has no sign-in form of its own left to drift', () => {
+      // The panel that used to be here posted to api/auth from inside this
+      // document. `/auth` owns that now, and `auth-page.spec.ts` holds the
+      // password-manager attributes, the no-native-submit rule and the reset
+      // note that used to be asserted here.
+      expect(SCRIPT_ACCOUNT).not.toContain('auth-form');
+      expect(SCRIPT_ACCOUNT).not.toContain('openAuth');
       expect(SCRIPT_ACCOUNT).not.toContain('innerHTML');
-    });
-
-    it('shows the server own login failure rather than inventing a distinction', () => {
-      // The server answers a wrong password and an unknown address identically
-      // on purpose; a page that rewrote either would undo that.
-      expect(SCRIPT_ACCOUNT).toContain('err && err.message ? err.message');
     });
   });
 
@@ -1240,5 +1237,118 @@ describe('renderDashboardPage — the account', () => {
     it('builds every path relative, since no URL appears in the client', () => {
       expect(SCRIPT_ACCOUNT).not.toMatch(/https?:\/\//);
     });
+  });
+});
+
+/**
+ * The focus card.
+ *
+ * What can be asserted against a rendered string is the shell, the ARIA and the
+ * discipline of the fragment that fills it. That the dialog actually opens,
+ * animates and gives focus back is `e2e/focus.spec.ts`, because a string test
+ * cannot execute JavaScript — the same division `page.spec.ts`'s own header
+ * draws.
+ */
+describe('the focus card', () => {
+  const html = renderDashboardPage();
+
+  it('ships an empty dialog shell, outside the feed', () => {
+    // OUTSIDE `#feed` ON PURPOSE. The feed rebuilds every four seconds and no
+    // node inside it survives a poll, so a dialog rendered into the card it
+    // came from would close itself under a reader mid-read.
+    const feedAt = html.indexOf('<div id="feed" class="feed"');
+    const dialogAt = html.indexOf('id="focus-back"');
+
+    expect(dialogAt).toBeGreaterThan(-1);
+    expect(dialogAt).toBeGreaterThan(feedAt);
+    // Empty in the markup: every claim, name and span in it is exchange-derived
+    // text and reaches the DOM through createElement/textContent or not at all.
+    expect(html).toContain('<div id="focus-body" class="focusbody"></div>');
+    expect(html).toContain(
+      '<footer id="focus-foot" class="focusfoot"></footer>',
+    );
+  });
+
+  it('is a real dialog, with a labelled close button', () => {
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="focus-symbol"');
+    // A bare glyph is unreachable to a screen reader and unhittable with a
+    // thumb, so the X is a button with an accessible name of its own.
+    expect(html).toContain('id="focus-close"');
+    expect(html).toContain('aria-label="Close"');
+  });
+
+  it('honours prefers-reduced-motion by removing the motion, not shortening it', () => {
+    const reduced = PAGE_STYLE_FOCUS.slice(
+      PAGE_STYLE_FOCUS.indexOf('prefers-reduced-motion'),
+    );
+
+    expect(reduced).toContain('transition: none');
+    expect(reduced).toContain('transform: none');
+  });
+
+  it('blurs the backdrop with both spellings, so Safari gets it too', () => {
+    expect(PAGE_STYLE_FOCUS).toContain('-webkit-backdrop-filter: blur(');
+    expect(PAGE_STYLE_FOCUS).toContain('backdrop-filter: blur(');
+  });
+
+  it('replaced the in-place expansion rather than adding to it', () => {
+    // The card no longer grows: `state.expanded` is gone, and with it the only
+    // reason the page held layout state across a poll.
+    expect(SCRIPT_BASE).not.toContain('expanded: {}');
+    expect(SCRIPT_FEED).not.toContain('state.expanded');
+    // The count survives, because silently truncating would make a partial card
+    // look complete.
+    expect(SCRIPT_FEED).toContain(
+      "'+ ' + (lines.length - CARD_CLAIMS) + ' more'",
+    );
+    expect(SCRIPT_FEED).toContain('openFocus(filing)');
+  });
+
+  it('does not swallow a click that landed on a link or a button', () => {
+    // Swallowing a click on a link is how a link stops being one. The test is
+    // on the event target rather than on bubbling, so a control added to the
+    // card later needs no ceremony.
+    expect(SCRIPT_FEED).toContain("closest('a, button')");
+  });
+
+  it('shows every claim, including the echoes the feed skips', () => {
+    // The feed skips a claim an earlier card already stated, because a scan
+    // view repeating itself is noise. This view is one filing opened on
+    // purpose, and "everything this filing said" cannot quietly omit a sentence
+    // the document contains.
+    expect(SCRIPT_FOCUS).toContain('function focusLines(e)');
+    expect(SCRIPT_FOCUS).not.toContain('echo');
+  });
+
+  it('quotes each span through textContent, with whitespace collapsed', () => {
+    // A span lifted out of a PDF carries the line breaks of the page it was set
+    // on, and those are not part of the sentence.
+    expect(SCRIPT_FOCUS).toContain('createTextNode');
+    // ASSERTED ON THE SERVED PAGE, NOT ON THE FRAGMENT SOURCE. Every backslash
+    // in a fragment is doubled because the template literal eats one, so the
+    // source says `\\s` and the browser receives `\s` — and it is the second
+    // that has to be a digit class. CLAUDE.md records this as a sharp edge
+    // because the wrong one has shipped.
+    expect(html).toContain("replace(/\\s+/g, ' ')");
+    expect(SCRIPT_FOCUS).not.toContain('innerHTML');
+  });
+
+  it('empties the dialog on close rather than merely hiding it', () => {
+    // A hidden node keeps every claim and quoted span in the document —
+    // invisible, and still there on a shared screen.
+    expect(SCRIPT_FOCUS).toContain("clear(el('focus-body'))");
+    expect(SCRIPT_FOCUS).toContain("clear(el('focus-foot'))");
+  });
+
+  it('keeps Tab inside the dialog, so aria-modal is not a claim it breaks', () => {
+    expect(SCRIPT_FOCUS).toContain('function trapFocus(event)');
+    expect(SCRIPT_FOCUS).toContain('focusReturn.focus()');
+  });
+
+  it('links the source only through safeHref', () => {
+    expect(SCRIPT_FOCUS).toContain('safeHref(f.attachmentUrl)');
+    expect(SCRIPT_FOCUS).toContain("rel = 'noopener noreferrer nofollow'");
   });
 });

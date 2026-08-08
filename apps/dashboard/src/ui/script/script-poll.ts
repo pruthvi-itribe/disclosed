@@ -114,6 +114,21 @@ export const SCRIPT_POLL = `
       // report on a question nobody is asking any more, and marking the page
       // down for it would contradict the newer refresh that succeeded.
       if (!fresh()) return;
+      // A SESSION THAT ENDED UNDER AN OPEN TAB IS NOT A PIPELINE FAULT.
+      //
+      // Every read on this page is behind the session now, so an expired or
+      // revoked one turns the whole feed into a red banner reappearing every
+      // four seconds - which reads as an outage and tells the reader nothing
+      // they can act on. Reloading hands the decision back to the server, and
+      // the server answers the front door with the landing page.
+      //
+      // Guarded on the flag rather than reloading unconditionally, because a
+      // reload loop is the one failure worse than a stale page.
+      if (err && err.status === 401 && !state.signedOut) {
+        state.signedOut = true;
+        window.location.reload();
+        return;
+      }
       state.failures += 1;
       // Never swallowed. A dashboard that silently stops updating is worse
       // than one that says it stopped, because the stale numbers still read

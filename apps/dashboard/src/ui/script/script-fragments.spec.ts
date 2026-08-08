@@ -6,6 +6,7 @@ import { SCRIPT_BRIEF } from './script-brief';
 import { SCRIPT_CELLS } from './script-cells';
 import { SCRIPT_COMPANY } from './script-company';
 import { SCRIPT_FEED } from './script-feed';
+import { SCRIPT_FOCUS } from './script-focus';
 import { SCRIPT_POLL } from './script-poll';
 import { SCRIPT_SUGGEST } from './script-suggest';
 import { SCRIPT_VIEWS } from './script-views';
@@ -24,6 +25,9 @@ const FRAGMENTS: ReadonlyArray<readonly [string, string]> = [
   ['script-base', SCRIPT_BASE],
   ['script-cells', SCRIPT_CELLS],
   ['script-feed', SCRIPT_FEED],
+  // After `script-feed`: it calls that fragment's `writeInsight`, and
+  // `feedCard` calls this one's `openFocus`.
+  ['script-focus', SCRIPT_FOCUS],
   // After `script-feed`, because the deck's every string reaches the DOM
   // through `writeClaim` and `safeHref` and nothing else.
   ['script-brief', SCRIPT_BRIEF],
