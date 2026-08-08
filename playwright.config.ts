@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { SIGNED_IN_STATE } from './e2e/session';
 
 /**
  * Browser tests for the dashboard.
@@ -29,8 +30,27 @@ export default defineConfig({
   reporter: [['list']],
   timeout: 30_000,
   expect: { timeout: 10_000 },
+  /**
+   * ONE REGISTRATION FOR THE WHOLE RUN, and one deletion after it.
+   *
+   * Every page and every read is behind the session now, so the suite needs a
+   * session — and `POST api/auth/*` is limited to ten a minute per IP, all of
+   * which arrive from 127.0.0.1. A per-file registration would rate-limit the
+   * suite against itself, which is the limiter working rather than a bug to
+   * route around. See `e2e/session.ts` for why there is no bypass in the server.
+   */
+  globalSetup: './e2e/global-setup.ts',
+  globalTeardown: './e2e/global-teardown.ts',
   use: {
     baseURL: process.env.DASHBOARD_URL ?? 'http://127.0.0.1:7717',
+    /**
+     * SIGNED IN BY DEFAULT, because that is what almost every test here is
+     * about: the feed, the deck, the type-ahead and the focus card are all
+     * behind the gate. The specs whose subject IS being signed out opt back
+     * out with `test.use({ storageState: { cookies: [], origins: [] } })`,
+     * which reads as the deliberate choice it is.
+     */
+    storageState: SIGNED_IN_STATE,
     // A screenshot of a failed dashboard assertion is worth more than its
     // stack: the question is nearly always "what did it actually look like".
     screenshot: 'only-on-failure',

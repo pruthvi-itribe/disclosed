@@ -1,8 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mkdtempSync, rmSync } from 'fs';
 import mongoose from 'mongoose';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { mongoUri, originUrl, RUN_PASSWORD } from './session';
 
 /**
  * The whole loop, in a browser, against the real database:
@@ -16,29 +14,31 @@ import { join } from 'path';
  * session exists. A fixture would be asserting that a mock renders.
  *
  * ================================================================
- * WHY MOST OF THESE TESTS DO NOT SIGN IN THROUGH THE FORM
+ * ITS OWN ACCOUNT, UNLIKE EVERY OTHER FILE HERE
  * ================================================================
  *
- * `POST api/auth/*` is limited to ten a minute PER IP, and every request in
- * this file comes from 127.0.0.1. Ten UI sign-ins in a suite that runs in under
- * a minute is a suite that rate-limits itself — which is the limiter working,
- * not a bug to route around.
+ * The rest of the suite starts from the one session `global-setup.ts` created,
+ * because `POST api/auth/*` is limited to ten a minute per IP and every request
+ * comes from 127.0.0.1. This file is the exception because its SUBJECT is
+ * registration and sign-in, and it cannot test those from a saved cookie.
  *
- * So the file spends its budget deliberately: ONE test drives the panel by hand
- * (that is the test whose subject is the form), and the rest start from a saved
- * cookie. Total sign-in calls: register, one wrong password, two UI logins in
- * the loop test, and one in the cleanup — five of the ten.
+ * The budget is spent deliberately: one register, one deliberately wrong
+ * password, two sign-ins in the loop test, and one in the cleanup — five of the
+ * ten, on top of global setup's one.
+ *
+ * ================================================================
+ * THE SIGN-IN SURFACE IS `/auth` NOW, NOT A PANEL ON THE FEED
+ * ================================================================
+ *
+ * A signed-out browser never receives the dashboard document — the front door
+ * serves the landing page — so the modal that used to hold these two fields is
+ * gone, along with the `#signin` button that opened it. Everything below drives
+ * the real page a person would use.
  *
  * The account is created with a unique address per run and REMOVED at the end —
- * the user, its sessions and its watchlist — by connecting to the same database
- * the dashboard is pointed at. Through the driver rather than through a route,
- * because there is no account-deletion route yet (it is follow-on F8), and a
- * browser suite that left a user document behind on every run would be turning
- * a test into a slow leak in a real collection.
- *
- * A killed run leaves one user with a random address behind it. `MONGO_URI` is
- * read the same way the dashboard reads it, so pointing the suite at a
- * different database is one variable.
+ * the user, its sessions and its watchlist — through the driver, because there
+ * is no account-deletion route yet (follow-on F8) and a browser suite that left
+ * a user document behind on every run would be a slow leak in a real collection.
  */
 
 /** Fails the test if the page logged an uncaught error, whatever else it did. */
@@ -58,24 +58,19 @@ const watchConsole = (page: Page): string[] => {
  * no `Origin` of its own, so each non-GET call below has to state it. A browser
  * sets it automatically, which is why the page itself needs no help.
  */
-const origin = (): string =>
-  process.env.DASHBOARD_URL ?? 'http://127.0.0.1:7717';
+const origin = originUrl;
 
 /** Unique per run, so a killed run cannot collide with the next one. */
-const EMAIL = `e2e-${Date.now()}-${Math.floor(Math.random() * 1e6)}@turret.test`;
-const PASSWORD = 'rhubarb tuesday lantern';
+const EMAIL = `e2e-loop-${Date.now()}-${Math.floor(Math.random() * 1e6)}@turret.test`;
+const PASSWORD = RUN_PASSWORD;
 
-/** Where the registered session's cookie is kept for the tests that reuse it. */
-const stateDir = mkdtempSync(join(tmpdir(), 'turret-e2e-'));
-const SIGNED_IN_STATE = join(stateDir, 'signed-in.json');
-
-/** Signs the page in through the panel, exactly as a person would. */
+/** Signs the page in through the real page, exactly as a person would. */
 const signInThroughTheForm = async (page: Page): Promise<void> => {
-  await expect(page.locator('#signin')).toBeVisible();
-  await page.locator('#signin').click();
+  await page.goto('/auth');
   await page.locator('#auth-email').fill(EMAIL);
   await page.locator('#auth-password').fill(PASSWORD);
   await page.locator('#auth-go').click();
+  // The page navigates to the app itself on success.
   await expect(page.locator('#signout')).toBeVisible();
 };
 
@@ -87,16 +82,33 @@ const aKnownSymbol = async (page: Page): Promise<string> => {
   return body.data[0].symbol;
 };
 
+/**
+ * A symbol that is ON SCREEN, which is not the same question.
+ *
+ * `aKnownSymbol` asks the server for the newest filing; the feed shows only
+ * filings carrying a verified claim, because "Only filings that said something"
+ * is on by default. The two disagree whenever the newest filing said nothing
+ * verifiable — which is most of them, and which is how this test came to be
+ * looking for a star on a card that was never drawn. A test about a control
+ * has to find the control the way a reader does.
+ */
+const aSymbolOnScreen = async (page: Page): Promise<string> => {
+  await expect(page.locator('#live-text')).not.toHaveText('connecting');
+  await expect(page.locator('#feed .card[data-seq]')).not.toHaveCount(0);
+  const symbol = await page
+    .locator('#feed .card[data-seq] .sym')
+    .first()
+    .textContent();
+  expect(symbol).toBeTruthy();
+  return (symbol as string).trim();
+};
+
 test.beforeAll(async ({ request }) => {
   const response = await request.post('/api/auth/register', {
     data: { email: EMAIL, password: PASSWORD },
     headers: { Origin: origin() },
   });
   expect(response.status()).toBe(201);
-
-  // The session cookie register just set, saved so the tests that are not
-  // about the form can start from it.
-  await request.storageState({ path: SIGNED_IN_STATE });
 });
 
 test.afterAll(async ({ request }) => {
@@ -122,13 +134,10 @@ test.afterAll(async ({ request }) => {
     });
   }
 
-  rmSync(stateDir, { recursive: true, force: true });
-
   // The account itself, removed through the driver. Named collections rather
   // than models: this file has no schemas and needs none to delete three
   // documents.
-  const uri = process.env.MONGO_URI ?? 'mongodb://localhost:27117/turret';
-  const connection = mongoose.createConnection(uri);
+  const connection = mongoose.createConnection(mongoUri());
   try {
     await connection.asPromise();
     const db = connection.db;
@@ -145,46 +154,62 @@ test.afterAll(async ({ request }) => {
   }
 });
 
-test.describe('signed out', () => {
-  test('offers a way in and hides everything that needs one', async ({
-    page,
-  }) => {
+test.describe('the sign-in page', () => {
+  // SIGNED OUT ON PURPOSE, against the config's signed-in default. These four
+  // are about the way in, and starting them from a session would test nothing.
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('is where the landing page sends a visitor', async ({ page }) => {
     const errors = watchConsole(page);
     await page.goto('/');
 
-    await expect(page.locator('#signin')).toBeVisible();
-    await expect(page.locator('#signout')).toBeHidden();
-    // The tab is meaningless without a watchlist, and a control that is
-    // permanently disabled and never explains itself is worse than no control.
-    await expect(page.locator('#tab-watching')).toBeHidden();
+    await page.locator('[data-ui="signin-top"]').click();
+    await expect(page).toHaveURL(/\/auth$/);
+    await expect(page.locator('#auth-email')).toBeVisible();
+    await expect(page.locator('#auth-password')).toBeVisible();
     expect(errors).toEqual([]);
   });
 
-  test('draws no watch star on any card', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('#live-text')).not.toHaveText('connecting');
-    await expect(page.locator('#feed .card, #feed .emptyfeed')).not.toHaveCount(
-      0,
-    );
+  test('offers the in-house form, because this host runs AUTH_MODE=local', async ({
+    page,
+  }) => {
+    // The suite cannot run any other way — `global-setup.ts` registers through
+    // the in-house route and fails loudly if it is closed — so asserting the
+    // mode here is asserting the environment the rest of the file assumes.
+    await page.goto('/auth');
 
-    // ABSENT, not disabled.
-    await expect(page.locator('[data-ui="watch"]')).toHaveCount(0);
+    await expect(page.locator('#auth-form')).toBeVisible();
+    await expect(page.locator('#auth-google')).toHaveCount(0);
+  });
+
+  test('switches between signing in and creating an account', async ({
+    page,
+  }) => {
+    await page.goto('/auth');
+
+    await expect(page.locator('#auth-go')).toHaveText('Sign in');
+    await page.locator('#auth-alt').click();
+    await expect(page.locator('#auth-go')).toHaveText('Create account');
+    // The password manager is told which of the two this is, or it offers a
+    // saved password on a signup form and a generator on neither.
+    await expect(page.locator('#auth-password')).toHaveAttribute(
+      'autocomplete',
+      'new-password',
+    );
   });
 
   test('says there is no self-serve password reset yet', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('#signin').click();
+    await page.goto('/auth');
 
     await expect(page.locator('.authnote')).toContainText(
-      'No password reset yet',
+      'No self-serve password reset yet',
     );
   });
 
   test('refuses a wrong password without saying which half was wrong', async ({
     page,
   }) => {
-    await page.goto('/');
-    await page.locator('#signin').click();
+    await page.goto('/auth');
     await page.locator('#auth-email').fill(EMAIL);
     await page.locator('#auth-password').fill('definitely not it at all');
     await page.locator('#auth-go').click();
@@ -192,11 +217,17 @@ test.describe('signed out', () => {
     await expect(page.locator('#auth-error')).toHaveText(
       'Email or password is incorrect.',
     );
-    await expect(page.locator('#signout')).toBeHidden();
+    await expect(page).toHaveURL(/\/auth$/);
   });
 });
 
 test.describe('the loop', () => {
+  // STARTS SIGNED OUT, and it has to: `signInThroughTheForm` opens `/auth`, and
+  // a browser that already holds a session is redirected off that page to the
+  // app. It also means the sign-out below revokes THIS account's session and
+  // never the shared one the rest of the run depends on.
+  test.use({ storageState: { cookies: [], origins: [] } });
+
   test('signs in, stars, watches, signs out, and comes back to it', async ({
     page,
   }) => {
@@ -204,16 +235,13 @@ test.describe('the loop', () => {
     // tester registers, signs in, stars a company, sees it in Watching, signs
     // out, signs back in, and finds the watchlist intact.
     const errors = watchConsole(page);
-    await page.goto('/');
-    const symbol = await aKnownSymbol(page);
-
     await signInThroughTheForm(page);
 
-    // The header swaps and the Watching tab arrives with the session.
-    await expect(page.locator('#signin')).toBeHidden();
+    // The header fills in and the Watching tab arrives with the session.
+    await expect(page.locator('#signout')).toBeVisible();
     await expect(page.locator('#tab-watching')).toBeVisible();
 
-    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    const symbol = await aSymbolOnScreen(page);
     const star = page
       .locator(`[data-ui="watch"][data-symbol="${symbol}"]`)
       .first();
@@ -241,12 +269,19 @@ test.describe('the loop', () => {
       .allTextContents();
     expect([...new Set(symbols)]).toEqual([symbol]);
 
-    // Signing out takes the tab, the stars and the view's contents with it.
+    // SIGNING OUT LEAVES THE APP ENTIRELY, and that is the gate rather than a
+    // repaint. Every read on the dashboard is behind the session now, so the
+    // page reloads and the server answers the front door with the landing
+    // page — which takes the tab, the stars and the whole document with it.
     await page.locator('#signout').click();
-    await expect(page.locator('#signin')).toBeVisible();
-    await expect(page.locator('#tab-watching')).toBeHidden();
-    await expect(page.locator('#view-watching')).toBeHidden();
+    await expect(page.locator('[data-ui="sample-notice"]')).toBeVisible();
+    await expect(page.locator('#tab-watching')).toHaveCount(0);
     await expect(page.locator('[data-ui="watch"]')).toHaveCount(0);
+
+    // REVOKED SERVER-SIDE, not merely un-cookied. Asked with whatever cookie
+    // the browser still holds, which is the only version of this claim worth
+    // making: clearing a cookie is something a client does and can undo.
+    expect((await page.request.get('/api/watchlist')).status()).toBe(401);
 
     // Back in, and the watchlist is a document rather than a tab.
     await signInThroughTheForm(page);
@@ -260,8 +295,8 @@ test.describe('the loop', () => {
 });
 
 test.describe('signed in', () => {
-  // Started from the cookie `beforeAll` saved, so these cost no sign-in.
-  test.use({ storageState: SIGNED_IN_STATE });
+  // The run's shared session, applied by playwright.config.ts. These cost no
+  // sign-in at all, which is the whole reason the account is created once.
 
   test('offers the same star on the company page', async ({ page }) => {
     await page.goto('/');
@@ -309,17 +344,4 @@ test.describe('signed in', () => {
     expect(response.status()).toBe(403);
   });
 
-  test('refuses the watchlist once the session has been revoked', async ({
-    page,
-  }) => {
-    await page.goto('/');
-    await expect(page.locator('#signout')).toBeVisible();
-
-    await page.locator('#signout').click();
-    await expect(page.locator('#signin')).toBeVisible();
-
-    // Asked with whatever cookie the browser still holds. The session was
-    // DELETED server-side, not merely un-cookied.
-    expect((await page.request.get('/api/watchlist')).status()).toBe(401);
-  });
 });

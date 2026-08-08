@@ -233,73 +233,49 @@ test('the page reports a dead server rather than showing stale numbers', async (
   await expect(page.locator('#alert')).toContainText('Refresh failed');
 });
 
-test('expands the rest of a card instead of just announcing them', async ({
-  page,
-}) => {
+test('offers a way to the claims a card had no room for', async ({ page }) => {
   // '+ 6 more' as dead text tells a reader the card is hiding something and
-  // gives them nowhere to go. The card stops at four because eleven is a wall;
+  // gives them nowhere to go. The card stops at two because eleven is a wall;
   // it says so because silently truncating would make a partial card look
-  // complete; and it has to open because a reader who wants the rest is one
-  // click from the source PDF otherwise.
+  // complete; and the control has to DO something.
+  //
+  // IT NO LONGER GROWS THE CARD. Expanding in place pushed every other card in
+  // the grid row down and reflowed the feed under whoever clicked, and it could
+  // not show the sentence in the document each claim was matched against. The
+  // control opens the focus card now — `e2e/focus.spec.ts` is where that
+  // behaviour is tested; what belongs HERE is that the feed still offers it.
   await page.goto('/');
   await expect(page.locator('#live-text')).not.toHaveText('connecting');
 
-  // PINNED BY seqId, not by position. A Playwright locator is a lazy query, so
-  // "the first card with an expander" names a DIFFERENT card once this one's
-  // button is gone — and the feed repaints every four seconds besides. Two
-  // earlier versions of this test failed on exactly that and the product was
-  // fine both times.
+  // PINNED BY seqId, not by position. A Playwright locator is a lazy query and
+  // the feed repaints every four seconds; two earlier versions of this test
+  // failed on exactly that and the product was fine both times.
   const anyExpandable = page
     .locator('#feed .card')
-    .filter({ has: page.locator('.andmore') })
+    .filter({ has: page.locator('[data-ui="card-more"]') })
     .first();
   test.skip(
     (await anyExpandable.count()) === 0,
-    'no card has more than four insights',
+    'no card currently has more than two insights',
   );
 
   const seq = await anyExpandable.getAttribute('data-seq');
   const card = page.locator('#feed .card[data-seq="' + seq + '"]');
-  const before = await card.locator('.insights li').count();
-  await card.locator('.andmore').click();
+  const shown = await card.locator('.insights li').count();
 
-  // Scoped to THIS card. `more` is a .first() locator that re-resolves, so
-  // asserting on it counts the NEXT card's button once this one is gone — the
-  // first version of this test failed for exactly that reason and the product
-  // was fine.
-  await expect(card.locator('.andmore')).toHaveCount(0);
-  expect(await card.locator('.insights li').count()).toBeGreaterThan(before);
-});
+  await expect(card.locator('[data-ui="card-more"]')).toContainText(/\+ \d+ more/);
+  await card.locator('[data-ui="card-more"]').click();
 
-test('an expanded card stays expanded across the four-second repaint', async ({
-  page,
-}) => {
-  // THE BUG THIS GUARDS, which the expander test found. The feed repaints on a
-  // poll, and the first version held the expansion in the DOM — so a card
-  // opened itself and closed itself four seconds later, which is worse than
-  // one that never opened: the reader loses their place and cannot tell
-  // whether they misclicked. Anything a reader does here has to outlive the
-  // refresh that makes the page live.
-  await page.goto('/');
-  await expect(page.locator('#live-text')).not.toHaveText('connecting');
+  // The dialog, with more claims in it than the card was showing.
+  await expect(page.locator('#focus')).toBeVisible();
+  expect(
+    await page.locator('[data-ui="focus-claims"] li').count(),
+  ).toBeGreaterThan(shown);
 
-  const anyExpandable = page
-    .locator('#feed .card')
-    .filter({ has: page.locator('.andmore') })
-    .first();
-  test.skip(
-    (await anyExpandable.count()) === 0,
-    'no card has more than four insights',
-  );
-
-  const seq = await anyExpandable.getAttribute('data-seq');
-  const card = page.locator('#feed .card[data-seq="' + seq + '"]');
-  await card.locator('.andmore').click();
-  const opened = await card.locator('.insights li').count();
-
-  // Longer than one poll interval, so a repaint is guaranteed to have run.
-  await page.waitForTimeout(6000);
-  expect(await card.locator('.insights li').count()).toBe(opened);
+  // AND THE CARD IS UNTOUCHED. That is the change: the feed does not reflow
+  // under a reader who asked to see one filing.
+  await page.keyboard.press('Escape');
+  expect(await card.locator('.insights li').count()).toBe(shown);
 });
 
 test.describe('the company page', () => {
