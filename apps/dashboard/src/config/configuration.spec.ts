@@ -115,6 +115,10 @@ describe('loadDashboardConfig', () => {
       host: DASHBOARD_HOST,
       sessionTtlDays: DASHBOARD_DEFAULTS.SESSION_TTL_DAYS,
       publicOrigin: `http://${DASHBOARD_HOST}:${DASHBOARD_DEFAULTS.DASHBOARD_PORT}`,
+      // An environment with no Firebase keys signs people in the in-house way.
+      // The whole decision table lives in `auth-config.spec.ts`; what this
+      // asserts is that the dashboard config carries it at all.
+      auth: { mode: 'local', firebase: null, missing: [] },
     });
   });
 
@@ -141,6 +145,7 @@ describe('loadDashboardConfig', () => {
       // configuration — and note it follows the PORT rather than the default,
       // or a dashboard on 9001 would refuse every mutation from its own page.
       publicOrigin: 'http://127.0.0.1:9001',
+      auth: { mode: 'local', firebase: null, missing: [] },
     });
   });
 

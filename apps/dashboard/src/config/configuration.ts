@@ -24,6 +24,12 @@
  * not being reintroduced for the sake of one shared function.
  */
 
+import {
+  describeAuthConfig,
+  loadAuthConfig,
+  type AuthConfig,
+} from './auth-config';
+
 export interface DashboardConfig {
   readonly mongoUri: string;
   /** TCP port to listen on. */
@@ -57,6 +63,16 @@ export interface DashboardConfig {
    * as copy for the landing page; nothing in the request path reads it.
    */
   readonly publicOrigin: string;
+  /**
+   * Which identity provider signs people in, and its keys.
+   *
+   * Read by `auth-config.ts`, which owns the whole decision table and its spec.
+   * It is a nested object rather than four more flat fields because the invalid
+   * combinations — a mode with half a project configured — have to be
+   * representable and named, and a flat `firebaseProjectId?: string` cannot say
+   * "asked for, not supplied".
+   */
+  readonly auth: AuthConfig;
 }
 
 /**
@@ -226,6 +242,7 @@ export const loadDashboardConfig = (
       env,
       `http://${DASHBOARD_HOST}:${port}`,
     ),
+    auth: loadAuthConfig(env),
   };
 };
 
@@ -253,4 +270,8 @@ export const describeDashboardConfig = (config: DashboardConfig): string =>
     'filings=read-only',
     `accounts=read-write ttl=${config.sessionTtlDays}d`,
     `origin=${config.publicOrigin}`,
+    // WHICH WAY IN IS OPEN, and whether it actually works. A host running
+    // `AUTH_MODE=firebase` with no project keys serves a sign-in page nobody
+    // can sign in through, and this line is where an operator looks first.
+    describeAuthConfig(config.auth),
   ].join(' ');
