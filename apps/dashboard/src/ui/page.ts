@@ -333,14 +333,25 @@ ${BRAND_FAVICON_LINK}
   'symbol_1_category_1_disseminatedAt_-1' index serves — and every widget in it
   is derived in the browser from that one payload.
 
-  THE COVERAGE LINE IS NOT DECORATION. Measured on 2026-08-07, this collection
-  holds 2,261 filings across 960 companies over four IST days: 460 companies
-  have filed exactly ONCE and only 128 have filed five times or more. Any
-  distribution drawn over that is computed from one or two observations for most
-  of the population, so the page states what it was computed over and the
-  group-mix bar suppresses itself below five filings. 'context-line.ts' already
-  wrote the rule: a claim about thirty days of data, made by a database holding
-  four, is the most confident lie the system is capable of.
+  THE COVERAGE LINE IS NOT DECORATION. Measured on 2026-08-08, this collection
+  holds 3,900 filings across 1,286 companies, and most companies have filed
+  once or twice. Any distribution drawn over that is computed from one or two
+  observations, so the page states what it was computed over before it states
+  anything else. 'context-line.ts' already wrote the rule: a claim about thirty
+  days of data, made by a database holding four, is the most confident lie the
+  system is capable of.
+
+  WHAT THIS PAGE STOPPED DRAWING, AND WHY. It used to open with a filing strip
+  — one square per filing, one column per IST day — and a stacked bar of the
+  categories a company files under. Both were pictures of OUR pipeline rather
+  than of the company: a reader learns nothing from knowing that four squares
+  arrived on a Tuesday, and "57% of this company's filings are routine
+  paperwork" is a fact about NSE's category list. They are replaced by three
+  sections that answer a reader's own questions — what the numbers were, what
+  is coming, and which way the documents said things moved — each of which is
+  ABSENT when the collection cannot support it. Measured with
+  'npm run company:sections' on 2026-08-08: the figures section draws for 15 of
+  1,286 companies, what's next for 50, and the movement marks for 282.
 -->
 <section id="view-company" data-ui="view-company" class="view" role="tabpanel" hidden>
   <button id="company-back" class="back" type="button">Back to feed</button>
@@ -374,13 +385,81 @@ ${BRAND_FAVICON_LINK}
     </div>
   </div>
 
-  <h2 class="bucket">Filing timeline</h2>
-  <div id="co-strip" class="strip" data-ui="company-timeline"></div>
+  <!--
+    THE NUMBERS, AS PRINTED.
 
-  <div id="co-mix-wrap" data-ui="company-group-mix" hidden>
-    <h2 class="bucket">What they file</h2>
-    <div id="co-mix" class="mix"></div>
-    <div id="co-mix-legend" class="mixlegend"></div>
+    The figures a results filing's own table carried, in the scale that table
+    declared, with the row each one was read from in its title. NOTHING IS
+    COMPUTED: no change, no growth rate, no margin, no percentage of anything.
+    'results-line.ts' holds the argument at length — a competitor rescaled this
+    exact class of figure and published an EBITDA margin of 13.32% where its own
+    two numbers give 13.23% — and the rule it reached is that every figure a
+    reader sees can be found in the source document by searching for the
+    characters printed here.
+
+    HIDDEN FOR ALMOST EVERYONE, and that is the section working rather than
+    failing. Measured 2026-08-08 with 'npm run company:sections': 15 of the
+    1,286 companies held carry a verified table at all, over 19 filings and 52
+    figures, and every one of them is Q1 FY27 — this collection is 32 days old
+    and a quarter is 90. A section that filled the gap with derived percentages
+    would be inventing exactly what the pipeline refuses to.
+  -->
+  <div id="co-figures-wrap" data-ui="company-figures" hidden>
+    <h2 class="bucket">The numbers, as printed</h2>
+    <p class="sectionnote" data-ui="company-figures-note">
+      The filing's own table, in the filing's own scale. Nothing here is
+      rescaled and no change, margin or percentage is computed from it — the
+      table row each figure was read from is in its title.
+    </p>
+    <div id="co-figures" class="figures"></div>
+  </div>
+
+  <!--
+    WHAT'S NEXT — the only forward-looking thing on this page that is a DATE.
+
+    A record date, an AGM, an e-voting window: appointments the filing itself
+    printed, quoted from the sentence that printed them, and shown only while
+    they are still ahead of the server's IST day. 'claim-commitment.ts' owns the
+    word list and the date shapes and this page holds neither, the same way the
+    plans section holds neither the kinds nor the forward-looking words.
+
+    THE SERVER DECIDES "STILL AHEAD". IST rolls at 18:30 UTC and a browser
+    deciding it locally would show yesterday's record date as upcoming all
+    evening. Measured 2026-08-08: 50 of 1,286 companies carry one.
+  -->
+  <div id="co-next-wrap" data-ui="company-next" hidden>
+    <h2 class="bucket">What's next</h2>
+    <p class="sectionnote" data-ui="company-next-note">
+      Dates this company's own filings printed and that have not passed yet,
+      with the sentence each was read from. Their calendar, not our forecast.
+    </p>
+    <ul id="co-next" class="plans"></ul>
+  </div>
+
+  <!--
+    MOVEMENT, IN THE ORDER THE FILINGS PRINTED IT — and this is what replaced
+    the category bar that used to sit here.
+
+    One mark per claim whose own sentence printed a direction, grouped under the
+    IST day it was filed on, oldest first. It counts nothing and totals nothing:
+    "four increases and one decrease" is a characterisation of a company, and
+    this page publishes none. Each mark carries the document's characters that
+    decided it, which is the only reason a derived glyph may appear at all.
+
+    NO COLOUR, and the reason is in 'page-style.ts' at length: 13 of the 45
+    printed decreases in this collection are falling bad loans, debt, borrowing
+    costs or emissions, so red and green would be a view about the company that
+    the collection says would be wrong.
+  -->
+  <div id="co-marks-wrap" data-ui="company-marks" hidden>
+    <h2 class="bucket">Movement, as the filings printed it</h2>
+    <p class="sectionnote" data-ui="company-marks-note">
+      One mark for each claim whose sentence printed a direction, oldest first.
+      A mark is not good or bad news — a falling number is a fall in bad loans
+      as often as in profit — so there is no colour, and the words the document
+      printed are in each mark's title.
+    </p>
+    <div id="co-marks" class="marks"></div>
   </div>
 
   <!-- The other axis. "What they file" is the document's category and "what
@@ -423,7 +502,7 @@ ${BRAND_FAVICON_LINK}
   -->
   <div id="co-plans-wrap" data-ui="company-plans" hidden>
     <h2 class="bucket">Plans, in their words</h2>
-    <p class="plansnote" data-ui="company-plans-note">
+    <p class="sectionnote" data-ui="company-plans-note">
       Quoted from the filings held here, where the company itself pointed at a
       period still ahead — its own guidance, or a target it has set. Their
       words, not our forecast, and not a view on the company.

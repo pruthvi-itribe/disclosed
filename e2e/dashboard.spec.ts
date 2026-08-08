@@ -278,6 +278,36 @@ test('offers a way to the claims a card had no room for', async ({ page }) => {
   expect(await card.locator('.insights li').count()).toBe(shown);
 });
 
+/**
+ * Opens ONE NAMED COMPANY's page, rather than whichever one is on top.
+ *
+ * The three reader sections are absent for most companies by design — 15 of
+ * 1,286 carry a results table, 50 carry a dated commitment — so a test that
+ * clicked the first card would assert almost nothing almost every time. There
+ * is no deep link into the company view on purpose (the feed is the way in), so
+ * this walks the reader's own path: type the ticker, take the suggestion, click
+ * the card.
+ */
+const openCompany = async (page: Page, symbol: string): Promise<void> => {
+  await page.goto('/');
+  await expect(page.locator('#live-text')).not.toHaveText('connecting');
+  await page.locator('#symbol').click();
+  await page.locator('#symbol').fill(symbol);
+  await page.locator('#symbol').press('Enter');
+  await expect(page.locator('#feed .card button.sym').first()).toHaveText(
+    symbol,
+  );
+  await page.locator('#feed .card button.sym').first().click();
+  await expect(page.locator('#co-symbol')).toHaveText(symbol);
+  // THE BANNER, ASSERTED ON EVERY WAY IN. Deleting the filing strip took a
+  // `WEEKDAY_NAME` with it that the ADMIN panel still read, and the fragments
+  // share one scope — so the page parsed, served a 200, rendered this view
+  // perfectly and failed every poll with "WEEKDAY_NAME is not defined". A
+  // `pageerror` listener does not see it: the poll catches its own errors and
+  // says so here, which is the design working and the only place it shows.
+  await expect(page.locator('#alert')).toBeHidden();
+};
+
 test.describe('the company page', () => {
   test('opens from a card symbol and states what it was computed over', async ({
     page,
@@ -293,33 +323,152 @@ test.describe('the company page', () => {
     await expect(page.locator('#view-feed')).toBeHidden();
     await expect(page.locator('#co-symbol')).not.toBeEmpty();
 
-    // THE COVERAGE LINE IS THE POINT. Measured 2026-08-07, 460 of 960 companies
-    // had filed exactly once and the collection held four IST days — so every
-    // number on this page is computed over a window the reader has to be told
-    // about. context-line.ts settled the principle: a claim about thirty days,
-    // made by a database holding four, is every word true and the whole
-    // sentence false.
+    // THE COVERAGE LINE IS THE POINT, and since the filing strip went it is the
+    // only thing on the page about the shape of our holdings rather than about
+    // the company. Measured 2026-08-08 the collection holds 3,900 filings over
+    // 1,286 companies and most have filed once or twice, so every number below
+    // it is computed over a window the reader has to be told about.
+    // context-line.ts settled the principle: a claim about thirty days, made by
+    // a database holding four, is every word true and the whole sentence false.
     await expect(page.locator('#co-coverage')).toContainText('filings held');
     await expect(page.locator('#co-coverage')).toContainText('IST day');
 
-    await expect(page.locator('#co-strip .stripday')).not.toHaveCount(0);
     await expect(page.locator('#company-feed .card')).not.toHaveCount(0);
+    // A caught error is still an error. See the note in `openCompany`.
+    await expect(page.locator('#alert')).toBeHidden();
     expect(errors).toEqual([]);
   });
 
-  test('suppresses the group mix below five filings', async ({ page }) => {
-    // A stacked bar over one observation is a single colour claiming to be a
-    // distribution. That the widget is usually absent is the widget working.
+  test('draws no filing strip and no category bar', async ({ page }) => {
+    // REMOVED, NOT HIDDEN. Both drew pictures of the pipeline rather than of
+    // the company — how many squares landed on a Tuesday, and what share of a
+    // company's filings NSE files under 'Governance'. A hidden element would
+    // leave the CSS and the renderer alive behind it.
     await page.goto('/');
     await expect(page.locator('#live-text')).not.toHaveText('connecting');
     await page.locator('#feed .card button.sym').first().click();
     await expect(page.locator('#co-symbol')).not.toBeEmpty();
 
-    const filings = Number(
-      (await page.locator('#co-filings').textContent())?.replace(/[^0-9]/g, ''),
+    await expect(page.locator('#co-strip')).toHaveCount(0);
+    await expect(page.locator('#co-mix-wrap')).toHaveCount(0);
+  });
+
+  test('prints the figures a results table carried, and computes none', async ({
+    page,
+  }) => {
+    // IONEXCHANG's Q1 FY27 consolidated table is one of the 19 in the
+    // collection that cleared the results gate (measured 2026-08-08 with
+    // `npm run company:sections`).
+    const errors = watchConsole(page);
+    await openCompany(page, 'IONEXCHANG');
+
+    await expect(page.locator('#co-figures-wrap')).toBeVisible();
+    const rows = page.locator('#co-figures [data-ui="company-figure"]');
+    await expect(rows).not.toHaveCount(0);
+
+    // THE ROW IT WAS READ FROM travels with every figure, which is what lets a
+    // reader find the same characters in the PDF.
+    await expect(rows.first()).toHaveAttribute(
+      'title',
+      /^The document printed: "/,
     );
-    const shown = await page.locator('#co-mix-wrap').isVisible();
-    expect(shown).toBe(filings >= 5);
+
+    // NOTHING IS COMPUTED. No percentage, no delta, no arrow — the section
+    // prints the two tokens and the word between them is 'vs'. A '%' may only
+    // appear inside a figure the document itself printed as a percentage, and
+    // this table has none.
+    const text = (await page.locator('#co-figures').textContent()) ?? '';
+    expect(text).toContain('vs ');
+    expect(text).not.toMatch(/[▲▼]/);
+    expect(text).not.toMatch(/[+-]?\d+(\.\d+)?%/);
+
+    // The basis is spelled out where a reader cannot skip it: the consolidated
+    // and standalone statements in one filing differ by tens of per cent.
+    await expect(page.locator('#co-figures .figbasis').first()).toHaveText(
+      /consolidated|standalone/,
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('lists a dated commitment that has not passed, soonest first', async ({
+    page,
+  }) => {
+    // HGS's 31st AGM is dated 25 September 2026 and appears in four of its
+    // filings — the section shows it once.
+    const errors = watchConsole(page);
+    await openCompany(page, 'HGS');
+
+    await expect(page.locator('#co-next-wrap')).toBeVisible();
+    const items = page.locator('#co-next [data-ui="company-next-item"]');
+    await expect(items).not.toHaveCount(0);
+
+    const dates = (await items.locator('.nextwhen').allTextContents()).map((d) =>
+      d.trim(),
+    );
+    expect(dates).toEqual([...dates].sort());
+    // Every date is still ahead of the server's IST day, which is the whole
+    // claim the heading makes. The page never computes this — the server sends
+    // only the days that survived.
+    const todayIst = new Date(Date.now() + 5.5 * 3_600_000)
+      .toISOString()
+      .slice(0, 10);
+    for (const date of dates) expect(date > todayIst).toBe(true);
+
+    // ONE ENTRY PER DATE AND WORD, however many filings repeated it.
+    expect(new Set(dates).size).toBe(dates.length);
+    // The sentence it was read from is quoted under it, so the date is
+    // checkable against the document rather than asserted.
+    await expect(items.first().locator('.planquote')).toContainText('"');
+    expect(errors).toEqual([]);
+  });
+
+  test('marks movement in time order, with no colour and no count', async ({
+    page,
+  }) => {
+    const errors = watchConsole(page);
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await page.locator('#feed .card button.sym').first().click();
+    await expect(page.locator('#co-symbol')).not.toBeEmpty();
+
+    // 282 of 1,286 companies carry a marked claim, so whichever company is on
+    // top decides whether this section exists. Absent is a valid outcome and
+    // the assertions below are about what it looks like WHEN it is there.
+    if (!(await page.locator('#co-marks-wrap').isVisible())) {
+      expect(errors).toEqual([]);
+      return;
+    }
+
+    const days = page.locator('#co-marks [data-ui="company-mark-day"]');
+    await expect(days).not.toHaveCount(0);
+
+    // OLDEST FIRST, so the row reads the way time does.
+    const stamps = (await days.locator('.markwhen').allTextContents()).map((d) =>
+      d.trim(),
+    );
+    expect(stamps).toEqual([...stamps].sort());
+
+    const marks = page.locator('#co-marks [data-ui="company-mark"]');
+    await expect(marks).not.toHaveCount(0);
+    // NO COUNT ANYWHERE. A tally of increases against decreases is a verdict on
+    // a company, and 13 of the 45 printed decreases in this collection are
+    // falling bad loans, debt or emissions.
+    //
+    // Asserted by REMOVING THE DAY KEYS AND LOOKING FOR A DIGIT, because the
+    // obvious version does not work: `textContent` runs "2026-08-08" straight
+    // into the first glyph, so a pattern for "a number beside a mark" matches
+    // the date itself. Everything in this section is a day or a glyph, so
+    // nothing but a tally could put a digit here.
+    let rest = (await page.locator('#co-marks').textContent()) ?? '';
+    for (const stamp of stamps) rest = rest.split(stamp).join('');
+    expect(rest).not.toMatch(/\d/);
+    // NO COLOUR, checked on the rendered pixels rather than on the stylesheet:
+    // red and green would be the sentiment claim smuggled back in through CSS.
+    const colours = await marks.evaluateAll((nodes) =>
+      nodes.map((node) => getComputedStyle(node).color),
+    );
+    expect(new Set(colours).size).toBe(1);
+    expect(errors).toEqual([]);
   });
 
   test('draws the topic mix on the claims, not on the filings', async ({
@@ -591,9 +740,16 @@ test.describe('plans, in their words', () => {
     await expect(page.locator('#feed .card')).not.toHaveCount(0);
     await page.locator('#feed .card button.sym').first().click();
     await expect(page.locator('#co-symbol')).not.toBeEmpty();
-    expect(await page.locator('#co-plans-wrap').isVisible()).toBe(
-      (await quotes.count()) > 0,
-    );
+    // BOTH FACTS READ IN ONE PASS OVER THE DOM. Asking Playwright for the
+    // visibility and then for the count is two reads with a live page between
+    // them, and this assertion failed once in a full-suite run on exactly that
+    // shape: the section is rebuilt on the four-second repaint, and comparing
+    // one render's flag against another render's count compares two pages.
+    const [shown, quoted] = await page.evaluate(() => [
+      document.getElementById('co-plans-wrap')?.hidden === false,
+      document.querySelectorAll('[data-ui="company-plan"]').length > 0,
+    ]);
+    expect(shown).toBe(quoted);
     expect(errors).toEqual([]);
   });
 });

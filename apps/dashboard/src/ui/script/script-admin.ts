@@ -458,6 +458,14 @@ export const SCRIPT_ADMIN = `
     chip.appendChild(tag('refusal: ' + state.refusal + '  (clear)', 'refusal active', pickRefusal(state.refusal)));
   }
 
+  // The weekday names the bar titles read out. DECLARED HERE, BESIDE ITS ONLY
+  // USER: it used to live in 'script-company.ts' next to the filing strip that
+  // shared it, and when that strip was deleted this panel broke at RUN time
+  // with "WEEKDAY_NAME is not defined" while every string test still passed.
+  // The fragments share one scope, so a name can be used from anywhere and is
+  // owned by nowhere unless somebody decides — this is that decision.
+  var WEEKDAY_NAME = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
   function renderDaily(rows) {
     var box = el('days');
     clear(box);

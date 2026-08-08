@@ -1,6 +1,7 @@
 /**
- * The company page: the day bar, the filing strip, the group mix, and the
- * floor below which a per-company distribution is not drawn at all.
+ * The company page: the day bar, the figures a filing printed, what the company
+ * has dated ahead of it, the movement its documents printed, and the floor
+ * below which a per-company distribution is not drawn at all.
  *
  * A FRAGMENT, NOT A MODULE. This is client-side ES5 source held as a string
  * and concatenated into one IIFE by `page-script.ts`; the pieces share that
@@ -54,173 +55,342 @@ export const SCRIPT_COMPANY = `
     );
   }
 
-  /**
-   * Filings below which a per-company distribution is not drawn.
-   *
-   * Five, and it suppresses the mix bar for most companies — measured on
-   * 2026-08-07, 460 of 960 companies had filed exactly ONCE and only 128 had
-   * filed five times or more. A stacked bar over one observation is not a
-   * distribution, it is a single colour claiming to be a summary.
-   *
-   * That the widget is usually absent is the widget working. 'context-line.ts'
-   * settled this argument for the alert path already: a claim about thirty days
-   * of data, made by a database holding four, is every word true and the whole
-   * sentence false.
-   */
-  var MIN_DISTRIBUTION_FILINGS = 5;
-
-  /** Every IST day from first to last inclusive, so gaps are drawn as gaps. */
-  function istDaySpan(from, to) {
-    var days = [];
-    var cursor = Date.parse(from + 'T00:00:00Z');
-    var end = Date.parse(to + 'T00:00:00Z');
-    if (isNaN(cursor) || isNaN(end)) return days;
-    // Bounded independently of the dates, so a malformed pair cannot spin.
-    for (var guard = 0; cursor <= end && guard < 400; guard += 1) {
-      days.push(new Date(cursor).toISOString().slice(0, 10));
-      cursor += 86400000;
-    }
-    return days;
-  }
-
-  var WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  var WEEKDAY_NAME = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // The reader-facing name for each metric, in the sentence case a page is set
+  // in. The wire spells them upper case because a Telegram line is upper case;
+  // this is the same table one register down, the way TOPIC_LABEL below is the
+  // reader's name for a stored topic key. The KEYS are the server's and are
+  // never invented here — an unknown one falls through to itself.
+  var METRIC_LABEL = {
+    revenue: 'Revenue',
+    'total-income': 'Total income',
+    'net-profit': 'Net profit',
+    ebitda: 'EBITDA',
+    'ebitda-margin': 'EBITDA margin',
+    eps: 'EPS'
+  };
 
   /**
-   * The filing strip: one column per IST day, one square per filing.
+   * The numbers a company's filings printed, as they printed them.
    *
-   * A SQUARE PER FILING, NOT A BAR, and that is the whole design. At the
-   * measured 2.36 filings a company, a bar chart is two bars of height one and
-   * needs an axis before it can be read at all. Squares are countable — a
-   * reader gets the number without reading anything.
+   * NOTHING IS COMPUTED, and this is the section where that rule costs the
+   * most. A reader wants the change and the margin; the document printed
+   * neither, and 'results-line.ts' records what happens to a pipeline that
+   * supplies them anyway — a competitor's rescaled line stated an EBITDA margin
+   * of 13.32% where its own two figures give 13.23%. So this shows the current
+   * token, the year-ago token, and the period each belongs to. The subtraction
+   * is the reader's, over two numbers they can find in the PDF.
    *
-   * A DAY WITH NO FILINGS GETS A RULE, NOT A SHORT COLUMN. In the 32-day corpus
-   * a Sunday carries 26 filings against a Tuesday's 832 — a factor of 32 — so a
-   * proportional bar renders an ordinary weekend as an outage. "Nobody filed"
-   * and "one filing" must not look alike.
+   * THE VALUES ARE RENDERED BY THE SERVER. 'currentDisplay' carries the
+   * document's own currency mark and scale word; the browser never assembles
+   * one, for the reason 'amountDisplay' exists.
+   *
+   * NEWEST FIRST, AND AN IDENTICAL TABLE IS SHOWN ONCE. A company files its
+   * quarter as a results statement and again as a press release the same
+   * morning, and both carry the same table: measured 2026-08-08, three of the
+   * fifteen companies with figures did exactly that, and the page drew the same
+   * four numbers twice under the same date, which reads as a bug.
+   *
+   * THE KEY IS THE CONTENT, NOT THE QUARTER, and that difference is the whole
+   * care taken here. Collapsing on period and basis alone would hide a
+   * RESTATEMENT — the same quarter filed again with a different number is the
+   * single most newsworthy thing this section could show. VIJAYA is the live
+   * case: two filings, one quarter, and one of them prints EPS the other does
+   * not, so it keeps both blocks.
    */
-  function renderStrip(box, items) {
+  function renderFigures(box, items) {
     box.textContent = '';
-    if (items.length === 0) return;
+    var drawn = 0;
+    var seen = {};
 
-    var byDay = {};
     for (var i = 0; i < items.length; i++) {
-      var key = items[i].istDay;
-      if (!key) continue;
-      if (!Object.prototype.hasOwnProperty.call(byDay, key)) byDay[key] = [];
-      byDay[key].push(items[i]);
+      var filing = items[i];
+      var results = filing.enrichment && filing.enrichment.results;
+      var figures = (results && results.figures) || [];
+      if (figures.length === 0) continue;
+
+      // Every published token, in order, so two blocks collapse only when a
+      // reader would see the same characters twice.
+      var signature = results.period + '|' + results.basis;
+      for (var s = 0; s < figures.length; s++) {
+        signature +=
+          '|' +
+          figures[s].metric +
+          ':' +
+          figures[s].current +
+          ':' +
+          figures[s].prior +
+          ':' +
+          figures[s].unit;
+      }
+      // 'hasOwnProperty' rather than a bare lookup: the key is built from
+      // document text and 'constructor' is on every object's prototype.
+      if (Object.prototype.hasOwnProperty.call(seen, signature)) continue;
+      seen[signature] = true;
+
+      var block = document.createElement('section');
+      block.className = 'figblock';
+      block.setAttribute('data-ui', 'company-figure-block');
+
+      var head = document.createElement('div');
+      head.className = 'fighead';
+
+      var period = document.createElement('span');
+      period.className = 'figperiod';
+      period.textContent = results.period;
+      head.appendChild(period);
+
+      var basis = document.createElement('span');
+      basis.className = 'figbasis';
+      // NEVER ABBREVIATED, and the evidence for it travels with it: the
+      // consolidated and standalone statements in one filing differ by tens of
+      // per cent, and the heading that fixed which one this is was quoted from
+      // the document for exactly this moment.
+      basis.textContent = results.basis;
+      if (results.basisSpan) {
+        basis.title = 'The document printed: "' + results.basisSpan + '"';
+      }
+      head.appendChild(basis);
+
+      var when = document.createElement('span');
+      when.className = 'figwhen';
+      // THE SERVER'S IST DAY, printed rather than formatted.
+      when.textContent = filing.istDay;
+      when.title = filing.disseminatedAtIst + ' IST';
+      head.appendChild(when);
+      block.appendChild(head);
+
+      var rows = document.createElement('ul');
+      rows.className = 'figrows';
+      for (var f = 0; f < figures.length; f++) {
+        var figure = figures[f];
+        var row = document.createElement('li');
+        row.className = 'figrow';
+        row.setAttribute('data-ui', 'company-figure');
+        // THE TABLE ROW THE FIGURE WAS READ FROM. A reader can search the PDF
+        // for these characters and find the same line, which is the whole
+        // reason a figure may be shown outside the document it came from.
+        row.title = 'The document printed: "' + figure.span + '"';
+
+        var metric = document.createElement('span');
+        metric.className = 'figmetric';
+        metric.textContent = describe(METRIC_LABEL, figure.metric);
+        row.appendChild(metric);
+
+        var current = document.createElement('span');
+        current.className = 'figvalue';
+        current.textContent = figure.currentDisplay;
+        row.appendChild(current);
+
+        var prior = document.createElement('span');
+        prior.className = 'figprior';
+        // The word is 'vs' and never an arrow, a sign or a percentage: the
+        // relation between the two numbers is the reader's to read.
+        prior.textContent =
+          'vs ' + figure.priorDisplay + ' · ' + results.priorPeriod;
+        row.appendChild(prior);
+
+        rows.appendChild(row);
+      }
+      block.appendChild(rows);
+      box.appendChild(block);
+      drawn += 1;
     }
 
-    var keys = Object.keys(byDay).sort();
-    if (keys.length === 0) return;
-
-    var days = istDaySpan(keys[0], keys[keys.length - 1]);
-    for (var d = 0; d < days.length; d++) {
-      var day = days[d];
-      var onDay = Object.prototype.hasOwnProperty.call(byDay, day)
-        ? byDay[day]
-        : [];
-      var weekday = new Date(day + 'T00:00:00Z').getUTCDay();
-
-      var column = document.createElement('div');
-      column.className =
-        'stripday' + (weekday === 0 || weekday === 6 ? ' weekend' : '');
-
-      var stack = document.createElement('div');
-      stack.className = 'stripstack';
-      if (onDay.length === 0) {
-        var none = document.createElement('div');
-        none.className = 'stripnone';
-        stack.appendChild(none);
-      }
-      for (var k = 0; k < onDay.length; k++) {
-        var cell = document.createElement('button');
-        cell.type = 'button';
-        var f = onDay[k];
-        // Three meanings, not eleven. Eleven groups cannot take eleven hues on
-        // a dark theme without a legend, and a legend defeats a glance — so
-        // colour carries what a reader already learned from the cards.
-        var kind =
-          f.categoryGroup === 'results'
-            ? ' results'
-            : (f.enrichment && f.enrichment.claims || []).length > 0
-              ? ' claim'
-              : f.categoryGroup === 'routine' ||
-                  f.categoryGroup === 'governance'
-                ? ' quiet'
-                : '';
-        cell.className = 'stripcell' + kind;
-        cell.title = f.disseminatedAtIst + ' IST · ' + f.category;
-        cell.onclick = (function (seqId) {
-          return function () {
-            var card = document.querySelector(
-              '#company-feed .card[data-seq="' + seqId + '"]',
-            );
-            if (card && card.scrollIntoView) {
-              card.scrollIntoView({ block: 'center' });
-            }
-          };
-        })(f.seqId);
-        stack.appendChild(cell);
-      }
-      column.appendChild(stack);
-
-      var label = document.createElement('div');
-      label.className = 'striplabel';
-      label.textContent = WEEKDAY[weekday];
-      column.appendChild(label);
-
-      var dayNum = document.createElement('div');
-      dayNum.className = 'stripday-num';
-      dayNum.textContent = day.slice(8);
-      column.appendChild(dayNum);
-
-      box.appendChild(column);
-    }
+    return drawn > 0;
   }
 
   /**
-   * The group mix, as one bar.
+   * What the company has dated ahead of it.
    *
-   * Widths are set with 'flexGrow' rather than a percentage, so flex does the
-   * arithmetic exactly and no rounding has to be reconciled against 100.
+   * SELECTED ON 'claim.commitments' AND ON NOTHING ELSE. The browser holds no
+   * list of scheduling words, no list of date shapes and no idea what today is:
+   * the server answers with the days themselves, using 'claim-commitment.ts',
+   * because "still ahead" rolls at 18:30 UTC and a browser deciding it locally
+   * would show yesterday's record date as upcoming all evening. Two rules would
+   * be two answers to one question.
+   *
+   * SOONEST FIRST, which is the one ordering this section can have — a list of
+   * appointments is read forwards.
+   *
+   * ONE ENTRY PER DATE AND WORD. A company files the same AGM date in four
+   * documents in a week; measured 2026-08-08, HGS's 25 September AGM is in four
+   * of them. The plans list leans on the server's 'echo' mark for this, which
+   * is about a repeated FACT; here the repeat is exact and visible — the same
+   * day under the same word — so it is collapsed on what a reader would see
+   * twice rather than on a second notion of sameness.
    */
-  function renderMix(bar, legend, items) {
-    bar.textContent = '';
-    legend.textContent = '';
+  function renderNext(list, items) {
+    list.textContent = '';
 
-    var counts = {};
-    var order = [];
+    var seen = {};
+    var found = [];
     for (var i = 0; i < items.length; i++) {
-      var g = items[i].categoryGroup;
-      if (!Object.prototype.hasOwnProperty.call(counts, g)) {
-        counts[g] = { n: 0, label: items[i].categoryGroupLabel };
-        order.push(g);
-      }
-      counts[g].n += 1;
-    }
-    order.sort(function (a, b) { return counts[b].n - counts[a].n; });
-
-    for (var j = 0; j < order.length; j++) {
-      var group = order[j];
-      var seg = document.createElement('div');
-      seg.className = 'mixseg g-' + group;
-      seg.style.flexGrow = String(counts[group].n);
-      seg.title = counts[group].label + ': ' + counts[group].n;
-      bar.appendChild(seg);
-
-      if (j < 3) {
-        var item = document.createElement('span');
-        item.className = 'mixitem';
-        var swatch = document.createElement('span');
-        swatch.className = 'mixdot g-' + group;
-        item.appendChild(swatch);
-        var text = document.createElement('span');
-        text.textContent = counts[group].label + ' ' + counts[group].n;
-        item.appendChild(text);
-        legend.appendChild(item);
+      var filing = items[i];
+      var claims = (filing.enrichment && filing.enrichment.claims) || [];
+      for (var c = 0; c < claims.length; c++) {
+        var dates = claims[c].commitments || [];
+        for (var d = 0; d < dates.length; d++) {
+          var one = dates[d];
+          var key = one.date + '|' + one.evidence.toLowerCase();
+          // 'hasOwnProperty' rather than a bare lookup: the key is built from
+          // document text and 'constructor' is on every object's prototype.
+          if (Object.prototype.hasOwnProperty.call(seen, key)) continue;
+          seen[key] = true;
+          found.push({
+            date: one.date,
+            what: one.evidence,
+            span: claims[c].span,
+            filedOn: filing.istDay,
+            filedAt: filing.disseminatedAtIst
+          });
+        }
       }
     }
+
+    found.sort(function (a, b) {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      // Ties broken by the word, so a repaint four seconds from now cannot
+      // reorder two appointments on one day and make the list appear to move.
+      return a.what < b.what ? -1 : 1;
+    });
+
+    for (var n = 0; n < found.length; n++) {
+      var entry = found[n];
+      var item = document.createElement('li');
+      item.className = 'plan';
+      item.setAttribute('data-ui', 'company-next-item');
+
+      var day = document.createElement('div');
+      day.className = 'nextwhen';
+      // The server's day key, printed. Nothing here parses or formats a date.
+      day.textContent = entry.date;
+      item.appendChild(day);
+
+      var what = document.createElement('div');
+      what.className = 'nextwhat';
+      // The document's own word for the appointment, which is also the evidence
+      // that it is one — the same discipline the movement mark follows.
+      what.textContent = entry.what;
+      item.appendChild(what);
+
+      var quote = document.createElement('div');
+      quote.className = 'planquote';
+      // The whitespace is collapsed the way the plans list collapses it: a span
+      // lifted out of a PDF carries the line breaks of the page it was set on.
+      quote.textContent = entry.span
+        ? '"' + String(entry.span).replace(/\\s+/g, ' ').trim() + '"'
+        : 'No source sentence is stored for this line.';
+      item.appendChild(quote);
+
+      var filed = document.createElement('div');
+      filed.className = 'planwhen';
+      filed.textContent = 'filed ' + entry.filedOn;
+      filed.title = entry.filedAt + ' IST';
+      item.appendChild(filed);
+
+      list.appendChild(item);
+    }
+
+    return found.length > 0;
+  }
+
+  /**
+   * The movement the documents printed, in the order they printed it.
+   *
+   * IN PLACE OF THE CATEGORY BAR, and answering a question the bar could not:
+   * that one said what share of a company's filings NSE files under
+   * 'Governance', which is a fact about NSE's category list. This says which
+   * way the company's own sentences pointed, and every mark carries the
+   * characters that decided it.
+   *
+   * NO COUNT, ANYWHERE. "Four increases and one decrease" is a verdict on a
+   * company and this page issues none — and the collection says such a tally
+   * would be wrong as often as right: 13 of the 45 printed decreases are
+   * falling bad loans, debt, borrowing costs or emissions.
+   *
+   * ONE ROW PER IST DAY, NOT PER FILING, and the difference is visible rather
+   * than academic: SONATSOFTW filed five marked documents on 2026-08-06, and
+   * the per-filing version drew five rows all stamped with the same date. A
+   * reader reads that as five days. The day is the unit a reader has, so it is
+   * the unit the row is.
+   *
+   * OLDEST FIRST, so the rows read down the way time does. The response arrives
+   * newest first, so this walks it backwards.
+   *
+   * THE GLYPHS AND THE LABELS ARE THE FEED'S. 'DIRECTION_GLYPH' and
+   * 'DIRECTION_LABEL' are declared in 'script-feed.ts' and every fragment
+   * shares one scope; a second copy here would be a second vocabulary for one
+   * thing, and the two would drift. That sharing is also a hazard — see the
+   * 'WEEKDAY_NAME' note in 'script-admin.ts' — so a name is used where it is
+   * declared beside its user, never left orphaned by a deletion elsewhere.
+   */
+  function renderMarks(box, items) {
+    box.textContent = '';
+
+    // Days in the order they are first met walking oldest-first, so the output
+    // order comes out of the walk rather than out of a second sort.
+    var order = [];
+    var byDay = {};
+    for (var i = items.length - 1; i >= 0; i--) {
+      var filing = items[i];
+      var claims = (filing.enrichment && filing.enrichment.claims) || [];
+      for (var c = 0; c < claims.length; c++) {
+        // The direction arrives from the database and 'constructor' is a key on
+        // every object literal's prototype, so an unguarded lookup would draw a
+        // function as a glyph. There is no entry for 'unrated' and none for
+        // null: a mark that means nothing is not drawn.
+        if (
+          !Object.prototype.hasOwnProperty.call(
+            DIRECTION_GLYPH,
+            claims[c].direction,
+          )
+        ) {
+          continue;
+        }
+        var key = filing.istDay;
+        if (!Object.prototype.hasOwnProperty.call(byDay, key)) {
+          byDay[key] = [];
+          order.push(key);
+        }
+        byDay[key].push(claims[c]);
+      }
+    }
+
+    for (var d = 0; d < order.length; d++) {
+      var day = document.createElement('div');
+      day.className = 'markday';
+      day.setAttribute('data-ui', 'company-mark-day');
+
+      var when = document.createElement('span');
+      when.className = 'markwhen';
+      // The server's IST day, printed. Nothing here formats a date.
+      when.textContent = order[d];
+      day.appendChild(when);
+
+      var row = document.createElement('span');
+      row.className = 'markrow';
+      var marked = byDay[order[d]];
+      for (var m = 0; m < marked.length; m++) {
+        var claim = marked[m];
+        var mark = document.createElement('span');
+        mark.className = 'dir';
+        mark.setAttribute('data-ui', 'company-mark');
+        mark.setAttribute('data-direction', claim.direction);
+        mark.textContent = DIRECTION_GLYPH[claim.direction];
+        mark.setAttribute('aria-label', DIRECTION_LABEL[claim.direction]);
+        // WHAT MAKES THE MARK ADMISSIBLE, and the only reason a derived glyph
+        // may appear on this page: the characters it was derived from travel
+        // with it, so a reader checks it without opening the PDF.
+        if (claim.directionEvidence) {
+          mark.title = 'Printed in the document: "' + claim.directionEvidence + '"';
+        }
+        row.appendChild(mark);
+      }
+      day.appendChild(row);
+      box.appendChild(day);
+    }
+
+    return order.length > 0;
   }
 
   // The reader-facing name for each topic, and the same words the filter chips
@@ -447,7 +617,10 @@ export const SCRIPT_COMPANY = `
     setText('co-last', items.length > 0 ? relativeTime(items[0].disseminatedAt) : '—');
 
     // THE COVERAGE LINE, and it is the first thing that tells a reader whether
-    // anything below it means anything.
+    // anything below it means anything. It is also the ONLY thing left on this
+    // page about the shape of our holdings rather than about the company: the
+    // filing strip drew one square per filing across a calendar and told a
+    // reader how many Tuesdays we had, which is a picture of the pipeline.
     var days = {};
     for (var d = 0; d < items.length; d++) {
       if (items[d].istDay) days[items[d].istDay] = true;
@@ -458,22 +631,28 @@ export const SCRIPT_COMPANY = `
       dayKeys.length === 0
         ? ''
         : groupInt(meta.total) +
-            ' filings held · ' +
+            ' filings held across ' +
+            dayKeys.length +
+            (dayKeys.length === 1 ? ' IST day · ' : ' IST days · ') +
             dayKeys[0] +
             ' to ' +
-            dayKeys[dayKeys.length - 1] +
-            ' · ' +
-            dayKeys.length +
-            (dayKeys.length === 1 ? ' IST day' : ' IST days'),
+            dayKeys[dayKeys.length - 1],
     );
 
-    renderStrip(el('co-strip'), items);
-
-    var mixWrap = el('co-mix-wrap');
-    mixWrap.hidden = items.length < MIN_DISTRIBUTION_FILINGS;
-    if (!mixWrap.hidden) {
-      renderMix(el('co-mix'), el('co-mix-legend'), items);
-    }
+    // DRAWN FIRST AND HIDDEN AFTER, all three of them, for the reason the two
+    // sections below already work this way: only the renderer can see whether
+    // anything qualified, and writing the condition twice is writing it in two
+    // places that can disagree.
+    //
+    // NO FLOOR ON ANY OF THEM, unlike the topic bar. A floor guards a bar
+    // drawn over too few observations, because one observation drawn as a bar
+    // is a single colour claiming to be a distribution. None of these three is
+    // a distribution: one printed table is one printed table, one dated
+    // appointment is one dated appointment, and one movement mark is one
+    // sentence with its evidence attached.
+    el('co-figures-wrap').hidden = !renderFigures(el('co-figures'), items);
+    el('co-next-wrap').hidden = !renderNext(el('co-next'), items);
+    el('co-marks-wrap').hidden = !renderMarks(el('co-marks'), items);
 
     // DRAWN FIRST, HIDDEN AFTER, because only the renderer can count the claims
     // — they are nested inside the filings and the floor is on their total, not

@@ -716,38 +716,60 @@ button.sym {
 button.sym:hover { color: var(--accent); }
 .card.quiet button.sym { font-size: 14px; }
 
-/* --- the filing strip ---------------------------------------------------
-   One column per IST day, one square per filing. A square rather than a bar
-   because at ~2.4 filings a company a bar chart is two bars of height one and
-   needs an axis; squares are countable at a glance. */
-.strip { display: flex; gap: 6px; align-items: flex-end; overflow-x: auto; padding: 4px 0 0; }
-.stripday { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 18px; }
-.stripstack { display: flex; flex-direction: column-reverse; gap: 2px; min-height: 12px; justify-content: flex-start; }
-.stripcell {
-  width: 12px; height: 12px; border-radius: 3px; padding: 0;
-  border: 0; cursor: pointer; background: var(--accent); opacity: .65;
-}
-.stripcell:hover { opacity: 1; }
-.stripcell.results { background: var(--results, #fcd34d); opacity: .85; }
-.stripcell.claim { background: var(--claim, #7dd3fc); opacity: .85; }
-/* routine and governance are 57% of everything filed. Making them recede is
-   the most informative thing colour does on this page. */
-.stripcell.quiet { background: var(--line); opacity: 1; }
-/* A day with NO filings is a rule, not a short column: on real data a Sunday
-   is 26 filings against a Tuesday's 832, so a proportional bar renders an
-   ordinary weekend as an outage. */
-.stripnone { width: 12px; height: 2px; border-radius: 1px; background: var(--line); }
-.striplabel { color: var(--muted); font-size: 10px; line-height: 1; }
-.stripday-num { color: var(--muted); font-size: 10px; opacity: .6; line-height: 1; }
-.stripday.weekend .striplabel, .stripday.weekend .stripday-num { opacity: .35; }
+/* --- the figures a filing's table printed --------------------------------
+   TEXT, NOT A CHART, and that is the whole decision. There is one quarter per
+   company in this collection and never two, so there is no series to plot;
+   a bar of one observation is a single colour claiming to be a trend. The
+   figures are set in the mono face because they are TOKENS lifted out of a
+   document rather than numbers this page computed with — the same signal the
+   card's '.fig' gives — and the current value is the only thing at reading
+   weight, because the year-ago one is context for it. */
+.figures { display: grid; gap: 18px; margin: 0 0 20px; max-width: 74ch; }
+.figblock { border-left: 2px solid var(--line); padding: 2px 0 2px 12px; }
+.fighead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.figperiod { font-size: 14px; font-weight: 600; color: var(--text); }
+/* Spelled out and never abbreviated, for the reason 'results-line.ts' gives:
+   the consolidated and standalone statements in one filing differ by tens of
+   per cent, and confusing them is the most dangerous error here. */
+.figbasis { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.figwhen { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.figrows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.figrow { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.figmetric { color: var(--muted); min-width: 11ch; }
+.figvalue { font-family: var(--mono); color: var(--text); }
+/* "vs" and the year-ago figure recede: they are what the current number is to
+   be read against, and giving both equal weight invites the eye to do the
+   subtraction this page refuses to do for it. */
+.figprior { font-family: var(--mono); color: var(--muted); font-size: 12.5px; }
+
+/* --- what is next --------------------------------------------------------
+   Shares the quote list's setting with the plans section, because it is the
+   same kind of thing: a date the company printed, and the sentence it printed
+   it in. The date leads in the mono face — it is the one thing a reader came
+   to this section for. */
+.nextwhen { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.nextwhat { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 2px 0 5px; }
+
+/* --- movement, in the order the filings printed it -----------------------
+   One row per IST day, oldest first. Compact enough to read in one glance and
+   deliberately without a count: a tally of increases against decreases is a
+   verdict on a company, and this page does not issue one. */
+.marks { display: grid; gap: 6px; margin: 0 0 20px; max-width: 74ch; }
+.markday { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.markwhen { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 11ch; }
+.markrow { display: flex; gap: 7px; flex-wrap: wrap; }
+/* Same rule as the card's mark and for the same reason — see the block below
+   the topic hues: colour here would be a sentiment claim smuggled in through
+   CSS, and the collection says it would be wrong. */
+.marks .dir { color: var(--text); font-size: 12px; opacity: .8; cursor: default; }
 
 /* --- the group mix ------------------------------------------------------ */
 .mix { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
 .mixseg { min-width: 2px; }
-/* The bottom margin is what separates one bar's legend from the next bar's
-   heading. Two distributions now stack here — what they file, then what they
-   say — and without it the legend of the first sits 4px under the title of the
-   second and reads as belonging to it. */
+/* The bottom margin is what separates a bar's legend from whatever heading
+   follows it: without it the legend sits 4px under the next title and reads as
+   belonging to it. It mattered most when two distributions stacked here; the
+   group-mix bar is gone and the topic bar still has a section under it. */
 .mixlegend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
 .mixitem { display: flex; align-items: center; gap: 6px; }
 .mixdot { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
@@ -789,7 +811,10 @@ button.sym:hover { color: var(--accent); }
    NO COLOUR CARRIES MEANING HERE, for the reason the movement mark's block
    below gives at length: a forward-looking sentence tinted green or red is this
    page taking a view on a company, and it publishes none. */
-.plansnote { color: var(--muted); font-size: 12.5px; line-height: 1.5; max-width: 66ch; margin: 0 0 12px; }
+/* One class for all four section notes on this page. They say the same kind of
+   thing — what the section is, and what it deliberately does not compute — so
+   naming the plans one differently would be two names for one thing. */
+.sectionnote { color: var(--muted); font-size: 12.5px; line-height: 1.5; max-width: 66ch; margin: 0 0 12px; }
 .plans { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 14px; max-width: 74ch; }
 .plan { border-left: 2px solid var(--line); padding: 2px 0 2px 12px; }
 .planquote { font-size: 14.5px; line-height: 1.5; color: var(--text); }

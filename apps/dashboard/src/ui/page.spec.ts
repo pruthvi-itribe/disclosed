@@ -147,6 +147,12 @@ describe('renderDashboardPage — content', () => {
     'co-watch',
     'co-plans-wrap',
     'co-plans',
+    'co-figures-wrap',
+    'co-figures',
+    'co-next-wrap',
+    'co-next',
+    'co-marks-wrap',
+    'co-marks',
     // The focus card's shell. Filled by the script; empty in the markup.
     'focus-back',
     'focus',
@@ -731,6 +737,175 @@ describe('renderDashboardPage — plans, in their words', () => {
     // The tags carry an `h2` and the class names; what must hold no number is
     // what a reader sees.
     expect(section.replace(/<[^>]*>/g, ' ')).not.toMatch(/\d/);
+  });
+});
+
+/**
+ * THE THREE SECTIONS THAT REPLACED THE FILING STRIP AND THE CATEGORY BAR.
+ *
+ * Both of those drew our PIPELINE rather than the company — how many squares
+ * landed on a Tuesday, and what share of a company's filings NSE files under
+ * `Governance`. What follows answers a reader's own questions instead, and each
+ * one is ABSENT rather than padded when the collection cannot support it:
+ * measured 2026-08-08 with `npm run company:sections`, the figures section
+ * draws for 15 of 1,286 companies, what's next for 50, and the marks for 282.
+ */
+describe('renderDashboardPage — the company page a reader gets', () => {
+  const figures = /function renderFigures\([\s\S]*?\n  \}/.exec(
+    SCRIPT_COMPANY,
+  )?.[0];
+  const next = /function renderNext\([\s\S]*?\n  \}/.exec(SCRIPT_COMPANY)?.[0];
+  const marks = /function renderMarks\([\s\S]*?\n  \}/.exec(
+    SCRIPT_COMPANY,
+  )?.[0];
+
+  it('has deleted the filing strip and the category bar, not hidden them', () => {
+    // REMOVED, not left behind a `hidden` attribute: a widget nobody can reach
+    // is a renderer, a stylesheet and a set of ids still being kept green.
+    for (const gone of ['co-strip', 'co-mix-wrap', 'co-mix', 'co-mix-legend']) {
+      expect(html).not.toContain(`id="${gone}"`);
+    }
+    for (const gone of [
+      'renderStrip',
+      'renderMix(',
+      'stripcell',
+      'striplabel',
+    ]) {
+      expect(SCRIPT_COMPANY).not.toContain(gone);
+    }
+    // The style went with them. `.mix` itself stays: the day bar and the Brief
+    // still draw one, and so does the topic bar this page kept.
+    expect(PAGE_STYLE).not.toContain('.stripcell');
+    expect(PAGE_STYLE).not.toContain('.stripday');
+  });
+
+  it('keeps one quiet coverage line, and it says what over', () => {
+    // The only thing left on the page about the shape of OUR holdings. Every
+    // number under it is computed over this window, and most companies here
+    // have filed once or twice.
+    expect(SCRIPT_COMPANY).toContain(' filings held across ');
+    expect(SCRIPT_COMPANY).toContain(' IST days · ');
+  });
+
+  describe('the numbers, as printed', () => {
+    it('is a section with a heading a person can say', () => {
+      expect(html).toContain('data-ui="company-figures"');
+      expect(html).toContain('The numbers, as printed');
+    });
+
+    it('prints the server’s rendered token, formatting no figure itself', () => {
+      // A second implementation of the currency mark and the scale suffix in
+      // the browser is a second thing to keep in step with the wire line — the
+      // argument `amountDisplay` already settled.
+      expect(figures).toContain('figure.currentDisplay');
+      expect(figures).toContain('figure.priorDisplay');
+      expect(figures).not.toContain('toFixed');
+      expect(figures).not.toContain('toLocaleString');
+    });
+
+    it('computes no change, margin or percentage from two figures', () => {
+      // THE VERBATIM GATE, in the one section most tempting to break it. A
+      // competitor rescaled this class of figure and published a margin of
+      // 13.32% where its own numbers give 13.23%.
+      expect(figures).not.toContain('parseFloat');
+      expect(figures).not.toContain('Number(');
+      expect(figures).not.toContain('Math.');
+      // The word between the two tokens is `vs`, and never an arrow, a sign or
+      // a percentage: the relation between them is the reader's to read.
+      expect(figures).toContain("'vs '");
+    });
+
+    it('carries the table row each figure was read from', () => {
+      expect(figures).toContain('figure.span');
+      expect(figures).toContain('The document printed:');
+    });
+
+    it('names the basis in full, with the heading that fixed it', () => {
+      // The consolidated and standalone statements in one filing differ by tens
+      // of per cent; `results-line.ts` calls confusing them the most dangerous
+      // error this feature can make.
+      expect(figures).toContain('results.basis');
+      expect(figures).toContain('results.basisSpan');
+    });
+  });
+
+  describe('what is next', () => {
+    it('is a section with a heading a person can say', () => {
+      expect(html).toContain('data-ui="company-next"');
+      expect(html).toContain("What's next");
+    });
+
+    it('reads the server’s verdict, holding no vocabulary and no calendar', () => {
+      // The browser knows no scheduling words, no date shapes and not what day
+      // it is: IST rolls at 18:30 UTC and a browser deciding "still ahead" for
+      // itself would show yesterday's record date all evening.
+      expect(next).toContain('commitments');
+      expect(next).not.toContain('new Date(');
+      expect(next).not.toContain('toLocale');
+      for (const word of ['Record Date', 'record date', 'AGM', 'e-voting']) {
+        expect(next).not.toContain(`'${word}'`);
+      }
+    });
+
+    it('quotes the sentence the date was read from', () => {
+      // The date is checkable against the document rather than asserted, which
+      // is the same rule the plans list above it follows.
+      expect(next).toContain('entry.span');
+      expect(next).toContain('No source sentence is stored for this line.');
+    });
+
+    it('shows one entry per date and word, however many filings repeat it', () => {
+      // HGS's 25 September AGM is in four of its filings.
+      expect(next).toContain('hasOwnProperty.call(seen, key)');
+    });
+  });
+
+  describe('movement, as the filings printed it', () => {
+    it('is a section with a heading a person can say', () => {
+      expect(html).toContain('data-ui="company-marks"');
+      expect(html).toContain('Movement, as the filings printed it');
+    });
+
+    it('uses the feed’s glyphs rather than a second set of its own', () => {
+      // One vocabulary for one thing. The fragments share a scope, so the table
+      // is declared once — and it is declared beside a user, because a name
+      // left orphaned by a deletion elsewhere is what broke the admin panel.
+      expect(marks).toContain('DIRECTION_GLYPH');
+      expect(marks).toContain('DIRECTION_LABEL');
+      expect(SCRIPT_COMPANY).not.toContain("'▲'");
+      expect(SCRIPT_FEED).toContain('var DIRECTION_GLYPH');
+    });
+
+    it('draws no mark it cannot name, and none for unrated', () => {
+      // `constructor` is a key on every object literal's prototype, so an
+      // unguarded lookup would draw a function as a glyph.
+      expect(marks).toContain('hasOwnProperty.call(');
+    });
+
+    it('carries the document’s own words on every mark', () => {
+      expect(marks).toContain('claim.directionEvidence');
+      expect(marks).toContain('Printed in the document:');
+    });
+
+    it('counts nothing and totals nothing', () => {
+      // A tally of increases against decreases is a verdict on a company, and
+      // 13 of the 45 printed decreases here are falling bad loans, debt,
+      // borrowing costs or emissions.
+      const section =
+        /<div id="co-marks-wrap"[\s\S]*?<\/div>\s*<\/div>/.exec(html)?.[0] ??
+        '';
+      expect(section).not.toBe('');
+      expect(marks).not.toContain('.length +');
+      expect(marks).not.toContain('groupInt');
+    });
+
+    it('gives the mark no colour of its own', () => {
+      // Red and green ARE the sentiment claim, smuggled back through CSS.
+      expect(marks).not.toContain('data-direction="expansion"');
+      expect(PAGE_STYLE).toContain('.marks .dir');
+      const rule = /\.marks \.dir \{[^}]*\}/.exec(PAGE_STYLE)?.[0] ?? '';
+      expect(rule).not.toMatch(/#[0-9a-f]{3,6}|--ok|--bad|--warn/i);
+    });
   });
 });
 
