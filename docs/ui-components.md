@@ -27,7 +27,7 @@ or `document.getElementById('co-topics')`.
 | `apps/dashboard/src/ui/script/script-admin.ts` | the admin panels |
 | `apps/dashboard/src/ui/script/script-poll.ts` | the poll loop and the filters |
 | `apps/dashboard/src/ui/script/script-suggest.ts` | the type-ahead |
-| `apps/dashboard/src/ui/script/script-account.ts` | **the account**: sign-in panel, the watch star, the Watching view |
+| `apps/dashboard/src/ui/script/script-account.ts` | **the account**: the watch star, the watchlist roster, the Watching view |
 | `apps/dashboard/src/ui/script/script-views.ts` | tabs, company view, chip state |
 
 ## The five views
@@ -37,7 +37,7 @@ or `document.getElementById('co-topics')`.
 | `view-brief` | the day as a finite deck. The default view at 430px and below |
 | `view-feed` | the product: what companies said today. The default above 430px |
 | `view-company` | one company, reached by clicking a ticker |
-| `view-watching` | filings from the companies this reader watches. **Signed in only** |
+| `view-watching` | the watchlist, then filings from the companies on it. **Signed in only** |
 | `view-admin` | the instrument panel: refusals, routes, tiers, states |
 
 While the Brief is open the body carries the class `briefing`: the deck is a
@@ -255,13 +255,56 @@ domain, and that is the same domain the TLS certificate needs.
 
 | Name | What it is |
 | --- | --- |
+The view is **the watchlist first, then what it said**. Both halves are drawn
+by one response — `api/watchlist/feed` returns the page of filings as `data`
+and the whole watchlist as `meta.watching`.
+
+| Name | What it is |
+| --- | --- |
 | `tab-watching` | the fourth tab. **Hidden when signed out** |
 | `tab-watching-count` | the unread badge. **Absent at zero**, never a `0` |
 | `watch-count` | "N of 50 companies watched" |
+| `watching-roster-note` (`watch-roster-note`) | what the list below is, in one sentence |
+| `watch-roster` | **the watchlist itself**: one `watching-row` per watched company |
+| `watching-row` (`data-ui`) | one row, carrying `data-symbol="<symbol>"`. Ticker (opens the company page), name, when it last filed, the star |
+| `watch-feed-head` | the second heading, "What they have said" |
+| `watch-feed-note` | **what the feed below is leaving out, in numbers**. Hidden when the feed is empty, because `watch-empty` speaks then |
 | `watch-feed` | the same card grid the feed uses, drawn by `renderFeedInto` |
 | `watch-empty` | shown **instead of** the grid, and it says which of the two empties this is |
 | `watch` (`data-ui`) | the star. Repeated, and each carries `data-symbol="<symbol>"` |
 | `co-watch` | the company page's star, inside `company-head` after `co-industry` |
+
+**The roster exists because the feed is not the watchlist.** `watch-feed` holds
+the newest `limit` filings *across* the whole watchlist — 25 by default, and
+the control that changes it is on the admin filter bar, not on this view. A
+company that files less often than its neighbours therefore contributes no
+card, and while the roster did not exist that company had no row anywhere on
+the page: watching it was indistinguishable from never having watched it. The
+roster is unpaged and bounded only by `MAX_WATCHED_SYMBOLS` (50), so it is
+always complete.
+
+**The narrowing is stated rather than implied.** `watch-feed-note` reads "The
+newest 25 of 138 filings from these companies. The list above is complete; this
+one is not." when `meta.hasMore`, and "All 12 filings from these companies."
+when it does not. A view that silently shows a short list is the bug this
+sentence closes.
+
+**The two empties are two different sentences.**
+
+| The state | What it says |
+| --- | --- |
+| watching nothing | "You are not watching anything yet" — the roster, its note and the feed heading are all hidden with it |
+| watching, nothing filed | "None of the 3 companies above has filed anything we hold. The watches are working — they are listed above." |
+
+**A row with no filing held says "nothing yet in our window"**, never a date.
+`add` refuses a symbol the directory does not hold, so this is rare rather than
+impossible — the directory snapshot is up to 60s old, so a company added on the
+strength of it can still be ahead of what the filings query sees.
+
+**How long ago is read against the browser's clock**, which is the one exception
+to the rule below; the absolute IST string the server computed
+(`lastFiledAtIst`) is what the row's `title` carries. See `relativeTime` in
+`script-base.ts` for the argument.
 
 The star is **drawn in CSS, not typed**: `page.spec.ts` rejects the emoji range
 `U+2600`-`U+27BF`, which holds both star glyphs, and rejects any CSS reference
@@ -279,8 +322,16 @@ follows. Keyed by symbol rather than by `seqId` because one company files
 repeatedly and the star belongs to the company.
 
 While the Watching tab is open the four-second poll is **authenticated** — one
-indexed session read per poll. On every other tab the poll is anonymous and
-touches no session.
+indexed session read per poll, and one request for both halves of the view. A
+roster fetched separately could disagree with the page of filings beside it (a
+card from a company the roster had not listed yet); one response cannot
+disagree with itself.
+
+**Pressing the star on a roster row asks for a repaint.** The poll owns that
+list, so the row is removed by the next render rather than by DOM surgery —
+`toggleWatch` calls `refresh(true)` when the Watching tab is the open one, or
+the reader would watch a company they just unwatched sit in the list for four
+seconds.
 
 ## Rules that hold across all of it
 
