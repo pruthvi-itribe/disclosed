@@ -141,11 +141,40 @@ const registerFresh = async (): Promise<{ email: string; cookie: string }> => {
  */
 const TEST_PORT = 7791;
 
+/** What `AUTH_MODE` was before this suite pinned it, restored afterwards. */
+let priorAuthMode: string | undefined;
+
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   process.env.MONGO_URI = mongo.getUri('turret');
   origin = `http://127.0.0.1:${TEST_PORT}`;
   process.env.PUBLIC_ORIGIN = origin;
+
+  /**
+   * THE MODE THIS SUITE IS ABOUT, PINNED RATHER THAN INHERITED.
+   *
+   * `readAuthMode` follows the keys when `AUTH_MODE` is unset, so a machine
+   * whose `.env` carries `FIREBASE_PROJECT_ID` and `FIREBASE_WEB_API_KEY`
+   * resolves to `firebase` — where `POST api/auth/register` and
+   * `POST api/auth/login` answer `409 LOCAL_AUTH_DISABLED` on purpose. Every
+   * test here goes through one of those two doors, so the suite reported 31
+   * failures out of 40 (measured 2026-08-08) for a server that was working
+   * exactly as configured.
+   *
+   * IT IS NOT A RE-RUN PROBLEM AND THERE IS NOTHING TO CLEAN UP. The mongod is
+   * in-memory and created in this same hook, so it holds no account before the
+   * first request and outlives no run; `freshEmail`'s counter restarts with the
+   * process. The failure is ambient rather than accumulated — it reproduced on
+   * a first run against a fresh clone, and pinning the mode makes the suite
+   * pass repeatedly on the same machine that failed it.
+   *
+   * Set here beside `MONGO_URI` and `PUBLIC_ORIGIN` because it is the same kind
+   * of fact: what the process under test IS, decided by the suite rather than
+   * by whatever the shell happens to be carrying. Restored rather than deleted,
+   * so a run under an explicit `AUTH_MODE=firebase` leaves it as it found it.
+   */
+  priorAuthMode = process.env.AUTH_MODE;
+  process.env.AUTH_MODE = 'local';
 
   const moduleRef = await Test.createTestingModule({
     imports: [DashboardModule],
@@ -178,6 +207,8 @@ afterAll(async () => {
   await mongo.stop();
   delete process.env.MONGO_URI;
   delete process.env.PUBLIC_ORIGIN;
+  if (priorAuthMode === undefined) delete process.env.AUTH_MODE;
+  else process.env.AUTH_MODE = priorAuthMode;
 }, 60_000);
 
 describe('register', () => {
