@@ -1,3 +1,4 @@
+import { BRAND, BRAND_MARK, BRAND_TAGLINE } from './brand';
 import { PAGE_SCRIPT } from './page-script';
 import { PAGE_STYLE } from './page-style';
 import { PAGE_STYLE_BRIEF } from './page-style-brief';
@@ -51,7 +52,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Turret — what Indian companies said today</title>
+<title>${BRAND} — ${BRAND_TAGLINE}</title>
 <!--
   TWO STYLESHEETS, ONE STYLE ELEMENT. The Brief's rules are a self-contained
   layout for one view and page-style.ts is already past this project's
@@ -62,7 +63,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <body>
 <header class="topbar" data-ui="top-bar">
   <div class="brand">
-    <span class="mark">tur<span class="dotmark">ret</span></span>
+    <span class="mark">${BRAND_MARK.head}<span class="dotmark">${BRAND_MARK.tail}</span></span>
   </div>
   <nav class="tabs" role="tablist">
     <!--
@@ -271,7 +272,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
          mark is the filing's word, never a view on the company — survives in
          nine words, and the long form lives in the title for whoever hovers. -->
     <div id="dir-legend" class="dirlegend" data-ui="direction-legend" hidden
-         title="The direction word and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and Turret publishes none.">
+         title="The direction word and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and ${BRAND} publishes none.">
       ▲ ▼ ◆ mark movement the document itself printed — not a view on the company or its shares.
     </div>
     <div id="search-note" class="searchnote" hidden></div>
@@ -456,7 +457,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
   A fall is not bad news and a rise is not good news: these marks follow the figure, not the company.
   In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions —
   a decrease every reader would call an improvement. Read the claim, not the arrow.
-  Turret does not rate companies or securities. It reports what documents say and shows you where they say it.
+  ${BRAND} does not rate companies or securities. It reports what documents say and shows you where they say it.
   Amount-path refusals are diagnostics, not headlines: no-candidate and ambiguity-keyword together accounted for
   95% of a collection none of whose rows are blank, so they are still counted and still filterable under Diagnostics
   rather than shouted from every row. The panel is collapsed and not removed, and its summary carries the live
