@@ -590,7 +590,7 @@ describe('the claim lane', () => {
   it('filters to the filings where the company said what it plans', async () => {
     // THE PAIR, NOT ONE OF THEM. `guidance` and `target` are two shapes of one
     // thing — the company's own statement about its own future — and measured
-    // on the live collection on 2026-08-08 they are 746 and 65 claims, so a
+    // on the live collection on 2026-08-08 they are 748 and 65 claims, so a
     // filter on `guidance` alone answers the reader's question wrongly by 8%
     // while looking like it worked.
     await seed([

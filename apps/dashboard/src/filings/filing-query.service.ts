@@ -881,9 +881,9 @@ export class FilingQueryService {
       // two rules disagreeing in public.
       //
       // Served by `claims_kind_1_disseminatedAt_-1`. Measured on the live
-      // collection of 3,459 filings on 2026-08-08, newest-first with a limit of
-      // 25: without the index a COLLSCAN examining all 3,459 documents in 7ms;
-      // with it, 344 keys and the 333 candidate documents to return 124 in 7ms.
+      // collection of 3,466 filings on 2026-08-08, newest-first with a limit of
+      // 25: forced to scan, all 3,466 documents in 21ms; with the index, 344
+      // keys and the 333 candidate documents re-checked to return 128, in 4ms.
       // The regex cannot be indexed and never will be — it is the `kind` seek
       // that keeps the re-check to the candidates rather than the collection.
       ...(query.plans === undefined

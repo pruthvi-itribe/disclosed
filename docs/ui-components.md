@@ -102,7 +102,7 @@ from>"`, which are the only stable ways to name **one specific card**.
 **The chip row holds two axes.** Every chip carries `data-topic` — what a claim
 is ABOUT — except `Plans`, which carries `data-plans="only"` and narrows to the
 filings holding a claim in which the company pointed at a period still ahead
-(179 of 3,992 stored claims, across 124 filings; `claim-plan.ts` owns the rule
+(179 of 3,994 stored claims, across 128 filings; `claim-plan.ts` owns the rule
 and both surfaces read it). They
 share a row because a reader uses them the same way, and the price is that
 **exactly one chip is ever lit**: picking either axis clears the other, and

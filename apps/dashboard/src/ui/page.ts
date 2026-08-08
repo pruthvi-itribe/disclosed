@@ -263,8 +263,10 @@ export const renderDashboardPage = (): string => `<!doctype html>
         A DIFFERENT AXIS IN THE SAME ROW, and it is the only chip here that is
         not a topic. The topics ask what a claim is ABOUT; this asks what SHAPE
         it is — 'guidance' or 'target', the two kinds in which a company states
-        something about its own future. Measured on 2026-08-08 that is 811 of
-        3,992 stored claims (20.3%) across 331 filings.
+        something about its own future, narrowed to the ones whose sentence
+        says so. Measured on 2026-08-08: 813 of 3,994 stored claims carry one of
+        those two kinds, 179 of those print a word about a period still ahead,
+        and those 179 sit in 128 filings.
 
         IN THIS ROW RATHER THAN A ROW OF ITS OWN because a reader uses it the
         same way they use the chip beside it — one lens at a time — and a second
@@ -408,7 +410,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
 
     NO FLOOR, unlike the two bars above it. A bar drawn over one observation is
     a single colour claiming to be a distribution; one quoted sentence is one
-    quoted sentence. 93 of the 257 companies holding a plan hold exactly one.
+    quoted sentence. 75 of the 113 companies with a quotable plan hold one.
   -->
   <div id="co-plans-wrap" data-ui="company-plans" hidden>
     <h2 class="bucket">Plans, in their words</h2>

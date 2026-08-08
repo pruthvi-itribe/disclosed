@@ -293,10 +293,10 @@ FilingSchema.index(
  *
  * THE `kind` SEEK IS THE WHOLE POINT, because the other half of that filter is
  * a regular expression and no index will ever serve one. Measured on the live
- * collection of 3,459 filings on 2026-08-08, the feed's own query (newest
- * first, limit 25): without this index a COLLSCAN examining all 3,459
- * documents in 7ms; with it, 344 keys and the 333 candidate documents re-checked
- * against the pattern to return 124, in 7ms. The sort stays blocking either
+ * collection of 3,466 filings on 2026-08-08, the feed's own query (newest
+ * first, limit 25): forced to scan, all 3,466 documents in 21ms; with this
+ * index, 344 keys and the 333 candidate documents re-checked against the
+ * pattern to return 128, in 4ms. The sort stays blocking either
  * way, because a multikey `$in` cannot walk the index in `disseminatedAt`
  * order.
  */

@@ -66,8 +66,8 @@ export const CLAIM_KIND_RANK: Readonly<Record<ClaimKind, number>> = {
  *
  * NAMED AS A PAIR because that is how a reader asks for them — "what does this
  * company say it plans" — and because neither half answers that alone. Measured
- * on the live collection on 2026-08-08: 746 claims are `guidance` and 65 are
- * `target`, 811 of 3,992 (20.3%), spread over 331 filings and 257 of the 1,219
+ * on the live collection on 2026-08-08: 748 claims are `guidance` and 65 are
+ * `target`, 813 of 3,994 (20.4%), spread over 333 filings and 257 of the 1,220
  * companies held. A filter on `guidance` alone would drop 8% of the
  * forward-looking sentences while looking like it worked.
  *

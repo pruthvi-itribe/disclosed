@@ -45,7 +45,7 @@
  * agency's word rather than the company's.
  *
  * The cost of that narrowness is measured and accepted: 179 claims, 22.0% of
- * the 813, across 124 filings and 109 companies — and KALYANKJIL's "September
+ * the 813, across 128 filings and 113 companies — and KALYANKJIL's "September
  * we will be debt free" is one of the sentences it refuses. Refusing to quote
  * is the failure this product is built to prefer.
  *

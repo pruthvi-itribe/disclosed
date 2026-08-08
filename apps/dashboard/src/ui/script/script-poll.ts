@@ -49,7 +49,7 @@ export const SCRIPT_POLL = `
     if (state.topic) parts.push('topic=' + encodeURIComponent(state.topic));
     // ONE VALUE, SENT LITERALLY, because the pair IS the question: the server
     // allowlists 'only' and answers 'plans=guidance' with a 400 rather than
-    // filtering to 746 of the 811 forward-looking claims and looking right.
+    // filtering to 748 of the 813 plan-kind claims and looking right.
     if (state.plans) parts.push('plans=only');
     if (state.tier) parts.push('tier=' + encodeURIComponent(state.tier));
     if (state.enrichState) parts.push('state=' + encodeURIComponent(state.enrichState));

@@ -538,9 +538,10 @@ describe('renderDashboardPage — the movement mark', () => {
 /**
  * WHAT THE COMPANY SAYS IT PLANS, AS A FEED FILTER.
  *
- * 811 stored claims are `guidance` or `target` — the company's own printed
- * statements about its own future, already through the verbatim gate — spread
- * over 331 filings. The chip narrows the feed to those filings.
+ * 179 stored claims are the company's own printed statement about a period
+ * still ahead: filed by the extractor as `guidance` or `target`, and saying so
+ * in the document's own words. They sit in 128 filings, and the chip narrows the
+ * feed to those.
  *
  * IT IS A DIFFERENT AXIS FROM THE CHIPS BESIDE IT and shares their row anyway:
  * the topic chips ask what a claim is ABOUT and this asks what SHAPE it is, but
@@ -563,9 +564,9 @@ describe('renderDashboardPage — the plans filter', () => {
   });
 
   it('asks the server for the pair, never for one kind of it', () => {
-    // `guidance` alone is 746 of the 811, so a chip that sent it would answer
-    // the reader's question 8% short while looking like it worked. The server
-    // answers `plans=guidance` with a 400 for the same reason.
+    // `guidance` alone is 748 of the 813 claims under the two plan kinds, so a
+    // chip that sent it would answer the reader's question 8% short while
+    // looking like it worked. The server answers `plans=guidance` with a 400.
     expect(script).toContain("parts.push('plans=only')");
     expect(script).not.toContain('kind=guidance');
   });
@@ -688,8 +689,8 @@ describe('renderDashboardPage — plans, in their words', () => {
     // THE DIFFERENT FLOOR IS THE POINT. A stacked bar over one observation is a
     // single colour claiming to be a distribution, so those widgets suppress
     // themselves; one quoted sentence is one quoted sentence and says exactly
-    // as much as it says. 93 of the 257 companies holding a plan hold exactly
-    // one, so a floor of two would silence 36% of them for nothing.
+    // as much as it says. 75 of the 113 companies with a quotable plan have
+    // exactly one, so a floor of two would silence two-thirds of them.
     expect(plans).not.toMatch(/MIN_[A-Z_]+/);
     expect(SCRIPT_COMPANY).toContain(
       "plansWrap.hidden = !renderPlans(el('co-plans'), items);",

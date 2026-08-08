@@ -422,7 +422,7 @@ export const SCRIPT_FEED = `
   function emptyHint() {
     var picked = state.picked;
 
-    // NAMED FIRST BECAUSE IT IS THE NARROWEST. Only 331 of 3,459 filings carry
+    // NAMED FIRST BECAUSE IT IS THE NARROWEST. Only 128 of 3,466 filings carry
     // a claim of this shape, so when a search and this chip are both on it is
     // almost always this one that emptied the feed - and letting the insight
     // toggle below take the blame would send the reader to the wrong control.
