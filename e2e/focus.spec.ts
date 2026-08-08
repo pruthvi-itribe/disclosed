@@ -85,10 +85,89 @@ test.describe('the focus card', () => {
 
     const claims = page.locator('[data-ui="focus-claims"] li');
     expect(await claims.count()).toBeGreaterThan(shown);
-    // Each one quotes the document it was matched against.
+    // Each one quotes the document it was matched against — folded, so the
+    // panel reads as claims, and one tap from the claim it belongs to.
+    await page.locator('[data-ui="focus-span-toggle"]').first().click();
     await expect(page.locator('[data-ui="focus-span"]').first()).toContainText(
       'matched in the document',
     );
+  });
+
+  test('folds each quote away, and gives back the same sentence on request', async ({
+    page,
+  }) => {
+    // THE CARD IS A SCAN, THE DIALOG IS A READ, AND NEITHER IS A WALL OF GREY.
+    // What this has to prove is the pair of them: that the quote is genuinely
+    // not on screen when the dialog opens, and that the control brings back the
+    // sentence itself rather than a placeholder or a re-render of the claim.
+    await page.goto('/');
+    const seq = await aCardSeq(page);
+    await page.locator(`#feed .card[data-seq="${seq}"]`).click();
+    await expect(page.locator('#focus')).toBeVisible();
+
+    const toggle = page.locator('[data-ui="focus-span-toggle"]').first();
+    if ((await toggle.count()) === 0) {
+      test.skip(
+        true,
+        'the filing this card opened carries no verified claim with a stored span',
+      );
+    }
+    const quotes = page.locator('[data-ui="focus-spans"]').first();
+
+    // CLOSED ON OPEN, and the button says what pressing it will do.
+    await expect(quotes).toBeHidden();
+    await expect(toggle).toHaveText('Show source line');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    // Read off the folded node, so the comparison after the tap is against the
+    // exact string the dialog was already holding rather than against a
+    // fragment of it retyped here.
+    const quoted = await quotes.textContent();
+    expect(quoted).toContain('matched in the document');
+
+    await toggle.click();
+    await expect(quotes).toBeVisible();
+    await expect(quotes).toHaveText(quoted ?? '');
+    await expect(toggle).toHaveText('Hide');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    // And back. A disclosure that only opens is an expander with extra steps.
+    await toggle.click();
+    await expect(quotes).toBeHidden();
+    await expect(toggle).toHaveText('Show source line');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('opens every quote folded again after the dialog is closed', async ({
+    page,
+  }) => {
+    // The reveal is not remembered, and that is the design rather than an
+    // omission: the body is emptied on close, so there is no state to keep and
+    // none is kept.
+    await page.goto('/');
+    const seq = await aCardSeq(page);
+    const card = page.locator(`#feed .card[data-seq="${seq}"]`);
+
+    await card.click();
+    const toggle = page.locator('[data-ui="focus-span-toggle"]').first();
+    if ((await toggle.count()) === 0) {
+      test.skip(
+        true,
+        'the filing this card opened carries no verified claim with a stored span',
+      );
+    }
+    await toggle.click();
+    await expect(page.locator('[data-ui="focus-spans"]').first()).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#focus-back')).toBeHidden();
+
+    await card.click();
+    await expect(page.locator('#focus')).toBeVisible();
+    await expect(page.locator('[data-ui="focus-spans"]').first()).toBeHidden();
+    await expect(
+      page.locator('[data-ui="focus-span-toggle"]').first(),
+    ).toHaveText('Show source line');
   });
 
   test('closes on Escape, on the backdrop and on the X, and gives focus back', async ({

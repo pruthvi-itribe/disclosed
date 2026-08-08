@@ -1772,6 +1772,29 @@ describe('the focus card', () => {
     expect(SCRIPT_FOCUS).not.toContain('innerHTML');
   });
 
+  it('folds each quote behind its own control, closed until it is asked for', () => {
+    // The dialog was drawing every claim with its grey quote block underneath,
+    // so a filing with eight claims opened as sixteen blocks of which the eight
+    // a reader came for were every other one. The quote is evidence and stays
+    // reachable; it is one tap per claim rather than half the panel.
+    expect(SCRIPT_FOCUS).toContain('quotes.hidden = true');
+    expect(SCRIPT_FOCUS).toContain(
+      "toggle.setAttribute('data-ui', 'focus-span-toggle')",
+    );
+    expect(SCRIPT_FOCUS).toContain("var SPAN_SHOW = 'Show source line'");
+    expect(SCRIPT_FOCUS).toContain("var SPAN_HIDE = 'Hide'");
+    // THE LABEL AND THE STATE MOVE TOGETHER. aria-expanded is what makes this a
+    // disclosure rather than a button that happens to change some text, and a
+    // label that swapped without it would tell a screen reader the opposite of
+    // what the page shows.
+    expect(SCRIPT_FOCUS).toContain(
+      "button.setAttribute('aria-expanded', opening ? 'true' : 'false')",
+    );
+    // Still text, still no markup — the control's label is the only string here
+    // that is ours rather than the exchange's, and both go the same way.
+    expect(SCRIPT_FOCUS).toContain('toggle.textContent = SPAN_SHOW');
+  });
+
   it('empties the dialog on close rather than merely hiding it', () => {
     // A hidden node keeps every claim and quoted span in the document —
     // invisible, and still there on a shared screen.

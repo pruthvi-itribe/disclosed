@@ -36,6 +36,14 @@ export const SCRIPT_FOCUS = `
   // top of the document has lost their place in a feed of sixty cards.
   var focusReturn = null;
 
+  // The two labels the quote's control swaps between. Written once so the
+  // button that opens a quote and the test that watches it close again cannot
+  // drift apart. The open label NAMES WHAT IT WILL SHOW rather than saying
+  // 'more': a reader deciding whether to spend the tap is deciding whether they
+  // want the sentence from the document, and 'more' does not tell them that.
+  var SPAN_SHOW = 'Show source line';
+  var SPAN_HIDE = 'Hide';
+
   /**
    * Every line the dialog shows, with the span each was matched against.
    *
@@ -80,6 +88,65 @@ export const SCRIPT_FOCUS = `
     parent.appendChild(box);
   }
 
+  /**
+   * One claim's quotes, and the control that reveals them.
+   *
+   * WHY THEY START CLOSED. The dialog is 'everything this filing said', and it
+   * was drawing every claim with its grey quote block underneath — so a filing
+   * with eight claims opened as sixteen blocks of text, of which the eight a
+   * reader came for were every other one. The card above it is scannable and
+   * the dialog was not.
+   *
+   * THE EVIDENCE IS NOT OPTIONAL AND IT IS NOT GONE. It is one tap per claim,
+   * beside the claim, behind a control that says what it will show. A claim
+   * whose quote a reader cannot reach would fail the rule this whole product is
+   * built on; a claim whose quote is folded until asked for does not.
+   *
+   * NOT REMEMBERED ACROSS A CLOSE, on purpose. 'closeFocus' empties the body,
+   * so the next open starts folded again. Keeping the reveal would be state
+   * held only so a layout could survive the dialog, which is the mistake the
+   * '+ 6 more' expander this dialog replaced was making.
+   */
+  function writeSpans(item, line) {
+    var quotes = document.createElement('div');
+    quotes.className = 'focusspans';
+    quotes.setAttribute('data-ui', 'focus-spans');
+    quotes.hidden = true;
+
+    writeSpan(quotes, 'matched in the document', line.span);
+    // Shown BESIDE its sentence rather than merged into it. They are two quotes
+    // from two places in the document, and running them together would forge a
+    // sentence. Both live behind the one control: they are the same answer to
+    // the same question, and two buttons on one claim is a menu.
+    if (line.periodSpan) {
+      writeSpan(quotes, 'period from', line.periodSpan);
+    }
+
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'spantoggle';
+    toggle.setAttribute('data-ui', 'focus-span-toggle');
+    // aria-expanded is what makes this a disclosure rather than a button that
+    // happens to change some text: it is how a screen reader says 'collapsed'
+    // BEFORE the reader presses it, and it moves with the label or the two
+    // describe different pages.
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.textContent = SPAN_SHOW;
+    toggle.onclick = (function (box, button) {
+      return function () {
+        var opening = box.hidden;
+        box.hidden = !opening;
+        button.textContent = opening ? SPAN_HIDE : SPAN_SHOW;
+        button.setAttribute('aria-expanded', opening ? 'true' : 'false');
+      };
+    })(quotes, toggle);
+
+    // The control first, then what it controls, so a keyboard reader tabs onto
+    // the button before reaching the text it just opened.
+    item.appendChild(toggle);
+    item.appendChild(quotes);
+  }
+
   /** Builds the dialog's body for one filing. Everything through textContent. */
   function fillFocusBody(f, e, lines) {
     var body = el('focus-body');
@@ -117,13 +184,7 @@ export const SCRIPT_FOCUS = `
       writeInsight(item, lines[i]);
 
       if (lines[i].span) {
-        writeSpan(item, 'matched in the document', lines[i].span);
-        // Shown BESIDE its sentence rather than merged into it. They are two
-        // quotes from two places in the document, and running them together
-        // would forge a sentence.
-        if (lines[i].periodSpan) {
-          writeSpan(item, 'period from', lines[i].periodSpan);
-        }
+        writeSpans(item, lines[i]);
       } else {
         // Cannot happen on a verified claim, so it is stated rather than left
         // as a gap: "no span was stored" and "no span was looked for" are

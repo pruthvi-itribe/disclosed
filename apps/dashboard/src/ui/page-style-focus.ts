@@ -86,6 +86,17 @@ export const PAGE_STYLE_FOCUS = `
   font-size: 16px; min-width: 0; overflow-wrap: anywhere;
 }
 
+/* THE CONTROL THAT UNFOLDS ONE. Sized and coloured like the foot's 'Copy',
+   because it is the same kind of thing: a small secondary action beside a line
+   rather than part of it. It is the only chrome the claim carries, which is
+   what keeps the dialog scannable now that the quote is folded under it. */
+.spantoggle {
+  margin-top: 7px; padding: 3px 9px;
+  background: transparent; border: 1px solid var(--line); border-radius: 7px;
+  color: var(--muted); font: inherit; font-size: 11px; line-height: 1.5;
+}
+.spantoggle:hover { color: var(--text); border-color: var(--muted); }
+
 /* THE SPAN, UNDER ITS CLAIM. Muted, because it is evidence rather than the
    line — a reader takes the claim and checks the quote, not the other way
    round. Quoted with real quotation marks and never merged with a neighbouring
