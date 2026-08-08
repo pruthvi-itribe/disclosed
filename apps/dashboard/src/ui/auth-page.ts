@@ -5,9 +5,10 @@ import {
   AUTH_SCRIPT_SHARED,
 } from './auth-script';
 import { AUTH_PAGE_STYLE } from './auth-page-style';
-import { BRAND, BRAND_MARK } from './brand';
+import { BRAND } from './brand';
 import { escapeHtml } from './landing';
 import { LANDING_STYLE } from './landing-style';
+import { BRAND_FAVICON_LINK, BRAND_LOGO, BRAND_LOGO_STYLE } from './logo';
 
 /**
  * The sign-in page.
@@ -186,13 +187,15 @@ export const renderAuthPage = (auth: AuthConfig): string => {
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
 <title>Sign in — ${BRAND}</title>
-<style>${LANDING_STYLE}${AUTH_PAGE_STYLE}</style>
+<!-- The icon travels in the attribute; nothing is fetched. See logo.ts. -->
+${BRAND_FAVICON_LINK}
+<style>${LANDING_STYLE}${AUTH_PAGE_STYLE}${BRAND_LOGO_STYLE}</style>
 </head>
 <body>
 <div class="authshell">
   <div class="authpanel">
     <a class="authback" href="/">&larr; Back</a>
-    <span class="authmark">${BRAND_MARK.word}<span class="dotmark">${BRAND_MARK.accent}</span></span>
+    ${BRAND_LOGO}
     <h1 id="auth-title" class="authtitle">Sign in</h1>
     <p id="auth-lead" class="authlead">Welcome back.</p>
 ${body}

@@ -1,6 +1,7 @@
 import { BRAND, BRAND_DOMAIN } from './brand';
 import { escapeHtml, renderLandingPage } from './landing';
 import { SAMPLE_CARDS, SAMPLE_DISCARD } from './landing-samples';
+import { BRAND_FAVICON_LINK, BRAND_LOGO } from './logo';
 
 /**
  * The landing page's invariants, which are mostly about what it does NOT do.
@@ -23,7 +24,15 @@ describe('the landing page is self-contained', () => {
   });
 
   it('loads no stylesheet, script or font from anywhere', () => {
-    expect(html).not.toContain('<link');
+    // ONE LINK ELEMENT, AND IT LOADS NOTHING: the favicon is an SVG carried in
+    // the attribute as a `data:` URI (`logo.ts`). A second link, or this one
+    // pointing anywhere but `data:`, is a font or a stylesheet arriving from a
+    // third party — on the one page served to people who have not agreed to
+    // anything yet, which is what this assertion has always been for.
+    expect([...html.matchAll(/<link[^>]*>/g)].map((match) => match[0])).toEqual(
+      [BRAND_FAVICON_LINK],
+    );
+    expect(BRAND_FAVICON_LINK).toContain('href="data:image/svg+xml,');
     expect(html).not.toMatch(/<script/);
     expect(html).not.toContain('@font-face');
     expect(html).not.toMatch(/url\s*\(/);
@@ -59,7 +68,12 @@ describe('it performs no read', () => {
   });
 
   it('links only to the sign-in page', () => {
-    const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
+    // ANCHORS ONLY. The head carries one more `href` — the favicon's `data:`
+    // URI — and it goes nowhere; the property worth holding is that every place
+    // a visitor can CLICK leads to `/auth` and to nothing else.
+    const hrefs = [...html.matchAll(/<a [^>]*href="([^"]*)"/g)].map(
+      (m) => m[1],
+    );
 
     expect(hrefs.length).toBeGreaterThan(0);
     expect([...new Set(hrefs)]).toEqual(['/auth']);
@@ -154,6 +168,12 @@ describe('it states the limits before anyone signs up', () => {
 });
 
 describe('the brand comes through the constant', () => {
+  it('draws the shared logo in the header', () => {
+    // The same element the app's top bar and the sign-in panel draw, so the
+    // three pages cannot end up with three slightly different logos.
+    expect(html).toContain(BRAND_LOGO);
+  });
+
   it('titles the page and signs the footer with it', () => {
     expect(html).toContain(`<title>${BRAND} —`);
     expect(html).toContain(BRAND_DOMAIN);

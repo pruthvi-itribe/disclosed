@@ -1,4 +1,5 @@
-import { BRAND, BRAND_MARK, BRAND_TAGLINE } from './brand';
+import { BRAND, BRAND_TAGLINE } from './brand';
+import { BRAND_FAVICON_LINK, BRAND_LOGO, BRAND_LOGO_STYLE } from './logo';
 import { PAGE_SCRIPT } from './page-script';
 import { PAGE_STYLE } from './page-style';
 import { PAGE_STYLE_BRIEF } from './page-style-brief';
@@ -55,17 +56,25 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <meta name="referrer" content="no-referrer">
 <title>${BRAND} — ${BRAND_TAGLINE}</title>
 <!--
-  THREE STYLESHEETS, ONE STYLE ELEMENT. The Brief's rules and the focus card's
-  are each a self-contained layout for one surface, and page-style.ts is already
-  past this project's 800-line file ceiling, so they file separately and are
-  concatenated here.
+  THE ONLY LINK ELEMENT ON THIS PAGE, AND IT LOADS NOTHING. The icon is an SVG
+  carried in the attribute as a data: URI — see logo.ts. A second link, of any
+  kind, is a stylesheet or a font arriving from somewhere, which is what
+  page.spec.ts refuses. (No backticks in here: this document is a template
+  literal, and one would end the string — see CLAUDE.md.)
 -->
-<style>${PAGE_STYLE}${PAGE_STYLE_BRIEF}${PAGE_STYLE_FOCUS}</style>
+${BRAND_FAVICON_LINK}
+<!--
+  FOUR STYLESHEETS, ONE STYLE ELEMENT. The Brief's rules, the focus card's and
+  the logo's are each a self-contained layout for one thing, and page-style.ts is
+  already past this project's 800-line file ceiling, so they file separately and
+  are concatenated here.
+-->
+<style>${PAGE_STYLE}${PAGE_STYLE_BRIEF}${PAGE_STYLE_FOCUS}${BRAND_LOGO_STYLE}</style>
 </head>
 <body>
 <header class="topbar" data-ui="top-bar">
   <div class="brand">
-    <span class="mark">${BRAND_MARK.word}<span class="dotmark">${BRAND_MARK.accent}</span></span>
+    ${BRAND_LOGO}
   </div>
   <nav class="tabs" role="tablist">
     <!--

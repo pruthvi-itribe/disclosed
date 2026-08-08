@@ -51,9 +51,8 @@ header.bar {
   align-items: baseline; justify-content: space-between;
   border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 16px;
 }
-.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.mark { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
-.mark .dotmark { color: var(--bad); }
+/* The wordmark itself is logo.ts: one drawing, one stylesheet, three pages. */
+.brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .sub { color: var(--muted); font-size: 13px; }
 .status { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }

@@ -28,8 +28,9 @@ export const AUTH_PAGE_STYLE = `
   border-radius: 18px; padding: 26px 24px 22px;
 }
 .authback { margin-bottom: 22px; font-size: 13px; }
-.authmark { display: block; margin-bottom: 6px; font-size: 24px; font-weight: 650; letter-spacing: -0.03em; }
-.authmark .dotmark { color: var(--bad); font-size: 1.15em; }
+/* The one caller that resizes the logo, and it does it with one declaration:
+   logo.ts sizes the mark in em, so the geometry is not restated here. */
+.authpanel .logo { display: flex; margin-bottom: 10px; font-size: 24px; }
 .authtitle { margin: 0; font-size: 21px; font-weight: 640; letter-spacing: -0.02em; }
 .authlead { margin: 7px 0 20px; color: var(--muted); font-size: 14px; line-height: 1.5; }
 

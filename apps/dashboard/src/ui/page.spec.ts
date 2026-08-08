@@ -5,6 +5,7 @@ import { CONFIDENCE_TIERS } from '@app/filings/logic/confidence-tier';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { BRAND } from './brand';
+import { BRAND_FAVICON_LINK, BRAND_LOGO } from './logo';
 import { renderDashboardPage } from './page';
 import { PAGE_STYLE } from './page-style';
 import { PAGE_STYLE_BRIEF } from './page-style-brief';
@@ -45,7 +46,14 @@ describe('renderDashboardPage — self-containment', () => {
   });
 
   it('loads no external stylesheet, script or font', () => {
-    expect(html).not.toContain('<link');
+    // ONE LINK ELEMENT, AND IT LOADS NOTHING: the favicon is an SVG carried in
+    // the attribute as a `data:` URI (`logo.ts`). A second link, or this one
+    // pointing anywhere but `data:`, is a stylesheet or a font arriving from
+    // somewhere — which is what this assertion has always been for.
+    expect([...html.matchAll(/<link[^>]*>/g)].map((match) => match[0])).toEqual(
+      [BRAND_FAVICON_LINK],
+    );
+    expect(BRAND_FAVICON_LINK).toContain('href="data:image/svg+xml,');
     expect(html).not.toMatch(/<script[^>]+src=/);
     expect(html).not.toContain('@import');
     expect(html).not.toContain('@font-face');
@@ -64,6 +72,13 @@ describe('renderDashboardPage — self-containment', () => {
     expect(html.startsWith('<!doctype html>')).toBe(true);
     expect(html.trimEnd().endsWith('</html>')).toBe(true);
     expect(html).toContain('<title>');
+  });
+
+  it('draws the shared logo in the top bar, not a copy of it', () => {
+    // The same string the landing page and the sign-in page embed. A
+    // hand-written wordmark here is how a product ends up with two logos.
+    expect(html).toContain(BRAND_LOGO);
+    expect(html).not.toContain('class="mark"');
   });
 });
 

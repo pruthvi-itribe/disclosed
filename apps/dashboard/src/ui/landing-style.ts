@@ -65,11 +65,8 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: 12px;
   padding: 16px 0; border-bottom: 1px solid var(--line);
 }
-.mark { font-size: 21px; font-weight: 650; letter-spacing: -0.03em; }
-/* The accent is a full stop rather than a coloured syllable — see brand.ts.
-   Slightly oversized and pulled tight, so it reads as a mark rather than as
-   punctuation somebody forgot to delete. */
-.mark .dotmark { color: var(--bad); font-size: 1.15em; margin-left: -0.02em; }
+/* The wordmark and its mark are logo.ts, so this page, the app and the
+   sign-in page cannot end up with three slightly different logos. */
 .grow { flex: 1 1 auto; }
 
 /* The one control in the header, and it is the same control as the one in the

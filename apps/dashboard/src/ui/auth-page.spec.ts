@@ -12,6 +12,7 @@ import {
 } from './auth-page';
 import { AUTH_PAGE_STYLE } from './auth-page-style';
 import { LANDING_STYLE } from './landing-style';
+import { BRAND_FAVICON_LINK, BRAND_LOGO } from './logo';
 
 /**
  * The sign-in page, and mostly the BOUNDARY of the one exception this codebase
@@ -86,10 +87,23 @@ describe('the CDN relaxation, and its edges', () => {
     // The exception is the SDK. It is not a general licence to fetch things.
     const html = renderAuthPage(FIREBASE);
 
-    expect(html).not.toContain('<link');
+    // ONE LINK ELEMENT, AND IT LOADS NOTHING: the favicon is an SVG carried in
+    // the attribute as a `data:` URI (`logo.ts`). A second one is a stylesheet
+    // or a font, which is what this assertion is for.
+    expect([...html.matchAll(/<link[^>]*>/g)].map((match) => match[0])).toEqual(
+      [BRAND_FAVICON_LINK],
+    );
+    expect(BRAND_FAVICON_LINK).toContain('href="data:image/svg+xml,');
     expect(html).not.toContain('@font-face');
     expect(html).not.toMatch(/url\s*\(/);
     expect(html).not.toContain('<img');
+  });
+
+  it('shows the shared logo above the form', () => {
+    // The moment before sign-in and the moment after it are the same product,
+    // so the mark on this page is the app's mark rather than a copy.
+    expect(renderAuthPage(FIREBASE)).toContain(BRAND_LOGO);
+    expect(renderAuthPage(LOCAL)).toContain(BRAND_LOGO);
   });
 
   it('draws the Google mark in CSS rather than fetching a logo', () => {

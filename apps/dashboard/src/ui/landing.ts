@@ -1,5 +1,6 @@
-import { BRAND, BRAND_DOMAIN, BRAND_MARK, BRAND_TAGLINE } from './brand';
+import { BRAND, BRAND_DOMAIN, BRAND_TAGLINE } from './brand';
 import { LANDING_STYLE } from './landing-style';
+import { BRAND_FAVICON_LINK, BRAND_LOGO, BRAND_LOGO_STYLE } from './logo';
 import {
   SAMPLE_CARDS,
   SAMPLE_DISCARD,
@@ -241,13 +242,15 @@ export const renderLandingPage = (): string => `<!doctype html>
 <meta name="color-scheme" content="dark">
 <title>${BRAND} — ${BRAND_TAGLINE}</title>
 <meta name="description" content="Every claim matched, character for character, against the filing it came from. Indian corporate announcements from NSE and BSE.">
-<style>${LANDING_STYLE}</style>
+<!-- The icon travels in the attribute; nothing is fetched. See logo.ts. -->
+${BRAND_FAVICON_LINK}
+<style>${LANDING_STYLE}${BRAND_LOGO_STYLE}</style>
 </head>
 <body>
 
 <header class="top">
   <div class="wrap" style="display:flex;align-items:center;gap:12px">
-    <span class="mark">${BRAND_MARK.word}<span class="dotmark">${BRAND_MARK.accent}</span></span>
+    ${BRAND_LOGO}
     <span class="grow"></span>
     <a class="go small" href="/auth" data-ui="signin-top">Sign in</a>
   </div>
