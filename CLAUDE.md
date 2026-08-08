@@ -106,3 +106,5 @@ These override any habit of writing more, sooner, or cleverer.
 - One logical change per commit; the commit message carries the evidence.
 - Tools in `tools/` are measurement/backfill scripts: no model calls unless
   stated, report-then-skip rather than silently fetching.
+
+- The one `<link>` element allowed on any page is the favicon, an inlined `data:` SVG — a second link (stylesheet, font) must fail the specs.
