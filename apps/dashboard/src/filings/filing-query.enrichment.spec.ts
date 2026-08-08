@@ -440,6 +440,10 @@ describe('the claim lane', () => {
         // whose sentence names a year it is aiming at, so the company page may
         // quote it under "plans, in their words".
         planEvidence: 'by FY31',
+        // Also computed on read, and empty here because the sentence schedules
+        // nothing. Empty rather than absent: "this claim names no appointment"
+        // and "nobody looked" must not read the same.
+        commitments: [],
       },
     ]);
     // The document's own line break survives the round trip, because the span
@@ -585,6 +589,50 @@ describe('the claim lane', () => {
     expect(
       items[0].enrichment.claims.map((claim) => claim.planEvidence),
     ).toEqual(['expect', null]);
+  });
+
+  it('sends the dated commitments a claim printed, against the server IST day', async () => {
+    // THE BROWSER HOLDS NO VOCABULARY AND NO CALENDAR. `datedCommitments` runs
+    // here, where the one IST definition lives, so "still ahead" is decided
+    // against the server's day rather than against whatever the reader's
+    // machine is set to — a browser on UTC rolls its day 5½ hours late and
+    // would show yesterday's record date as upcoming for half the evening.
+    await seed([
+      [
+        1,
+        enrichment({
+          claims: [
+            {
+              ...CLAIM,
+              span: 'the Company has fixed August 18, 2026 (Tuesday), as the Record Date for the purpose of determining the entitlement of equity Shareholders.',
+              kind: 'operational',
+            },
+            {
+              ...CLAIM,
+              span: 'Approved convening 31 st AGM of Hinduja Global Solutions Limited on Friday, September 25, 2025',
+              kind: 'operational',
+            },
+          ],
+        }),
+      ],
+    ]);
+
+    const { items } = await page();
+
+    // The clock is 2026-08-06 IST. The record date is ahead of it and travels
+    // with the words that made it one; the 2025 AGM is behind it and is gone.
+    expect(
+      items[0].enrichment.claims.map((claim) => claim.commitments),
+    ).toEqual([
+      [
+        {
+          date: '2026-08-18',
+          dateText: 'August 18, 2026',
+          evidence: 'Record Date',
+        },
+      ],
+      [],
+    ]);
   });
 
   it('filters to the filings where the company said what it plans', async () => {
@@ -765,6 +813,12 @@ describe('the results view on a filing row', () => {
         prior: '65,607.59',
         unit: 'MN',
         span: 'Revenue from operations 73,977.90 73,356.74 65,607.59',
+        // Rendered HERE, by the same `renderResultsValue` the wire line uses,
+        // for the reason `amountDisplay` is: a second implementation of the
+        // currency mark and the unit suffix in the browser is a second thing to
+        // keep in step with the message that actually goes out.
+        currentDisplay: '₹73,977.90 MN',
+        priorDisplay: '₹65,607.59 MN',
       },
     ]);
     expect(view.resultsDiscards).toEqual([
@@ -776,6 +830,58 @@ describe('the results view on a filing row', () => {
       },
     ]);
     expect(view.resultsProposed).toBe(1);
+  });
+
+  it('renders a per-share figure and a margin without inventing a scale', async () => {
+    // The unit is the DOCUMENT's own declaration and the empty one is not a
+    // missing value: EPS is rupees per share and takes the currency mark with
+    // no scale word after it, and a margin the filer printed takes a percent
+    // sign. Neither number is rescaled — that is the whole policy in
+    // `results-line.ts`, and the page must not undo it by formatting its own.
+    await seed([
+      [
+        7,
+        enrichment({
+          results: {
+            basis: 'standalone',
+            basisSpan: 'STANDALONE FINANCIAL RESULTS',
+            columnsSpan: '30.06.2026 30.06.2025',
+            period: 'Q1 FY27',
+            priorPeriod: 'Q1 FY26',
+            figures: [
+              {
+                metric: 'eps',
+                current: '5.52',
+                prior: '0.20',
+                unit: '',
+                span: 'Basic EPS (Rs.) 5.52 0.20',
+              },
+              {
+                metric: 'ebitda-margin',
+                current: '11.73',
+                prior: '(13.32)',
+                unit: '%',
+                span: 'EBITDA Margin (%) 11.73 (13.32)',
+              },
+            ],
+          },
+        }),
+      ],
+    ]);
+
+    const { items } = await page();
+    const figures = items[0].enrichment.results?.figures ?? [];
+
+    expect(figures.map((one) => one.currentDisplay)).toEqual([
+      '₹5.52',
+      '11.73%',
+    ]);
+    // A bracketed figure is a negative in an Indian statement, and the renderer
+    // says so with a sign rather than leaving the reader to know the convention.
+    expect(figures.map((one) => one.priorDisplay)).toEqual([
+      '₹0.20',
+      '-13.32%',
+    ]);
   });
 
   it('counts results lines and refusals apart from the claim ones', async () => {

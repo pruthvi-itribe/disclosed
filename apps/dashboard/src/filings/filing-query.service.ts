@@ -15,12 +15,14 @@ import {
   composeOutcome,
   confidenceTierFor,
   CONFIDENCE_TIER_LABEL,
+  datedCommitments,
   formatRupees,
   MAPPED_GROUP_CATEGORIES,
   FactsSeen,
   PLAN_CLAIM_KINDS,
   PLAN_SPAN_PATTERN,
   planEvidence,
+  renderResultsValue,
   type CategoryGroup,
   type ClaimTopic,
   type Filing,
@@ -1021,7 +1023,11 @@ export class FilingQueryService {
       categoryGroupLabel: CATEGORY_GROUP_LABEL[group],
       confidenceTier: tier,
       confidenceTierLabel: CONFIDENCE_TIER_LABEL[tier],
-      enrichment: toEnrichmentView(enrichment),
+      // THE IST DAY IS PASSED IN, NOT READ INSIDE. `toEnrichmentView` is a free
+      // function and has no clock; the one thing in it that depends on today —
+      // whether a printed appointment is still ahead — takes it as an argument
+      // so a test can move the day without moving the machine's.
+      enrichment: toEnrichmentView(enrichment, istDayKey(this.now())),
     };
   }
 }
@@ -1078,6 +1084,7 @@ const groupFilter = (
  */
 function toEnrichmentView(
   enrichment: FilingEnrichment | undefined,
+  todayIstDay: string,
 ): EnrichmentView {
   const amountRupees = enrichment?.amountRupees ?? null;
 
@@ -1125,6 +1132,17 @@ function toEnrichmentView(
       // than on the next backfill. The page filters its plans section on this
       // one field and knows none of the vocabulary itself.
       planEvidence: planEvidence(claim.kind, claim.span),
+      // The other rule computed on read, and the only one that depends on WHEN
+      // the request arrived: an appointment is upcoming or it is not, and that
+      // cannot be stored. `claim-commitment.ts` owns the word list and the date
+      // shapes, so the page is told the days and never the vocabulary.
+      commitments: datedCommitments(claim.span, todayIstDay).map(
+        (commitment) => ({
+          date: commitment.date,
+          dateText: commitment.dateText,
+          evidence: commitment.evidence,
+        }),
+      ),
       // Nullish-coalesced rather than read directly: every claim stored before
       // the period rule existed carries no such field, and `undefined` reaching
       // the page would render as the string "undefined" beside a real quote.
@@ -1164,6 +1182,14 @@ function toEnrichmentView(
               prior: figure.prior,
               unit: figure.unit,
               span: figure.span,
+              // Rendered HERE, from the same function the wire line composes
+              // with, for the reason `amountDisplay` above is: the currency
+              // mark, the unit suffix and the bracket-means-negative convention
+              // are one rule, and a second copy of it in the browser is a
+              // second thing to keep in step. It moves no digit — the rescaling
+              // `results-line.ts` refuses stays refused.
+              currentDisplay: renderResultsValue(figure.current, figure.unit),
+              priorDisplay: renderResultsValue(figure.prior, figure.unit),
             })),
           },
     resultsDiscards: (enrichment?.resultsDiscards ?? []).map((row) => ({

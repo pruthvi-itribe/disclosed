@@ -139,6 +139,36 @@ export interface ResultsFigureView {
   readonly unit: string;
   /** The verbatim table row. This is what makes the figures checkable. */
   readonly span: string;
+  /**
+   * The current value with the document's own currency mark and scale word —
+   * `₹73,977.90 MN`, `₹5.52`, `11.73%`.
+   *
+   * RENDERED ON THE SERVER, by the same `renderResultsValue` the wire line
+   * uses, for the reason `amountDisplay` is: a second implementation in the
+   * browser is a second thing to keep in step with the message that goes out.
+   * It moves no digit and changes no magnitude — the rescaling a competitor
+   * does here is the exact failure `results-line.ts` was written against.
+   */
+  readonly currentDisplay: string;
+  /** The year-ago value, rendered the same way. */
+  readonly priorDisplay: string;
+}
+
+/**
+ * One appointment a claim's sentence printed, still ahead of the server's day.
+ *
+ * Computed on READ, like `planEvidence` and for the same reasons: it is a pure
+ * function of the stored span, so the whole collection has it without a
+ * backfill — and the "still ahead" half is a function of the CLOCK, which
+ * cannot be stored at all.
+ */
+export interface ClaimCommitmentView {
+  /** The IST calendar day the document named, as `YYYY-MM-DD`. */
+  readonly date: string;
+  /** The document's own characters for the date. */
+  readonly dateText: string;
+  /** The document's own word that made it a commitment — `Record Date`, `AGM`. */
+  readonly evidence: string;
 }
 
 /** One refused figure and the rule that refused it. */
@@ -216,6 +246,21 @@ export interface ClaimView {
    * without a backfill. `claim-plan.ts` owns the rule.
    */
   readonly planEvidence: string | null;
+  /**
+   * Every appointment this claim's sentence printed that is STILL AHEAD of the
+   * server's IST day, soonest first. Empty for almost every claim.
+   *
+   * THE BROWSER HOLDS NEITHER THE VOCABULARY NOR THE CALENDAR. `claim-commitment.ts`
+   * owns the word list and the date shapes; the IST day comes from the one
+   * definition in `libs/common/src/ist.ts`. A browser deciding "still ahead"
+   * for itself would roll its day at midnight local time — 5½ hours late on
+   * UTC — and show yesterday's record date as upcoming all evening.
+   *
+   * Measured on 2026-08-08: 93 of 4,679 stored claims carry one, yielding 106
+   * dates across 50 of the 1,286 companies held. Empty, never absent: "this
+   * sentence schedules nothing" and "nobody looked" are different facts.
+   */
+  readonly commitments: readonly ClaimCommitmentView[];
   /**
    * The verbatim heading that stated the claim's fiscal period, when the period
    * came from outside the sentence. Null otherwise, which is the usual case.
