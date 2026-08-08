@@ -94,7 +94,22 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
   scroll-snap-type: y mandatory;
   overscroll-behavior-y: contain;
   scroll-behavior: smooth;
+  /* THIN, BECAUSE THE RAIL IS THE PROGRESS INDICATOR. The deck already draws
+     its own twelve-segment rail; a full-width desktop scrollbar beside it is a
+     second, uglier copy of the same information. On phones — the deck's home —
+     the overlay scrollbar never shows and none of this fires. 'thin' is the
+     whole vocabulary Firefox offers; the -webkit- rules bring Chromium and
+     Safari to the same weight, themed so the thumb is a line and not a slab. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
+#brief-deck::-webkit-scrollbar { width: 6px; }
+#brief-deck::-webkit-scrollbar-track { background: transparent; }
+#brief-deck::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 3px;
+}
+#brief-deck::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 #brief-deck[hidden] { display: none; }
 
 /* EVERY CARD IS EXACTLY ONE VIEWPORT, which is what lets the lede be set at

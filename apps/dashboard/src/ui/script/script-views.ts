@@ -140,7 +140,7 @@ export const SCRIPT_VIEWS = `
   // Number('') || DEFAULT_LIMIT and silently snapped a 75-row feed back to 25
   // under the reader. Two controls over one filter stay consistent only if
   // every writer uses values both can hold.
-  var LIMIT_STEPS = [25, 50, 100, 200];
+  var LIMIT_STEPS = [25, 50, 100, 200, 500];
   function growFeed() {
     var grew = false;
     for (var i = 0; i < LIMIT_STEPS.length; i++) {

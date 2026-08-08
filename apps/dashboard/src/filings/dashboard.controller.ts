@@ -35,8 +35,14 @@ export const DEFAULT_LIMIT = 25;
  * Hard ceiling on rows per request. Not a preference — the collection grows
  * without bound and an unbounded page would serialise all of it into one
  * response, on a route a browser re-requests every few seconds.
+ *
+ * 500, raised from 200 when the feed's auto-load reached the old ceiling with
+ * the reader mid-scroll and the button simply stopped. The cost is bounded and
+ * paid every four seconds by whoever scrolls that deep: ~500 rows a poll.
+ * Past it the feed says so and offers the filters, because a window that
+ * re-serialises the whole collection each tick is not a page any more.
  */
-export const MAX_LIMIT = 200;
+export const MAX_LIMIT = 500;
 
 /** Ceiling on `offset`. Deep paging is a scan; the filters exist for that. */
 export const MAX_OFFSET = 100_000;

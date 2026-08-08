@@ -17,6 +17,8 @@ export const SCRIPT_BASE = `
   var FAST_MS = 4000;
   var SLOW_EVERY = 5;
   var DEFAULT_LIMIT = 25;
+  // The server's MAX_LIMIT, restated for the growth steps and the at-cap note.
+  var LIMIT_MAX = 500;
 
   // Columns in the filings table. Named because the empty-state row AND the
   // per-row detail row both have to span all of them, and a colspan that

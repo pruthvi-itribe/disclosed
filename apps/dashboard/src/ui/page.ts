@@ -432,7 +432,37 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <div id="stat-pending" class="value">—</div>
       <div id="stat-pending-note" class="note">source PDFs</div>
     </div>
-  </section>
+  
+  <!-- THE METHODOLOGY, MOVED OFF THE READER'S FLOOR. This block stood at the
+       bottom of every view and is a wall: twelve lines a reader scrolls past
+       daily and an operator needs once. It lives with the other operator
+       reading now. Nothing was cut — the tier meanings, the traceability
+       story, the arrow rule and the "read the claim, not the arrow" warning
+       are all still on the page, where the tests can still hold them. -->
+<footer>
+  This view never writes to the filings collection. All times are IST (UTC+05:30).
+  Every insight is traceable: the symbol and category are stored verbatim, the action phrase is a fixed lookup,
+  and the amount and counterparty quote the source document.
+  A refused amount degrades the headline to the exchange's own words.
+  Every claim carries the sentence it was read from, matched against the source document before it is shown;
+  a claim whose sentence is not in the document is discarded, and the discard is kept under Admin with the rule that refused it.
+  Verified means a span of the source was matched character for character and is the only tier allowed near an alert;
+  exchange-stated means NSE's own summary said it and nobody has checked it against the attached document;
+  category only means all that is known is what kind of filing this is.
+  Category only is an honest floor, not a failure — an investor presentation nobody verified is still an investor presentation.
+  A ▲, ▼ or ◆ appears on a claim only where the document printed both a direction — up, down, grew, declined —
+  and the amount, as a percentage or in basis points. Where a filing did not print both, no mark appears;
+  that is the case for about three-quarters of verified claims, and an absent mark means the filing was silent, not that nothing happened.
+  A fall is not bad news and a rise is not good news: these marks follow the figure, not the company.
+  In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions —
+  a decrease every reader would call an improvement. Read the claim, not the arrow.
+  Turret does not rate companies or securities. It reports what documents say and shows you where they say it.
+  Amount-path refusals are diagnostics, not headlines: no-candidate and ambiguity-keyword together accounted for
+  95% of a collection none of whose rows are blank, so they are still counted and still filterable under Diagnostics
+  rather than shouted from every row. The panel is collapsed and not removed, and its summary carries the live
+  refusal total, because an extractor whose refusals are invisible is indistinguishable from one that is not running.
+</footer>
+</section>
 
   <section class="filters">
     <label for="category">Category</label>
@@ -478,6 +508,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <option value="50">50</option>
       <option value="100">100</option>
       <option value="200">200</option>
+      <option value="500">500</option>
     </select>
     <button id="clear" type="button">Clear</button>
     <span id="refusal-chip"></span>
@@ -589,29 +620,6 @@ export const renderDashboardPage = (): string => `<!doctype html>
   </div>
 </div>
 
-<footer>
-  This view never writes to the filings collection. All times are IST (UTC+05:30).
-  Every insight is traceable: the symbol and category are stored verbatim, the action phrase is a fixed lookup,
-  and the amount and counterparty quote the source document.
-  A refused amount degrades the headline to the exchange's own words.
-  Every claim carries the sentence it was read from, matched against the source document before it is shown;
-  a claim whose sentence is not in the document is discarded, and the discard is kept under Admin with the rule that refused it.
-  Verified means a span of the source was matched character for character and is the only tier allowed near an alert;
-  exchange-stated means NSE's own summary said it and nobody has checked it against the attached document;
-  category only means all that is known is what kind of filing this is.
-  Category only is an honest floor, not a failure — an investor presentation nobody verified is still an investor presentation.
-  A ▲, ▼ or ◆ appears on a claim only where the document printed both a direction — up, down, grew, declined —
-  and the amount, as a percentage or in basis points. Where a filing did not print both, no mark appears;
-  that is the case for about three-quarters of verified claims, and an absent mark means the filing was silent, not that nothing happened.
-  A fall is not bad news and a rise is not good news: these marks follow the figure, not the company.
-  In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions —
-  a decrease every reader would call an improvement. Read the claim, not the arrow.
-  Turret does not rate companies or securities. It reports what documents say and shows you where they say it.
-  Amount-path refusals are diagnostics, not headlines: no-candidate and ambiguity-keyword together accounted for
-  95% of a collection none of whose rows are blank, so they are still counted and still filterable under Diagnostics
-  rather than shouted from every row. The panel is collapsed and not removed, and its summary carries the live
-  refusal total, because an extractor whose refusals are invisible is indistinguishable from one that is not running.
-</footer>
 
 <script>${PAGE_SCRIPT}</script>
 </body>

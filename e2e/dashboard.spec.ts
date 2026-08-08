@@ -483,7 +483,9 @@ test.describe('load more', () => {
     await more.click();
 
     const value = await page.locator('#limit').inputValue();
-    expect(['50', '100', '200']).toContain(value);
+    // Auto-load may have advanced a step beyond the two clicks by the time
+    // this reads; any real option except the floor proves the growth path.
+    expect(['50', '100', '200', '500']).toContain(value);
     expect(value).not.toBe('');
   });
 });

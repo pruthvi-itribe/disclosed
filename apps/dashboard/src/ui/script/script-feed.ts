@@ -492,7 +492,15 @@ export const SCRIPT_FEED = `
     if (chrome) {
       var shown = meta.offset + meta.returned;
       setText('feed-info', shown + ' of ' + groupInt(meta.total));
-      el('feed-more').hidden = !meta.hasMore;
+      // At the server's ceiling the button lies if it stays: there IS more,
+      // and this window will not show it. Hidden, and the info line says what
+      // the reader can actually do — narrow, rather than scroll.
+      var atCap = state.limit >= LIMIT_MAX;
+      el('feed-more').hidden = !meta.hasMore || atCap;
+      if (atCap && meta.hasMore) {
+        el('feed-info').textContent += ' - showing the ' + LIMIT_MAX +
+          ' most recent. Narrow with search or a topic to reach the rest.';
+      }
     }
   }
 
