@@ -514,6 +514,90 @@ test.describe('the topic chips', () => {
   });
 });
 
+/**
+ * PLANS — the chip in the feed and the quoted section on a company page.
+ *
+ * Both read the same pair of claim kinds, `guidance` and `target`, and both
+ * show the company's own printed sentence rather than anything derived from it.
+ * These tests drive the pair end to end: the chip changes the request the page
+ * makes, and the section it leads to quotes and dates what came back.
+ */
+test.describe('plans, in their words', () => {
+  test('narrows the feed to the filings where a company said what it plans', async ({
+    page,
+  }) => {
+    const errors = watchConsole(page);
+    const asked: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('api/filings')) asked.push(r.url());
+    });
+
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    await page.locator('.chip[data-plans="only"]').click();
+    await expect(page.locator('.chip[data-plans="only"]')).toHaveClass(/active/);
+    // The pair, as one filter the server allowlists. `plans=guidance` is a 400.
+    await expect
+      .poll(() => asked.some((url) => url.includes('plans=only')))
+      .toBe(true);
+    await expect(page.locator('#feed .card, #feed .emptyfeed')).not.toHaveCount(
+      0,
+    );
+
+    // ONE LENS AT A TIME. The row holds two axes, so picking a topic has to put
+    // the Plans chip out — otherwise the feed is narrowed by both while only
+    // one chip says so.
+    await page.locator('.chip[data-topic="financial"]').click();
+    await expect(page.locator('.chip[data-plans="only"]')).not.toHaveClass(
+      /active/,
+    );
+    await expect(page.locator('.chip[data-topic="financial"]')).toHaveClass(
+      /active/,
+    );
+    expect(errors).toEqual([]);
+  });
+
+  test('quotes a company on its own page, dated, and hides the section when there is nothing to quote', async ({
+    page,
+  }) => {
+    const errors = watchConsole(page);
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    // REACHED THROUGH THE CHIP, so the company opened is one that has something
+    // to quote. Picking the first card of the unfiltered feed would land on a
+    // company with no plan nine times in ten — 128 of 3,466 filings carry one.
+    await page.locator('.chip[data-plans="only"]').click();
+    await expect(page.locator('#feed .card')).not.toHaveCount(0);
+    await page.locator('#feed .card button.sym').first().click();
+    await expect(page.locator('#co-symbol')).not.toBeEmpty();
+
+    const quotes = page.locator('[data-ui="company-plan"]');
+    await expect(page.locator('#co-plans-wrap')).toBeVisible();
+    await expect(quotes).not.toHaveCount(0);
+    // The document's own sentence, in quotation marks that are text, and the
+    // server's IST day under it — the browser formats no timestamp.
+    await expect(quotes.first().locator('.planquote')).toContainText('"');
+    await expect(quotes.first().locator('.planwhen')).toHaveText(
+      /^\d{4}-\d{2}-\d{2}$/,
+    );
+
+    // AND THE ABSENCE IS THE SAME RULE. Back on the unfiltered feed, whichever
+    // company the first card belongs to, the section is shown exactly when it
+    // has a quote to show — there is no floor above one.
+    await page.locator('#company-back').click();
+    await page.locator('.chip[data-topic=""]').click();
+    await expect(page.locator('#feed .card')).not.toHaveCount(0);
+    await page.locator('#feed .card button.sym').first().click();
+    await expect(page.locator('#co-symbol')).not.toBeEmpty();
+    expect(await page.locator('#co-plans-wrap').isVisible()).toBe(
+      (await quotes.count()) > 0,
+    );
+    expect(errors).toEqual([]);
+  });
+});
+
 test.describe('the feed layout', () => {
   test('fills the width with columns instead of one card per row', async ({
     page,
