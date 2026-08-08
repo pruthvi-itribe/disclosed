@@ -19,6 +19,8 @@ import {
   MAPPED_GROUP_CATEGORIES,
   FactsSeen,
   PLAN_CLAIM_KINDS,
+  PLAN_SPAN_PATTERN,
+  planEvidence,
   type CategoryGroup,
   type ClaimTopic,
   type Filing,
@@ -64,10 +66,11 @@ export const GROUP_FILTERS = CATEGORY_GROUPS;
  * The forward-looking filter: filings in which the company said what it plans.
  *
  * ONE VALUE, AND IT IS NOT A `kind` AXIS. `kind` has six values and this page
- * offers no way to ask for four of them; what a reader asks for is the PAIR in
- * `PLAN_CLAIM_KINDS`, and a `kind=guidance` filter would answer that question
- * 8% short while looking like it worked. A second value gets added here when a
- * second question exists, not before.
+ * offers no way to ask for four of them; what a reader asks for is the pair in
+ * `PLAN_CLAIM_KINDS`, narrowed to the claims whose span actually says something
+ * about a period ahead — see `claim-plan.ts` for why the kind alone is 22%
+ * right. A second value gets added here when a second question exists, not
+ * before.
  */
 export const PLANS_FILTERS = ['only'] as const;
 
@@ -861,21 +864,38 @@ export class FilingQueryService {
       ...(query.topic === undefined
         ? {}
         : { 'enrichment.claims.topic': query.topic }),
-      // The same "any claim" reading the topic filter has, over the two kinds a
-      // company uses to talk about its own future: a results presentation that
+      // The same "any claim" reading the topic filter has, over the claims in
+      // which a company talks about its own future: a results presentation that
       // also states next year's guidance belongs under both.
+      //
+      // `$elemMatch`, NOT TWO DOTTED PATHS, and the difference is the whole
+      // correctness of the filter. `{'claims.kind': ..., 'claims.span': ...}`
+      // is satisfied by a filing whose OPERATIONAL claim says "expected" and
+      // whose guidance claim says nothing of the kind — two conditions met by
+      // two different array elements. This asks for one claim that meets both.
+      //
+      // The pattern is `claim-plan.ts`'s, so the chip and the company page's
+      // quoted section answer to one rule rather than two: 179 of the 813
+      // claims stored under those kinds print a word about a period ahead, and
+      // a chip that promised plans and led to a page holding none would be the
+      // two rules disagreeing in public.
       //
       // Served by `claims_kind_1_disseminatedAt_-1`. Measured on the live
       // collection of 3,459 filings on 2026-08-08, newest-first with a limit of
-      // 25: unindexed it was a COLLSCAN examining all 3,459 documents in 7ms;
-      // with the index it examines 342 keys and the 331 matching documents in
-      // 1ms. The sort stays a blocking one either way — a multikey `$in` cannot
-      // walk the index in `disseminatedAt` order — but the examined set is the
-      // matches rather than the collection, on a page that polls every four
-      // seconds against the collection the ingest poller writes to.
+      // 25: without the index a COLLSCAN examining all 3,459 documents in 7ms;
+      // with it, 344 keys and the 333 candidate documents to return 124 in 7ms.
+      // The regex cannot be indexed and never will be — it is the `kind` seek
+      // that keeps the re-check to the candidates rather than the collection.
       ...(query.plans === undefined
         ? {}
-        : { 'enrichment.claims.kind': { $in: [...PLAN_CLAIM_KINDS] } }),
+        : {
+            'enrichment.claims': {
+              $elemMatch: {
+                kind: { $in: [...PLAN_CLAIM_KINDS] },
+                span: { $regex: PLAN_SPAN_PATTERN, $options: 'i' },
+              },
+            },
+          }),
       ...this.enrichmentFilter(query),
     };
   }
@@ -1099,6 +1119,12 @@ function toEnrichmentView(
       // derived tag is allowed on this page is that they can.
       direction: claim.direction ?? null,
       directionEvidence: claim.directionEvidence ?? null,
+      // Computed here rather than stored, because it is a pure function of the
+      // span and the kind — so the whole collection has it without a backfill,
+      // and a change to the word list takes effect on the next response rather
+      // than on the next backfill. The page filters its plans section on this
+      // one field and knows none of the vocabulary itself.
+      planEvidence: planEvidence(claim.kind, claim.span),
       // Nullish-coalesced rather than read directly: every claim stored before
       // the period rule existed carries no such field, and `undefined` reaching
       // the page would render as the string "undefined" beside a real quote.

@@ -71,13 +71,19 @@ export const CLAIM_KIND_RANK: Readonly<Record<ClaimKind, number>> = {
  * companies held. A filter on `guidance` alone would drop 8% of the
  * forward-looking sentences while looking like it worked.
  *
+ * NOT THE SET A "PLANS" SURFACE MAY PUBLISH, and that is measured rather than
+ * suspected: only 179 of the 813 (22.0%) print a word about a period still
+ * ahead, and the rest are last quarter's figures, a declared dividend or an AGM
+ * date. `claim-plan.ts` holds the second condition and the evidence for it.
+ * This constant is the extractor's half of the answer.
+ *
  * NOTHING NEW IS DERIVED BY GROUPING THEM. Every claim here is already through
  * the verbatim gate, so what a plans surface publishes is the company's own
  * printed sentence — see the design note in
  * `docs/superpowers/specs/2026-08-08-update-signal-design.md` §2.5, which
- * reached for exactly this set when it killed "how can it improve": improvement
+ * reached for this set when it killed "how can it improve": improvement
  * commentary about a named listed company cannot be checked against anything,
- * and these 811 sentences answer the same question with the company's words.
+ * and these sentences answer the same question with the company's words.
  */
 export const PLAN_CLAIM_KINDS: readonly ClaimKind[] = ['guidance', 'target'];
 

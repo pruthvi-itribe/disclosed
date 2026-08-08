@@ -200,6 +200,23 @@ export interface ClaimView {
    */
   readonly directionEvidence: string | null;
   /**
+   * The company's own forward-looking words in this claim's span — `expect`,
+   * `on track`, `guidance`, `by FY28` — or null.
+   *
+   * NON-NULL MEANS BOTH THINGS ARE TRUE: the extractor filed the claim as
+   * `guidance` or `target`, and the document itself printed a word about a
+   * period still ahead. Either alone is the wrong set. Measured on 2026-08-08,
+   * only 179 of the 813 claims stored under those two kinds (22.0%) print such
+   * a word; the rest are last quarter's figures, a declared dividend or an AGM
+   * date, and quoting those under a heading about plans would be a
+   * characterisation the document does not support.
+   *
+   * Computed on READ, like `confidenceTier` and for the same reason: it is a
+   * pure function of a stored field, so the whole existing collection gained it
+   * without a backfill. `claim-plan.ts` owns the rule.
+   */
+  readonly planEvidence: string | null;
+  /**
    * The verbatim heading that stated the claim's fiscal period, when the period
    * came from outside the sentence. Null otherwise, which is the usual case.
    *

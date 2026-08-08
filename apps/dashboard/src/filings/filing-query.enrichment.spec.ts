@@ -436,6 +436,10 @@ describe('the claim lane', () => {
         topic: null,
         direction: null,
         directionEvidence: null,
+        // Computed on read from the kind and the span: this one is a `target`
+        // whose sentence names a year it is aiming at, so the company page may
+        // quote it under "plans, in their words".
+        planEvidence: 'by FY31',
       },
     ]);
     // The document's own line break survives the round trip, because the span
@@ -550,6 +554,39 @@ describe('the claim lane', () => {
     expect(meta.total).toBe(expected);
   });
 
+  it('says which claims a plans section may quote, and which it may not', async () => {
+    // THE FIELD THE COMPANY PAGE SELECTS ON. The extractor files a great deal
+    // under `guidance` that points nowhere ahead — measured 2026-08-08, 634 of
+    // 813 such claims are last quarter's figures, a declared dividend or an AGM
+    // date — so the read path answers the question rather than leaving the
+    // browser to guess it from the kind.
+    await seed([
+      [
+        1,
+        enrichment({
+          claims: [
+            {
+              ...CLAIM,
+              span: 'we expect our organic growth in FY27 to be better than FY26',
+              kind: 'guidance',
+            },
+            {
+              ...CLAIM,
+              text: 'cash and equivalents at Rs 4,566.70 million',
+              span: 'Cash and Cash Equivalents (including investments) were at ₹ 4566.70 million as at June 30, 2026.',
+              kind: 'guidance',
+            },
+          ],
+        }),
+      ],
+    ]);
+
+    const { items } = await page();
+    expect(
+      items[0].enrichment.claims.map((claim) => claim.planEvidence),
+    ).toEqual(['expect', null]);
+  });
+
   it('filters to the filings where the company said what it plans', async () => {
     // THE PAIR, NOT ONE OF THEM. `guidance` and `target` are two shapes of one
     // thing — the company's own statement about its own future — and measured
@@ -586,6 +623,55 @@ describe('the claim lane', () => {
     ]);
 
     expect((await page({ plans: 'only' })).meta.total).toBe(1);
+  });
+
+  it('drops a filing whose plan-kind claim points nowhere ahead', async () => {
+    // The chip and the company page's quoted section answer to one rule, so a
+    // filing that would show an empty section must not reach the chip's feed.
+    await seed([
+      [
+        1,
+        enrichment({
+          claims: [
+            {
+              ...CLAIM,
+              kind: 'guidance',
+              span: 'Consolidated Revenue for Q1 FY2027 at ₹ 3637 million - up 54% Y-o-Y',
+            },
+          ],
+        }),
+      ],
+    ]);
+
+    expect((await page({ plans: 'only' })).meta.total).toBe(0);
+  });
+
+  it('will not build one plan out of two different claims', async () => {
+    // `$elemMatch`, and this is the filing it exists for: the forward-looking
+    // words are in an OPERATIONAL claim and the guidance claim says nothing of
+    // the kind. Two dotted paths would match this and the section would be
+    // empty on the page the chip led to.
+    await seed([
+      [
+        1,
+        enrichment({
+          claims: [
+            {
+              ...CLAIM,
+              kind: 'operational',
+              span: 'we expect the plant to be commissioned in FY28',
+            },
+            {
+              ...CLAIM,
+              kind: 'guidance',
+              span: 'Q1 FY27 revenue stood at ₹ 3,637 million',
+            },
+          ],
+        }),
+      ],
+    ]);
+
+    expect((await page({ plans: 'only' })).meta.total).toBe(0);
   });
 
   it('returns everything when the plans filter is not asked for', async () => {

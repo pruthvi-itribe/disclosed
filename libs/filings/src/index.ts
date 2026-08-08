@@ -23,6 +23,7 @@ export * from './logic/claim.types';
 export * from './logic/span-canon';
 export * from './logic/claim-span';
 export * from './logic/claim-advisory';
+export * from './logic/claim-plan';
 export * from './logic/claim-numbers';
 export * from './logic/claim-period';
 export * from './logic/claim-eligibility';
