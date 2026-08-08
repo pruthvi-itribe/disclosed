@@ -589,6 +589,10 @@ describe('the watchlist', () => {
         symbol: 'RELIANCE',
         companyName: 'RELIANCE Limited',
         filingsHeld: 2,
+        // The newest of the two seeded RELIANCE filings, in both forms: the
+        // instant for the page's "how long ago", the IST text for the title.
+        lastFiledAt: '2026-08-05T05:10:00.000Z',
+        lastFiledAtIst: '2026-08-05 10:40:00',
       }),
     ]);
   });
@@ -682,6 +686,57 @@ describe('the Watching feed', () => {
     expect(
       (await call('GET', '/api/watchlist/feed?limit=abc', { cookie })).status,
     ).toBe(400);
+  });
+
+  it('carries every watched company, including one the page of filings left out', async () => {
+    // THE REPORTED BUG, as a test. The feed is the newest `limit` filings
+    // ACROSS the whole watchlist, so a company whose filings fall past that
+    // cut had no row anywhere on the view and the reader could not tell
+    // whether watching it had worked. TCS filed last of the three seeded
+    // documents, so `limit=1` returns TCS and nothing of RELIANCE.
+    const { cookie } = await registerFresh();
+    await call('POST', '/api/watchlist?symbol=RELIANCE', { cookie });
+    await call('POST', '/api/watchlist?symbol=TCS', { cookie });
+
+    const response = await call('GET', '/api/watchlist/feed?limit=1', {
+      cookie,
+    });
+
+    expect(
+      (response.body.data as Array<{ symbol: string }>).map((f) => f.symbol),
+    ).toEqual(['TCS']);
+    const meta = response.body.meta as {
+      watching: Array<{ symbol: string; lastFiledAt: string | null }>;
+    };
+    expect(meta.watching.map((row) => row.symbol)).toEqual(['RELIANCE', 'TCS']);
+    expect(meta.watching[0].lastFiledAt).toBe('2026-08-05T05:10:00.000Z');
+  });
+
+  it('states the narrowing in numbers, so a short page is never silent', async () => {
+    // `total` against `returned` is what the page turns into "the newest 1 of
+    // 2". Without it the view narrows and says nothing, which is the bug.
+    const { cookie } = await registerFresh();
+    await call('POST', '/api/watchlist?symbol=RELIANCE', { cookie });
+
+    const response = await call('GET', '/api/watchlist/feed?limit=1', {
+      cookie,
+    });
+
+    expect(response.body.meta).toMatchObject({
+      total: 2,
+      returned: 1,
+      hasMore: true,
+    });
+  });
+
+  it('carries an empty roster rather than omitting it when nothing is watched', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('GET', '/api/watchlist/feed', { cookie });
+
+    expect((response.body.meta as { watching: unknown[] }).watching).toEqual(
+      [],
+    );
   });
 });
 

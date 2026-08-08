@@ -573,6 +573,49 @@ export class FilingQueryService {
   }
 
   /**
+   * When each of these symbols last filed anything held here.
+   *
+   * EXISTS BECAUSE THE WATCHING PAGE OF FILINGS IS NOT THE WATCHLIST.
+   * `getWatchedPage` returns the newest `limit` filings ACROSS the whole
+   * watchlist, so a company that has been quiet — or merely quieter than the
+   * others — contributes no row to it. The Watching view now lists every
+   * watched company whatever the page holds, and a row has to be able to say
+   * when that company last spoke.
+   *
+   * BOUNDED BY THE CAP, not by a page size: `MAX_WATCHED_SYMBOLS` is 50, so the
+   * `$in` never grows past 50 values however the view is paged. A symbol
+   * nothing is held for is ABSENT from the map rather than present with a
+   * default — the page renders an absence as an absence.
+   *
+   * NOT FOLDED INTO THE DIRECTORY SNAPSHOT, which already groups by company.
+   * That snapshot's two reads are `PROJECTION_COVERED` off
+   * `symbol_1_companyName_1` — 0 documents examined, asserted with
+   * `explain('executionStats')` in `company-directory.spec.ts` — and
+   * `disseminatedAt` is not in that index, so a `$max` on it would turn a
+   * covered scan into a fetch of the whole collection on a 60-second clock. A
+   * 50-symbol `$match` on request is the smaller bill.
+   *
+   * An empty symbol list is answered WITHOUT A READ, for the reason
+   * `getWatchedPage` gives: the answer is knowable in advance.
+   */
+  async lastFiledFor(
+    symbols: readonly string[],
+  ): Promise<ReadonlyMap<string, Date>> {
+    if (symbols.length === 0) return new Map();
+
+    const rows = await this.filings
+      .aggregate<{ _id: string; lastFiledAt: Date }>([
+        { $match: { symbol: { $in: [...symbols] } } },
+        {
+          $group: { _id: '$symbol', lastFiledAt: { $max: '$disseminatedAt' } },
+        },
+      ])
+      .exec();
+
+    return new Map(rows.map((row) => [row._id, row.lastFiledAt]));
+  }
+
+  /**
    * How many filings from these symbols arrived since the reader last looked.
    *
    * `null` for `since` means they have never looked, and the honest answer then

@@ -480,6 +480,51 @@ describe('FilingQueryService — category breakdown', () => {
   });
 });
 
+describe('FilingQueryService — when each watched company last filed', () => {
+  beforeEach(async () => {
+    await seed([
+      makeFiling(1, {
+        symbol: 'RELIANCE',
+        disseminatedAt: new Date('2026-08-01T04:00:00.000Z'),
+      }),
+      makeFiling(2, {
+        symbol: 'RELIANCE',
+        disseminatedAt: new Date('2026-08-04T09:30:00.000Z'),
+      }),
+      makeFiling(3, {
+        symbol: 'TCS',
+        disseminatedAt: new Date('2026-07-02T05:15:00.000Z'),
+      }),
+    ]);
+  });
+
+  it('reports the newest filing per symbol, not the newest overall', async () => {
+    const last = await service.lastFiledFor(['RELIANCE', 'TCS']);
+
+    expect(last.get('RELIANCE')).toEqual(new Date('2026-08-04T09:30:00.000Z'));
+    expect(last.get('TCS')).toEqual(new Date('2026-07-02T05:15:00.000Z'));
+  });
+
+  it('omits a symbol nothing is held for rather than dating it now', async () => {
+    // "Nothing was found" and "nothing was looked for" must not render the
+    // same: an absent key becomes "nothing yet in our window" on the page, and
+    // a defaulted date would become a filing that never happened.
+    const last = await service.lastFiledFor(['RELIANCE', 'NOSUCHCO']);
+
+    expect(last.has('NOSUCHCO')).toBe(false);
+    expect(last.size).toBe(1);
+  });
+
+  it('answers an empty symbol list without a read', async () => {
+    const spy = jest.spyOn(model, 'aggregate');
+
+    expect((await service.lastFiledFor([])).size).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+});
+
 describe('FilingQueryService — the filing view', () => {
   it('renders every timestamp in IST and keeps the raw instant alongside', async () => {
     await seed([

@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
+import { istTimestamp } from '@app/common';
 import {
   isPlausibleSymbol,
   MAX_WATCHED_SYMBOLS,
@@ -40,6 +41,19 @@ export interface WatchedCompany {
   readonly companyName: string;
   readonly addedAt: string;
   readonly filingsHeld: number;
+  /**
+   * The instant this company last filed anything held here, or null when
+   * nothing is.
+   *
+   * NULL IS A REAL ANSWER AND IS RENDERED AS ONE — "nothing yet in our window",
+   * not a date. `add` refuses a symbol the directory does not hold, so this is
+   * rare rather than impossible: the directory snapshot is up to 60s old, so a
+   * company added on the strength of it can still be ahead of what the filings
+   * query sees.
+   */
+  readonly lastFiledAt: string | null;
+  /** The same instant as IST text, because the server owns that formatting. */
+  readonly lastFiledAtIst: string | null;
 }
 
 /** `{used, cap}` on every response, so the page can always draw the counter. */
@@ -104,11 +118,15 @@ export class WatchlistController {
   /**
    * The watchlist, oldest entry first.
    *
-   * `companyName` and `filingsHeld` come from the directory SNAPSHOT, so this
-   * route costs zero database reads beyond the one watchlist document. A
-   * company added to the watchlist within the last minute may not be in the
-   * snapshot yet — it renders with its symbol as its name and a zero count,
-   * which is late rather than wrong, and the next refresh fixes it.
+   * `companyName` and `filingsHeld` come from the directory SNAPSHOT, so those
+   * two cost no database read at all. A company added to the watchlist within
+   * the last minute may not be in the snapshot yet — it renders with its symbol
+   * as its name and a zero count, which is late rather than wrong, and the next
+   * refresh fixes it.
+   *
+   * `lastFiledAt` is the one read: a single `$group` bounded by the 50-symbol
+   * cap. See `FilingQueryService.lastFiledFor` for why it is not folded into
+   * the snapshot.
    */
   @Get()
   @Header('Cache-Control', 'no-store')
@@ -116,29 +134,69 @@ export class WatchlistController {
   async list(
     @Req() request: AuthedRequest,
   ): Promise<ApiEnvelope<readonly WatchedCompany[], WatchlistMeta>> {
-    const entries = await this.watchlists.entriesFor(request.signedin!.userId);
-    const snapshot = await this.directory.snapshot();
-
-    const rows = entries.map((entry) => {
-      const known = snapshot.companies.find(
-        (company) => company.symbol === entry.symbol,
-      );
-      return {
-        symbol: entry.symbol,
-        companyName: known?.companyName ?? entry.symbol,
-        addedAt: entry.addedAt.toISOString(),
-        filingsHeld: known?.filings ?? 0,
-      };
-    });
+    const rows = await this.watchedRows(request.signedin!.userId);
 
     return okWith(rows, { used: rows.length, cap: MAX_WATCHED_SYMBOLS });
   }
 
   /**
-   * The v1 alert surface: this reader's symbols, newest first.
+   * Every watched company as a row, oldest entry first.
+   *
+   * ORDERED BY WHEN IT WAS ADDED, not by when it last filed. The Watching view
+   * repaints every four seconds; ordering by activity would reshuffle the list
+   * under a reader's cursor every time somebody filed.
+   */
+  private async watchedRows(
+    userId: string,
+  ): Promise<readonly WatchedCompany[]> {
+    const entries = await this.watchlists.entriesFor(userId);
+    const [snapshot, lastFiled] = await Promise.all([
+      this.directory.snapshot(),
+      this.filings.lastFiledFor(entries.map((entry) => entry.symbol)),
+    ]);
+
+    return entries.map((entry) => {
+      const known = snapshot.companies.find(
+        (company) => company.symbol === entry.symbol,
+      );
+      const last = lastFiled.get(entry.symbol) ?? null;
+      return {
+        symbol: entry.symbol,
+        companyName: known?.companyName ?? entry.symbol,
+        addedAt: entry.addedAt.toISOString(),
+        filingsHeld: known?.filings ?? 0,
+        lastFiledAt: last === null ? null : last.toISOString(),
+        lastFiledAtIst: last === null ? null : istTimestamp(last),
+      };
+    });
+  }
+
+  /**
+   * The v1 alert surface: this reader's symbols, newest first — and, beside it,
+   * the watchlist itself.
    *
    * RETURNS THE SAME SHAPE `api/filings` DOES, so the page's `renderFeedInto`
    * draws it unchanged — which is the largest saving in the whole design.
+   *
+   * ================================================================
+   * WHY THE WATCHLIST TRAVELS IN THIS RESPONSE'S META
+   * ================================================================
+   *
+   * `data` is a PAGE OF FILINGS: the newest `limit` of them across the whole
+   * watchlist. That is not the watchlist, and shipping only that is what the
+   * founder reported — a company that files less often than the others than
+   * appeared nowhere on the view, so watching it looked broken rather than
+   * quiet. `meta.watching` is every watched company, unpaged and uncapped by
+   * anything but `MAX_WATCHED_SYMBOLS`.
+   *
+   * In the SAME response rather than a second request, for two reasons. The
+   * page polls this route every four seconds while the tab is open, and two
+   * round trips per poll would double that; and a roster fetched separately
+   * could disagree with the page of filings beside it — a card from a company
+   * the roster had not listed yet. One response cannot disagree with itself.
+   *
+   * `meta.total` against `meta.returned` is what lets the page state the
+   * narrowing in numbers instead of quietly showing a short list.
    *
    * It also STAMPS the watchlist as seen, which is what makes the unread badge
    * mean "since you last looked". Stamped on the way out rather than on the way
@@ -151,13 +209,16 @@ export class WatchlistController {
     @Req() request: AuthedRequest,
     @Query() query: RawQuery,
   ): Promise<
-    ApiEnvelope<readonly FilingView[], PageMeta & { unread: number }>
+    ApiEnvelope<
+      readonly FilingView[],
+      PageMeta & { unread: number; watching: readonly WatchedCompany[] }
+    >
   > {
     const who = request.signedin!;
     const entries = await this.watchlists.entriesFor(who.userId);
     const symbols = entries.map((entry) => entry.symbol);
 
-    const [page, unread] = await Promise.all([
+    const [page, unread, watching] = await Promise.all([
       this.filings.getWatchedPage(
         symbols,
         readBoundedInteger('limit', query, {
@@ -172,11 +233,12 @@ export class WatchlistController {
         }),
       ),
       this.filings.countWatchedSince(symbols, who.lastSeenWatchlistAt),
+      this.watchedRows(who.userId),
     ]);
 
     await this.users.markWatchlistSeen(who.userId, this.now());
 
-    return okWith(page.items, { ...page.meta, unread });
+    return okWith(page.items, { ...page.meta, unread, watching });
   }
 
   /**
