@@ -266,10 +266,13 @@ export const renderDashboardPage = (): string => `<!doctype html>
       the difference between reporting a disclosure and publishing unregistered
       research on a named listed scrip.
     -->
-    <div id="dir-legend" class="dirlegend" data-ui="direction-legend" hidden>
-      <strong>▲ ▼ ◆ mark movement the document itself printed</strong> — the direction word and the
-      figure it printed beside it. They describe what the filing said about its own numbers.
-      They are not a view on the company or its shares, and Turret publishes none.
+    <!-- ONE LINE. It was three, and standing chrome is the wrong place to
+         spend a reader's attention on every visit; the regulatory core — the
+         mark is the filing's word, never a view on the company — survives in
+         nine words, and the long form lives in the title for whoever hovers. -->
+    <div id="dir-legend" class="dirlegend" data-ui="direction-legend" hidden
+         title="The direction word and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and Turret publishes none.">
+      ▲ ▼ ◆ mark movement the document itself printed — not a view on the company or its shares.
     </div>
     <div id="search-note" class="searchnote" hidden></div>
     <label class="onlyinsights">

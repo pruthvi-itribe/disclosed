@@ -694,6 +694,16 @@ td.grp { white-space: nowrap; }
 .cohead { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .coident { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .cosym { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+/* The industry is a WORD, not an instrument reading. It inherited the admin
+   badge style — 10px monospace with tracking — which beside a 26px company
+   name read as a debug label that leaked. Prose chip instead: the page's own
+   face, sentence size, no tracking. The value stays NSE's raw string
+   ("Airconditioners", "Computers - Software") because inventing a prettier
+   taxonomy is editing data this page only reports. */
+#co-industry {
+  font-family: var(--sans); font-size: 12px; letter-spacing: 0;
+  padding: 2px 10px; border-radius: 999px;
+}
 .cocoverage { margin-left: auto; color: var(--muted); font-size: 12px; }
 
 /* The symbol on a card is the way into the company page. Styled as text, not

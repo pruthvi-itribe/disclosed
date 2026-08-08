@@ -447,6 +447,27 @@ test.describe('the company page', () => {
 });
 
 test.describe('load more', () => {
+  test('loads the next step when the button scrolls into view', async ({
+    page,
+  }) => {
+    // The button is its own sentinel: entering the viewport is the click. One
+    // step per entry — the new cards push it back out, so the next request is
+    // the reader reaching it again, not a loop.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    const more = page.locator('#feed-more');
+    if (await more.isHidden()) return; // not enough rows to page at all
+    const before = await page.locator('#feed .card').count();
+    await more.scrollIntoViewIfNeeded();
+    await expect
+      .poll(async () => page.locator('#feed .card').count(), { timeout: 8_000 })
+      .toBeGreaterThan(before);
+    // And the limit select still holds a real option.
+    expect(['50', '100', '200']).toContain(
+      await page.locator('#limit').inputValue(),
+    );
+  });
+
   test('grows through values the limit select can hold', async ({ page }) => {
     // The limit is TWO controls over one filter: this button, and a select in
     // Admin holding 25/50/100/200. Growing by +25 assigned the select 75,

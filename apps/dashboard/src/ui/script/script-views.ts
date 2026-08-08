@@ -141,13 +141,38 @@ export const SCRIPT_VIEWS = `
   // under the reader. Two controls over one filter stay consistent only if
   // every writer uses values both can hold.
   var LIMIT_STEPS = [25, 50, 100, 200];
-  el('feed-more').addEventListener('click', function () {
+  function growFeed() {
+    var grew = false;
     for (var i = 0; i < LIMIT_STEPS.length; i++) {
-      if (LIMIT_STEPS[i] > state.limit) { state.limit = LIMIT_STEPS[i]; break; }
+      if (LIMIT_STEPS[i] > state.limit) { state.limit = LIMIT_STEPS[i]; grew = true; break; }
     }
+    if (!grew) return;
     el('limit').value = String(state.limit);
     refresh(true);
-  });
+  }
+  el('feed-more').addEventListener('click', growFeed);
+
+  // AUTO-LOAD ON SCROLL, with the button as its own sentinel. When the button
+  // scrolls into view the feed grows one LIMIT_STEP, exactly as a click would —
+  // one shared function, so the two paths cannot drift. The observer's shape is
+  // what bounds it: it fires on ENTERING the viewport, so each firing loads one
+  // step, the new cards push the button back out, and reaching it again is the
+  // next request. When the server says there is no more, renderFeedInto hides
+  // the button and a hidden element does not intersect. The button STAYS, for
+  // keyboards, for reduced-motion readers, and for the browser without
+  // IntersectionObserver, where it keeps being the whole mechanism.
+  if (typeof IntersectionObserver !== 'undefined') {
+    new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        if (!entries[i].isIntersecting) continue;
+        if (el('feed-more').hidden) continue;
+        // Only the feed grows this way. The company page has its own window
+        // and Admin pages with prev/next.
+        if (state.view !== 'feed' || state.company !== null) continue;
+        growFeed();
+      }
+    }, { rootMargin: '200px' }).observe(el('feed-more'));
+  }
 
   // '/' focuses the search from anywhere, unless something is already being
   // typed into.

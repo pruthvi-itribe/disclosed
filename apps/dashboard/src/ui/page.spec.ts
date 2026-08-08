@@ -487,6 +487,8 @@ describe('renderDashboardPage — the movement mark', () => {
   it('carries a legend that is shown only when a marked card is', () => {
     expect(html).toContain('id="dir-legend"');
     expect(html).toContain('mark movement the document itself printed');
+    // One line of standing copy; the long form is the title attribute.
+    expect(html).toContain('not a view on the company or its shares');
     expect(script).toContain("el('dir-legend').hidden = marks === 0;");
   });
 
