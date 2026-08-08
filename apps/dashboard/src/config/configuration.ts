@@ -49,6 +49,12 @@ export interface DashboardConfig {
    * defaults to this process's own loopback URL, so day one needs no
    * configuration; behind the reverse proxy it must be set to the public
    * https origin, or every mutation from the real page is refused.
+   *
+   * In production that value is `https://disclosed.live`, and it is CONFIGURED
+   * rather than compiled in. Hard-coding the brand's domain into the origin
+   * check would break every loopback run and every e2e port, which is precisely
+   * the failure this default exists to avoid. `ui/brand.ts` carries the domain
+   * as copy for the landing page; nothing in the request path reads it.
    */
   readonly publicOrigin: string;
 }

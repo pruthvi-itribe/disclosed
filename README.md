@@ -1,4 +1,4 @@
-# Turret — NSE filings ingest
+# Disclosed — NSE filings ingest
 
 Low-latency ingest of NSE corporate announcements with a no-loss guarantee,
 feeding a Telegram alert lane.

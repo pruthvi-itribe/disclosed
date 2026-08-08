@@ -63,7 +63,7 @@ export const renderDashboardPage = (): string => `<!doctype html>
 <body>
 <header class="topbar" data-ui="top-bar">
   <div class="brand">
-    <span class="mark">${BRAND_MARK.head}<span class="dotmark">${BRAND_MARK.tail}</span></span>
+    <span class="mark">${BRAND_MARK.word}<span class="dotmark">${BRAND_MARK.accent}</span></span>
   </div>
   <nav class="tabs" role="tablist">
     <!--

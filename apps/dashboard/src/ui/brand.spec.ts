@@ -9,11 +9,15 @@ import { renderDashboardPage } from './page';
  * the rendered page rather than the presence of the new one.
  */
 describe('the brand constant', () => {
-  it('names the product and its two wordmark halves', () => {
-    expect(BRAND).toBe('Turret');
-    // Lowercase, because the header sets the mark lowercase and colours the
-    // tail. A capital here would render "Turret" with a red "Ret".
-    expect(BRAND_MARK.head + BRAND_MARK.tail).toBe(BRAND.toLowerCase());
+  it('names the product, and sets its wordmark to the same word', () => {
+    expect(BRAND).toBe('Disclosed');
+    // Lowercase, because the header sets the mark lowercase. A capital here
+    // would render the name twice in two cases on one line.
+    expect(BRAND_MARK.word).toBe(BRAND.toLowerCase());
+    // The accent is punctuation set AFTER the word, never a slice of it: the
+    // name is a plain English verb and cutting it in two is the one thing the
+    // mark must not do.
+    expect(BRAND.toLowerCase()).not.toContain(BRAND_MARK.accent);
   });
 
   it('is the only spelling of the name in the dashboard page', () => {
@@ -25,10 +29,10 @@ describe('the brand constant', () => {
     const occurrences = html.split(BRAND).length - 1;
     expect(occurrences).toBeGreaterThan(0);
 
-    // The wordmark is the one place the name is split, and it is split by the
-    // constant too.
+    // The wordmark is the one place the name carries its accent, and the accent
+    // comes through the constant too.
     expect(html).toContain(
-      `${BRAND_MARK.head}<span class="dotmark">${BRAND_MARK.tail}</span>`,
+      `${BRAND_MARK.word}<span class="dotmark">${BRAND_MARK.accent}</span>`,
     );
   });
 

@@ -1,4 +1,4 @@
-# Turret — project instructions
+# Disclosed — project instructions
 
 An NSE/BSE corporate-filings pipeline. Every published claim is matched
 character-for-character against a verbatim span of the source document; a claim

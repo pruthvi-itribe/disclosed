@@ -30,7 +30,7 @@ import {
  * wrong one. The same competitor's third line — `Q1 EBITDA MARGIN 11.73% VS
  * 13.32% (YOY)` — is the demonstration: 8.68B over 65.61B is 13.23%, not 13.32%.
  * Two digits transposed, in a figure the filing never printed, on a line about a
- * named listed company. Every figure in a Turret results line can be found in
+ * named listed company. Every figure in a Disclosed results line can be found in
  * the source document by searching for the characters it prints.
  *
  * The one transformation applied is abbreviating the filer's own scale word —

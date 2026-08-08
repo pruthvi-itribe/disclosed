@@ -2,6 +2,7 @@ import { CATEGORY_GROUPS } from '@app/filings/logic/category-group';
 import { CONFIDENCE_TIERS } from '@app/filings/logic/confidence-tier';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { BRAND } from './brand';
 import { renderDashboardPage } from './page';
 import { PAGE_STYLE } from './page-style';
 import { PAGE_STYLE_BRIEF } from './page-style-brief';
@@ -502,7 +503,7 @@ describe('renderDashboardPage — the movement mark', () => {
     expect(prose).toContain(
       '13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions',
     );
-    expect(prose).toContain('Turret does not rate companies or securities');
+    expect(prose).toContain(`${BRAND} does not rate companies or securities`);
     expect(prose).toContain('an absent mark means the filing was silent');
   });
 

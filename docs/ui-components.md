@@ -1,4 +1,4 @@
-# The dashboard, by name
+# Disclosed, by name
 
 Every part of the page has a name you can say out loud. Point at one — "the card
 foot wraps", "the company topic mix is empty" — and it maps to exactly one thing
