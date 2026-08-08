@@ -93,11 +93,19 @@ from>"`, which are the only stable ways to name **one specific card**.
 | `day-mix` / `day-sentence` | the bar itself, and the sentence under it |
 | `feed-controls` | the search box, the topic chips, the toggle |
 | `search` | the search wrapper (input `symbol`, listbox `suggest`) |
-| `topics` | the one row of topic chips |
+| `topics` | the one row of topic chips, plus `Plans` |
 | `only-insights` | "Only filings that said something" |
 | `search-note` | what the current query matched |
 | `feed` | the card grid |
 | `feed-info` / `feed-more` | the count, and "Load more" |
+
+**The chip row holds two axes.** Every chip carries `data-topic` — what a claim
+is ABOUT — except `Plans`, which carries `data-plans="only"` and narrows to the
+claims whose SHAPE is the company stating something about its own future
+(`guidance` or `target`, 811 of 3,992 stored claims across 331 filings). They
+share a row because a reader uses them the same way, and the price is that
+**exactly one chip is ever lit**: picking either axis clears the other, and
+Clear resets both.
 
 ## One card
 

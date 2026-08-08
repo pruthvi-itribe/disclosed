@@ -259,6 +259,28 @@ export const renderDashboardPage = (): string => `<!doctype html>
       <button class="chip" type="button" data-topic="capacity">Capacity</button>
       <button class="chip" type="button" data-topic="product">Product</button>
       <button class="chip" type="button" data-topic="ratings">Ratings</button>
+      <!--
+        A DIFFERENT AXIS IN THE SAME ROW, and it is the only chip here that is
+        not a topic. The topics ask what a claim is ABOUT; this asks what SHAPE
+        it is — 'guidance' or 'target', the two kinds in which a company states
+        something about its own future. Measured on 2026-08-08 that is 811 of
+        3,992 stored claims (20.3%) across 331 filings.
+
+        IN THIS ROW RATHER THAN A ROW OF ITS OWN because a reader uses it the
+        same way they use the chip beside it — one lens at a time — and a second
+        row holding a single chip is furniture on the densest control in the
+        product. The cost is a rule the script has to keep: picking this clears
+        the topic and picking a topic clears this, so exactly one chip is lit.
+
+        NOTHING IS DERIVED BY ASKING FOR IT. Every claim behind this filter is a
+        span matched character for character against the source document, so
+        what the reader gets is the company's own printed sentence about its own
+        plans — the answer to "what happens next" that this pipeline is allowed
+        to give, and the one the update-signal design settled on when it refused
+        to author improvement commentary about a named listed company.
+      -->
+      <button class="chip" type="button" data-plans="only"
+              title="Filings carrying a sentence in which the company stated its own guidance or a target it has set.">Plans</button>
     </div>
     <!--
       THE LEGEND FOR THE MOVEMENT MARKS, hidden until a marked card is on

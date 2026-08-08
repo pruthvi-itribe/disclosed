@@ -149,6 +149,15 @@ export const SCRIPT_BASE = `
     // What the reader asked the claims to be ABOUT. Empty means any. A separate
     // axis from 'group', which is what KIND of filing NSE says it is.
     topic: '',
+    // Whether the reader asked for the filings where the company said what it
+    // PLANS - the claims whose kind is 'guidance' or 'target'.
+    //
+    // A THIRD AXIS, and its own flag rather than a value of 'topic', because it
+    // is a different question about the same claim: a plan can be financial, a
+    // capacity plan or a product plan. The two share a chip row and are
+    // mutually exclusive there, which is a rule 'syncTopics' keeps rather than
+    // a property of the state.
+    plans: false,
     // WHO THIS BROWSER IS, as api/me last answered. Null before the first
     // answer, which is why both header buttons start hidden: "we do not know
     // yet" is a third state and drawing either of the other two through it is

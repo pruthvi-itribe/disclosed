@@ -422,6 +422,15 @@ export const SCRIPT_FEED = `
   function emptyHint() {
     var picked = state.picked;
 
+    // NAMED FIRST BECAUSE IT IS THE NARROWEST. Only 331 of 3,459 filings carry
+    // a claim of this shape, so when a search and this chip are both on it is
+    // almost always this one that emptied the feed - and letting the insight
+    // toggle below take the blame would send the reader to the wrong control.
+    if (state.plans) {
+      return 'Nothing here carries a line where the company said what it plans.'
+        + ' Clear the Plans chip, or search a different company.';
+    }
+
     if (state.onlyInsights) {
       if (picked && picked.kind === 'company') {
         return picked.head + ' has ' + groupInt(picked.filings)

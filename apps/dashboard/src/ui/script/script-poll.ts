@@ -47,6 +47,10 @@ export const SCRIPT_POLL = `
     if (state.category) parts.push('category=' + encodeURIComponent(state.category));
     if (state.group) parts.push('group=' + encodeURIComponent(state.group));
     if (state.topic) parts.push('topic=' + encodeURIComponent(state.topic));
+    // ONE VALUE, SENT LITERALLY, because the pair IS the question: the server
+    // allowlists 'only' and answers 'plans=guidance' with a 400 rather than
+    // filtering to 746 of the 811 forward-looking claims and looking right.
+    if (state.plans) parts.push('plans=only');
     if (state.tier) parts.push('tier=' + encodeURIComponent(state.tier));
     if (state.enrichState) parts.push('state=' + encodeURIComponent(state.enrichState));
     if (state.amount) parts.push('amount=' + encodeURIComponent(state.amount));
@@ -190,8 +194,10 @@ export const SCRIPT_POLL = `
     state.refusal = '';
     // The topic row is a filter like any other, so Clear must reach it. A
     // Clear that left one chip lit would leave the feed narrowed by a control
-    // the reader believes they just reset.
+    // the reader believes they just reset. Both axes in that row are cleared,
+    // because the reader sees one row and reset one thing.
     state.topic = '';
+    state.plans = false;
     syncTopics();
     closeSuggest();
     renderSearchNote();

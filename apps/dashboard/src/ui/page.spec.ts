@@ -531,6 +531,66 @@ describe('renderDashboardPage — the movement mark', () => {
 });
 
 /**
+ * WHAT THE COMPANY SAYS IT PLANS, AS A FEED FILTER.
+ *
+ * 811 stored claims are `guidance` or `target` — the company's own printed
+ * statements about its own future, already through the verbatim gate — spread
+ * over 331 filings. The chip narrows the feed to those filings.
+ *
+ * IT IS A DIFFERENT AXIS FROM THE CHIPS BESIDE IT and shares their row anyway:
+ * the topic chips ask what a claim is ABOUT and this asks what SHAPE it is, but
+ * a reader uses both the same way — one lens at a time — and a second row
+ * holding one chip is furniture. What that costs is the rule asserted here:
+ * picking either clears the other, so exactly one chip is ever lit.
+ */
+describe('renderDashboardPage — the plans filter', () => {
+  const script = html.slice(
+    html.indexOf('<script>') + '<script>'.length,
+    html.lastIndexOf('</script>'),
+  );
+
+  const topicRow = /<div id="topics"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1];
+
+  it('puts Plans in the one chip row the feed already has', () => {
+    expect(topicRow).toBeDefined();
+    expect(topicRow).toContain('data-plans="only"');
+    expect(topicRow).toContain('>Plans<');
+  });
+
+  it('asks the server for the pair, never for one kind of it', () => {
+    // `guidance` alone is 746 of the 811, so a chip that sent it would answer
+    // the reader's question 8% short while looking like it worked. The server
+    // answers `plans=guidance` with a 400 for the same reason.
+    expect(script).toContain("parts.push('plans=only')");
+    expect(script).not.toContain('kind=guidance');
+  });
+
+  it('lights exactly one chip, whichever axis it belongs to', () => {
+    // The two axes share a row, so the row has to behave like one control:
+    // picking Plans clears the topic and picking a topic clears Plans.
+    expect(script).toContain("var plans = target.getAttribute('data-plans');");
+    expect(script).toContain('state.plans = plans !== null;');
+    expect(script).toContain("state.topic = topic === null ? '' : topic;");
+    expect(script).toContain("chips[i].getAttribute('data-plans') !== null");
+  });
+
+  it('lets Clear reach the plans chip too', () => {
+    // A Clear that left this chip lit would leave the feed narrowed by a
+    // control the reader believes they just reset.
+    const clear = /el\('clear'\)\.addEventListener\([\s\S]*?\}\);/.exec(script);
+    expect(clear?.[0]).toContain('state.plans = false;');
+    expect(clear?.[0]).toContain('syncTopics();');
+  });
+
+  it('names the plans chip when it is the filter that emptied the feed', () => {
+    // "Nothing was found" and "nothing was looked for" must not read the same,
+    // and the insight toggle would otherwise take the blame for this filter.
+    expect(script).toContain('if (state.plans)');
+    expect(script).toContain('said what it plans');
+  });
+});
+
+/**
  * THE AMOUNT-PATH REFUSALS, DEMOTED FROM LABELS TO DIAGNOSTICS.
  *
  * `no-candidate` and `ambiguity-keyword` between them covered 95% of the

@@ -107,10 +107,18 @@ export const SCRIPT_VIEWS = `
   // question. Kept as its own state and its own sync so the two rows can be set
   // independently — a reader narrowing to Dividends has not said anything about
   // which category group they want.
+  //
+  // TWO AXES SHARE THIS ROW. Every chip but one narrows by TOPIC - what a claim
+  // is about - and 'Plans' narrows by the claim's SHAPE, the two kinds in which
+  // a company states something about its own future. They are in one row
+  // because a reader uses them the same way, and the price of that is here:
+  // exactly one chip may be lit, so picking either axis clears the other.
   function syncTopics() {
     var chips = el('topics').getElementsByClassName('chip');
     for (var i = 0; i < chips.length; i++) {
-      var mine = chips[i].getAttribute('data-topic') === state.topic;
+      var mine = chips[i].getAttribute('data-plans') !== null
+        ? state.plans
+        : !state.plans && chips[i].getAttribute('data-topic') === state.topic;
       chips[i].className = 'chip' + (mine ? ' active' : '');
     }
   }
@@ -118,8 +126,14 @@ export const SCRIPT_VIEWS = `
     var target = event.target;
     if (!target || !target.getAttribute) return;
     var topic = target.getAttribute('data-topic');
-    if (topic === null) return;
-    state.topic = topic;
+    var plans = target.getAttribute('data-plans');
+    // A click that landed on the row's padding rather than on a chip.
+    if (topic === null && plans === null) return;
+    // BOTH ARE WRITTEN ON EVERY CLICK, so the row cannot end up with two
+    // filters applied and one chip lit - which would be a feed narrowed by a
+    // control the reader cannot see.
+    state.topic = topic === null ? '' : topic;
+    state.plans = plans !== null;
     state.offset = 0;
     syncTopics();
     refresh(true);
