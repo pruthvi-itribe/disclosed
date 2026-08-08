@@ -103,6 +103,39 @@ const aSymbolOnScreen = async (page: Page): Promise<string> => {
   return (symbol as string).trim();
 };
 
+/**
+ * A company that filed a long time ago and not since — the "quiet" half of a
+ * watchlist.
+ *
+ * Read from the OLDEST page of `api/filings` rather than from the driver: the
+ * route already orders newest-first, so the tail of it is the companies whose
+ * last word was longest ago, and one request answers the whole question.
+ *
+ * `exclude` keeps this from returning the company the caller already watched,
+ * which would collapse a two-company test into a one-company one and still
+ * pass.
+ */
+const aCompanyThatFiledLongAgo = async (
+  page: Page,
+  exclude: string,
+): Promise<string> => {
+  const counted = await page.request.get('/api/filings?limit=1');
+  const { meta } = (await counted.json()) as { meta: { total: number } };
+  expect(meta.total).toBeGreaterThan(1);
+
+  const offset = Math.max(0, meta.total - 25);
+  const tail = await page.request.get(`/api/filings?limit=25&offset=${offset}`);
+  const { data } = (await tail.json()) as { data: Array<{ symbol: string }> };
+
+  // Last row first: the very oldest filing held.
+  const symbol = data
+    .map((row) => row.symbol)
+    .reverse()
+    .find((candidate) => candidate !== exclude);
+  expect(symbol).toBeTruthy();
+  return symbol as string;
+};
+
 test.beforeAll(async ({ request }) => {
   const response = await request.post('/api/auth/register', {
     data: { email: EMAIL, password: PASSWORD },
@@ -330,6 +363,119 @@ test.describe('signed in', () => {
 
     expect(clip).toContain('polygon');
     await expect(star).toContainText(/Watch/);
+  });
+
+  test('lists every watched company, quiet ones included, above the filings', async ({
+    page,
+  }) => {
+    // THE REPORTED GAP, in a browser. The Watching view used to draw one thing:
+    // a page of filings, the newest 25 of them ACROSS the whole watchlist. A
+    // company that files less often than its neighbours contributed no card, so
+    // it had no row anywhere on the view and watching it was indistinguishable
+    // from never having pressed the star — "I don't see all my companies".
+    //
+    // Two companies as far apart as this collection allows: the one whose card
+    // is on screen right now, and the one whose last word was longest ago.
+    const errors = watchConsole(page);
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const loud = await aSymbolOnScreen(page);
+    const quiet = await aCompanyThatFiledLongAgo(page, loud);
+
+    for (const symbol of [loud, quiet]) {
+      const added = await page.request.post(
+        `/api/watchlist?symbol=${encodeURIComponent(symbol)}`,
+        { headers: { Origin: origin() } },
+      );
+      expect([200, 201]).toContain(added.status());
+    }
+
+    try {
+      await page.locator('#tab-watching').click();
+      await expect(page.locator('#view-watching')).toBeVisible();
+
+      // BOTH OF THEM, WHATEVER THE FEED BELOW HOLDS. This is the assertion the
+      // old view could not pass: there was no roster for it to pass against.
+      const rows = page.locator('#watch-roster [data-ui="watching-row"]');
+      await expect(rows).toHaveCount(2);
+      for (const symbol of [loud, quiet]) {
+        const row = page.locator(
+          `#watch-roster [data-ui="watching-row"][data-symbol="${symbol}"]`,
+        );
+        await expect(row).toBeVisible();
+        // Each row says when that company last spoke, or that nothing is held.
+        // Never nothing at all, which is the state a reader cannot read.
+        await expect(row.locator('.rosterwhen')).toHaveText(
+          /^last filed |^nothing yet in our window$/,
+        );
+      }
+
+      // And the feed below states what it is showing instead of narrowing in
+      // silence.
+      await expect(page.locator('#watch-feed-note')).toHaveText(
+        /filings from these companies/,
+      );
+
+      // THE NARROWING ITSELF, PROVOKED THROUGH THE SAME SESSION. The page always
+      // asks for 25 rows and no company in this collection holds enough filings
+      // to push another off a page that size — measured 2026-08-09: 3,932
+      // filings, and the busiest single company has 19 — so the browser cannot
+      // be made to drop one. A page of ONE can: `data` loses a company and
+      // `meta.watching` still carries both, which is the whole fix.
+      const narrowed = await page.request.get('/api/watchlist/feed?limit=1');
+      const body = (await narrowed.json()) as {
+        data: Array<{ symbol: string }>;
+        meta: { watching: Array<{ symbol: string }>; total: number };
+      };
+      expect(body.data).toHaveLength(1);
+      expect(body.meta.total).toBeGreaterThan(1);
+      expect(body.meta.watching.map((row) => row.symbol).sort()).toEqual(
+        [loud, quiet].sort(),
+      );
+
+      // The star on a roster row takes the row with it, rather than leaving a
+      // company the reader just dropped sitting in their watchlist until the
+      // next poll notices.
+      await page
+        .locator(
+          `#watch-roster [data-ui="watching-row"][data-symbol="${quiet}"] [data-ui="watch"]`,
+        )
+        .click();
+      await expect(rows).toHaveCount(1);
+    } finally {
+      // Through the same route a person has, so the shared account goes back to
+      // the empty watchlist every other test in this run assumes.
+      for (const symbol of [loud, quiet]) {
+        await page.request.delete(
+          `/api/watchlist/${encodeURIComponent(symbol)}`,
+          { headers: { Origin: origin() } },
+        );
+      }
+    }
+
+    expect(errors).toEqual([]);
+  });
+
+  test('says which of the two empties an empty Watching view is', async ({
+    page,
+  }) => {
+    // "Nothing was found" and "nothing was looked for" must not read the same.
+    // The shared account watches nothing, so this is the second sentence.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    await page.locator('#tab-watching').click();
+
+    await expect(page.locator('#watch-empty')).toContainText(
+      'You are not watching anything yet',
+    );
+    // The roster, its note and the feed heading go with it — two headings over
+    // an empty list is a page that looks broken rather than one with nothing
+    // yet to show.
+    await expect(page.locator('#watch-roster')).toBeHidden();
+    await expect(page.locator('#watch-feed-head')).toBeHidden();
+    await expect(page.locator('#watch-feed-note')).toBeHidden();
   });
 
   test('refuses a mutation that claims another origin', async ({ page }) => {
