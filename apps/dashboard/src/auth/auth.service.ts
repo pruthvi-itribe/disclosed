@@ -115,6 +115,18 @@ export class AuthService {
       throw invalidCredentials();
     }
 
+    // AN ACCOUNT WITH NO PASSWORD IS NOT AN ACCOUNT THIS ROUTE CAN SIGN IN.
+    //
+    // Every Firebase account has `passwordHash: null`, and the temptation is to
+    // answer "this address uses Google, try that instead" — which would be a
+    // registered-address oracle bolted onto the one endpoint the whole of this
+    // class's header is about not building. It takes the same path, the same
+    // message and the same ~50 ms as an address nobody registered.
+    if (user.passwordHash === null) {
+      await this.hasher.verify(DUMMY_PASSWORD_HASH, password);
+      throw invalidCredentials();
+    }
+
     if (!(await this.hasher.verify(user.passwordHash, password))) {
       await this.users.recordFailure(
         user.id,
@@ -143,6 +155,17 @@ export class AuthService {
   ): Promise<void> {
     const user = await this.users.findById(userId);
     if (user === null) throw invalidCredentials();
+
+    // A Firebase account has no current password to verify, so there is nothing
+    // here to change. Setting one would be this route inventing a second
+    // credential for an identity somebody else owns.
+    if (user.passwordHash === null) {
+      throw new ApiError(
+        'NO_LOCAL_PASSWORD',
+        'This account signs in with Google. There is no password to change here.',
+        409,
+      );
+    }
 
     if (!(await this.hasher.verify(user.passwordHash, current))) {
       throw invalidCredentials();

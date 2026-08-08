@@ -30,9 +30,35 @@ export const WATCHLIST_MODEL = 'AccountWatchlist';
 export interface UserRecord {
   /** Normalised: lowercase, trimmed. The identity, and the unique key. */
   readonly email: string;
-  /** Encoded argon2id string; carries its own parameters. */
-  readonly passwordHash: string;
-  /** Null for everyone on MVP day — there is no verification lane yet. */
+  /**
+   * Encoded argon2id string; carries its own parameters.
+   *
+   * NULL FOR AN ACCOUNT THAT HAS NEVER HAD A PASSWORD, which is every account
+   * created through Firebase. It is not a sentinel hash and must not become
+   * one: "this account has no password" and "this account has a password no
+   * input matches" are different facts, and only the first can be told to a
+   * reader honestly. `auth.service.ts` treats null as the no-such-user path,
+   * timing equaliser included.
+   */
+  readonly passwordHash: string | null;
+  /**
+   * The Firebase `sub` claim, or null for a local account.
+   *
+   * THE IDENTITY THAT SURVIVES AN EMAIL CHANGE. Google is the authority on the
+   * address, not on our row, so keying the lookup on the uid means a reader who
+   * changes their Google address keeps their watchlist. The email is still the
+   * unique key for the local path, and §linking below says when the two are
+   * allowed to meet.
+   */
+  readonly firebaseUid: string | null;
+  /**
+   * When the address was proved to belong to whoever is signing in.
+   *
+   * Null for every locally registered account — there is still no verification
+   * lane of our own. Firebase fills it in: the `email_verified` claim on a
+   * Google sign-in is Google's own assertion, and it is the ONLY thing that
+   * permits linking a federated sign-in to an existing local account.
+   */
   readonly emailVerifiedAt: Date | null;
   readonly createdAt: Date;
   readonly lastLoginAt: Date | null;
@@ -72,7 +98,12 @@ const ChannelSchema = new Schema(
 export const UserSchema = new Schema<UserDocument>(
   {
     email: { type: String, required: true },
-    passwordHash: { type: String, required: true },
+    // NOT `required`, and the change is deliberate rather than a relaxation: a
+    // Firebase account has no password to store, and the alternative — writing
+    // a hash nothing verifies against — would put a value in the column that
+    // reads as a credential and is not one.
+    passwordHash: { type: String, default: null },
+    firebaseUid: { type: String, default: null },
     emailVerifiedAt: { type: Date, default: null },
     createdAt: { type: Date, required: true },
     lastLoginAt: { type: Date, default: null },
@@ -91,6 +122,33 @@ export const UserSchema = new Schema<UserDocument>(
 
 /** The identity. Unique, and the reason registration cannot race itself. */
 UserSchema.index({ email: 1 }, { unique: true, name: 'email_1' });
+
+/**
+ * The Firebase identity, looked up on every federated sign-in.
+ *
+ * UNIQUE AND PARTIAL, and both halves are load-bearing.
+ *
+ * Unique, because two rows sharing a `firebaseUid` would be two accounts for one
+ * Google identity — and which one a sign-in landed on would depend on document
+ * order. It is the same guarantee `email_1` gives the local path, and for the
+ * same reason: the index decides, not a preceding read, so two simultaneous
+ * first sign-ins cannot both win.
+ *
+ * PARTIAL rather than sparse. A sparse unique index tolerates many documents
+ * that OMIT the field, but every local account here stores `firebaseUid: null`
+ * explicitly — the field is present, so sparse would not exclude it, and the
+ * second local account ever created would collide on null. The partial filter
+ * indexes only the rows where the value is a string, which is exactly the set
+ * the uniqueness claim is about.
+ */
+UserSchema.index(
+  { firebaseUid: 1 },
+  {
+    unique: true,
+    name: 'firebaseUid_1',
+    partialFilterExpression: { firebaseUid: { $type: 'string' } },
+  },
+);
 
 /**
  * For the eventual per-channel fan-out.

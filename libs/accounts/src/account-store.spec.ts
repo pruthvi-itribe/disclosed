@@ -89,7 +89,25 @@ describe('assertAccountIndexes', () => {
       '_id_',
       'channels_kind_1',
       'email_1',
+      'firebaseUid_1',
     ]);
+  });
+
+  it('indexes only the rows that HAVE a firebase uid', async () => {
+    // PARTIAL, NOT SPARSE, and this is the assertion that says which. Every
+    // local account stores `firebaseUid: null` explicitly, so the field is
+    // present and a sparse index would cover it — the second local account ever
+    // created would then collide with the first on null and registration would
+    // start failing. The filter is what makes the uniqueness claim be about the
+    // set it is actually about.
+    const index = (await users.collection.indexes()).find(
+      (candidate) => candidate.name === 'firebaseUid_1',
+    );
+
+    expect(index?.unique).toBe(true);
+    expect(index?.partialFilterExpression).toEqual({
+      firebaseUid: { $type: 'string' },
+    });
   });
 
   it('builds exactly the indexes the design names on sessions', async () => {
@@ -222,6 +240,119 @@ describe('UserRepository', () => {
 
   it('answers null for an address nobody registered', async () => {
     expect(await userRepo.findByEmail('nobody@example.com')).toBeNull();
+  });
+
+  // --------------------------------------------------- the firebase half ----
+
+  it('creates a federated account with no password at all', async () => {
+    const created = await userRepo.createFederated(
+      'asha@example.com',
+      'uid-asha',
+      now,
+      now,
+    );
+
+    // NULL, NOT A SENTINEL HASH. "This account has no password" and "this
+    // account has a password nothing matches" are different facts, and only
+    // the first can be told to a reader honestly.
+    expect(created?.passwordHash).toBeNull();
+    expect(created?.firebaseUid).toBe('uid-asha');
+    expect((await userRepo.findByFirebaseUid('uid-asha'))?.id).toBe(
+      created?.id,
+    );
+  });
+
+  it('reads a local account as having no firebase identity', async () => {
+    const local = await userRepo.create(
+      'local@example.com',
+      '$argon2id$x',
+      now,
+    );
+
+    expect(local?.firebaseUid).toBeNull();
+    expect(await userRepo.findByFirebaseUid('uid-nobody')).toBeNull();
+  });
+
+  it('lets many local accounts coexist despite the unique firebase index', async () => {
+    // THE TEST THE PARTIAL FILTER EXISTS FOR. Every local row stores
+    // `firebaseUid: null` explicitly; a sparse unique index would cover those
+    // rows and refuse the second one, so registration would break on the second
+    // user ever created rather than on a Firebase edge case.
+    expect(await userRepo.create('a@example.com', '$a', now)).not.toBeNull();
+    expect(await userRepo.create('b@example.com', '$b', now)).not.toBeNull();
+    expect(await userRepo.create('c@example.com', '$c', now)).not.toBeNull();
+    expect(await users.countDocuments({}).exec()).toBe(3);
+  });
+
+  it('refuses a second account for one firebase identity, at the index', async () => {
+    await userRepo.createFederated('asha@example.com', 'uid-asha', now, now);
+
+    expect(
+      await userRepo.createFederated('other@example.com', 'uid-asha', now, now),
+    ).toBeNull();
+    expect(await users.countDocuments({}).exec()).toBe(1);
+  });
+
+  it('resolves exactly one winner when two first sign-ins race', async () => {
+    const both = await Promise.all([
+      userRepo.createFederated('race@example.com', 'uid-race', now, now),
+      userRepo.createFederated('race@example.com', 'uid-race', now, now),
+    ]);
+
+    expect(both.filter((one) => one !== null)).toHaveLength(1);
+    expect(await users.countDocuments({}).exec()).toBe(1);
+  });
+
+  it('links a firebase identity onto an unlinked local account', async () => {
+    const local = await userRepo.create('asha@example.com', '$argon2id$x', now);
+
+    expect(await userRepo.linkFirebaseUid(local!.id, 'uid-asha', now)).toBe(
+      true,
+    );
+
+    const linked = await userRepo.findByFirebaseUid('uid-asha');
+    expect(linked?.id).toBe(local!.id);
+    // The password survives the link: a reader who set one keeps both ways in.
+    expect(linked?.passwordHash).toBe('$argon2id$x');
+  });
+
+  it('refuses to relink an account that already has an identity', async () => {
+    // THE FILTER IS THE CONTROL, NOT A PRECEDING READ. A read-then-write leaves
+    // a window in which two Google identities both see an unlinked row and both
+    // link to it, the second silently taking the first one's account.
+    const local = await userRepo.create('asha@example.com', '$x', now);
+    await userRepo.linkFirebaseUid(local!.id, 'uid-first', now);
+
+    expect(await userRepo.linkFirebaseUid(local!.id, 'uid-second', now)).toBe(
+      false,
+    );
+    expect((await userRepo.findById(local!.id))?.firebaseUid).toBe('uid-first');
+  });
+
+  it('lets exactly one of two simultaneous links win', async () => {
+    const local = await userRepo.create('asha@example.com', '$x', now);
+
+    const both = await Promise.all([
+      userRepo.linkFirebaseUid(local!.id, 'uid-a', now),
+      userRepo.linkFirebaseUid(local!.id, 'uid-b', now),
+    ]);
+
+    expect(both.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('refuses a link that would give one identity a second account', async () => {
+    await userRepo.createFederated('first@example.com', 'uid-shared', now, now);
+    const local = await userRepo.create('second@example.com', '$x', now);
+
+    expect(await userRepo.linkFirebaseUid(local!.id, 'uid-shared', now)).toBe(
+      false,
+    );
+  });
+
+  it('reports a link against a user who is gone as a refusal', async () => {
+    const gone = new mongoose.Types.ObjectId().toString();
+
+    expect(await userRepo.linkFirebaseUid(gone, 'uid-ghost', now)).toBe(false);
   });
 });
 
