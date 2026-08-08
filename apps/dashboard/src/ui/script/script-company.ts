@@ -411,12 +411,17 @@ export const SCRIPT_COMPANY = `
   /**
    * Claims below which a company's topic mix is not drawn.
    *
-   * FOUR CLAIMS, NOT FIVE FILINGS, and the different unit is the point rather
-   * than an oversight. MIN_DISTRIBUTION_FILINGS guards a bar whose
-   * observations ARE filings; this one's observations are claims, and the two
-   * counts are only loosely related — CAPACITE has 23 claims across 2 filings
-   * and would be suppressed by a filing floor while having more to say than
-   * almost anyone.
+   * FOUR CLAIMS, NOT FOUR FILINGS, and the different unit is the point rather
+   * than an oversight. This bar's observations are CLAIMS, and a company's
+   * claim count and filing count are only loosely related — CAPACITE has 23
+   * claims across 2 filings and would be suppressed by a filing floor while
+   * having more to say than almost anyone. (The group-mix bar that once sat
+   * above this one carried the filing-counted floor, MIN_DISTRIBUTION_FILINGS
+   * = 5; it drew for 128 companies where this one draws for 257, and it was
+   * deleted for saying nothing about the company either way.)
+   *
+   * THE ONLY FLOOR LEFT ON THIS PAGE. The three sections above it have none,
+   * because none of them is a distribution - see 'renderCompany'.
    *
    * Measured over the 547 companies holding at least one claim:
    *
@@ -428,8 +433,7 @@ export const SCRIPT_COMPANY = `
    *       5           222                  92%
    *
    * Four is where the curve flattens: 3 to 4 buys six points and 4 to 5 buys
-   * two. It also draws the bar for 257 companies where the filing floor draws
-   * the one above it for 128, so the newer bar is the one more readers see.
+   * two.
    *
    * A SINGLE-COLOUR BAR IS NOT THE FAILURE HERE, which is why the floor sits on
    * count and not on diversity. "Every one of these nine claims is financial"

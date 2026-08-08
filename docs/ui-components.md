@@ -23,7 +23,7 @@ or `document.getElementById('co-topics')`.
 | `apps/dashboard/src/ui/script/script-cells.ts` | the admin table's cells |
 | `apps/dashboard/src/ui/script/script-feed.ts` | **the card** and the time buckets |
 | `apps/dashboard/src/ui/script/script-brief.ts` | **the deck**: candidates, ordering, one card, the rail |
-| `apps/dashboard/src/ui/script/script-company.ts` | the company page's widgets |
+| `apps/dashboard/src/ui/script/script-company.ts` | the company page's sections |
 | `apps/dashboard/src/ui/script/script-admin.ts` | the admin panels |
 | `apps/dashboard/src/ui/script/script-poll.ts` | the poll loop and the filters |
 | `apps/dashboard/src/ui/script/script-suggest.ts` | the type-ahead |
@@ -132,14 +132,79 @@ across the four-second repaint.
 | `company-head` | ticker, name, industry tag, coverage line |
 | `co-symbol` / `co-name` / `co-industry` / `co-coverage` | the identity, and what the numbers were computed over |
 | `co-filings` / `co-verified` / `co-last` | filings held · verified · last filed |
-| `company-timeline` (`co-strip`) | one column per IST day, one square per filing |
-| `company-group-mix` (`co-mix-wrap`) | **what they file** — categories, over filings. Hidden below 5 filings |
+| `company-figures` (`co-figures-wrap`) | **the numbers, as printed** — the filing's own results table. **Hidden when there is none** |
+| `co-figures` | the blocks. `company-figure-block` is one table, `company-figure` one row |
+| `company-next` (`co-next-wrap`) | **what's next** — dated commitments still ahead. **Hidden when there are none** |
+| `co-next` | the list. `company-next-item` (`data-ui`) is one date, its word and the quote |
+| `company-marks` (`co-marks-wrap`) | **movement, as the filings printed it** — one mark per directional claim. **Hidden when there are none** |
+| `co-marks` | the rows. `company-mark-day` is one IST day, `company-mark` one glyph |
 | `company-topic-mix` (`co-topics-wrap`) | **what they say** — claim topics, over claims. Hidden below 4 claims |
-| `co-mix` / `co-mix-legend` | the group bar and its top-3 legend |
 | `co-topics` / `co-topics-legend` | the topic bar and its top-3 legend |
 | `company-plans` (`co-plans-wrap`) | **plans, in their words** — the company's own forward-looking sentences, quoted. **Hidden when there are none, and drawn at one** |
 | `co-plans` | the list. `company-plan` (`data-ui`) is one quote and its IST date |
 | `company-feed` | the same card grid, without the repeated company identity |
+
+Each section's note carries the class `sectionnote` and a `data-ui` of
+`company-<section>-note`. One class for all four, because they say the same kind
+of thing: what the section is, and what it deliberately does not compute.
+
+### What this page stopped drawing
+
+`co-strip` (the filing strip: one column per IST day, one square per filing) and
+`co-mix-wrap` (the category bar) are **gone, not hidden** — with `renderStrip`,
+`renderMix`, `MIN_DISTRIBUTION_FILINGS` and their CSS. Both drew the PIPELINE
+rather than the company: a reader learns nothing from four squares landing on a
+Tuesday, and "57% of this company's filings are routine" is a fact about NSE's
+category list. What survives of them is one quiet coverage line —
+`N filings held across M IST days · first to last` — which is the only thing on
+the page about the shape of our holdings, and it is there because every number
+under it is computed over that window.
+
+### Absent is a valid state, and it is the usual one
+
+All three new sections hide themselves when there is nothing to show, and
+`npm run company:sections` is how often. Measured 2026-08-08 over 3,900 filings
+and 1,286 companies:
+
+| Section | Companies it draws for | What it holds |
+| --- | --- | --- |
+| the numbers, as printed | 15 (1.2%) | 19 tables, 52 figures, every one Q1 FY27 |
+| what's next | 50 (3.9%) | 93 claims, 106 dates |
+| movement over time | 282 (21.9%) | 989 marks; 25 companies span 2+ IST days, none 3+ |
+
+**None of them has a floor**, unlike the topic bar. A floor guards a bar drawn
+over too few observations — one observation drawn as a bar is a single colour
+claiming to be a distribution. None of these is a distribution: one printed
+table is one printed table, one dated appointment is one dated appointment, and
+one mark is one sentence with its evidence attached.
+
+**The numbers, as printed, computes nothing.** The figures are the tokens the
+document printed, in the scale it declared, rendered server-side by the same
+`renderResultsValue` the wire line uses (`currentDisplay` / `priorDisplay`) — a
+second implementation of the currency mark in the browser is a second thing to
+keep in step. No change, margin, growth rate or percentage is derived from two
+figures: `results-line.ts` holds the argument, and a competitor's rescaled line
+published a margin of 13.32% where its own numbers give 13.23%. The basis is
+spelled out in full with the heading that fixed it in its title, because the
+consolidated and standalone statements in one filing differ by tens of per cent.
+An identical table filed twice — three of the fifteen companies did that — is
+shown once, keyed on the CONTENT and not on the quarter, so a **restatement**
+still draws two blocks.
+
+**What's next holds no vocabulary and no calendar.** `claim-commitment.ts` owns
+the scheduling words and the two date shapes it will read; the server sends
+`commitments` on each claim, computed on read against `istDayKey(now)`. IST rolls
+at 18:30 UTC, so a browser deciding "still ahead" for itself would show
+yesterday's record date all evening. One entry per date and word, because a
+company files the same AGM date in four documents in a week.
+
+**The movement marks take the feed's glyphs and no colour.** `DIRECTION_GLYPH`
+and `DIRECTION_LABEL` are declared once, in `script-feed.ts`, and the fragments
+share a scope. One row per IST **day** rather than per filing — SONATSOFTW filed
+five marked documents in one day, and the per-filing version drew five rows under
+one date, which reads as five days. Nothing is counted: a tally of increases
+against decreases is a verdict on a company, and 13 of the 45 printed decreases
+in this collection are falling bad loans, debt, borrowing costs or emissions.
 
 **Plans quotes the span, never the claim text.** The section shows the
 document's own bytes at the matched position — the extractor's compressed `text`
