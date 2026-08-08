@@ -50,15 +50,30 @@ These override any habit of writing more, sooner, or cleverer.
   formats a timestamp.
 - **Exchange text is untrusted.** No `innerHTML`, ever; DOM via
   `createElement`/`textContent`; links only through `safeHref`.
+- **No access without sign-in.** Every page and every `/api/*` read is behind
+  the session guard. The four exceptions are `GET /` (which serves the landing
+  page to a signed-out browser and reads nothing), `GET /auth`, `GET
+  /api/health` and `GET /api/me` — enumerated in `dashboard.controller.ts` so an
+  addition has to argue with the list.
 - **The dashboard is self-contained.** No CDN, no external request, no web
   font. Inline everything.
+  - **The one relaxation is `/auth`, in firebase mode only.** It loads the
+    Firebase Web SDK from `gstatic.com` at a pinned version, and nothing else
+    from anywhere. The app and the landing page are unchanged — `page.spec.ts`
+    and `landing.spec.ts` both assert their documents contain no `https?://` at
+    all — and `auth-page.spec.ts` asserts the set of external origins on the
+    sign-in page is exactly `[gstatic]` in firebase mode and exactly `[]` in the
+    other two. The argument is in `ui/auth-page.ts`'s header: that page renders
+    no filing, calls no read route and has no database access, and the
+    alternative is hand-writing Google's OAuth dance. A font, a stylesheet, an
+    image or an analytics tag there is still refused; the Google mark is CSS.
 - **Fail open on categories.** Never key a fail-closed gate on a category name
   NSE controls (`claim-eligibility.ts` records why).
 
 ## Sharp edges (each has shipped a real breakage)
 
-- `apps/dashboard/src/ui/script/*.ts` and `page-style.ts` are **TypeScript
-  template literals**: a backtick or `${` inside the string body — including in
+- `apps/dashboard/src/ui/script/*.ts`, `auth-script.ts`, `page-style*.ts` and
+  `landing-style.ts` are **TypeScript template literals**: a backtick or `${` inside the string body — including in
   a comment — is consumed by the compiler and breaks the page while serving
   200. `script-fragments.spec.ts` guards this; keep fragments free of both.
 - Client-script regexes need **doubled backslashes** (`\\d`), because the
@@ -76,7 +91,11 @@ These override any habit of writing more, sooner, or cleverer.
 - `npm test` — Jest, no network, ~10s. `npx tsc --noEmit -p tsconfig.json`,
   `npm run lint`.
 - `npm run test:e2e` / `npx playwright test` — needs the dashboard running;
-  `DASHBOARD_URL` overrides the default `http://127.0.0.1:7717`.
+  `DASHBOARD_URL` overrides the default `http://127.0.0.1:7717`. **It requires
+  `AUTH_MODE=local`**, which is what an environment with no `FIREBASE_*` keys
+  resolves to: global setup registers one throwaway account through the real
+  register route and deletes it afterwards. There is deliberately no test bypass
+  in the server — see `e2e/session.ts`.
 - `npm run start:dashboard` (port from `DASHBOARD_PORT`, default 7717).
 - Component names for the UI: `docs/ui-components.md`.
 

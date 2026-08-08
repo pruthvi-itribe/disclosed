@@ -165,6 +165,12 @@ default.
 | ---------------------- | ------------------------------------ | --------------------------------------------- |
 | `MONGO_URI`            | `mongodb://localhost:27117/turret`   | Storage. Read by both apps.                   |
 | `DASHBOARD_PORT`       | `7717`                               | Dashboard listen port, 1024–65535. Always bound to `127.0.0.1`; the interface is not configurable. |
+| `PUBLIC_ORIGIN`        | `http://127.0.0.1:<port>`            | The one origin allowed to POST. Behind a proxy this must be the public https origin, or every mutation from the real page is refused. |
+| `SESSION_TTL_DAYS`     | `30`                                 | How long a session lives unused, 1–365. Slides forward on use, at most hourly. |
+| `AUTH_MODE`            | _(follows the keys)_                 | `firebase` or `local`. Unset ⇒ `firebase` when the two Firebase keys are set, `local` otherwise. |
+| `FIREBASE_PROJECT_ID`  | _(empty)_                            | The Firebase project. The server verifies ID tokens against it. |
+| `FIREBASE_WEB_API_KEY` | _(empty)_                            | The project's Web API key. Printed into `/auth`; not a secret — see below. |
+| `FIREBASE_AUTH_DOMAIN` | `<project>.firebaseapp.com`          | Only needed if the project is served from a custom domain. |
 | `TELEGRAM_BOT_TOKEN`   | _(empty)_                            | Unset ⇒ alerts are logged, not sent.          |
 | `TELEGRAM_CHAT_ID`     | _(empty)_                            | Unset ⇒ alerts are logged, not sent.          |
 | `NSE_HOT_INTERVAL_MS`  | `2000`                               | Poll interval inside 07:00–23:00 IST.         |
@@ -178,6 +184,53 @@ default.
 | `DOCLING_URL`          | _(empty)_                            | Optional hybrid parser. Empty ⇒ `pdf-parse` reads everything. |
 | `DOCLING_TIMEOUT_MS`   | `300000`                             | One conversion's ceiling. Docling costs 2.5–4 s a page. |
 | `DOCLING_COOLDOWN_MS`  | `300000`                             | How long an unreachable service is skipped without a request. |
+
+### Signing in
+
+**Nobody reads a filing without an account.** Every page and every `/api/*` read
+is behind the session guard; a signed-out visitor gets the landing page and
+nothing else. The exceptions are `GET /`, `GET /auth`, `GET /api/health` and
+`GET /api/me`, enumerated in `dashboard.controller.ts`.
+
+**Two providers, one session.** Firebase answers *who this person is*, once, at
+sign-in; what the browser then carries is the same opaque, revocable,
+Mongo-backed cookie the in-house path has always minted. Nothing downstream can
+tell which provider a session came from, which is what keeps "log me out
+everywhere" working.
+
+**To turn Firebase on**, create a project in the Firebase console, enable the
+Google and Email/Password providers, add this deployment's domain to the
+authorised-domain list, and set two variables:
+
+    FIREBASE_PROJECT_ID=your-project-id
+    FIREBASE_WEB_API_KEY=AIza...
+
+in `.env` beside `MONGO_URI`. That is the whole configuration. `AUTH_MODE` then
+resolves to `firebase` on its own. **No service-account key file is needed:**
+verifying an ID token is a signature check against Google's public certificates
+plus a project-id comparison, so there is no private key on this host to leak.
+
+`FIREBASE_WEB_API_KEY` is printed into the `/auth` page, and that is how Firebase
+is designed — a web API key identifies a project to Google's endpoints and
+authorises nothing on its own. What guards the project is the authorised-domain
+list.
+
+**Before the keys arrive**, or with `AUTH_MODE=local`, the in-house
+email + password path runs instead: argon2id, per-account backoff, and one
+identical failure message for a wrong password and an unknown address. It is
+dormant rather than deleted — on a Firebase host `register` and `login` answer
+`409 LOCAL_AUTH_DISABLED`.
+
+**If `AUTH_MODE=firebase` is set and the keys are not**, the process still
+boots. The startup line says
+`auth=firebase UNCONFIGURED(missing FIREBASE_PROJECT_ID,...)`, `/auth` names the
+variables that are unset, and the token-exchange route answers `503`.
+
+**A Firebase account must confirm its email address.** Firebase's own
+email+password sign-up does not verify it, so anyone could hold a valid token
+claiming somebody else's; requiring it only when linking to an existing account
+would turn the refusal into a registered-address oracle. Firebase sends the
+confirmation mail — which is a lane this product did not previously have at all.
 
 ### The shipped watchlist is a firehose
 
