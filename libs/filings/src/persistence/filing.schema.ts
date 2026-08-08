@@ -281,6 +281,26 @@ FilingSchema.index(
   { name: 'claims_topic_1_disseminatedAt_-1' },
 );
 
+/**
+ * Serves the feed's plans filter: "show me where the company said what it
+ * plans", which is `kind` in `guidance` or `target`.
+ *
+ * A SECOND MULTIKEY INDEX OVER THE SAME ARRAY, one field along, and not a
+ * widening of the topic one: a compound `{topic, kind}` index cannot serve a
+ * query on `kind` alone, and the two filters are independent — a reader picks
+ * one or the other.
+ *
+ * Measured on the live collection of 3,459 filings on 2026-08-08, the feed's
+ * own query (newest first, limit 25): unindexed it was a COLLSCAN examining all
+ * 3,459 documents in 7ms; with this index it examines 342 keys and the 331
+ * matching documents in 1ms. The sort stays blocking either way, because a
+ * multikey `$in` cannot walk the index in `disseminatedAt` order.
+ */
+FilingSchema.index(
+  { 'enrichment.claims.kind': 1, disseminatedAt: -1 },
+  { name: 'claims_kind_1_disseminatedAt_-1' },
+);
+
 FilingSchema.index(
   { symbol: 1, category: 1, disseminatedAt: -1 },
   { name: 'symbol_1_category_1_disseminatedAt_-1' },

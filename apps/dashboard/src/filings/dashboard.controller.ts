@@ -42,6 +42,7 @@ import {
   CLAIM_FILTERS,
   ENRICHMENT_STATES,
   GROUP_FILTERS,
+  PLANS_FILTERS,
   TIER_FILTERS,
   FilingQueryService,
 } from './filing-query.service';
@@ -203,7 +204,8 @@ export class DashboardController {
    * Recent filings, newest first, paginated and filterable.
    *
    * Query: `q`, `limit`, `offset`, `symbol`, `category`, `state`, `amount`,
-   * `claim`, `refusal`. Anything unparseable is a 400 rather than a silently applied
+   * `claim`, `topic`, `plans`, `tier`,
+   * `refusal`. Anything unparseable is a 400 rather than a silently applied
    * default — a filter that quietly did nothing is indistinguishable from one
    * that matched everything, and on the refusal filters that difference is the
    * whole point of the view.
@@ -246,6 +248,10 @@ export class DashboardController {
       // Validated against the closed list like every other filter, so caller
       // text never reaches a Mongo predicate.
       topic: readEnum('topic', query, CLAIM_TOPICS),
+      // One accepted value, allowlisted like the rest: `plans=guidance` is a
+      // 400 rather than a filter that matches nothing, because the pair is what
+      // the question means and half of it is the wrong answer.
+      plans: readEnum('plans', query, PLANS_FILTERS),
       tier: readEnum('tier', query, TIER_FILTERS),
       refusal: readFilter('refusal', query),
     });

@@ -61,6 +61,26 @@ export const CLAIM_KIND_RANK: Readonly<Record<ClaimKind, number>> = {
   operational: 5,
 };
 
+/**
+ * The two kinds in which a company states something about its OWN future.
+ *
+ * NAMED AS A PAIR because that is how a reader asks for them — "what does this
+ * company say it plans" — and because neither half answers that alone. Measured
+ * on the live collection on 2026-08-08: 746 claims are `guidance` and 65 are
+ * `target`, 811 of 3,992 (20.3%), spread over 331 filings and 257 of the 1,219
+ * companies held. A filter on `guidance` alone would drop 8% of the
+ * forward-looking sentences while looking like it worked.
+ *
+ * NOTHING NEW IS DERIVED BY GROUPING THEM. Every claim here is already through
+ * the verbatim gate, so what a plans surface publishes is the company's own
+ * printed sentence — see the design note in
+ * `docs/superpowers/specs/2026-08-08-update-signal-design.md` §2.5, which
+ * reached for exactly this set when it killed "how can it improve": improvement
+ * commentary about a named listed company cannot be checked against anything,
+ * and these 811 sentences answer the same question with the company's words.
+ */
+export const PLAN_CLAIM_KINDS: readonly ClaimKind[] = ['guidance', 'target'];
+
 /** One claim as proposed by the extractor. UNVERIFIED — never publish this. */
 export interface ProposedClaim {
   /**

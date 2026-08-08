@@ -550,6 +550,53 @@ describe('the claim lane', () => {
     expect(meta.total).toBe(expected);
   });
 
+  it('filters to the filings where the company said what it plans', async () => {
+    // THE PAIR, NOT ONE OF THEM. `guidance` and `target` are two shapes of one
+    // thing — the company's own statement about its own future — and measured
+    // on the live collection on 2026-08-08 they are 746 and 65 claims, so a
+    // filter on `guidance` alone answers the reader's question wrongly by 8%
+    // while looking like it worked.
+    await seed([
+      [1, enrichment({ claims: [{ ...CLAIM, kind: 'guidance' }] })],
+      [2, enrichment({ claims: [{ ...CLAIM, kind: 'target' }] })],
+      [3, enrichment({ claims: [{ ...CLAIM, kind: 'operational' }] })],
+      [4, enrichment({ claimRefusalReason: 'no-claims' })],
+      [5, undefined],
+    ]);
+
+    const { items, meta } = await page({ plans: 'only' });
+
+    expect(meta.total).toBe(2);
+    expect(items.map((item) => item.seqId).sort()).toEqual([1, 2]);
+  });
+
+  it('keeps a filing whose plan sits among claims of other kinds', async () => {
+    // The same "any claim" reading the topic filter has: a results presentation
+    // that also states next year's guidance belongs under both.
+    await seed([
+      [
+        1,
+        enrichment({
+          claims: [
+            { ...CLAIM, kind: 'operational' },
+            { ...CLAIM, kind: 'guidance' },
+          ],
+        }),
+      ],
+    ]);
+
+    expect((await page({ plans: 'only' })).meta.total).toBe(1);
+  });
+
+  it('returns everything when the plans filter is not asked for', async () => {
+    await seed([
+      [1, enrichment({ claims: [{ ...CLAIM, kind: 'guidance' }] })],
+      [2, enrichment({ claims: [{ ...CLAIM, kind: 'operational' }] })],
+    ]);
+
+    expect((await page()).meta.total).toBe(2);
+  });
+
   it('lets a discard reason filter the table', async () => {
     // The refusal filter reaches the claim lane as well as the amount lane, so
     // clicking `span-not-found` in the panel shows the documents it happened on.

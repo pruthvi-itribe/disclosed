@@ -18,6 +18,7 @@ import {
   formatRupees,
   MAPPED_GROUP_CATEGORIES,
   FactsSeen,
+  PLAN_CLAIM_KINDS,
   type CategoryGroup,
   type ClaimTopic,
   type Filing,
@@ -58,6 +59,19 @@ export type AmountFilter = (typeof AMOUNT_FILTERS)[number];
 
 /** Category groups a caller may filter on. */
 export const GROUP_FILTERS = CATEGORY_GROUPS;
+
+/**
+ * The forward-looking filter: filings in which the company said what it plans.
+ *
+ * ONE VALUE, AND IT IS NOT A `kind` AXIS. `kind` has six values and this page
+ * offers no way to ask for four of them; what a reader asks for is the PAIR in
+ * `PLAN_CLAIM_KINDS`, and a `kind=guidance` filter would answer that question
+ * 8% short while looking like it worked. A second value gets added here when a
+ * second question exists, not before.
+ */
+export const PLANS_FILTERS = ['only'] as const;
+
+export type PlansFilter = (typeof PLANS_FILTERS)[number];
 
 /**
  * Confidence tiers a caller may filter on.
@@ -131,6 +145,15 @@ export interface RecentQuery {
    * under the single kind `operational`.
    */
   readonly topic?: ClaimTopic;
+  /**
+   * Narrows to filings carrying a claim in which the company stated something
+   * about its own future — `guidance` or `target`.
+   *
+   * A THIRD AXIS AGAIN, and it is the claim's SHAPE rather than what it is
+   * about: a plan can be financial, a capacity plan or a product plan, so this
+   * cuts across `topic` instead of overlapping it.
+   */
+  readonly plans?: PlansFilter;
   /** Whether anything about this filing survived a gate against the document. */
   readonly tier?: TierFilter;
 }
@@ -838,6 +861,21 @@ export class FilingQueryService {
       ...(query.topic === undefined
         ? {}
         : { 'enrichment.claims.topic': query.topic }),
+      // The same "any claim" reading the topic filter has, over the two kinds a
+      // company uses to talk about its own future: a results presentation that
+      // also states next year's guidance belongs under both.
+      //
+      // Served by `claims_kind_1_disseminatedAt_-1`. Measured on the live
+      // collection of 3,459 filings on 2026-08-08, newest-first with a limit of
+      // 25: unindexed it was a COLLSCAN examining all 3,459 documents in 7ms;
+      // with the index it examines 342 keys and the 331 matching documents in
+      // 1ms. The sort stays a blocking one either way — a multikey `$in` cannot
+      // walk the index in `disseminatedAt` order — but the examined set is the
+      // matches rather than the collection, on a page that polls every four
+      // seconds against the collection the ingest poller writes to.
+      ...(query.plans === undefined
+        ? {}
+        : { 'enrichment.claims.kind': { $in: [...PLAN_CLAIM_KINDS] } }),
       ...this.enrichmentFilter(query),
     };
   }

@@ -478,6 +478,25 @@ describe('DashboardController — enrichment filters', () => {
     expect(calls.recent[0].refusal).toBe('unit-scaled-header');
   });
 
+  it('passes the plans filter through to the query layer', async () => {
+    await controller.getFilings({ plans: 'only' });
+
+    expect(calls.recent[0].plans).toBe('only');
+  });
+
+  it.each([
+    ['plans', 'all'],
+    ['plans', 'yes'],
+    ['plans', 'guidance'],
+  ])(
+    'rejects an unknown %s value "%s" rather than matching nothing',
+    async (key, value) => {
+      await expect(controller.getFilings({ [key]: value })).rejects.toThrow(
+        BadRequestException,
+      );
+    },
+  );
+
   it.each([
     ['state', 'ENRICHED'],
     ['state', 'done'],
@@ -527,6 +546,7 @@ describe('DashboardController — enrichment filters', () => {
     expect(calls.recent[0].state).toBeUndefined();
     expect(calls.recent[0].amount).toBeUndefined();
     expect(calls.recent[0].refusal).toBeUndefined();
+    expect(calls.recent[0].plans).toBeUndefined();
   });
 });
 
