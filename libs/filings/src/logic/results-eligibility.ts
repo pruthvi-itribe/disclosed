@@ -39,6 +39,53 @@ import { forStructuralTest } from './structural-text';
  * standalone statement heading. Both are structural properties of the thing
  * being looked for, both are already needed by the verifier downstream, and a
  * covering letter announcing that results were approved has neither.
+ *
+ * ================================================================
+ * WHY `Copy of Newspaper Publication` STAYS SHUT, MEASURED
+ * ================================================================
+ *
+ * It is the largest category this lane refuses and the refusal is not idle:
+ * 143 of the 408 cached newspaper pages carry a real statutory results
+ * statement, and `shared-page.ts`'s four-CIN rule only reaches 56 of them.
+ *
+ * The mechanism proposed for the other 87 was a TABLE-LEVEL attribution check
+ * shaped exactly like `governingBasis` — admit a table when the filer's own
+ * name sits within a bounded window ABOVE its column header. It was measured
+ * before it was written (`tools/results/measure-table-attribution.ts`), over
+ * the 337 column headers on those pages, with the page's own layout as ground
+ * truth: whichever company's name sits nearer above a header is whose table it
+ * is. 158 headers are the filer's, 170 are another company's, 9 name neither.
+ *
+ *     window   the filer's own tables admitted   another company's published
+ *        400            10/158   6.3%                    0/170   0.0%
+ *        500            23/158  14.6%                    0/170   0.0%
+ *        600            29/158  18.4%                    3/170   1.8%
+ *      1,000            50/158  31.6%                    9/170   5.3%
+ *      2,400            68/158  43.0%                   19/170  11.2%
+ *     12,000           112/158  70.9%                   85/170  50.0%
+ *
+ * The two distributions sit on top of each other, exactly as the proximity rule
+ * in `shared-page.ts` did. The widest window that mis-attributes nothing is 500
+ * and it reads 14.6% of the filer's own tables; no window up to 12,000 reaches
+ * 95% of them, and by then it is publishing half of everyone else's. Matching
+ * the name without its corporate suffix moves both curves together — 16.2%
+ * recall at 500, and the first mis-attribution arrives at 300.
+ *
+ * THE REASON IS STRUCTURAL AND NO BOUND FIXES IT. A statutory advertisement
+ * SIGNS OFF with the company's name — "For and on behalf of the Board of
+ * Directors, <COMPANY>, Sd/-" — and the next advertiser's banner and table
+ * follow immediately underneath. So the filer's name appearing above a table is
+ * systematically ambiguous: it is either the banner of its own table or the
+ * signature at the foot of it, and the second sits directly above somebody
+ * else's. RateGain's page (seqId 106731309) is the measured case: RATEGAIN
+ * TRAVEL TECHNOLOGIES LIMITED is 508 characters above a column header whose
+ * table belongs to SHYAM CENTURY FERROUS LIMITED, whose own banner is 414
+ * characters above it. Eight more pages leak inside 1,000 characters.
+ *
+ * A missed table is a line nobody sees. A full financial statement published
+ * under the wrong company's name is the SANOFI failure with figures attached,
+ * so the category stays out until a mechanism is measured that does not have
+ * this shape.
  */
 
 /**
@@ -67,6 +114,10 @@ import { forStructuralTest } from './structural-text';
  *   - `Certificate under SEBI (Depositories and Participants) Regulations, 2018`
  *     (1,973, 19.8%) is a share-transfer compliance certificate that names a
  *     quarter and states no results at all.
+ *   - `Copy of Newspaper Publication` (539 live) carries a genuine results
+ *     statement on 143 of the 408 pages whose text is on disk, and is refused
+ *     anyway because no measured rule attributes a table on such a page to the
+ *     filer. The distribution is in the module header above.
  */
 export const RESULTS_BEARING_CATEGORIES: ReadonlySet<string> = new Set([
   'outcome of board meeting',
