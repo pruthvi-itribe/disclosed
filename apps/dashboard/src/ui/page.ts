@@ -382,6 +382,44 @@ export const renderDashboardPage = (): string => `<!doctype html>
     <div id="co-topics-legend" class="mixlegend"></div>
   </div>
 
+  <!--
+    WHAT THE COMPANY SAYS IT PLANS, AND IT IS A QUOTE RATHER THAN A SUMMARY.
+
+    Every line in this list is a span the claim gate matched character for
+    character against the source filing, kept only when the extractor filed it
+    as guidance or a target AND the sentence itself printed a word about a
+    period still ahead. Nothing here is composed, counted or characterised: the
+    page quotes and dates, and stops.
+
+    BOTH CONDITIONS, because the kind alone does not support the heading:
+    measured on 2026-08-08, only 179 of the 813 claims stored under those two
+    kinds (22.0%) point forward, and the rest are last quarter's figures, a
+    declared dividend or an AGM date. 'claim-plan.ts' holds the rule and the
+    measurement; the server sends 'planEvidence' and this page shows only the
+    claims that carry one.
+
+    THAT IS THE WHOLE REASON IT MAY SHIP. The founder asked for a rating that
+    said "how can it improve"; improvement commentary about a named listed
+    company can be checked against nothing, is authored by us rather than by the
+    filer, and is the analytic core of a research note. The company's own
+    forward-looking sentences answer the same question — what happens next —
+    with words a reader can verify against the PDF. See
+    'docs/superpowers/specs/2026-08-08-update-signal-design.md' section 2.5.
+
+    NO FLOOR, unlike the two bars above it. A bar drawn over one observation is
+    a single colour claiming to be a distribution; one quoted sentence is one
+    quoted sentence. 93 of the 257 companies holding a plan hold exactly one.
+  -->
+  <div id="co-plans-wrap" data-ui="company-plans" hidden>
+    <h2 class="bucket">Plans, in their words</h2>
+    <p class="plansnote" data-ui="company-plans-note">
+      Quoted from the filings held here, where the company itself pointed at a
+      period still ahead — its own guidance, or a target it has set. Their
+      words, not our forecast, and not a view on the company.
+    </p>
+    <ul id="co-plans" class="plans"></ul>
+  </div>
+
   <h2 class="bucket">Filings</h2>
   <div id="company-feed" class="feed" data-ui="company-feed"></div>
 </section>

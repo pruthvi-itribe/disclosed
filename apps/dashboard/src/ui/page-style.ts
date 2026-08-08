@@ -780,6 +780,22 @@ button.sym:hover { color: var(--accent); }
 .t-governance { background: #64748b; }
 .t-other { background: var(--line); }
 
+/* --- plans, in their words ----------------------------------------------
+   A list of QUOTES, so it is set as quotes: the company's sentence at reading
+   size, the date under it, and a rule down the left that says "this is not our
+   text". Measured at 122 characters a span (max 435), so the column is capped
+   near the 66ch a line of prose stays readable at rather than run the width of
+   a 1440px window.
+
+   NO COLOUR CARRIES MEANING HERE, for the reason the movement mark's block
+   below gives at length: a forward-looking sentence tinted green or red is this
+   page taking a view on a company, and it publishes none. */
+.plansnote { color: var(--muted); font-size: 12.5px; line-height: 1.5; max-width: 66ch; margin: 0 0 12px; }
+.plans { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 14px; max-width: 74ch; }
+.plan { border-left: 2px solid var(--line); padding: 2px 0 2px 12px; }
+.planquote { font-size: 14.5px; line-height: 1.5; color: var(--text); }
+.planwhen { margin-top: 5px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
 #company-feed { margin-top: 10px; }
 /* On a page headed GODREJCP, repeating "GODREJCP Godrej Consumer Products
    Limited" on all six cards is six lines of chrome answering a question the

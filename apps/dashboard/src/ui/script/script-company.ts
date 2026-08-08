@@ -332,6 +332,91 @@ export const SCRIPT_COMPANY = `
     return true;
   }
 
+  /**
+   * What the company says it plans, in its own printed words.
+   *
+   * QUOTES THE SPAN, NEVER THE CLAIM TEXT. The span is the document's own bytes
+   * at the matched position; the text is the extractor's compression of them,
+   * and a section headed "in their words" may only ever show the first. That
+   * also makes every line checkable against the PDF by a reader with no tools,
+   * which is the only reason a forward-looking sentence may appear on this page
+   * at all — see the section comment in page.ts.
+   *
+   * SELECTED ON 'planEvidence' AND ON NOTHING ELSE. The browser holds no list
+   * of kinds and no list of forward-looking words: the server answers whether
+   * this sentence is one of these, using 'claim-plan.ts', which is the same
+   * rule the feed's Plans chip filters on. Two rules would be two answers to
+   * one question. The evidence itself goes in the item's title, so a reader can
+   * see which of the document's words put the line here.
+   *
+   * NOTHING IS COMPUTED. No count, no comparison between one filing's guidance
+   * and the next, no sentence composed across two quotes. Two guidance
+   * statements six weeks apart are two dated quotes, and what changed between
+   * them is the reader's to read.
+   *
+   * NEWEST FIRST, which costs nothing: the response arrives newest first and
+   * this walks it in order. Uncapped, because the busiest company measured on
+   * 2026-08-08 held 7 quotable plans and a list of 7 dated quotes is a list.
+   */
+  function renderPlans(list, items) {
+    list.textContent = '';
+    var drawn = 0;
+
+    for (var i = 0; i < items.length; i++) {
+      var filing = items[i];
+      var claims = (filing.enrichment && filing.enrichment.claims) || [];
+      for (var c = 0; c < claims.length; c++) {
+        var claim = claims[c];
+        if (!claim.planEvidence) continue;
+        // ECHOES ARE SKIPPED, the same way the feed's headlines skip them and
+        // for the same reason: a company files its guidance in a press release
+        // and in a presentation the same morning, and this list would show one
+        // sentence twice under two dates. The server has already decided what
+        // counts as a repeat; inventing a second notion of sameness here would
+        // be two answers to one question.
+        if (claim.echo === true) continue;
+
+        var item = document.createElement('li');
+        item.className = 'plan';
+        item.setAttribute('data-ui', 'company-plan');
+        // WHY THIS LINE IS HERE, in the document's own words. The section
+        // quotes a sentence because the filing pointed forward in it, and the
+        // words that decided so travel with it — the same rule the movement
+        // mark follows: a derived judgement is admissible only when the reader
+        // can check it without opening the PDF.
+        item.title = 'The company printed: "' + claim.planEvidence + '"';
+
+        var quote = document.createElement('div');
+        quote.className = 'planquote';
+        // The quotation marks are TEXT around text, never markup, and the
+        // whitespace is collapsed the way the focus card collapses it: a span
+        // lifted out of a PDF carries the line breaks of the page it was set on
+        // and those are not part of the sentence.
+        //
+        // A verified claim always carries a span. If one ever does not, this
+        // says so rather than drawing empty quotation marks — "no words were
+        // stored" and "the company said nothing" are different facts.
+        quote.textContent = claim.span
+          ? '"' + String(claim.span).replace(/\\s+/g, ' ').trim() + '"'
+          : 'No source sentence is stored for this line.';
+        item.appendChild(quote);
+
+        var when = document.createElement('div');
+        when.className = 'planwhen';
+        // THE SERVER'S IST DAY, printed rather than formatted. A browser set to
+        // UTC would date a 9am Mumbai filing to the previous evening.
+        when.textContent = filing.istDay;
+        when.title = filing.disseminatedAtIst + ' IST';
+        item.appendChild(when);
+
+        list.appendChild(item);
+        drawn += 1;
+      }
+    }
+
+    return drawn > 0;
+  }
+
   function renderCompany(items, meta) {
     if (state.company === null) return;
 
@@ -401,6 +486,15 @@ export const SCRIPT_COMPANY = `
       items,
     );
     topicsWrap.hidden = !drewTopics;
+
+    // DRAWN FIRST AND HIDDEN AFTER, like the bar above it, because only the
+    // renderer can see whether any claim qualified. The condition is the ONLY
+    // one: there is no floor here, and that difference from the two widgets
+    // above is deliberate — one quoted sentence says exactly as much as it
+    // says, while one observation drawn as a bar is a single colour claiming to
+    // be a distribution.
+    var plansWrap = el('co-plans-wrap');
+    plansWrap.hidden = !renderPlans(el('co-plans'), items);
 
     renderFeedInto(el('company-feed'), items, meta, false);
   }

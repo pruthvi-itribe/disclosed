@@ -101,8 +101,9 @@ from>"`, which are the only stable ways to name **one specific card**.
 
 **The chip row holds two axes.** Every chip carries `data-topic` — what a claim
 is ABOUT — except `Plans`, which carries `data-plans="only"` and narrows to the
-claims whose SHAPE is the company stating something about its own future
-(`guidance` or `target`, 811 of 3,992 stored claims across 331 filings). They
+filings holding a claim in which the company pointed at a period still ahead
+(179 of 3,992 stored claims, across 124 filings; `claim-plan.ts` owns the rule
+and both surfaces read it). They
 share a row because a reader uses them the same way, and the price is that
 **exactly one chip is ever lit**: picking either axis clears the other, and
 Clear resets both.
@@ -136,7 +137,23 @@ across the four-second repaint.
 | `company-topic-mix` (`co-topics-wrap`) | **what they say** — claim topics, over claims. Hidden below 4 claims |
 | `co-mix` / `co-mix-legend` | the group bar and its top-3 legend |
 | `co-topics` / `co-topics-legend` | the topic bar and its top-3 legend |
+| `company-plans` (`co-plans-wrap`) | **plans, in their words** — the company's own forward-looking sentences, quoted. **Hidden when there are none, and drawn at one** |
+| `co-plans` | the list. `company-plan` (`data-ui`) is one quote and its IST date |
 | `company-feed` | the same card grid, without the repeated company identity |
+
+**Plans quotes the span, never the claim text.** The section shows the
+document's own bytes at the matched position — the extractor's compressed `text`
+appears nowhere in it — dated from the server's `istDay`, with echoes skipped
+the way the feed's headlines skip them. A claim is quotable when it carries a
+`planEvidence`, which the server computes from **both** the claim's kind and its
+span: the extractor filed it as guidance or a target, *and* the sentence itself
+printed a word about a period still ahead. The kind alone is 22% right, so the
+browser is told the verdict rather than the vocabulary, and the words that
+decided it are in each item's `title`. It computes nothing: no count, no
+comparison between one filing's guidance and the next, which is why it carries
+no "what a count would mean" note. It has **no floor** where the two bars above
+it do, because one quoted sentence says exactly as much as it says while one
+observation drawn as a bar is a single colour claiming to be a distribution.
 
 ## Admin
 

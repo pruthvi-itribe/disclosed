@@ -1,4 +1,6 @@
 import { CATEGORY_GROUPS } from '@app/filings/logic/category-group';
+import { planEvidence } from '@app/filings/logic/claim-plan';
+import { PLAN_CLAIM_KINDS } from '@app/filings/logic/claim.types';
 import { CONFIDENCE_TIERS } from '@app/filings/logic/confidence-tier';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -10,6 +12,7 @@ import { PAGE_STYLE_FOCUS } from './page-style-focus';
 import { SCRIPT_ACCOUNT } from './script/script-account';
 import { SCRIPT_BASE } from './script/script-base';
 import { SCRIPT_BRIEF } from './script/script-brief';
+import { SCRIPT_COMPANY } from './script/script-company';
 import { SCRIPT_FEED } from './script/script-feed';
 import { SCRIPT_FOCUS } from './script/script-focus';
 import { SCRIPT_POLL } from './script/script-poll';
@@ -127,6 +130,8 @@ describe('renderDashboardPage — content', () => {
     'watch-empty',
     'watch-feed',
     'co-watch',
+    'co-plans-wrap',
+    'co-plans',
     // The focus card's shell. Filled by the script; empty in the markup.
     'focus-back',
     'focus',
@@ -587,6 +592,129 @@ describe('renderDashboardPage — the plans filter', () => {
     // and the insight toggle would otherwise take the blame for this filter.
     expect(script).toContain('if (state.plans)');
     expect(script).toContain('said what it plans');
+  });
+});
+
+/**
+ * PLANS, IN THEIR WORDS — the company page's section of quoted spans.
+ *
+ * It publishes the DOCUMENT'S OWN BYTES and nothing else: the model's
+ * compressed `text` is not shown here, no count is computed over the quotes,
+ * and no sentence about the company is composed from them. That is what makes
+ * the section admissible where "how can it improve" was not — every line in it
+ * was already matched character for character against the source filing, so the
+ * page is quoting rather than assessing.
+ *
+ * 257 of the 1,219 companies held carry at least one such claim, and 93 of
+ * those 257 carry exactly one.
+ */
+describe('renderDashboardPage — plans, in their words', () => {
+  const plans = /function renderPlans\([\s\S]*?\n  \}/.exec(
+    SCRIPT_COMPANY,
+  )?.[0];
+
+  it('is a section of the company page, with a heading a person can say', () => {
+    expect(html).toContain('data-ui="company-plans"');
+    expect(html).toContain('Plans, in their words');
+  });
+
+  it('selects on the server’s verdict, holding no vocabulary of its own', () => {
+    // THE BROWSER KNOWS NEITHER LIST. Restating the kinds or the forward-looking
+    // words here would be a second rule, and the chip in the feed and this
+    // section would show different sets under one name the moment either moved.
+    expect(plans).toContain('claim.planEvidence');
+    expect(plans).not.toContain('claim.kind');
+    for (const kind of PLAN_CLAIM_KINDS) {
+      // The word may appear in the fragment's prose; what must not appear is a
+      // value the browser tests a claim against.
+      expect(SCRIPT_COMPANY).not.toContain(`'${kind}'`);
+    }
+  });
+
+  it('carries the words that put each line here', () => {
+    // The rule the movement mark already follows: a derived judgement is
+    // admissible only where a reader can check it without opening the PDF.
+    expect(plans).toContain('claim.planEvidence + ');
+    expect(plans).toContain('The company printed:');
+  });
+
+  it('quotes a sentence only where the document pointed forward', () => {
+    // 634 of the 813 claims stored under the two plan kinds are last quarter's
+    // figures, a declared dividend or an AGM date. The heading would be wrong
+    // about two lines in three if the kind alone decided this.
+    expect(
+      planEvidence('guidance', 'Q1 FY27 revenue at Rs 3,637 million'),
+    ).toBeNull();
+    expect(
+      planEvidence(
+        'guidance',
+        'we expect our organic growth in FY27 to be better',
+      ),
+    ).toBe('expect');
+  });
+
+  it('quotes the document, never the model’s version of it', () => {
+    // `span` is the document's own bytes at the matched position; `text` is the
+    // extractor's compression of them. A section headed "in their words" may
+    // only ever show the first.
+    expect(plans).toContain('claim.span');
+    expect(plans).not.toContain('claim.text');
+  });
+
+  it('collapses the PDF’s line breaks and adds the quotation marks as text', () => {
+    // A span lifted out of a PDF carries the line breaks of the page it was set
+    // on, and those are not part of the sentence. Asserted on the SERVED page
+    // as well, because a fragment's doubled backslash is what reaches it.
+    expect(plans).toContain('.replace(');
+    expect(html).toContain("replace(/\\s+/g, ' ')");
+    expect(SCRIPT_COMPANY).not.toContain('innerHTML');
+  });
+
+  it('says so rather than drawing empty quotation marks', () => {
+    // A verified claim always carries a span. If one ever does not, "no words
+    // were stored" must not render as a company that said nothing.
+    expect(plans).toContain('No source sentence is stored for this line.');
+  });
+
+  it('dates each quote from the server’s IST, formatting none of it', () => {
+    // The browser showing this page is not necessarily set to IST, and a laptop
+    // on UTC would date a 9am filing to the previous day.
+    expect(plans).toContain('istDay');
+    expect(plans).not.toContain('toLocale');
+    expect(plans).not.toContain('new Date(');
+  });
+
+  it('draws at one quote, where the two bars above it refuse to', () => {
+    // THE DIFFERENT FLOOR IS THE POINT. A stacked bar over one observation is a
+    // single colour claiming to be a distribution, so those widgets suppress
+    // themselves; one quoted sentence is one quoted sentence and says exactly
+    // as much as it says. 93 of the 257 companies holding a plan hold exactly
+    // one, so a floor of two would silence 36% of them for nothing.
+    expect(plans).not.toMatch(/MIN_[A-Z_]+/);
+    expect(SCRIPT_COMPANY).toContain(
+      "plansWrap.hidden = !renderPlans(el('co-plans'), items);",
+    );
+  });
+
+  it('skips a plan an earlier filing in the same response already stated', () => {
+    // The company page is one response, and a company files its guidance in a
+    // press release and a presentation the same morning. The server already
+    // marks the repeat; the section reads that mark rather than inventing a
+    // second notion of sameness.
+    expect(plans).toContain('echo === true');
+  });
+
+  it('counts nothing, so it needs no note about what a count would mean', () => {
+    // `2026-08-08-update-signal-design.md` §3.6: a tally over verified claims
+    // describes what companies chose to print rather than how they performed,
+    // and any count shown has to say so. This section shows quotes and no
+    // number, which is the version of that rule that needs no paragraph.
+    const section =
+      /<div id="co-plans-wrap"[\s\S]*?<\/ul>\s*<\/div>/.exec(html)?.[0] ?? '';
+    expect(section).not.toBe('');
+    // The tags carry an `h2` and the class names; what must hold no number is
+    // what a reader sees.
+    expect(section.replace(/<[^>]*>/g, ' ')).not.toMatch(/\d/);
   });
 });
 
