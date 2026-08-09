@@ -2014,3 +2014,69 @@ describe('renderDashboardPage — without the operator panel', () => {
     expect((off.match(/<script/g) ?? []).length).toBe(1);
   });
 });
+
+/**
+ * THE FEED'S THREE NUMBERS, and the one thing that makes them a sentence.
+ *
+ * "N filings today" beside "M of them said something" reads as a subset claim.
+ * It was not one: N came from the server's IST day and M was counted in the
+ * browser over whatever rows the feed had loaded, so the pair printed "8"
+ * beside "22" on the live collection at 10:36 IST on 2026-08-09 — and Load
+ * more took the 22 to 44 while the 8 stood still.
+ *
+ * The server half is pinned in `filing-query.service.spec.ts` against a real
+ * mongod. This is the half a rendered string can hold: that the browser reads
+ * both from the same payload and counts neither itself.
+ */
+describe('renderDashboardPage — the feed hero', () => {
+  it('draws all three numbers from the summary payload', () => {
+    expect(SCRIPT).toContain("setText('hero-today', groupInt(d.todayCount));");
+    expect(SCRIPT).toContain(
+      "setText('hero-insights', groupInt(d.todayVerified));",
+    );
+    expect(SCRIPT).toContain('heroLag.textContent = duration(d.feedLagMs);');
+  });
+
+  it('counts no insight of its own while drawing the feed', () => {
+    // THE LINE THAT MADE THE PAIR IMPOSSIBLE. `renderFeedInto` walked the rows
+    // on screen, tallied the ones carrying an insight and wrote the total into
+    // the hero — a different unit over a different window from the number
+    // beside it, and one that grew with every Load more.
+    expect(SCRIPT).not.toContain('withInsight');
+    // The MARK count is still walked here, and that is correct: the legend is
+    // about what is on screen, which is exactly what this loop can see.
+    expect(SCRIPT).toContain("el('dir-legend').hidden = marks === 0;");
+  });
+
+  it('says what each number was measured over', () => {
+    // A number whose window is not stated is a number a reader supplies a
+    // window for. The long form is a title, which is where this page puts the
+    // long form of everything.
+    const start = html.indexOf('<div class="hero" data-ui="feed-hero">');
+    const hero = html
+      .slice(start, html.indexOf('<div class="feedbar"', start))
+      .replace(/\s+/g, ' ');
+
+    expect(start).toBeGreaterThan(-1);
+    expect(hero).toContain('in the current IST day');
+    expect(hero).toContain('UTC+05:30');
+    expect(hero).toContain('can never be larger than the number beside it');
+    // The lag is deliberately NOT today's, and says so rather than looking
+    // like an oversight beside two numbers that are.
+    expect(hero).toContain('Deliberately not scoped to today');
+  });
+
+  it('carries the subset relation in the visible copy, not only in a title', () => {
+    // "verified insights" reads as a total in its own right; "of them said
+    // something" cannot. It is also the feed toggle's own words for the same
+    // set, so one screen has one name for one idea.
+    expect(html).toContain('<div class="herolabel">filings today</div>');
+    expect(html).toContain(
+      '<div class="herolabel">of them said something</div>',
+    );
+    expect(html).toContain('Only filings that said something');
+    expect(html).not.toContain(
+      '<div class="herolabel">verified insights</div>',
+    );
+  });
+});

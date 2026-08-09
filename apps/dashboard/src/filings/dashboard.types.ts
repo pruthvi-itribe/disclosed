@@ -452,6 +452,28 @@ export interface SummaryView {
    * summary whose coverage is 100% and stays there.
    */
   readonly todayByGroup: Readonly<Record<string, number>>;
+  /**
+   * How many of `todayCount` carry an insight a document verified.
+   *
+   * A COUNT OF FILINGS, OVER THE SAME IST DAY AS `todayCount`, and both halves
+   * of that sentence are load-bearing. It is the number the feed's hero prints
+   * beside "filings today", so it must be a SUBSET of it — one filing counts
+   * once here however many claims it carries, and a day is a day.
+   *
+   * WHAT COUNTS AS AN INSIGHT: a claim, or a results line. Those are exactly
+   * the two things a card DRAWS as an insight line (`insightLines` in
+   * `script-feed.ts`), so the number and the cards under it cannot disagree.
+   *
+   * AN AMOUNT ALONE DOES NOT, though `TIER_FILTERS` calls such a filing
+   * verified. It is verified — the figure was matched against the document —
+   * and it still renders as a quiet card with no line on it. Counting it here
+   * would promise a reader an insight they cannot find by scrolling. Measured
+   * over the five days of the live collection that hold filings (2026-08-05 to
+   * 08-09): the amounts add 3, 0, 2, 2 and 0 filings to 376, 460, 444, 178 and
+   * 3 — under 1% and every one of them a card with nothing written on it.
+   *
+   * The results line adds 6, 1, 2, 0 and 0 over the same five days.
+   */
   readonly todayVerified: number;
   readonly todayIstDay: string;
   /** ISO-8601 UTC of the newest filing held, or null when the collection is empty. */

@@ -35,7 +35,16 @@ export const SCRIPT_CELLS = `
     // what surfaces here is how much arrived, how much of it said something,
     // and how long since the last one — the last of those being the only
     // honest way to tell a quiet market from a stopped pipeline.
+    //
+    // ALL THREE COME FROM THIS ONE PAYLOAD, and that is the fix rather than a
+    // tidy-up. The second used to be counted in the browser over the rows the
+    // feed had loaded — a different unit over a different window from the first
+    // — so the pair read "8 filings today, 22 verified insights" and grew to 44
+    // the moment somebody pressed Load more. Both are now filings, over the
+    // server's IST day, and the second is a subset of the first by
+    // construction: see SummaryView.todayVerified in dashboard.types.ts.
     setText('hero-today', groupInt(d.todayCount));
+    setText('hero-insights', groupInt(d.todayVerified));
     // The Brief's cover card is the same day, at phone scale. Drawn from this
     // payload rather than from its own request, which is what makes card 0
     // free.

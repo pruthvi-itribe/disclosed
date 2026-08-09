@@ -196,16 +196,32 @@ ${BRAND_FAVICON_LINK}
 <!-- ============================ FEED ============================ -->
 <section id="view-feed" data-ui="view-feed" class="view" role="tabpanel" aria-labelledby="tab-feed">
 
+  <!--
+    THREE NUMBERS THAT HAVE TO BE READABLE AS ONE SENTENCE.
+
+    They were not. The first was the server's IST-day count and the second was
+    counted in the browser over whatever rows the feed had loaded — a different
+    unit over a different window — so the pair printed "8 filings today, 22
+    verified insights" and climbed to 44 on Load more. Both are counts of
+    FILINGS over the SAME IST DAY now, and the second is a subset of the first
+    by construction (see SummaryView.todayVerified in dashboard.types.ts).
+
+    THE COPY CARRIES THE RELATION, not just the values. "of them said something"
+    cannot be read as an independent total the way "verified insights" could,
+    and it is the feed toggle's own words for the same set. Each window is
+    stated in a title rather than in standing copy, which is where this page
+    puts the long form of everything.
+  -->
   <div class="hero" data-ui="feed-hero">
-    <div class="herostat">
+    <div class="herostat" title="Filings the exchange disseminated in the current IST day, 00:00 to 24:00 at UTC+05:30. Counted by the server, which is the process that owns the one definition of an IST day.">
       <div id="hero-today" class="herovalue">—</div>
       <div class="herolabel">filings today</div>
     </div>
-    <div class="herostat">
+    <div class="herostat" title="How many of today's filings carry a claim or a results line matched against the source document — the two things a card prints as an insight. One filing counts once, over the same IST day, so this can never be larger than the number beside it.">
       <div id="hero-insights" class="herovalue accent">—</div>
-      <div class="herolabel">verified insights</div>
+      <div class="herolabel">of them said something</div>
     </div>
-    <div class="herostat">
+    <div class="herostat" title="Since the newest filing held, which on a quiet morning is earlier than today. Deliberately not scoped to today: it is the only one of these three that tells a quiet market from a stopped pipeline.">
       <div id="hero-lag" class="herovalue">—</div>
       <div class="herolabel">since the last one</div>
     </div>

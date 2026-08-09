@@ -628,10 +628,14 @@ test.describe('load more', () => {
     await expect
       .poll(async () => page.locator('#feed .card').count(), { timeout: 8_000 })
       .toBeGreaterThan(before);
-    // And the limit select still holds a real option.
-    expect(['50', '100', '200']).toContain(
-      await page.locator('#limit').inputValue(),
-    );
+    // And the limit select still holds a real option — where there IS one.
+    // It lives in the Admin section, which a host built without the panel does
+    // not have; the growth path above is the feed's own and does not need it.
+    if ((await page.locator('#limit').count()) > 0) {
+      expect(['50', '100', '200']).toContain(
+        await page.locator('#limit').inputValue(),
+      );
+    }
   });
 
   test('grows through values the limit select can hold', async ({ page }) => {
@@ -648,11 +652,49 @@ test.describe('load more', () => {
     await more.click();
     await more.click();
 
+    if ((await page.locator('#limit').count()) === 0) {
+      // No panel on this host, so the select this test is about is not here.
+      // The growth itself is covered by the sibling test above.
+      return;
+    }
+
     const value = await page.locator('#limit').inputValue();
     // Auto-load may have advanced a step beyond the two clicks by the time
     // this reads; any real option except the floor proves the growth path.
     expect(['50', '100', '200', '500']).toContain(value);
     expect(value).not.toBe('');
+  });
+
+  test('does not move the hero while it grows the feed', async ({ page }) => {
+    // THE BUG THIS PINS. The hero's second number used to be counted in the
+    // browser over the rows the feed had loaded, beside a first number the
+    // server had computed over the IST day — two units, two windows, one
+    // sentence. Every Load more pushed the second up and left the first alone,
+    // until the pair read "8 filings today / 44 verified insights".
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const number = async (id: string): Promise<number> =>
+      Number(
+        ((await page.locator(id).textContent()) ?? '').replace(/[^0-9]/g, ''),
+      );
+
+    const today = await number('#hero-today');
+    const said = await number('#hero-insights');
+
+    // The relation the copy claims: "N filings today", "M of them said
+    // something". M is a subset of N or the sentence is false.
+    expect(said).toBeLessThanOrEqual(today);
+
+    const more = page.locator('#feed-more');
+    if (await more.isHidden()) return; // fewer filings than one page holds
+    await more.click();
+    await page.waitForTimeout(1_500);
+    await more.click();
+    await page.waitForTimeout(1_500);
+
+    expect(await number('#hero-today')).toBe(today);
+    expect(await number('#hero-insights')).toBe(said);
   });
 });
 

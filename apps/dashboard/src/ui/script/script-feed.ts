@@ -464,20 +464,31 @@ export const SCRIPT_FEED = `
     feed.textContent = '';
 
     if (chrome) {
-      var withInsight = 0;
+      // THE HERO'S SECOND NUMBER IS NOT COUNTED HERE ANY MORE.
+      //
+      // It used to be: this loop counted the rows on screen that carried an
+      // insight and wrote the total into 'hero-insights', beside a first number
+      // the SERVER had computed over the IST day. Two units, two windows, one
+      // sentence — and the sentence was impossible. Measured on the live
+      // collection at 10:36 IST on 2026-08-09: "8 filings today" beside "22
+      // verified insights", where the 22 came from 25 rows spanning two IST
+      // days after the verified filter. Pressing Load more grew it to 50, 100,
+      // 200 while "filings today" stayed at 8.
+      //
+      // It comes from 'api/summary' now, day-windowed and counted per filing,
+      // so it cannot exceed the number beside it. See 'renderSummary'.
       var marks = 0;
       for (var n = 0; n < items.length; n++) {
         var insights = insightLines(items[n].enrichment || {});
-        if (insights.length > 0) withInsight += 1;
         for (var m = 0; m < insights.length; m++) {
           if (Object.prototype.hasOwnProperty.call(DIRECTION_GLYPH, insights[m].direction)) marks += 1;
         }
       }
-      setText('hero-insights', groupInt(withInsight));
       // THE LEGEND FOLLOWS THE MARKS. Only 23.2% of claims carry one, so a
       // permanent legend explaining glyphs nobody can see on this screen is
       // furniture; a legend that appears with the first mark is an answer to
-      // the question the mark just raised.
+      // the question the mark just raised. It is about what is ON SCREEN, which
+      // is why this one is still counted here and the hero's is not.
       el('dir-legend').hidden = marks === 0;
     }
 

@@ -684,3 +684,149 @@ describe('FilingQueryService — read-only', () => {
     expect(new Date(summary.generatedAt).getTime()).toBeLessThanOrEqual(after);
   });
 });
+
+/**
+ * THE HERO'S TRIPLET, and the one relation that makes it a sentence.
+ *
+ * The feed prints "N filings today" beside "M of them said something". Read as
+ * English that says M is a subset of N, so the two have to be the same UNIT
+ * (filings, not claims) over the same WINDOW (one IST day). They were not:
+ * the first came from here and the second was counted in the browser over
+ * whatever rows the feed had loaded — on the live collection at 10:36 IST on
+ * 2026-08-09 that printed "8" beside "22", and Load more took the 22 to 44.
+ *
+ * This suite pins the half that lives on the server, which is the half that can
+ * be pinned: same window, same unit, and therefore M <= N whatever is stored.
+ */
+describe('getSummary — today, and how much of it said something', () => {
+  /** A filing inside the 2026-08-05 IST day, with whatever enrichment. */
+  const inDay = (
+    seqId: number,
+    enrichment?: Record<string, unknown>,
+  ): Filing & { enrichment?: Record<string, unknown> } => ({
+    ...makeFiling(seqId, {
+      disseminatedAt: new Date('2026-08-05T06:00:00.000Z'),
+    }),
+    ...(enrichment === undefined ? {} : { enrichment }),
+  });
+
+  /** A filing at an exact instant, so an IST-day boundary can be sat on. */
+  const onDay = (
+    seqId: number,
+    at: string,
+    enrichment: Record<string, unknown>,
+  ): Filing =>
+    ({
+      ...makeFiling(seqId, { disseminatedAt: new Date(at) }),
+      enrichment,
+    }) as Filing;
+
+  const claim = (text: string): Record<string, unknown> => ({
+    state: 'enriched',
+    claims: [{ text, span: text, kind: 'operational' }],
+  });
+
+  it('counts FILINGS, not claims, so it can never exceed the day', async () => {
+    // THE ARITHMETIC THAT PRODUCED AN IMPOSSIBLE HEADLINE. Three filings, six
+    // claims. Counted per claim this says 6 insights over 3 filings; counted
+    // per filing it says 3, which is the only reading the label supports.
+    await seed([
+      inDay(1, {
+        state: 'enriched',
+        claims: [
+          { text: 'a', span: 'a', kind: 'operational' },
+          { text: 'b', span: 'b', kind: 'operational' },
+          { text: 'c', span: 'c', kind: 'operational' },
+        ],
+      }),
+      inDay(2, {
+        state: 'enriched',
+        claims: [
+          { text: 'd', span: 'd', kind: 'operational' },
+          { text: 'e', span: 'e', kind: 'operational' },
+        ],
+      }),
+      inDay(3, claim('f')),
+    ]);
+    now = new Date('2026-08-05T12:00:00.000Z');
+
+    const summary = await service.getSummary();
+
+    expect(summary.todayCount).toBe(3);
+    expect(summary.todayVerified).toBe(3);
+  });
+
+  it('never reports more insights than filings, whatever is stored', async () => {
+    // THE INVARIANT, asserted over a mixed day rather than a convenient one:
+    // some filings say nothing, one says several things, one is a results
+    // table, one carries only an amount.
+    await seed([
+      inDay(10),
+      inDay(11),
+      inDay(12, claim('BOARD APPROVED A DIVIDEND OF RS 4 PER SHARE.')),
+      inDay(13, {
+        state: 'enriched',
+        claims: [
+          { text: 'x', span: 'x', kind: 'operational' },
+          { text: 'y', span: 'y', kind: 'operational' },
+        ],
+      }),
+      inDay(14, { state: 'enriched', resultsLine: 'REVENUE 1,000 vs 900' }),
+      inDay(15, { state: 'enriched', amountRupees: 4_000_000 }),
+    ]);
+    now = new Date('2026-08-05T12:00:00.000Z');
+
+    const summary = await service.getSummary();
+
+    expect(summary.todayCount).toBe(6);
+    expect(summary.todayVerified).toBeLessThanOrEqual(summary.todayCount);
+    // Two with claims and one with a results line. The amount-only filing is
+    // NOT one: it draws a quiet card with no line on it, and a number that
+    // counted it would promise a reader an insight they cannot find.
+    expect(summary.todayVerified).toBe(3);
+  });
+
+  it('counts a results-only filing, because a card draws it as a line', async () => {
+    // It did not before, and the card did — 6 filings on the busiest day of
+    // the live collection (2026-08-05: 376 with a claim or a results line
+    // against 370 with a claim).
+    await seed([
+      inDay(20, { state: 'enriched', resultsLine: 'EPS 12.4 vs 9.1' }),
+    ]);
+    now = new Date('2026-08-05T12:00:00.000Z');
+
+    expect((await service.getSummary()).todayVerified).toBe(1);
+  });
+
+  it('measures it over the SAME IST day as todayCount, both ends bounded', async () => {
+    // A verified filing from yesterday and one from tomorrow must not appear
+    // in either number. The window is the thing the two share.
+    await seed([
+      // 2026-08-04 IST, one millisecond before the roll.
+      onDay(30, '2026-08-04T18:29:59.999Z', claim('yesterday')),
+      // 2026-08-05 IST, the instant it rolls.
+      onDay(31, '2026-08-04T18:30:00.000Z', claim('today')),
+      // 2026-08-06 IST.
+      onDay(32, '2026-08-05T18:30:00.000Z', claim('tomorrow')),
+    ]);
+    now = new Date('2026-08-05T12:00:00.000Z');
+
+    const summary = await service.getSummary();
+
+    expect(summary.todayIstDay).toBe('2026-08-05');
+    expect(summary.todayCount).toBe(1);
+    expect(summary.todayVerified).toBe(1);
+  });
+
+  it('is zero rather than absent on a day that produced nothing', async () => {
+    // "Nothing was found" and "nothing was looked for" are different facts.
+    // A day with filings and no insights is the first; both numbers are real.
+    await seed([inDay(40), inDay(41)]);
+    now = new Date('2026-08-05T12:00:00.000Z');
+
+    const summary = await service.getSummary();
+
+    expect(summary.todayCount).toBe(2);
+    expect(summary.todayVerified).toBe(0);
+  });
+});

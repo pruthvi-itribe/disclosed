@@ -382,13 +382,36 @@ export class FilingQueryService {
               $group: {
                 _id: '$category',
                 n: { $sum: 1 },
+                // ONE PER FILING, NOT ONE PER CLAIM, and that is what makes
+                // the hero's second number a subset of its first. `$sum: 1`
+                // under a boolean counts documents; summing `$size` would
+                // count claims, and a day on which 178 filings carried 431
+                // claims would print "480 filings today, 431 verified
+                // insights" — two true numbers over two different units, read
+                // as one impossible sentence.
+                //
+                // A CLAIM OR A RESULTS LINE, which is exactly what a card
+                // draws as an insight line. See `SummaryView.todayVerified`
+                // for why an amount on its own is deliberately not one.
                 verified: {
                   $sum: {
                     $cond: [
                       {
-                        $gt: [
-                          { $size: { $ifNull: ['$enrichment.claims', []] } },
-                          0,
+                        $or: [
+                          {
+                            $gt: [
+                              {
+                                $size: { $ifNull: ['$enrichment.claims', []] },
+                              },
+                              0,
+                            ],
+                          },
+                          {
+                            $ne: [
+                              { $ifNull: ['$enrichment.resultsLine', null] },
+                              null,
+                            ],
+                          },
                         ],
                       },
                       1,
