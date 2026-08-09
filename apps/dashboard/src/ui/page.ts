@@ -243,12 +243,24 @@ ${BRAND_FAVICON_LINK}
       createElement and textContent, because a company name is exchange-supplied
       text and this page has one absolute rule about that.
     -->
+    <!--
+      ONE ROW FOR THE TWO CONTROLS A READER ACTUALLY USES. The search box was
+      already capped at 420px and had a whole row to itself; the insight toggle
+      had another. Two rows of chrome for 460px of controls is the feed's first
+      card pushed a row further down on every visit.
+    -->
+    <div class="feedtop">
     <div class="searchbox" data-ui="search">
       <input id="symbol" type="search" placeholder="Search a company, a category, or what was said…"
              autocomplete="off" spellcheck="false"
              role="combobox" aria-expanded="false" aria-autocomplete="list"
              aria-controls="suggest" aria-label="Search filings">
       <ul id="suggest" class="suggest" role="listbox" aria-label="Suggestions" hidden></ul>
+    </div>
+    <label class="onlyinsights">
+      <input id="only-insights" type="checkbox" checked>
+      <span>Only filings that said something</span>
+    </label>
     </div>
     <!--
       TOPIC CHIPS, a second row and a different question from the one above.
@@ -339,10 +351,6 @@ ${BRAND_FAVICON_LINK}
       ▲ ▼ ◆ mark movement the document itself printed — not a view on the company or its shares.
     </div>
     <div id="search-note" class="searchnote" hidden></div>
-    <label class="onlyinsights">
-      <input id="only-insights" type="checkbox" checked>
-      <span>Only filings that said something</span>
-    </label>
   </div>
 
   <div id="feed" class="feed" data-ui="feed"></div>

@@ -2080,3 +2080,53 @@ describe('renderDashboardPage — the feed hero', () => {
     );
   });
 });
+
+describe('renderDashboardPage — the above-fold chrome', () => {
+  it('puts the search box and the insight toggle on one row', () => {
+    // The box has been capped at 420px since it was written, so its row was
+    // two-thirds empty and the toggle had a row of its own underneath.
+    const bar = html.slice(
+      html.indexOf('<div class="feedbar"'),
+      html.indexOf('<div id="feed" class="feed"'),
+    );
+    const top = bar.slice(
+      bar.indexOf('<div class="feedtop">'),
+      bar.indexOf('</div>', bar.indexOf('id="only-insights"')),
+    );
+
+    expect(top).toContain('id="symbol"');
+    expect(top).toContain('id="only-insights"');
+    // And the chips are still their own row, below both.
+    expect(bar.indexOf('id="topics"')).toBeGreaterThan(
+      bar.indexOf('id="only-insights"'),
+    );
+  });
+
+  it('sets the hero value and its label side by side, at a subheading size', () => {
+    // Three status numbers at 40px over 12px captions spent 83px of every
+    // visit — a fifth of the way to the first card on a laptop — saying how
+    // many filings there were.
+    expect(html).toContain('.herostat { display: flex; align-items: baseline;');
+    expect(html).toMatch(/\.herovalue \{\s*font-size: 20px;/);
+    expect(html).toContain(
+      '.herolabel { color: var(--muted); font-size: 12px; }',
+    );
+  });
+
+  it('floors the feed grid track at the column, not at 400px', () => {
+    // A bare 400px minimum cannot shrink, so at 390px the grid was wider than
+    // the window and every card ran off the right edge.
+    expect(html).toContain(
+      'grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr));',
+    );
+  });
+
+  it('gives the card head a row to drop the meta into', () => {
+    // `.cardmeta` takes `width: 100%` below 640px, and a 100%-wide item in a
+    // flex line that cannot wrap does not move down — it overlaps.
+    const narrow = html.slice(html.indexOf('@media (max-width: 640px)'));
+
+    expect(narrow).toContain('.cardhead { flex-wrap: wrap; }');
+    expect(narrow).toContain('.cardmeta { margin-left: 0; width: 100%; }');
+  });
+});

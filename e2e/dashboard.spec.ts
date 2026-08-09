@@ -838,6 +838,88 @@ test.describe('plans, in their words', () => {
 });
 
 test.describe('the feed layout', () => {
+  test('starts the feed high enough to read one on a laptop', async ({
+    page,
+  }) => {
+    // WHAT THIS PINS IS A DISTANCE, not a design. The hero and the control bar
+    // are standing chrome — the same pixels on every visit, spent before the
+    // first thing a reader came for. Measured before the compression: 384px at
+    // 1440x900 and 655px at 390x844, the second of which is 78% of the way down
+    // a phone. After: 272px and 422px.
+    //
+    // The ceilings are the measured values with room to move, because the
+    // numbers depend on real data — a hidden search note and a hidden direction
+    // legend both appear on some days. What they refuse is a new row of
+    // furniture, which is worth about 30px each time.
+    for (const [width, height, ceiling] of [
+      [1440, 900, 320],
+      [390, 844, 470],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      await page.goto('/');
+      await expect(page.locator('#live-text')).not.toHaveText('connecting');
+      // At 390 the script opens the deck; this is about the feed.
+      await page.locator('#tab-feed').click();
+      await expect(page.locator('#feed .card').first()).toBeVisible();
+
+      const top = await page.evaluate(() =>
+        Math.round(
+          document.querySelector('#feed .card')!.getBoundingClientRect().top,
+        ),
+      );
+
+      expect([width, top <= ceiling]).toEqual([width, true]);
+    }
+  });
+
+  test('never scrolls sideways, at any width a phone has', async ({ page }) => {
+    // A grid track floored at a bare 400px cannot shrink below it, so at 390px
+    // the feed was 400px wide inside a 350px column and every card ran off the
+    // right edge — measured scrollWidth 420 against clientWidth 390. Invisible
+    // until now because the feed is not what a phone lands on.
+    for (const width of [390, 414, 430]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto('/');
+      await expect(page.locator('#live-text')).not.toHaveText('connecting');
+      await page.locator('#tab-feed').click();
+      await expect(page.locator('#feed .card').first()).toBeVisible();
+
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+
+      expect([width, overflow]).toEqual([width, 0]);
+    }
+  });
+
+  test('drops the card meta to its own row rather than on top of the name', async ({
+    page,
+  }) => {
+    // The card meta takes width:100% on a narrow screen, and the row it was
+    // dropping to did not exist: .cardhead was a flex line with no wrap, so
+    // the timestamp rendered ON TOP of the ticker.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await page.locator('#tab-feed').click();
+    await expect(page.locator('#feed .card').first()).toBeVisible();
+
+    const overlaps = await page.evaluate(() =>
+      [...document.querySelectorAll('#feed .card')].filter((card) => {
+        const who = card.querySelector('.who')?.getBoundingClientRect();
+        const meta = card.querySelector('.cardmeta')?.getBoundingClientRect();
+        if (!who || !meta) return false;
+        // Same row means they share vertical space; on a wrapped head they
+        // must not.
+        return meta.top < who.bottom - 1 && meta.left < who.right - 1;
+      }).length,
+    );
+
+    expect(overlaps).toBe(0);
+  });
+
   test('fills the width with columns instead of one card per row', async ({
     page,
   }) => {

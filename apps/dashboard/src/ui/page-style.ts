@@ -392,8 +392,8 @@ td.grp { white-space: nowrap; }
    ========================================================================== */
 
 .topbar {
-  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
-  padding-bottom: 14px; margin-bottom: 20px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding-bottom: 12px; margin-bottom: 14px;
   border-bottom: 1px solid var(--line);
 }
 .topbar .brand { flex: 0 0 auto; }
@@ -404,25 +404,59 @@ td.grp { white-space: nowrap; }
   background: transparent; color: var(--muted); border: 0;
   font: inherit; font-weight: 550; cursor: pointer;
   padding: 6px 14px; border-radius: 999px;
+  /* One line, always. "Sign out" broke across two on a 390px header and made
+     that row 53px tall to hold a 32px button. */
+  white-space: nowrap;
 }
 .tab:hover { color: var(--text); background: var(--panel); }
 .tab.active { color: var(--bg); background: var(--text); }
 
 .view[hidden] { display: none; }
 
-/* --- hero ---------------------------------------------------------------- */
-.hero { display: flex; gap: 40px; flex-wrap: wrap; margin-bottom: 22px; }
+/* --- hero ----------------------------------------------------------------
+   ONE LINE, NOT THREE STACKED BLOCKS, and the change is about what the reader
+   came for. These are three status numbers about the day; the sentence a
+   company said is the thing this page exists to show, and 40px figures over
+   12px labels spent 83px of every visit — a fifth of the way to the first card
+   on a laptop — saying how many filings there were. They are still here, still
+   first, and now the size of a subheading rather than of a headline.
+
+   Value and label sit SIDE BY SIDE and read as a phrase: "8 filings today".
+   Stacked, the label was a caption under a number and the pair had to be read
+   twice. The middot between stats is what stops three phrases running into one
+   sentence when they share a line.
+   -------------------------------------------------------------------------- */
+.hero {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 4px 18px; margin-bottom: 14px;
+}
+.herostat { display: flex; align-items: baseline; gap: 7px; }
+.herostat + .herostat::before {
+  /* The character itself, not an escape: this file is a template literal and
+     a backslash followed by digits is read as an octal escape - see the note
+     on the company page's arrow. */
+  content: '·'; color: var(--line); margin-right: 11px;
+}
 .herovalue {
-  font-size: 40px; font-weight: 680; letter-spacing: -0.03em; line-height: 1.05;
+  font-size: 20px; font-weight: 660; letter-spacing: -0.02em; line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 .herovalue.accent { color: var(--ok); }
 .herovalue.stale { color: var(--warn); }
 .herovalue.down { color: var(--bad); }
-.herolabel { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.herolabel { color: var(--muted); font-size: 12px; }
 
-/* --- controls ------------------------------------------------------------ */
-.feedbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+/* --- controls ------------------------------------------------------------
+   THE SEARCH BOX AND THE INSIGHT TOGGLE SHARE A ROW. The box has been capped
+   at 420px since it was written, so its row was two-thirds empty, and the
+   toggle sat on a row of its own underneath. One row for 460px of controls.
+   -------------------------------------------------------------------------- */
+.feedbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.feedtop { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.feedtop .searchbox { flex: 1 1 240px; }
+/* Pushed to the far end on a wide screen; on a narrow one it wraps under the
+   box, which is where it was before and is still the right place. */
+.feedtop .onlyinsights { margin-left: auto; }
 #symbol {
   width: 100%;
   background: var(--panel); color: var(--text);
@@ -543,7 +577,14 @@ td.grp { white-space: nowrap; }
    between two card bottoms reads as breakage. */
 .feed {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  /* min(400px, 100%) RATHER THAN A BARE 400px, which is the difference
+     between a column that narrows and a page that scrolls sideways. A track
+     floored at 400px cannot shrink below it, so at 390px the grid was 400px
+     wide inside a 350px column and every card ran off the right edge, taking
+     the search box and the card footers with it. Measured before the fix:
+     documentElement.scrollWidth 420 against clientWidth 390. It was invisible
+     because the feed is not what a phone lands on — the deck is. */
+  grid-template-columns: repeat(auto-fill, minmax(min(400px, 100%), 1fr));
   gap: 10px;
 }
 /* The time buckets are dividers across the whole feed, not cards in it. */
@@ -676,9 +717,57 @@ td.grp { white-space: nowrap; }
 .emptyhint { color: var(--muted); font-size: 13px; max-width: 460px; margin: 0 auto; line-height: 1.5; }
 
 @media (max-width: 640px) {
-  .hero { gap: 26px; }
-  .herovalue { font-size: 30px; }
+  /* FOUR ROWS OF HEADER ON A PHONE, measured at 390px: brand, tabs, account
+     and status each wrapped onto their own line, 181px of chrome before the
+     view began. Two rows in a grid instead — the brand keeps the status
+     beside it and the tabs keep the sign-out button. */
+  .topbar {
+    display: grid; align-items: center;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: 'brand status' 'tabs account';
+    gap: 10px 12px;
+  }
+  .topbar .brand { grid-area: brand; }
+  .topbar .status { grid-area: status; justify-self: end; margin-left: 0; }
+  /* min-width:0 AND flex-wrap TOGETHER. A grid column sized auto takes
+     the min-content width of what is in it, and a nowrap flex row of four tabs
+     has a min-content width of all four — 294px beside a 76px sign-out button
+     in a 350px header, which is 409px of page inside a 390px window. Zeroing
+     the minimum lets the column shrink; wrapping is what it does instead of
+     overflowing when even the smaller padding is not enough. */
+  .topbar .tabs { grid-area: tabs; min-width: 0; flex-wrap: wrap; }
+  .topbar .account { grid-area: account; justify-self: end; }
+  /* 14px of side padding on each of four tabs is 80px this header does not
+     have. The touch target keeps its height, which is the dimension a thumb
+     actually misses. */
+  .topbar .tab { padding: 6px 9px; }
+  /* The dot and the word are the freshness signal and they stay. The exact
+     IST instant beside them is 130px of monospace on a 390px screen, and it
+     is the one thing here nobody is reading on a phone. */
+  #generated { display: none; }
+
+  .hero { gap: 4px 14px; }
+  .herostat + .herostat::before { margin-right: 7px; }
+  .herovalue { font-size: 19px; }
+
+  /* Two rows of chips rather than three, by taking the padding down rather
+     than the type: a chip is a touch target before it is a label. */
+  .chips.topics .chip { padding: 5px 10px; }
+
+  /* THE META DROPS TO ITS OWN ROW, and until now the row it dropped to did
+     not exist. .cardhead is a flex line with no wrap, so a 100%-wide item
+     inside it did not move down - it sat ON TOP of the symbol and the company
+     name, which at 390px rendered the ticker and the timestamp as one
+     unreadable overlap. Invisible until now because the feed is not what a
+     phone lands on. */
+  .cardhead { flex-wrap: wrap; }
   .cardmeta { margin-left: 0; width: 100%; }
+
+  /* The middot between two stats is a separator, and a separator that wraps
+     to the head of a line is a bullet. Below this width the hero is two lines
+     more often than one, so the gap does the separating instead. */
+  .herostat + .herostat::before { content: none; }
+  .hero { gap: 6px 16px; }
 }
 
 /* ===================== COMPANY PAGE ===================================== */
@@ -883,7 +972,12 @@ button.sym:hover { color: var(--text); text-decoration: underline; }
 
 /* The legend sits under the filter row, in the quieter register the topic chips
    use, and is hidden by the script until a marked card is on screen. */
-.dirlegend { color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 66ch; }
+/* 66ch WAS THE CAP WHEN THIS WAS A PARAGRAPH. It is one sentence now, and a
+   66ch cap wrapped it onto a second line on a 1440px screen — a row of chrome
+   bought for four words. The cap stays, because an unbounded line of muted
+   type across a wide monitor is unreadable; it is just wide enough for the
+   sentence that is actually there. */
+.dirlegend { color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 92ch; }
 .dirlegend strong { color: var(--text); font-weight: 600; }
 
 /* A weekend bar is short because the exchange is quiet, not because ingestion
