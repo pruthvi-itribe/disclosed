@@ -96,6 +96,13 @@ export const PAGE_STYLE_FOCUS = `
   color: var(--muted); font: inherit; font-size: 11px; line-height: 1.5;
 }
 .spantoggle:hover { color: var(--text); border-color: var(--muted); }
+/* The global button rule outlines EVERY focus in accent blue, and a mouse
+   click focuses too — so the toggle wore a blue ring that read as selection,
+   not affordance. Mouse focus shows nothing; the ring stays for keyboard
+   focus only (:focus-visible), in grey, because a control inside a grey
+   dialog should whisper in the dialog's own palette. */
+.spantoggle:focus { outline: none; }
+.spantoggle:focus-visible { outline: 2px solid var(--muted); outline-offset: 1px; }
 
 /* THE SPAN, UNDER ITS CLAIM. Muted, because it is evidence rather than the
    line — a reader takes the claim and checks the quote, not the other way
