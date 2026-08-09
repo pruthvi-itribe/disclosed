@@ -158,7 +158,7 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
   cursor: pointer;
   text-align: left;
 }
-.bsym:hover { color: var(--accent); }
+.bsym:hover { color: var(--text); text-decoration: underline; }
 .bwhen {
   margin-left: auto;
   font-size: 12px;

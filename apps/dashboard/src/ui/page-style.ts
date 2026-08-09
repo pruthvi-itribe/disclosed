@@ -92,7 +92,11 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 button:focus { outline: none; }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button { cursor: pointer; }
-button:hover:enabled { border-color: var(--accent); }
+/* HOVER IS GREY, EVERYWHERE. Accent blue on hover made every control shout
+   its most saturated colour for the least meaningful event — the pointer
+   passing by. Hover now brightens within the neutral palette; accent is
+   reserved for what IS blue: links, the active chip, keyboard focus. */
+button:hover:enabled { border-color: var(--muted); }
 button:disabled { opacity: 0.4; cursor: default; }
 select { max-width: 330px; }
 
@@ -243,7 +247,7 @@ td.amt .party { display: block; font-size: 11px; color: var(--muted); white-spac
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
   color: var(--muted); opacity: 0.55; cursor: pointer; vertical-align: baseline;
 }
-.why:hover { opacity: 1; color: var(--accent); text-decoration: underline; }
+.why:hover { opacity: 1; color: var(--text); text-decoration: underline; }
 /* Keyboard focus is the shared input/select/button outline near the top of this
    file, deliberately not overridden: this control has no border of its own to
    carry a focus ring. */
@@ -260,7 +264,7 @@ td.amt .party { display: block; font-size: 11px; color: var(--muted); white-spac
   border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
 }
 .tag.clickable { cursor: pointer; }
-.tag.clickable:hover { border-color: var(--accent); color: var(--accent); }
+.tag.clickable:hover { border-color: var(--muted); color: var(--text); }
 .tag.state-enriched { color: var(--ok); border-color: rgba(63, 185, 80, 0.45); }
 .tag.state-pending { color: var(--warn); border-color: rgba(210, 153, 34, 0.45); }
 .tag.state-unparseable { color: var(--bad); border-color: rgba(248, 81, 73, 0.45); }
@@ -729,7 +733,7 @@ button.sym {
   color: var(--text); font: inherit;
   font-size: 17px; font-weight: 680; letter-spacing: -0.01em;
 }
-button.sym:hover { color: var(--accent); }
+button.sym:hover { color: var(--text); text-decoration: underline; }
 .card.quiet button.sym { font-size: 14px; }
 
 /* --- the figures a filing's table printed --------------------------------
