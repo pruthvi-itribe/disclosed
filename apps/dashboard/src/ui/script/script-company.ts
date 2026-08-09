@@ -14,6 +14,29 @@
  */
 export const SCRIPT_COMPANY = `
 
+  // How a metric is spelled for a reader. The stored keys are wire values —
+  // 'net-profit', 'ebitda-margin' — and printing those raw beside a number is
+  // the database talking to the reader.
+  //
+  // MIRRORS 'RESULTS_METRIC_LABEL' in 'libs/filings/src/logic/results.types.ts',
+  // which is the source of truth and spells the same six for the alert wire.
+  // The pattern is DIRECTION_LABEL's and TOPIC_LABEL's; a key missing here
+  // falls through 'describe' and prints the wire value rather than nothing.
+  //
+  // ITS ABSENCE WAS A BROKEN PAGE, not a missing word. This table was READ
+  // before it was written: 'METRIC_LABEL is not defined' threw inside the poll
+  // on every company page carrying a results table, and because the fragments
+  // share one scope the throw took every later repaint with it. The banner is
+  // the only place it showed, which is why 'openCompany' asserts on it.
+  var METRIC_LABEL = {
+    revenue: 'Revenue',
+    'total-income': 'Total income',
+    'net-profit': 'Net profit',
+    ebitda: 'EBITDA',
+    'ebitda-margin': 'EBITDA margin',
+    eps: 'EPS'
+  };
+
   /**
    * The numbers a company's filings printed, as they printed them.
    *

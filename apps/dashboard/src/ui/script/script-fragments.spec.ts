@@ -68,6 +68,36 @@ describe('the client script fragments', () => {
     }
   });
 
+  it('declares every label table it reads', () => {
+    // THE FAILURE THIS SHIPPED. `script-company.ts` called
+    // `describe(METRIC_LABEL, ...)` against a table nobody had written, which is
+    // a `ReferenceError` thrown inside the four-second poll — so the company
+    // page rendered once, served a 200, and then stopped repainting. The
+    // fragments share one scope, so the throw took every later view with it.
+    //
+    // NARROWED TO `_LABEL` AND `_GLYPH` ON PURPOSE, rather than to every
+    // shouty name. Those are the lookup tables, they are always `var`-declared
+    // in a fragment, and — unlike `IST`, `NSE` or `GET` — they never occur
+    // inside a string a reader sees, so the rule needs no allowlist to stay
+    // true. A rule with an allowlist of exceptions is a rule that grows one
+    // more every time it is wrong.
+    const code = PAGE_SCRIPT.replace(/\/\*[\s\S]*?\*\//g, ' ')
+      // `//` is a comment unless it follows a colon, which is how every URL in
+      // a string here spells `https://`.
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+
+    const TABLE = /\b[A-Z][A-Z0-9_]*_(?:LABEL|GLYPH)\b/g;
+    const read = new Set(code.match(TABLE) ?? []);
+    const declared = new Set(
+      (code.match(/\bvar\s+[A-Z][A-Z0-9_]*_(?:LABEL|GLYPH)\b/g) ?? []).map(
+        (line) => line.replace(/\bvar\s+/, ''),
+      ),
+    );
+
+    expect(read.size).toBeGreaterThan(0);
+    expect([...read].filter((name) => !declared.has(name))).toEqual([]);
+  });
+
   it('wraps them in one IIFE under strict mode', () => {
     // The fragments declare bare functions and `var`s; they are only private to
     // the page because something encloses them.
