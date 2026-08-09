@@ -197,18 +197,6 @@ ${BRAND_FAVICON_LINK}
     </div>
   </div>
 
-  <!--
-    THE DAY IN ONE BAR. Sixty cards is the day; this is the shape of it. Every
-    filing has a category, so this is the one summary on the page whose coverage
-    is 100% and always will be — unlike claims (38%), amounts (1.4%) or results
-    (0.6%). Routine and governance are drawn in the line colour because they are
-    57% of everything filed, and making them recede is the most informative
-    thing colour does here.
-  -->
-  <div class="daybar" data-ui="day-bar">
-    <div id="day-mix" class="mix"></div>
-    <div id="day-sentence" class="daysentence"></div>
-  </div>
 
   <div class="feedbar" data-ui="feed-controls">
     <!--

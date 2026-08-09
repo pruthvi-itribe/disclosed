@@ -850,9 +850,6 @@ button.sym:hover { color: var(--text); text-decoration: underline; }
 #company-feed .cardhead { margin-bottom: 8px; }
 
 /* --- the day bar and figure emphasis ----------------------------------- */
-.daybar { margin-bottom: 20px; }
-.daybar .mix { height: 6px; }
-.daysentence { margin-top: 9px; color: var(--muted); font-size: 12.5px; }
 
 /* A figure the DOCUMENT printed, set apart so the eye finds it. It is
    typography, never arithmetic: nothing here computes, converts or compares a

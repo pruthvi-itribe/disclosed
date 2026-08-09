@@ -15,61 +15,6 @@
 export const SCRIPT_COMPANY = `
 
   /**
-   * The day as one bar and one sentence.
-   *
-   * Reads the category breakdown the summary route already returns, so it costs
-   * no extra request. The sentence names the two numbers a reader actually
-   * wants: how much of today is compliance paperwork, and how much of it said
-   * something a document verified.
-   */
-  function renderDayBar(byGroup, total, verified) {
-    var bar = el('day-mix');
-    if (!bar) return;
-    bar.textContent = '';
-
-    var groups = Object.keys(byGroup).sort(function (a, b) {
-      return byGroup[b] - byGroup[a];
-    });
-    var quiet = 0;
-    for (var i = 0; i < groups.length; i++) {
-      var g = groups[i];
-      if (byGroup[g] === 0) continue;
-      if (g === 'routine' || g === 'governance') quiet += byGroup[g];
-      var seg = document.createElement('div');
-      seg.className = 'mixseg g-' + g;
-      seg.style.flexGrow = String(byGroup[g]);
-      seg.title = g + ': ' + byGroup[g];
-      bar.appendChild(seg);
-    }
-
-    setText(
-      'day-sentence',
-      total === 0
-        ? ''
-        : groupInt(total) +
-            ' filings today. ' +
-            groupInt(quiet) +
-            ' of them are routine or governance paperwork. ' +
-            groupInt(verified) +
-            ' said something a document verified.',
-    );
-  }
-
-  // The reader-facing name for each metric, in the sentence case a page is set
-  // in. The wire spells them upper case because a Telegram line is upper case;
-  // this is the same table one register down, the way TOPIC_LABEL below is the
-  // reader's name for a stored topic key. The KEYS are the server's and are
-  // never invented here — an unknown one falls through to itself.
-  var METRIC_LABEL = {
-    revenue: 'Revenue',
-    'total-income': 'Total income',
-    'net-profit': 'Net profit',
-    ebitda: 'EBITDA',
-    'ebitda-margin': 'EBITDA margin',
-    eps: 'EPS'
-  };
-
-  /**
    * The numbers a company's filings printed, as they printed them.
    *
    * NOTHING IS COMPUTED, and this is the section where that rule costs the
