@@ -596,7 +596,48 @@ export const SCRIPT_BRIEF = `
     renderBriefRail(shown.length);
     fillBriefRail(0);
     observeBrief(deck);
+    // The deck was just rebuilt, so its scroll height changed and the pager's
+    // ends moved with it.
+    syncBriefPager();
   }
+
+  /**
+   * THE PAGER'S STATE COMES FROM THE SCROLL POSITION, for the reason the rail's
+   * does: the deck's scrollTop is the truth about where a reader is, and a
+   * counter beside it is a second copy that can be wrong.
+   *
+   * NOT FROM THE RAIL. The rail indexes COMPANY cards; the deck also holds the
+   * cover and the end card, so a rail index of 0 is the second card of the deck
+   * and the last segment is not the last card. The two ends this asks about are
+   * the deck's, which is what the buttons move.
+   */
+  function syncBriefPager() {
+    var deck = el('brief-deck');
+    var prev = el('brief-prev');
+    var next = el('brief-next');
+    if (!deck || !prev || !next) return;
+    var at = deck.scrollTop;
+    prev.disabled = at <= 1;
+    // A pixel of tolerance: a snapped scrollTop plus clientHeight lands a
+    // fraction short of scrollHeight on a fractional-density display, and a
+    // Next that stays live on the last card is the page claiming a card it
+    // does not have.
+    next.disabled = at + deck.clientHeight >= deck.scrollHeight - 2;
+  }
+
+  function briefPage(forward) {
+    var deck = el('brief-deck');
+    if (!deck) return;
+    briefStep(deck, forward);
+    // The scroll is smooth, so the position this reads is the one BEFORE it
+    // lands. The deck's own scroll handler below is what settles the buttons;
+    // this call is only so a click at an end disables its button immediately.
+    syncBriefPager();
+  }
+
+  el('brief-prev').addEventListener('click', function () { briefPage(false); });
+  el('brief-next').addEventListener('click', function () { briefPage(true); });
+  el('brief-deck').addEventListener('scroll', syncBriefPager);
 
   el('brief-deck').addEventListener('keydown', function (event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;

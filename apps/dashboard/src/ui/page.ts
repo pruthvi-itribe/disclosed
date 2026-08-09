@@ -187,6 +187,30 @@ ${BRAND_FAVICON_LINK}
     </article>
   </div>
 
+  <!--
+    THE PAGER, AND IT EXISTS ONLY ABOVE A PHONE.
+
+    A thumb has a gesture for a deck and a mouse does not. Scroll-snap is
+    invisible: on a desktop the deck looked like a column of cards with no
+    control on it at all, and the two things that DID move it — the wheel and
+    the arrow keys — announce themselves nowhere. These buttons are the
+    affordance, and they drive the same 'briefStep' the arrow keys drive, so
+    there is one way to move a card and not two.
+
+    REAL BUTTONS WITH REAL NAMES. The chevron is drawn in CSS, for the reason
+    the company page's back arrow is: a character would have to be escaped in a
+    template literal, and the two triangles this product already owns mean
+    something else entirely — a direction the DOCUMENT printed. Reusing them to
+    mean "next" would be the one glyph on this page carrying two meanings.
+
+    Hidden below 900px by the stylesheet rather than by an attribute, so the
+    phone's DOM is the phone's DOM and nothing here has to be undone at runtime.
+  -->
+  <div class="bpager" data-ui="brief-pager">
+    <button id="brief-prev" class="bpage bprev" type="button" aria-label="Previous card" aria-controls="brief-deck" disabled></button>
+    <button id="brief-next" class="bpage bnext" type="button" aria-label="Next card" aria-controls="brief-deck"></button>
+  </div>
+
   <!-- Shown INSTEAD of the deck when nothing qualified, with the real number
        of filings looked at. "Nothing was found" and "nothing was looked for"
        are different facts and must not render the same. -->

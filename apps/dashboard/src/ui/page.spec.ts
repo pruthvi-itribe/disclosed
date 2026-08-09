@@ -2130,3 +2130,76 @@ describe('renderDashboardPage — the above-fold chrome', () => {
     expect(narrow).toContain('.cardmeta { margin-left: 0; width: 100%; }');
   });
 });
+
+describe('renderDashboardPage — the deck on a desktop', () => {
+  it('ships a pager that is a pair of real buttons with real names', () => {
+    // A span with a click handler is unreachable without a mouse, and this
+    // control exists FOR the pointer — which makes its keyboard reachability
+    // the thing most likely to be forgotten.
+    expect(html).toContain('id="brief-prev"');
+    expect(html).toContain('id="brief-next"');
+    expect(html).toContain('aria-label="Previous card"');
+    expect(html).toContain('aria-label="Next card"');
+    expect(html).toContain('aria-controls="brief-deck"');
+    // It starts at the top of the deck, so Back starts dead.
+    expect(html).toMatch(/id="brief-prev"[^>]*disabled/);
+  });
+
+  it('draws the chevron in CSS rather than borrowing a triangle that means something', () => {
+    // The page owns three glyphs already and they mean a direction the
+    // DOCUMENT printed. Reusing one for "next" would be the only mark here
+    // carrying two meanings.
+    expect(html).toContain('.bpage::before {');
+    expect(html).toContain('.bprev::before { transform: rotate(135deg);');
+    expect(html).toContain('.bnext::before { transform: rotate(-45deg);');
+    const pager = html.slice(
+      html.indexOf('.bpager'),
+      html.indexOf('.bnext::before'),
+    );
+    for (const glyph of ['▲', '▼', '◆']) expect(pager).not.toContain(glyph);
+  });
+
+  it('leaves the phone deck untouched, and adds nothing to it', () => {
+    // EVERY DESKTOP RULE IS BEHIND 900px. The deck a phone gets — one card per
+    // viewport, the rail above it, no pager — is the same stylesheet it was.
+    const desktop = html.slice(html.indexOf('@media (min-width: 900px)'));
+
+    expect(desktop).toContain('max-width: 660px;');
+    expect(desktop).toContain('flex-direction: column;');
+    // And the phone's own rules are still there, ahead of it.
+    const phone = html.slice(
+      html.indexOf('.bcard {'),
+      html.indexOf('@media (min-width: 431px)'),
+    );
+    expect(phone).toContain('min-height: 100%;');
+    expect(phone).toContain('scroll-snap-align: start;');
+    // The pager is display:none until the media query turns it on.
+    expect(html).toContain('.bpager { display: none; }');
+  });
+
+  it('drives the pager through the same step the arrow keys drive', () => {
+    // One way to move a card, two ways to ask for it. A second stepper would
+    // be a second definition of "the next card".
+    expect(SCRIPT).toContain('briefStep(deck, forward);');
+    expect(SCRIPT).toContain(
+      "el('brief-next').addEventListener('click', function () { briefPage(true); });",
+    );
+    expect(SCRIPT).toContain(
+      "el('brief-prev').addEventListener('click', function () { briefPage(false); });",
+    );
+  });
+
+  it('takes the pager ends from the scroll position, not from a counter', () => {
+    // The same rule the rail follows: the deck's scrollTop is the truth about
+    // where a reader is, and anything else is a copy that can disagree with
+    // the screen. The rail cannot answer this one — it indexes company cards,
+    // and the deck also holds the cover and the end card.
+    expect(SCRIPT).toContain('prev.disabled = at <= 1;');
+    expect(SCRIPT).toContain(
+      'next.disabled = at + deck.clientHeight >= deck.scrollHeight - 2;',
+    );
+    expect(SCRIPT).toContain(
+      "el('brief-deck').addEventListener('scroll', syncBriefPager);",
+    );
+  });
+});

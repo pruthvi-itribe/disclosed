@@ -302,6 +302,44 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 #brief-empty { padding: 56px 22px; font-size: 15px; line-height: 1.5; color: var(--muted); }
 #brief-empty[hidden] { display: none; }
 
+/* --- the pager ---------------------------------------------------------- */
+
+/* NOT ON A PHONE. A thumb has a gesture for a deck; these are for the pointer
+   that does not. Display, rather than the hidden attribute, so the phone needs
+   no runtime undo. */
+.bpager { display: none; }
+.bpage {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bpage:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+.bpage:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* AT THE END OF THE DECK THE CONTROL SAYS SO. A button that is still live and
+   does nothing is the page pretending it moved; the deck has a first card and
+   a last one, and that is the fact worth showing. */
+.bpage:disabled { opacity: .35; cursor: default; }
+/* The chevron, drawn from two borders on a rotated square. A character would
+   need escaping in this template literal, and the two triangles this product
+   owns already mean a direction the DOCUMENT printed. */
+.bpage::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-left: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+}
+.bprev::before { transform: rotate(135deg); margin-top: 4px; }
+.bnext::before { transform: rotate(-45deg); margin-bottom: 4px; }
+
 /* --- above a phone ------------------------------------------------------ */
 
 /* ONE CODEPATH, ONE SET OF BUGS. The same deck, centred in a reading column,
@@ -311,6 +349,109 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
   #brief-deck { max-width: 480px; margin: 0 auto; width: 100%; }
   #brief-rail { max-width: 480px; margin: 0 auto; width: 100%; }
   .bcard { min-height: 78%; }
+}
+
+/* --- a desktop ---------------------------------------------------------- */
+
+/* WHAT WAS WRONG ABOVE 900px, in one sentence: it was a phone screen blown up.
+   A 480px column floated in the middle of a 1440px window; every card was a
+   fixed 650px tall whatever it held, so a two-line claim sat above 300px of
+   nothing; the rail was a hairline above the fold; and the only two things
+   that moved the deck — the wheel and the arrow keys — announced themselves
+   nowhere at all. Scroll-snap has no affordance, and a pointer has no swipe.
+
+   FOUR CHANGES, AND THEY ARE THE SAME DECK. No second renderer, no second
+   codepath in the script, nothing conditional in JS: the cards, the ordering,
+   the cap and the keyboard are byte-identical to the phone's. Below 900px not
+   one of these rules applies.
+
+     1  a 660px reading column with real gutters, so a 25px lede breaks at
+        about 70 characters instead of 44;
+     2  the rail turns VERTICAL and stands beside the column, where it reads as
+        a chapter marker and costs no vertical space at all;
+     3  a card is its natural height with a floor, and is drawn as a card —
+        border, radius, panel — so the deck reads as a stack rather than as one
+        long document that happens to stop in places;
+     4  the pager, which is the affordance scroll-snap does not have.
+   -------------------------------------------------------------------------- */
+@media (min-width: 900px) {
+  /* A ROW: rail, then column. Centring the pair puts the reading column a
+     rail's width right of true centre, which is where a margin marker
+     belongs. */
+  #view-brief {
+    flex-direction: row;
+    justify-content: center;
+    align-items: stretch;
+    gap: 26px;
+    padding: 4px 24px 24px;
+  }
+
+  /* THE RAIL, TURNED. One segment per card down the left edge of the reading
+     column: the same promise about time the horizontal bar made, in the
+     dimension a desktop has to spare. */
+  #brief-rail {
+    flex-direction: column;
+    width: 3px;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 auto;
+    align-self: stretch;
+  }
+  [data-ui="brief-rail-seg"] { width: 3px; height: auto; flex: 1 1 0; }
+
+  #brief-deck {
+    max-width: 660px;
+    flex: 1 1 660px;
+    margin: 0;
+    /* The scrollbar is redundant beside a rail that says the same thing, and
+       on this width it is a slab down the side of the reading column. */
+    scrollbar-width: none;
+  }
+  #brief-deck::-webkit-scrollbar { width: 0; height: 0; }
+
+  /* NATURAL HEIGHT WITH A FLOOR, not one viewport. 100% of the deck made every
+     card the same height as the tallest thing a card could ever hold, and most
+     hold two lines — so the topic and the footer, which are pushed to the
+     bottom, sat under 300px of nothing. The floor keeps a card feeling like a
+     card; the snap still lands on its top edge either way. */
+  .bcard {
+    /* Room for the lede, the topic and the foot without the void. */
+    min-height: 340px;
+    padding: 30px 34px 26px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--panel);
+    margin-bottom: 18px;
+    /* The snap lands here rather than on the card's border box, so a card
+       arrives with air above it rather than jammed against the top edge. */
+    scroll-margin-top: 4px;
+  }
+  /* The cover and the end card are statements, not filings: they centre, and
+     they do not need a filing's floor. */
+  .bcover, .bend { min-height: 300px; }
+  .blede { font-size: 27px; margin-top: 22px; }
+  .brest { font-size: 15.5px; }
+
+  /* THE PAGER SITS BESIDE THE COLUMN, not against the window's edge. Pinned to
+     the right margin it was 330px from the card it pages — a control that far
+     from its object reads as belonging to the window rather than to the deck.
+     A third item in the same flex row keeps it a hand's width away, and the
+     row's centring absorbs it: the reading column moves 17px, which is the
+     difference between the rail on one side and the buttons on the other. */
+  .bpager {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 0 0 auto;
+    align-self: center;
+  }
+}
+
+/* The pager is a pointer's affordance and the window is where a pointer lives,
+   but a very short window has no room beside the card for it. */
+@media (min-width: 900px) and (max-height: 520px) {
+  .bpager { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

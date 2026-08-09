@@ -529,3 +529,186 @@ test('the deck survives the four-second repaint without moving', async ({
       .getAttribute('data-symbol'),
   ).toBe(symbol);
 });
+
+/**
+ * THE DECK ON A DESKTOP, which is a different reader with the same content.
+ *
+ * The complaint this answers was one sentence: "not easy to use, looks like a
+ * mobile interface blown up." It was — a 480px column adrift in a 1440px
+ * window, every card locked to 650px whatever it held, and the only two things
+ * that moved it (the wheel and the arrow keys) advertised by nothing. Scroll
+ * snap has no affordance and a pointer has no swipe.
+ *
+ * WHAT IS ASSERTED HERE IS THE SHAPE, not the styling: the reading column's
+ * width, that a card is its content's height rather than the window's, that the
+ * pager exists and steps, and that it says so at both ends. The phone's own
+ * behaviour is every test above this one, unchanged.
+ */
+const DESKTOP = { width: 1440, height: 900 };
+
+const openDeck = async (page: Page): Promise<void> => {
+  await page.setViewportSize(DESKTOP);
+  await page.goto('/');
+  await expect(page.locator('#live-text')).not.toHaveText('connecting');
+  await page.locator('#tab-brief').click();
+  await expect(page.locator('#brief-deck')).toBeVisible();
+  await expect(page.locator('#brief-deck .bcard').first()).toBeVisible();
+};
+
+test.describe('the deck above 900px', () => {
+  test('reads in a column, with the gutters a wide window has to spare', async ({
+    page,
+  }) => {
+    await openDeck(page);
+
+    const box = await page.locator('#brief-deck').boundingBox();
+    expect(box).not.toBeNull();
+    // 600-680px is about 70 characters of the 27px lede. The old 480px broke
+    // the same sentence at 44, which is a phone's line length on a monitor.
+    expect(box!.width).toBeGreaterThanOrEqual(600);
+    expect(box!.width).toBeLessThanOrEqual(680);
+    // And it is a column in the middle, not a panel against an edge: the
+    // gutter on each side is generous and neither is zero.
+    expect(box!.x).toBeGreaterThan(200);
+    expect(DESKTOP.width - (box!.x + box!.width)).toBeGreaterThan(200);
+  });
+
+  test('gives a card the height of what is on it, not of the window', async ({
+    page,
+  }) => {
+    await openDeck(page);
+
+    const heights = await page.evaluate(() =>
+      [...document.querySelectorAll('#brief-deck .bcard')].map((card) =>
+        Math.round(card.getBoundingClientRect().height),
+      ),
+    );
+
+    // NOT ALL THE SAME, which is the whole change: one viewport per card made
+    // a two-line claim sit above 300px of nothing, because the topic and the
+    // foot are pushed to the bottom of whatever the card is.
+    expect(new Set(heights).size).toBeGreaterThan(1);
+    // And none of them is a viewport tall.
+    for (const height of heights) expect(height).toBeLessThan(DESKTOP.height);
+    // With a floor, so a card still reads as a card.
+    for (const height of heights) expect(height).toBeGreaterThan(240);
+  });
+
+  test('draws the rail beside the column rather than above it', async ({
+    page,
+  }) => {
+    await openDeck(page);
+
+    const rail = await page.locator('#brief-rail').boundingBox();
+    const deck = await page.locator('#brief-deck').boundingBox();
+    expect(rail).not.toBeNull();
+    expect(deck).not.toBeNull();
+
+    // A hairline to the LEFT of the reading column, as tall as it — a chapter
+    // marker rather than a progress bar, costing no vertical space at all.
+    expect(rail!.width).toBeLessThan(12);
+    expect(rail!.x).toBeLessThan(deck!.x);
+    expect(rail!.height).toBeGreaterThan(deck!.height / 2);
+  });
+
+  test('steps a card when the pager is clicked, and says where the ends are', async ({
+    page,
+  }) => {
+    await openDeck(page);
+
+    const prev = page.locator('#brief-prev');
+    const next = page.locator('#brief-next');
+    await expect(prev).toBeVisible();
+    await expect(next).toBeVisible();
+
+    // AT THE TOP, BACK IS NOT A CONTROL. A live button that does nothing is
+    // the page pretending it moved.
+    await expect(prev).toBeDisabled();
+    await expect(next).toBeEnabled();
+
+    const at = async (): Promise<number> =>
+      page.evaluate(() =>
+        Math.round(document.getElementById('brief-deck')!.scrollTop),
+      );
+
+    expect(await at()).toBe(0);
+    await next.click();
+    await expect.poll(at, { timeout: 5_000 }).toBeGreaterThan(0);
+
+    const afterOne = await at();
+    await expect(prev).toBeEnabled();
+
+    // And back to where it started, through the same step.
+    await prev.click();
+    await expect.poll(at, { timeout: 5_000 }).toBeLessThan(afterOne);
+  });
+
+  test('reaches the end of the deck and stops claiming another card', async ({
+    page,
+  }) => {
+    await openDeck(page);
+
+    const next = page.locator('#brief-next');
+
+    // SETTLED BEFORE ASKED, because the scroll is smooth: reading the button
+    // mid-flight sees the state it had before the step landed, and clicking on
+    // that reading races the animation to the last card.
+    const settle = async (): Promise<void> => {
+      let previous = -1;
+      for (let tick = 0; tick < 40; tick += 1) {
+        const now = await page.evaluate(
+          () => document.getElementById('brief-deck')!.scrollTop,
+        );
+        if (now === previous) return;
+        previous = now;
+        await page.waitForTimeout(100);
+      }
+    };
+
+    // The deck holds at most twelve company cards plus a cover and an end.
+    for (let step = 0; step < 20; step += 1) {
+      await settle();
+      if (await next.isDisabled()) break;
+      await next.click();
+    }
+    await settle();
+
+    await expect(next).toBeDisabled();
+    await expect(page.locator('#brief-prev')).toBeEnabled();
+    // The last card is the one that states the remainder, and it is reachable
+    // by the pointer alone.
+    await expect(page.locator('#brief-end')).toBeInViewport();
+  });
+
+  test('leaves the keyboard driving the same step it always did', async ({
+    page,
+  }) => {
+    // The pager calls `briefStep`, which is what ArrowDown calls. One way to
+    // move a card, two ways to ask for it.
+    await openDeck(page);
+    await page.locator('#brief-deck').focus();
+
+    const at = async (): Promise<number> =>
+      page.evaluate(() =>
+        Math.round(document.getElementById('brief-deck')!.scrollTop),
+      );
+
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(at, { timeout: 5_000 }).toBeGreaterThan(0);
+    // And the pager caught up with a move it did not make.
+    await expect(page.locator('#brief-prev')).toBeEnabled();
+  });
+
+  test('hides the pager where there is no pointer to need it', async ({
+    page,
+  }) => {
+    // A phone has a gesture for this and 38px of chrome it does not need.
+    await page.setViewportSize(PHONE);
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await expect(page.locator('#brief-deck')).toBeVisible();
+
+    await expect(page.locator('#brief-prev')).toBeHidden();
+    await expect(page.locator('#brief-next')).toBeHidden();
+  });
+});

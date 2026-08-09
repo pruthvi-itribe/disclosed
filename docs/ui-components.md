@@ -17,6 +17,7 @@ or `document.getElementById('co-topics')`.
 | File | Holds |
 | --- | --- |
 | `apps/dashboard/src/ui/page.ts` | the markup shell — every `id` below with a fixed position |
+| `apps/dashboard/src/ui/page-admin.ts` | the Admin view's markup, which a non-local host does not serve at all |
 | `apps/dashboard/src/ui/page-style.ts` | all CSS except the Brief's |
 | `apps/dashboard/src/ui/page-style-brief.ts` | the Brief's CSS, concatenated onto the above by `page.ts` |
 | `apps/dashboard/src/ui/script/script-base.ts` | constants, DOM and format helpers |
@@ -38,11 +39,24 @@ or `document.getElementById('co-topics')`.
 | `view-feed` | the product: what companies said today. The default above 430px |
 | `view-company` | one company, reached by clicking a ticker |
 | `view-watching` | the watchlist, then filings from the companies on it. **Signed in only** |
-| `view-admin` | the instrument panel: refusals, routes, tiers, states |
+| `view-admin` | the instrument panel: refusals, routes, tiers, states. **Local only** — see below |
 
 While the Brief is open the body carries the class `briefing`: the deck is a
 scroll container sized to the viewport, so the page behind it must not scroll
 too.
+
+### Admin is not always there
+
+`ADMIN_ENABLED` decides whether the operator panel is built into the served
+document at all — the tab, the section, the six filter `<select>`s it carries
+and the `script-admin.ts` fragment. Off, none of it is in the page and
+`api/enrichment`, `api/categories` and `api/daily` answer 404. The rule and its
+argument are in `apps/dashboard/src/config/configuration.ts` and the README.
+
+Anything below that lives inside `view-admin` is therefore **absent** rather
+than hidden on such a host, and every script that touches one of its controls
+goes through `controlValue` / `onControl` / `setControl`, which read a missing
+control as its default rather than as empty.
 
 ## The Brief
 
@@ -64,6 +78,14 @@ reader's thumb costs them their place.
 | `brief-end` | the last card |
 | `brief-end-line` / `brief-to-feed` | the remainder, and the way into the feed |
 | `brief-empty` | shown **instead of** the deck when nothing qualified |
+| `brief-pager` | the desktop stepper. **Above 900px only** — a thumb has a gesture for a deck and a pointer does not |
+| `brief-prev` / `brief-next` | one card back, one card on. They call the same `briefStep` the arrow keys call, and disable themselves at the ends |
+
+**Above 900px the same deck reads differently**, and it is one stylesheet
+rather than a second renderer: a 660px reading column with real gutters, the
+rail turned vertical beside it, cards at their natural height with a floor
+instead of one viewport each, and the pager. Below 900px not one of those rules
+applies — the phone's deck is the phone's deck.
 
 ### One card of the deck
 
