@@ -445,6 +445,12 @@ export class FilingQueryService {
       todayByGroup,
       todayVerified,
       todayIstDay: istDayKey(now),
+      // THE PAIR IS THE FEED'S DAY VOCABULARY. `istDayKeysEndingAt(now, 2)` is
+      // `[yesterday, today]`, and taking the predecessor from the one helper
+      // that already crosses month and year ends is why this is not a
+      // `now - 86_400_000` written here. The feed compares each filing's
+      // `istDay` against these two strings and never subtracts a day itself.
+      previousIstDay: istDayKeysEndingAt(now, 2)[0],
       newestDisseminatedAt: newestAt === null ? null : newestAt.toISOString(),
       newestDisseminatedAtIst:
         newestAt === null ? null : istTimestamp(newestAt),

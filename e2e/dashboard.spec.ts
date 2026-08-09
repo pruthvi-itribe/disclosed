@@ -88,6 +88,99 @@ test.describe('the feed', () => {
   });
 });
 
+/**
+ * The dividers, which used to be a rolling window and are now calendar days.
+ *
+ * The reported bug: at 09:00 a filing from 17:00 the previous evening was
+ * sixteen hours old, and the old buckets called anything under 24h 'Today'. So
+ * two market days sat under one heading. `script-feed.spec.ts` proves the
+ * function; these two prove the page is wired to the server's IST day.
+ */
+test.describe('the feed dividers', () => {
+  /** The feed's own opening question: 25 verified rows, newest first. */
+  const FEED_QUERY = 'api/filings?limit=25&offset=0&tier=verified';
+
+  /**
+   * The divider text as the SCRIPT WROTE IT.
+   *
+   * `textContent`, not `innerText`: `.bucket` is `text-transform: uppercase`,
+   * so the rendered text is 'EARLIER TODAY' and an assertion against it would
+   * be pinning the stylesheet rather than the bucketing rule.
+   */
+  const dividers = async (page: Page): Promise<string[]> => {
+    await expect(page.locator('#feed h2.bucket')).not.toHaveCount(0);
+    return page.locator('#feed h2.bucket').allTextContents();
+  };
+
+  test('names every divider a day, and never a rolling window', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await expect(page.locator('#feed .card, #feed .emptyfeed')).not.toHaveCount(
+      0,
+    );
+
+    const labels = await dividers(page);
+    for (const label of labels) {
+      // The closed vocabulary. 'Today' and 'Earlier' are gone on purpose: the
+      // first could not tell this morning from last night, and the second
+      // swallowed every day before yesterday into one heading.
+      expect([
+        label,
+        label === 'Just now' ||
+          label === 'Earlier today' ||
+          label === 'Yesterday' ||
+          /^\d{4}-\d{2}-\d{2}$/.test(label),
+      ]).toEqual([label, true]);
+    }
+    expect(labels).not.toContain('Today');
+    expect(labels).not.toContain('Earlier');
+  });
+
+  test('names Yesterday when the feed reaches into yesterday', async ({
+    page,
+  }) => {
+    // SEED-DEPENDENT, AND SKIPPED HONESTLY. Whether the opening 25 rows cross
+    // an IST midnight depends on how busy the exchange has been, and asserting
+    // a heading that the data cannot produce would be a test that fails on a
+    // quiet Monday morning. So the same two routes the page reads are asked
+    // first, and the test says which case it saw.
+    const summary = await page.request.get('api/summary');
+    expect(summary.status()).toBe(200);
+    const { todayIstDay, previousIstDay } = (await summary.json()).data;
+
+    const filings = await page.request.get(FEED_QUERY);
+    expect(filings.status()).toBe(200);
+    const days: string[] = (await filings.json()).data.map(
+      (row: { istDay: string }) => row.istDay,
+    );
+
+    test.skip(
+      !days.includes(previousIstDay),
+      `the opening ${days.length} rows hold no filing from ${previousIstDay} ` +
+        `(they span ${[...new Set(days)].join(', ') || 'nothing'}), so there ` +
+        'is no Yesterday to name',
+    );
+
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await expect(page.locator('#feed .card')).not.toHaveCount(0);
+
+    const labels = await dividers(page);
+    expect(labels.filter((label) => label === 'Yesterday')).toHaveLength(1);
+
+    // AND TODAY IS A HEADING OF ITS OWN ABOVE IT. The pair is the point: one
+    // heading over both days was the bug, and 'Yesterday' appearing second
+    // says the split happened.
+    if (days.includes(todayIstDay)) {
+      expect(labels.indexOf('Yesterday')).toBeGreaterThan(0);
+      // Today is named in words, never by its date.
+      expect(labels).not.toContain(todayIstDay);
+    }
+  });
+});
+
 test.describe('the insight filter', () => {
   test('is on by default and asks the server for the verified tier', async ({
     page,

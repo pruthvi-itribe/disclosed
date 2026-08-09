@@ -161,6 +161,28 @@ describe('FilingQueryService — IST day bucketing at the 18:30 UTC boundary', (
     expect(summary.todayCount).toBe(1);
   });
 
+  it('names the day before, so the feed can say Yesterday without a clock', async () => {
+    // The pair the browser compares each filing's `istDay` against. It rolls at
+    // the same instant `todayIstDay` does — a page that got a stale predecessor
+    // would file today's cards under 'Yesterday' for one poll.
+    now = new Date('2026-08-05T18:29:59.999Z');
+    expect((await service.getSummary()).previousIstDay).toBe('2026-08-04');
+
+    now = new Date('2026-08-05T18:30:00.000Z');
+    expect((await service.getSummary()).previousIstDay).toBe('2026-08-05');
+  });
+
+  it('crosses a month end rather than subtracting from the day number', async () => {
+    // `${month}-${day - 1}` is the bug this guards: on the 1st it produces a
+    // day zero, which matches no filing and puts every card under a date.
+    now = new Date('2026-09-01T05:00:00.000Z');
+
+    const summary = await service.getSummary();
+
+    expect(summary.todayIstDay).toBe('2026-09-01');
+    expect(summary.previousIstDay).toBe('2026-08-31');
+  });
+
   it('excludes a filing dated into the future from today, rather than inflating it', async () => {
     // Today's count is what an operator reads to decide whether ingestion is
     // alive, so it is bounded at both ends. An open-ended $gte would fold a

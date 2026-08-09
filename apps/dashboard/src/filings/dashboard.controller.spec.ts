@@ -67,6 +67,7 @@ const SUMMARY: SummaryView = {
   todayByGroup: { results: 2, routine: 1 },
   todayVerified: 1,
   todayIstDay: '2026-08-05',
+  previousIstDay: '2026-08-04',
   newestDisseminatedAt: '2026-08-05T18:02:13.000Z',
   newestDisseminatedAtIst: '2026-08-05 23:32:13',
   maxSeqId: 106_727_715,

@@ -191,7 +191,19 @@ export const SCRIPT_BASE = `
     // so a poll request sent just before a ticker click could land after
     // openCompany() and paint the whole feed as that company's filings. A
     // response whose id is stale renders nothing.
-    refreshSeq: 0
+    refreshSeq: 0,
+    // WHICH IST DAY IT IS, AS THE SERVER LAST SAID IT. Both come from
+    // 'api/summary' and are written here by 'renderSummary'; the feed's
+    // dividers are the only reader. Null until that first response lands,
+    // which 'feedBucket' handles by naming the day rather than guessing at it.
+    //
+    // KEPT IN STATE RATHER THAN RECOMPUTED because the browser must not
+    // recompute it: IST rolls at 18:30 UTC and a laptop set to any other zone
+    // would put the same filing under a different heading. It also stays
+    // CORRECT ACROSS THE ROLL for a tab left open overnight - the poll rewrites
+    // both strings every four seconds, so 'Today' becomes a date on its own.
+    todayIstDay: null,
+    previousIstDay: null
   };
 
   // A lookup that cannot be walked into the prototype chain. The keys come from

@@ -14,6 +14,12 @@
  */
 export const SCRIPT_CELLS = `
   function renderSummary(d) {
+    // THE FEED'S DAY VOCABULARY, STASHED BEFORE ANYTHING IS DRAWN. The server
+    // owns IST, so these two strings are the only thing that lets the feed say
+    // 'Today' and 'Yesterday' - see 'feedBucket'. Rewritten on every poll, so a
+    // tab left open across 18:30 UTC re-labels itself rather than going stale.
+    state.todayIstDay = d.todayIstDay;
+    state.previousIstDay = d.previousIstDay;
     setText('stat-total', groupInt(d.totalFilings));
     setText('stat-today', groupInt(d.todayCount));
     setText('stat-today-note', d.todayIstDay + ' IST');

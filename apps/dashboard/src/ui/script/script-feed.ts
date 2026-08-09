@@ -402,19 +402,49 @@ export const SCRIPT_FEED = `
   }
 
   /**
-   * The feed.
+   * Which divider a filing falls under.
    *
-   * Grouped by how long ago, because a reader scanning a market day thinks in
-   * "what just happened" and "what I have already seen", not in timestamps.
+   * BUCKETED BY CALENDAR DAY, NOT BY ELAPSED TIME, and that is the fix. It
+   * used to be pure subtraction - under 24h was 'Today', under 48h was
+   * 'Yesterday' - so at 09:00 on Sunday a filing disseminated at 17:00 on
+   * Saturday was sixteen hours old and printed under 'Today'. Two different
+   * market days sat under one heading with nothing between them, which is the
+   * founder's report: no distinction between today and yesterday.
+   *
+   * 'today' and 'previous' are the server's own IST day strings, from
+   * 'api/summary'. The comparison is string equality against the filing's own
+   * server-sent 'istDay', so this function does no date arithmetic at all -
+   * required, because IST rolls at 18:30 UTC and any browser doing that sum
+   * for itself would shift filings onto the wrong day for a reader outside
+   * India.
+   *
+   * WITHIN TODAY the elapsed clock still splits the day, because 'what landed
+   * while I was reading' is a genuinely different question from 'what day was
+   * this' and a market day is 400+ filings under one heading otherwise. That
+   * is a duration, not a date, so the browser may own it.
+   *
+   * OLDER DAYS ARE NAMED BY THEIR DATE rather than lumped into 'Earlier'. The
+   * string is the server's, printed as sent. The company page shares this
+   * renderer and shows ten months of one filer, where 'Earlier' was every row
+   * but the first few.
+   *
+   * BEFORE THE FIRST SUMMARY LANDS both strings are null and every filing is
+   * named by its date. 'api/summary' and 'api/filings' are two requests of one
+   * refresh and fetch does not promise ordering, so the feed can paint first;
+   * naming the day is never WRONG, only plainer, and the next paint - at most
+   * one round trip later - carries the words.
    */
-  function feedBucket(iso) {
-    var ms = Date.now() - Date.parse(iso);
-    if (isNaN(ms)) return 'Earlier';
-    if (ms < 30 * 60 * 1000) return 'Just now';
-    if (ms < 4 * 60 * 60 * 1000) return 'Earlier today';
-    if (ms < 24 * 60 * 60 * 1000) return 'Today';
-    if (ms < 48 * 60 * 60 * 1000) return 'Yesterday';
-    return 'Earlier';
+  function feedBucket(istDay, iso, today, previous) {
+    if (istDay === today) {
+      var ms = Date.now() - Date.parse(iso);
+      // 'ms >= 0' rejects a filing stamped in the future rather than calling it
+      // brand new: a browser clock running slow would otherwise put the whole
+      // day under 'Just now'.
+      if (ms >= 0 && ms < 30 * 60 * 1000) return 'Just now';
+      return 'Earlier today';
+    }
+    if (istDay === previous) return 'Yesterday';
+    return istDay;
   }
 
   // Why the feed is empty, in the most specific words the page can honestly
@@ -528,7 +558,7 @@ export const SCRIPT_FEED = `
     var bucket = null;
     for (var i = 0; i < items.length; i++) {
       var f = items[i];
-      var label = feedBucket(f.disseminatedAt);
+      var label = feedBucket(f.istDay, f.disseminatedAt, state.todayIstDay, state.previousIstDay);
       if (label !== bucket) {
         bucket = label;
         var head = document.createElement('h2');

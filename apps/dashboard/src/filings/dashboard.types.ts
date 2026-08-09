@@ -475,7 +475,21 @@ export interface SummaryView {
    * The results line adds 6, 1, 2, 0 and 0 over the same five days.
    */
   readonly todayVerified: number;
+  /** The IST day `todayCount` counts, as `YYYY-MM-DD`. */
   readonly todayIstDay: string;
+  /**
+   * The IST calendar day before `todayIstDay`, as `YYYY-MM-DD`.
+   *
+   * SENT SO THE BROWSER CAN NAME "YESTERDAY" WITHOUT OWNING A CLOCK. The feed
+   * groups cards by comparing each filing's `istDay` against these two strings
+   * (`feedBucket` in `script-feed.ts`); subtracting a day in the page would be
+   * timezone arithmetic in a browser that is not necessarily set to IST, which
+   * is the one thing `libs/common/ist.ts` exists to keep out of the client.
+   *
+   * A calendar day, not a trading day: the day before Monday is Sunday, and a
+   * Sunday with no filings simply produces no cards under that heading.
+   */
+  readonly previousIstDay: string;
   /** ISO-8601 UTC of the newest filing held, or null when the collection is empty. */
   readonly newestDisseminatedAt: string | null;
   readonly newestDisseminatedAtIst: string | null;
