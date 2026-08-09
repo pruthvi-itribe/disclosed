@@ -48,6 +48,50 @@ import { normaliseQuery, toTextSearch } from './search-terms';
  * descending. One sign flip is cheaper to read than a second sort.
  */
 
+/**
+ * Whether the reader's query IS this ticker, case-folded.
+ *
+ * ================================================================
+ * WHY A TIER IS NOT ENOUGH, AND THIS PREDICATE EXISTS
+ * ================================================================
+ *
+ * `SEARCH_RANK.symbol` orders the answer. It cannot put a filing into one. The
+ * tiers are computed over the documents the TEXT INDEX matched, so a company's
+ * own filings lead the page only while they are in that set — and the reader's
+ * other filters are applied to the same set. Measured on the live collection
+ * (3,937 filings, 1,289 companies, 2026-08-09) with the feed's shipped default
+ * — the "said something" toggle, which sends `tier=verified`:
+ *
+ *   q=ACC     →  6 filings, every one of them STUDDS
+ *   q=CERA    →  2 filings: KAJARIACER, ORIENTCER
+ *   q=NH      →  1 filing:  NHPC
+ *   q=LTF     →  1 filing:  LTFOODS
+ *   q=MCL     →  1 filing:  MCLOUD
+ *   q=CRISIL  →  8 filings by 8 other companies, each naming its rating agency
+ *   q=ZENTEC  →  nothing, though Zen Technologies has filed five times
+ *
+ * Not one of those rows is a filing by the company whose ticker was typed. The
+ * page says "Searching for ACC" above six filings by Studds Accessories, which
+ * is the failure mode this codebase treats as its most dangerous: every row is
+ * a true answer to a question the reader did not ask.
+ *
+ * So an identifier is answered as an identifier. A reader who typed `ACC` named
+ * a company, and this file already argues that there is nothing to infer from
+ * that — the same argument says a filing that merely MENTIONS the word must not
+ * stand in for the company, not merely rank below it. The query is resolved
+ * against the company directory before the text index is asked anything, and an
+ * exact ticker is answered with `{symbol: ...}` — the same filter the type-ahead
+ * applies when a reader PICKS the company from the list. That agreement is the
+ * point: typing `ACC` and picking ACC were two different answers to one query.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO is widen the reader's other filters. Under
+ * the insight toggle, a company with nothing verified answers with an empty page
+ * — which is what picking it from the list has always done, and is honest in a
+ * way that six filings by another company is not.
+ */
+export const namesSymbol = (raw: string, symbol: string): boolean =>
+  normaliseQuery(raw) === symbol.toLowerCase();
+
 /** The three tiers, named so the pipeline and the tests cannot drift apart. */
 export const SEARCH_RANK = {
   /** The query is the ticker, case-folded. An identifier, not a description. */

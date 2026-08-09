@@ -39,7 +39,12 @@ import type {
   PageMeta,
   SummaryView,
 } from './dashboard.types';
-import { rankStages, SEARCH_SORT, textFilter } from '../search/search-rank';
+import {
+  namesSymbol,
+  rankStages,
+  SEARCH_SORT,
+  textFilter,
+} from '../search/search-rank';
 import type { FilingReadModel } from './filing-read.model';
 
 /** Enrichment states a caller may filter on. */
@@ -438,6 +443,16 @@ export class FilingQueryService {
    * timestamp alone has no defined order among them — and an undefined order
    * means a row can appear on both page 1 and page 2, or on neither, as the
    * collection grows underneath a reader who is paging through it.
+   *
+   * A FREE-TEXT QUERY IS ANSWERED IN THREE WAYS, tried in this order, and the
+   * order is the whole of the search's behaviour:
+   *
+   *   1  the query IS a ticker      →  that company's filings, and only those
+   *   2  the text index matched     →  those filings, ranked by `search-rank.ts`
+   *   3  neither, but the directory
+   *      completes what was typed   →  the completed companies' filings
+   *
+   * Step 1 is the newer one and `namesSymbol` carries its measurement.
    */
   async getRecent(query: RecentQuery): Promise<RecentPage> {
     // A QUERY THAT REDUCES TO NO TERM IS NOT NO FILTER. `?q=---` holds nothing
@@ -449,22 +464,44 @@ export class FilingQueryService {
       return emptyPage(query);
     }
 
-    const page = await this.filterPage(
-      query,
-      this.buildFilter(query),
-      query.q ?? null,
-    );
-    if (query.q === undefined || page.meta.total > 0) return page;
+    if (query.q === undefined) {
+      return this.filterPage(query, this.buildFilter(query), null);
+    }
+
+    // RESOLVED BEFORE THE TEXT INDEX IS ASKED, and that ordering is the change.
+    // The directory is a snapshot held in memory and refreshed on a clock, so
+    // this costs no round trip however many times it is called — see
+    // `company-directory.ts`, whose spec asserts a hundred consecutive calls
+    // issue zero reads. What the old shape was protecting was the second
+    // DATABASE page below it, and that is still a miss path.
+    const symbols = await this.resolveSymbols(query.q);
+
+    // AN IDENTIFIER IS NOT A DESCRIPTION. A query that IS a ticker names one
+    // company and is answered with that company's filings, never with the
+    // filings that merely mention it. `namesSymbol` in `search-rank.ts` carries
+    // the measurement: seven tickers on the live collection answered entirely
+    // with other companies' filings before this. The directory ranks an exact
+    // ticker first, so the exact match — if there is one — is `symbols[0]`.
+    if (symbols.length > 0 && namesSymbol(query.q, symbols[0])) {
+      return this.filterPage(
+        query,
+        { ...this.buildFilter({ ...query, q: undefined }), symbol: symbols[0] },
+        null,
+      );
+    }
+
+    const page = await this.filterPage(query, this.buildFilter(query), query.q);
+    if (page.meta.total > 0) return page;
 
     // Nothing said the reader's word — but they may have typed only part of
     // one. See `resolveSymbols`.
-    const symbols = await this.resolveSymbols(query.q);
     if (symbols.length === 0) return page;
 
-    // Asked UNRANKED, and that is the honest ordering rather than a shortcut.
-    // Every row here matched because its company's ticker or name completes
-    // what the reader typed, so all of them are identity matches — the same
-    // tier — and inside a tier this page orders by the clock.
+    // Asked UNRANKED, and by the time it is asked that is defensible. An EXACT
+    // ticker never reaches here — it was answered above — so every row is a
+    // company whose ticker or name merely COMPLETES a fragment, and the reader
+    // has not named any one of them. Inside that set the page orders by the
+    // clock, which is how every other view here orders.
     return this.filterPage(
       query,
       {

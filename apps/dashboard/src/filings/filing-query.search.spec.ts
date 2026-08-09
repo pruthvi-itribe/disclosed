@@ -135,8 +135,45 @@ beforeAll(async () => {
       category: 'Record Date',
       minutesAgo: 80,
     }),
+    // THE CASE TASK #45 NAMES, as it stands on the live collection. Zen
+    // Technologies has filed and neither filing carries a verified line, so
+    // under the feed's shipped "said something" toggle its own rows are gone —
+    // and a filing by somebody else that NAMES it is not.
+    makeFiling(10, {
+      symbol: 'ZENTEC',
+      companyName: 'Zen Technologies Limited',
+      category: 'Change in Management',
+      minutesAgo: 90,
+    }),
+    makeFiling(11, {
+      symbol: 'ZENTEC',
+      companyName: 'Zen Technologies Limited',
+      category: 'Board Meeting Intimation',
+      minutesAgo: 300,
+    }),
+    withClaim(12, {
+      symbol: 'MIDWESTLTD',
+      companyName: 'Midwest Limited',
+      category: 'Updates',
+      claimLine:
+        'AWARDED A SIMULATOR ORDER TO ZEN TECHNOLOGIES (ZENTEC), ITS SUPPLIER.',
+      minutesAgo: 1,
+    }),
   ]);
 }, 60_000);
+
+/**
+ * The directory's answer for these fixtures, ranked the way `symbolsMatching`
+ * ranks: an exact ticker first, then a ticker this completes.
+ *
+ * Written out rather than imported so the search's behaviour is pinned to a
+ * KNOWN resolution rather than to whatever the type-ahead happens to do — the
+ * two are wired together in `dashboard.module.ts` and tested apart on purpose.
+ */
+const directory =
+  (matches: Record<string, readonly string[]>) =>
+  async (query: string): Promise<readonly string[]> =>
+    matches[query.toLowerCase()] ?? [];
 
 afterAll(async () => {
   await mongoose.disconnect();
@@ -210,6 +247,85 @@ describe('search — the ranking', () => {
   });
 });
 
+describe('search — a ticker is an identity, not a description', () => {
+  // The wiring `dashboard.module.ts` builds, narrowed to these fixtures.
+  // Built per call rather than once at module scope: `model` is connected in
+  // `beforeAll`, which runs after a describe body is evaluated.
+  const typed = (): FilingQueryService =>
+    new FilingQueryService(
+      model,
+      () => BASE,
+      directory({ zentec: ['ZENTEC'], zen: ['ZENTEC'] }),
+    );
+
+  it('answers a ticker with that company own filings, newest first', async () => {
+    const page = await typed().getRecent({ limit: 25, offset: 0, q: 'ZENTEC' });
+
+    expect(page.items.map((row) => row.seqId)).toEqual([10, 11]);
+    expect(page.meta.total).toBe(2);
+  });
+
+  it('does not offer a filing that merely NAMES the company in its place', async () => {
+    // TASK #45. Midwest's claim line says ZENTEC, it is the newest row in the
+    // collection, and it carries a verified claim — so under the feed's shipped
+    // toggle it was the whole answer to `ZENTEC` while Zen Technologies' own two
+    // filings were nowhere. Measured on the live collection the same way: `ACC`
+    // returned six filings, every one of them Studds Accessories.
+    const page = await typed().getRecent({ limit: 25, offset: 0, q: 'ZENTEC' });
+
+    expect(page.items.map((row) => row.symbol)).not.toContain('MIDWESTLTD');
+  });
+
+  it('answers with NOTHING rather than with somebody else when the filters exclude it', async () => {
+    // The insight toggle, which is on by default. Zen Technologies has no
+    // verified line, so the honest answer is an empty page — exactly what
+    // PICKING it from the type-ahead has always produced. The failure this
+    // replaces was an answer full of another company's filings.
+    const page = await typed().getRecent({
+      limit: 25,
+      offset: 0,
+      q: 'ZENTEC',
+      tier: 'verified',
+    });
+
+    expect(page.items).toEqual([]);
+    expect(page.meta.total).toBe(0);
+  });
+
+  it('keeps the reader other filters, since it is the same page', async () => {
+    const page = await typed().getRecent({
+      limit: 25,
+      offset: 0,
+      q: 'ZENTEC',
+      category: 'Change in Management',
+    });
+
+    expect(page.items.map((row) => row.seqId)).toEqual([10]);
+  });
+
+  it('leaves a FRAGMENT to the ranked text search, mentions and all', async () => {
+    // `zen` is not a ticker, so the reader has named nothing yet and this must
+    // NOT narrow to one company. It goes on to the ranked text search, which
+    // finds Zen Technologies through its name and Midwest through its claim
+    // line — and the tiers still put the company above the mention.
+    const page = await typed().getRecent({ limit: 25, offset: 0, q: 'zen' });
+
+    expect(page.items[0].symbol).toBe('ZENTEC');
+    expect(page.items.map((row) => row.symbol)).toContain('MIDWESTLTD');
+  });
+
+  it('still RANKS the company first when no directory answers at all', async () => {
+    // The tier rule on its own, with the identity step switched off. It was
+    // always right about ORDER — Zen Technologies' own filings lead — and that
+    // was never the failure. The failure was every one of its rows being
+    // filtered out while the mention below them survived.
+    const found = await search('zentec');
+
+    expect(found[0]).toBe('ZENTEC');
+    expect(found).toContain('MIDWESTLTD');
+  });
+});
+
 describe('search — the whole-word limit, and the prefix that answers it', () => {
   it('a text index matches WORDS, so a prefix finds nothing on its own', async () => {
     // THE LIMIT, PINNED RATHER THAN HIDDEN. `brit` is not a word in any filing;
@@ -245,9 +361,13 @@ describe('search — the whole-word limit, and the prefix that answers it', () =
     expect(page.meta.total).toBe(2);
   });
 
-  it('does not fall back when the text index DID find something', async () => {
-    // The fallback is a miss path. Firing it beside a successful search would
-    // be a second query per request on the route the page polls.
+  it('asks the directory ONCE, and the database only as far as it must', async () => {
+    // THE DIRECTORY IS NOW ASKED FIRST, because an exact ticker has to be
+    // recognised before the text index is consulted at all — see `namesSymbol`.
+    // That is not the cost the old shape was protecting: `snapshot()` answers
+    // from memory and issues no read (`company-directory.spec.ts` asserts a
+    // hundred calls cost zero). The second DATABASE page below it is still a
+    // miss path, and one resolution feeds both branches rather than two.
     let asked = 0;
     const counting = new FilingQueryService(
       model,
@@ -260,7 +380,7 @@ describe('search — the whole-word limit, and the prefix that answers it', () =
 
     await counting.getRecent({ limit: 25, offset: 0, q: 'lupin' });
 
-    expect(asked).toBe(0);
+    expect(asked).toBe(1);
   });
 
   it('orders a prefix completion newest first, since every row is one company', async () => {
