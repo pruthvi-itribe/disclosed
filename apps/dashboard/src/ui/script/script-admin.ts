@@ -12,6 +12,24 @@
  * failure this file split exists to make less likely — a test asserts it.
  */
 export const SCRIPT_ADMIN = `
+  // THE PANEL'S OWN SLOW-CYCLE READS, declared here rather than in the poll.
+  //
+  // Nothing else on the page asks for these three: 'api/enrichment' fills the
+  // refusal, state and parse-route panels, 'api/categories' fills the category
+  // select and its panel, and 'api/daily' fills the per-day bars. A host built
+  // without the panel answers all three with a 404 — so the route names must
+  // not survive into the document either, and they do not, because this whole
+  // fragment is left out of it. See 'page-script.ts'.
+  //
+  // 'refresh' owns the list and the sequencing; this only adds to it.
+  function pushAdminJobs(jobs) {
+    jobs.push(getJson('api/categories').then(function (b) { renderCategories(b.data); }));
+    jobs.push(getJson('api/daily').then(function (b) { renderDaily(b.data); }));
+    // Seven grouped aggregations, so it rides the slow cycle rather than the
+    // four-second one. It is a shape, not a live number.
+    jobs.push(getJson('api/enrichment').then(function (b) { renderEnrichment(b.data); }));
+  }
+
   function renderFilings(items, meta) {
     var body = el('rows');
     clear(body);

@@ -111,8 +111,11 @@ describe('the client script fragments', () => {
     const joined = FRAGMENTS.map(([, source]) =>
       source.replace(/^\n/, '').replace(/\n$/, ''),
     ).join('\n');
+    // THE ONE LINE THAT IS NOT A FRAGMENT is the server's admin flag, written
+    // into the script because the fragments read it at load — before any fetch
+    // returns — to decide what to wire up. See `page-script.ts`.
     expect(PAGE_SCRIPT).toBe(
-      `\n(function () {\n  'use strict';\n${joined}\n})();\n`,
+      `\n(function () {\n  'use strict';\n  var ADMIN_ENABLED = true;\n${joined}\n})();\n`,
     );
   });
 });

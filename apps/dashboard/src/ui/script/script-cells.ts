@@ -19,9 +19,14 @@ export const SCRIPT_CELLS = `
     setText('stat-today-note', d.todayIstDay + ' IST');
     setText('stat-cursor', groupInt(d.maxSeqId));
     setText('stat-newest', d.newestDisseminatedAtIst || '—');
+    // The eight stats above and this one live in the Admin section, which is
+    // absent on a host built without it. 'setText' already answers a missing
+    // node with nothing; this one needs two writes, so it is guarded here.
     var lag = el('stat-lag');
-    lag.textContent = duration(d.feedLagMs);
-    lag.className = 'value ' + lagClass(d.feedLagMs);
+    if (lag !== null) {
+      lag.textContent = duration(d.feedLagMs);
+      lag.className = 'value ' + lagClass(d.feedLagMs);
+    }
     setText('generated', 'updated ' + d.generatedAtIst + ' IST');
 
     // The feed's three numbers, which are NOT the eight above them. Admin asks
@@ -104,10 +109,15 @@ export const SCRIPT_CELLS = `
   // mechanism - a link that reloads with a query string, say - would be a second
   // place for a filter to be applied and a second place for the select, the
   // panel row and the request to disagree about what is being shown.
+  //
+  // THE SELECT EACH ONE MIRRORS IS IN THE ADMIN SECTION and is absent without
+  // it, so both write 'state' first and the control second. That order is the
+  // rule everywhere on this page — state is the description of what is being
+  // asked for, and a control is one way to write it, never the record of it.
   function pickGroup(value) {
     return function () {
       state.group = state.group === value ? '' : value;
-      el('group').value = state.group;
+      setControl('group', state.group);
       state.offset = 0;
       refresh(true);
     };
@@ -116,7 +126,7 @@ export const SCRIPT_CELLS = `
   function pickTier(value) {
     return function () {
       state.tier = state.tier === value ? '' : value;
-      el('tier').value = state.tier;
+      setControl('tier', state.tier);
       state.offset = 0;
       refresh(true);
     };

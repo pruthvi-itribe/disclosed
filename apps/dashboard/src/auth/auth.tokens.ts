@@ -23,3 +23,13 @@ export const AUTH_CONFIG = 'AUTH_CONFIG';
  * created the project yet.
  */
 export const FIREBASE_SIGN_IN = 'FIREBASE_SIGN_IN';
+
+/**
+ * Whether the operator panel is built into this process.
+ *
+ * A boolean behind a string token for the same reason `AUTH_CONFIG` is one: it
+ * is a resolved CONFIGURATION value, not a class Nest could construct. Read by
+ * `dashboard.controller.ts` to decide what the page contains and which routes
+ * exist; the rule that produces it is in `config/configuration.ts`.
+ */
+export const ADMIN_ENABLED = 'ADMIN_ENABLED';

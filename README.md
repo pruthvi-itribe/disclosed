@@ -167,6 +167,7 @@ default.
 | `DASHBOARD_PORT`       | `7717`                               | Dashboard listen port, 1024–65535. Always bound to `127.0.0.1`; the interface is not configurable. |
 | `PUBLIC_ORIGIN`        | `http://127.0.0.1:<port>`            | The one origin allowed to POST. Behind a proxy this must be the public https origin, or every mutation from the real page is refused. |
 | `SESSION_TTL_DAYS`     | `30`                                 | How long a session lives unused, 1–365. Slides forward on use, at most hourly. |
+| `ADMIN_ENABLED`        | _(follows the host)_                 | `true` or `false`. Unset ⇒ on when `NODE_ENV` is not `production` **and** `PUBLIC_ORIGIN` is loopback. Decides whether the Admin view and its three routes are built at all — see below. |
 | `AUTH_MODE`            | _(follows the keys)_                 | `firebase` or `local`. Unset ⇒ `firebase` when the two Firebase keys are set, `local` otherwise. |
 | `FIREBASE_PROJECT_ID`  | _(empty)_                            | The Firebase project. The server verifies ID tokens against it. |
 | `FIREBASE_WEB_API_KEY` | _(empty)_                            | The project's Web API key. Printed into `/auth`; not a secret — see below. |
@@ -184,6 +185,50 @@ default.
 | `DOCLING_URL`          | _(empty)_                            | Optional hybrid parser. Empty ⇒ `pdf-parse` reads everything. |
 | `DOCLING_TIMEOUT_MS`   | `300000`                             | One conversion's ceiling. Docling costs 2.5–4 s a page. |
 | `DOCLING_COOLDOWN_MS`  | `300000`                             | How long an unreachable service is skipped without a request. |
+
+### The Admin view is local-only
+
+The Admin tab is the instrument panel: the filings table, the enrichment and
+refusal breakdowns, the parse routes, the confidence tiers and the daily bars.
+Every one of those describes **this pipeline** rather than a company — how much
+it refused, how much it could not read, how far behind it is. That is useful on
+a laptop and is nobody else's business.
+
+So it is not hidden behind a role. It is **not shipped**:
+
+- no Admin tab and no Admin section in the served HTML — absent, not `hidden`;
+- no Admin fragment in the inlined script, so none of its renderers exist;
+- `GET /api/enrichment`, `/api/categories` and `/api/daily` answer **404**.
+
+404 rather than 403, because 403 says "this exists and you may not have it" —
+which is a fact about our machinery given to whoever asked. 404 says what is
+true on that host. The session guard stays on all three: this is a second
+condition, never a replacement for one.
+
+**The rule.** `ADMIN_ENABLED=true|false` is explicit and wins in both
+directions. Unset, the panel is built when `NODE_ENV` is not `production`
+**and** `PUBLIC_ORIGIN` names this machine (`127.0.0.1`, `localhost`, `[::1]`).
+
+Two signals, both required, because either alone is one line an operator can
+forget. `NODE_ENV` is a convention nothing enforces — a server started without
+it looks exactly like a laptop. And the loopback *bind* cannot discriminate:
+`DASHBOARD_HOST` is hard-coded to `127.0.0.1` and deliberately not
+configurable, so every deployment binds loopback, including the one behind the
+public reverse proxy. What separates them is `PUBLIC_ORIGIN`, which is not
+optional there — leave it at the loopback default and every mutation from the
+real page is refused by the origin guard. A host serving the internet has
+therefore necessarily set it. An origin that cannot be parsed is not loopback,
+so the gate fails closed.
+
+The startup line says which way it went: `admin=on` or `admin=off`.
+
+The six filter selects (`category`, `group`, `state`, `amount`, `tier`,
+`limit`) live inside the Admin section, so on a host without it they are simply
+absent. The feed reads a missing control as **its default**, never as empty —
+`state` is the one description of what is being asked for and a control is one
+way to write it, never the record of it. `e2e/admin.spec.ts` reads the mode off
+the served page and holds that host to the whole of its own contract, so the
+same suite proves either configuration.
 
 ### Signing in
 

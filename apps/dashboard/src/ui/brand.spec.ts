@@ -24,7 +24,7 @@ describe('the brand constant', () => {
   });
 
   it('is the only spelling of the name in the dashboard page', () => {
-    const html = renderDashboardPage();
+    const html = renderDashboardPage(true);
 
     // Every occurrence must have come through the constant. Counting rather
     // than matching once: a literal left behind would still let a `toContain`
@@ -40,7 +40,7 @@ describe('the brand constant', () => {
   });
 
   it('titles the page from the name and the tagline together', () => {
-    expect(renderDashboardPage()).toContain(
+    expect(renderDashboardPage(true)).toContain(
       `<title>${BRAND} — ${BRAND_TAGLINE}</title>`,
     );
   });

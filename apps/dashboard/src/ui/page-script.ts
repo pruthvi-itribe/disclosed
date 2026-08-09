@@ -58,8 +58,25 @@ import { SCRIPT_VIEWS } from './script/script-views';
  * output to the byte, and asserts no fragment carries a backtick of its own.
  */
 
+/**
+ * The one value the server writes INTO the script rather than sending as JSON.
+ *
+ * `ADMIN_ENABLED` decides whether the operator panel exists, and the fragments
+ * read it at load time — before the first fetch returns — to decide what to
+ * wire up. It cannot arrive from `api/summary` for the same reason the tab
+ * cannot be hidden with CSS: by then the listeners are already bound to elements
+ * that are not there.
+ *
+ * A BOOLEAN LITERAL, NOT INTERPOLATED TEXT. The only two strings this can ever
+ * produce are `true` and `false`, so there is nothing here for a value to escape
+ * from — which is the property every other value on this page gets by going
+ * through `textContent` instead.
+ */
+const adminFlag = (enabled: boolean): string =>
+  `  var ADMIN_ENABLED = ${enabled ? 'true' : 'false'};`;
+
 /** The fragments, in the order they execute. */
-const FRAGMENTS: readonly string[] = [
+const fragments = (admin: boolean): readonly string[] => [
   SCRIPT_BASE,
   SCRIPT_CELLS,
   SCRIPT_FEED,
@@ -73,7 +90,12 @@ const FRAGMENTS: readonly string[] = [
   // `writeClaim`, and no other way.
   SCRIPT_BRIEF,
   SCRIPT_COMPANY,
-  SCRIPT_ADMIN,
+  // THE WHOLE PANEL, OR NONE OF IT. Off, this fragment is not in the document
+  // at all — not hidden, not dead behind a flag. Its renderers are its only
+  // callers outside `script-poll`, and those calls are guarded by
+  // `ADMIN_ENABLED`, so the joined script defines nothing it does not use. See
+  // `configuration.ts` for why the surface is removed rather than gated.
+  ...(admin ? [SCRIPT_ADMIN] : []),
   SCRIPT_POLL,
   SCRIPT_SUGGEST,
   // Before `script-views`, which ends with the page's three bootstrap lines.
@@ -100,7 +122,17 @@ const body = (fragment: string): string =>
  * outer string for a backtick to escape from; the only template literals left
  * are the fragments themselves, each small enough to read.
  */
-export const PAGE_SCRIPT =
+export const pageScript = (admin: boolean): string =>
   "\n(function () {\n  'use strict';\n" +
-  FRAGMENTS.map(body).join('\n') +
+  adminFlag(admin) +
+  '\n' +
+  fragments(admin).map(body).join('\n') +
   '\n})();\n';
+
+/**
+ * The script as a local host serves it, with the panel in.
+ *
+ * Kept as a constant because that is what nearly every spec is about, and
+ * because the composed-output test has to hold ONE known string to the byte.
+ */
+export const PAGE_SCRIPT = pageScript(true);

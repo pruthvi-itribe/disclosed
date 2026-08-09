@@ -5,6 +5,7 @@ import {
   MIN_PORT,
   describeDashboardConfig,
   loadDashboardConfig,
+  readAdminEnabled,
   readPort,
   readString,
 } from './configuration';
@@ -119,6 +120,8 @@ describe('loadDashboardConfig', () => {
       // The whole decision table lives in `auth-config.spec.ts`; what this
       // asserts is that the dashboard config carries it at all.
       auth: { mode: 'local', firebase: null, missing: [] },
+      // A laptop: no NODE_ENV and a loopback origin. See `readAdminEnabled`.
+      adminEnabled: true,
     });
   });
 
@@ -146,6 +149,7 @@ describe('loadDashboardConfig', () => {
       // or a dashboard on 9001 would refuse every mutation from its own page.
       publicOrigin: 'http://127.0.0.1:9001',
       auth: { mode: 'local', firebase: null, missing: [] },
+      adminEnabled: true,
     });
   });
 
@@ -232,5 +236,100 @@ describe('describeDashboardConfig', () => {
 
     expect(line).toContain('mongodb://***@host:27017/turret');
     expect(line).not.toContain('s3cret');
+  });
+});
+
+describe('readAdminEnabled — where the operator panel exists', () => {
+  const LOOPBACK = 'http://127.0.0.1:7717';
+  const PUBLIC = 'https://disclosed.live';
+
+  it('is on for a laptop: no NODE_ENV, loopback origin', () => {
+    // The shipped local run, which needs no configuration at all.
+    expect(readAdminEnabled(env(), LOOPBACK)).toBe(true);
+    expect(readAdminEnabled(env({ NODE_ENV: 'development' }), LOOPBACK)).toBe(
+      true,
+    );
+    expect(readAdminEnabled(env({ NODE_ENV: 'test' }), LOOPBACK)).toBe(true);
+  });
+
+  it('is off in production, whatever the origin says', () => {
+    expect(readAdminEnabled(env({ NODE_ENV: 'production' }), LOOPBACK)).toBe(
+      false,
+    );
+    expect(readAdminEnabled(env({ NODE_ENV: 'production' }), PUBLIC)).toBe(
+      false,
+    );
+  });
+
+  it('is off behind a public origin, even with NODE_ENV unset', () => {
+    // THE SIGNAL THAT CANNOT BE FORGOTTEN. `NODE_ENV` is a convention nothing
+    // enforces, so a host started without it looks exactly like a laptop.
+    // `PUBLIC_ORIGIN` is not optional behind the proxy — leave it at the
+    // loopback default and every mutation from the real page is refused by
+    // `origin-guard.ts` — so a host serving the internet has necessarily set it.
+    expect(readAdminEnabled(env(), PUBLIC)).toBe(false);
+    expect(readAdminEnabled(env(), 'https://app.example.com:8443')).toBe(false);
+  });
+
+  it('counts localhost and ::1 as this machine, and nothing else', () => {
+    expect(readAdminEnabled(env(), 'http://localhost:7717')).toBe(true);
+    expect(readAdminEnabled(env(), 'http://[::1]:7717')).toBe(true);
+    // Loopback by RFC and not a value this application is ever configured
+    // with. A gate recognises the shipped values and refuses the rest.
+    expect(readAdminEnabled(env(), 'http://127.13.9.2:7717')).toBe(false);
+  });
+
+  it('fails CLOSED on an origin it cannot parse', () => {
+    // "Nothing was found" and "nothing was looked for" must not read the same
+    // — and for a gate the safe reading of "unreadable" is off. The startup
+    // line says `admin=off`, which is where an operator who expected it looks.
+    expect(readAdminEnabled(env(), 'not a url')).toBe(false);
+    expect(readAdminEnabled(env(), '')).toBe(false);
+  });
+
+  it('lets ADMIN_ENABLED win in BOTH directions', () => {
+    // An explicit setting is an operator's decision and outranks the
+    // inference, exactly as `AUTH_MODE` does.
+    expect(
+      readAdminEnabled(
+        env({ ADMIN_ENABLED: 'true', NODE_ENV: 'production' }),
+        PUBLIC,
+      ),
+    ).toBe(true);
+    expect(readAdminEnabled(env({ ADMIN_ENABLED: 'false' }), LOOPBACK)).toBe(
+      false,
+    );
+    // Case and padding are an operator typing, not a different answer.
+    expect(readAdminEnabled(env({ ADMIN_ENABLED: ' TRUE ' }), PUBLIC)).toBe(
+      true,
+    );
+  });
+
+  it('treats a blank assignment as unset, like every other key here', () => {
+    // `ADMIN_ENABLED=` is how a .env file spells "not set".
+    expect(readAdminEnabled(env({ ADMIN_ENABLED: '' }), PUBLIC)).toBe(false);
+    expect(readAdminEnabled(env({ ADMIN_ENABLED: '  ' }), LOOPBACK)).toBe(true);
+  });
+
+  it('refuses a value it cannot read, naming the key', () => {
+    // Not guessed at. `ADMIN_ENABLED=yes` read as false silently removes a
+    // surface, and read as true ships it — so it stops the process instead.
+    expect(() =>
+      readAdminEnabled(env({ ADMIN_ENABLED: 'yes' }), LOOPBACK),
+    ).toThrow(/ADMIN_ENABLED must be "true" or "false"/);
+    expect(() =>
+      readAdminEnabled(env({ ADMIN_ENABLED: '1' }), LOOPBACK),
+    ).toThrow(/ADMIN_ENABLED/);
+  });
+
+  it('says which way it went in the startup line', () => {
+    expect(
+      describeDashboardConfig(
+        loadDashboardConfig(env({ ADMIN_ENABLED: 'false' })),
+      ),
+    ).toContain('admin=off');
+    expect(describeDashboardConfig(loadDashboardConfig(env()))).toContain(
+      'admin=on',
+    );
   });
 });

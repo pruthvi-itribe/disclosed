@@ -222,7 +222,7 @@ export const SCRIPT_SUGGEST = `
     if (picked.kind === 'company') state.symbol = '';
     if (picked.kind === 'category') {
       state.category = '';
-      el('category').value = '';
+      setControl('category', '');
     }
     if (picked.kind === 'group') {
       state.group = '';
@@ -244,7 +244,7 @@ export const SCRIPT_SUGGEST = `
       state.symbol = item.value;
     } else if (item.kind === 'category') {
       state.category = item.value;
-      el('category').value = item.value;
+      setControl('category', item.value);
     } else {
       state.group = item.value;
       syncChips();

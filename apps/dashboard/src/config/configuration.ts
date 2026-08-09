@@ -73,6 +73,13 @@ export interface DashboardConfig {
    * "asked for, not supplied".
    */
   readonly auth: AuthConfig;
+  /**
+   * Whether the Admin view and the three routes only it reads exist at all.
+   *
+   * NOT A PERMISSION AND NOT A ROLE. It is whether the instrument panel is
+   * BUILT — see `readAdminEnabled` for the rule and why it is two signals.
+   */
+  readonly adminEnabled: boolean;
 }
 
 /**
@@ -223,10 +230,98 @@ export const readSessionTtlDays = (env: NodeJS.ProcessEnv): number => {
   return value;
 };
 
+/**
+ * Hostnames that mean "this machine, reached from this machine".
+ *
+ * Written out rather than pattern-matched. `127.0.0.0/8` is entirely loopback
+ * and a range test would accept `127.13.9.2`, which is loopback and is also not
+ * anything this application is ever configured with — a gate should recognise
+ * the shipped values and refuse the rest.
+ */
+const LOOPBACK_HOSTS: readonly string[] = ['127.0.0.1', 'localhost', '[::1]'];
+
+/**
+ * Whether the Admin view and its routes are built into this process.
+ *
+ * ================================================================
+ * WHAT ADMIN IS, AND WHY IT IS NOT A ROLE
+ * ================================================================
+ *
+ * Admin is the instrument panel: the filings table, the enrichment and refusal
+ * breakdowns, the parse routes, the daily bars. Every one of those is a fact
+ * about THIS PIPELINE rather than about a company — how much it refused, how
+ * much it could not read, how far behind it is. `page.ts` argues the split; this
+ * is the consequence of taking it seriously. A reader has no use for it, and a
+ * stranger reading how much of the corpus we failed to parse is a description of
+ * our own machinery given to somebody who did not ask for it.
+ *
+ * So it is not hidden behind a role. It is NOT SHIPPED: no tab, no markup, no
+ * client fragment, and the three routes only it reads answer 404. A surface that
+ * is not built cannot be reached by guessing a URL, and there is no admin flag
+ * on a user row to leak, mis-set, or forget to revoke.
+ *
+ * ================================================================
+ * THE RULE
+ * ================================================================
+ *
+ *   ADMIN_ENABLED=true|false    explicit, and it wins in both directions
+ *   otherwise                   NODE_ENV is not 'production'
+ *                               AND `PUBLIC_ORIGIN` is a loopback origin
+ *
+ * TWO SIGNALS, BOTH REQUIRED, because either one alone is a single line an
+ * operator can forget. `NODE_ENV` is a convention with no enforcement — a host
+ * started without it looks exactly like a laptop — and the loopback bind cannot
+ * discriminate on its own: `DASHBOARD_HOST` is hard-coded to `127.0.0.1` and is
+ * deliberately not configurable, so *every* deployment binds loopback, including
+ * the one behind the public reverse proxy. What actually distinguishes them is
+ * `PUBLIC_ORIGIN`: it defaults to this process's own loopback URL and MUST be
+ * set to the public https origin behind the proxy, or every mutation from the
+ * real page is refused. A host serving the internet therefore cannot leave it at
+ * the loopback default and still work, which is what makes it a signal rather
+ * than a wish.
+ *
+ * FAILS CLOSED, AND SAYS SO. An origin this cannot parse is not loopback, so
+ * Admin is off — and `describeDashboardConfig` prints `admin=off` at boot, which
+ * is where an operator who expected it looks first.
+ */
+export const readAdminEnabled = (
+  env: NodeJS.ProcessEnv,
+  publicOrigin: string,
+): boolean => {
+  const raw = env.ADMIN_ENABLED;
+
+  if (raw !== undefined && raw.trim() !== '') {
+    const wanted = raw.trim().toLowerCase();
+    if (wanted === 'true' || wanted === 'false') return wanted === 'true';
+
+    throw new Error(
+      `ADMIN_ENABLED must be "true" or "false", but was "${raw}". It decides ` +
+        'whether the operator panel and its routes are built into this ' +
+        'process, so an unreadable value is not guessed at.',
+    );
+  }
+
+  return env.NODE_ENV !== 'production' && isLoopbackOrigin(publicOrigin);
+};
+
+/** Whether an origin names this machine. Unparseable is not loopback. */
+const isLoopbackOrigin = (origin: string): boolean => {
+  try {
+    return LOOPBACK_HOSTS.includes(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+};
+
 export const loadDashboardConfig = (
   env: NodeJS.ProcessEnv = process.env,
 ): DashboardConfig => {
   const port = readPort(env);
+  const publicOrigin = readString(
+    'PUBLIC_ORIGIN',
+    env,
+    `http://${DASHBOARD_HOST}:${port}`,
+  );
 
   return {
     mongoUri: readString('MONGO_URI', env, DASHBOARD_DEFAULTS.MONGO_URI),
@@ -237,12 +332,9 @@ export const loadDashboardConfig = (
     // blank one fails CLOSED in `isAllowedOrigin` — which is right for a
     // misconfiguration and wrong for the shipped loopback deployment, where
     // every mutation would be refused before anyone had configured anything.
-    publicOrigin: readString(
-      'PUBLIC_ORIGIN',
-      env,
-      `http://${DASHBOARD_HOST}:${port}`,
-    ),
+    publicOrigin,
     auth: loadAuthConfig(env),
+    adminEnabled: readAdminEnabled(env, publicOrigin),
   };
 };
 
@@ -270,6 +362,11 @@ export const describeDashboardConfig = (config: DashboardConfig): string =>
     'filings=read-only',
     `accounts=read-write ttl=${config.sessionTtlDays}d`,
     `origin=${config.publicOrigin}`,
+    // WHETHER THE INSTRUMENT PANEL EXISTS ON THIS HOST. Printed because it is a
+    // surface that is either built or absent, with no runtime way to tell from
+    // the outside: an operator who cannot find the Admin tab reads this line
+    // and learns whether it was refused or never made.
+    `admin=${config.adminEnabled ? 'on' : 'off'}`,
     // WHICH WAY IN IS OPEN, and whether it actually works. A host running
     // `AUTH_MODE=firebase` with no project keys serves a sign-in page nobody
     // can sign in through, and this line is where an operator looks first.

@@ -13,26 +13,38 @@
  */
 export const SCRIPT_VIEWS = `
   // ---------------------------------------------------------------- tabs ----
+  // The Admin tab and its section are absent on a host built without the panel,
+  // so every touch of either goes through these. Written as helpers rather than
+  // as an 'if' around each line because 'showView' runs on every tab press and
+  // a null dereference here would freeze the whole page.
+  function hideUnless(id, showing) {
+    var node = el(id);
+    if (node !== null) node.hidden = !showing;
+  }
+
+  function markTab(id, active) {
+    var node = el(id);
+    if (node === null) return;
+    // The count is a child of the tab, so the class is set rather than the
+    // whole element rebuilt - assigning textContent here would delete it.
+    node.className = 'tab' + (active ? ' active' : '');
+    node.setAttribute('aria-selected', String(active));
+  }
+
   function showView(name) {
     state.view = name;
     el('view-brief').hidden = name !== 'brief';
     el('view-feed').hidden = name !== 'feed';
     el('view-watching').hidden = name !== 'watching';
-    el('view-admin').hidden = name !== 'admin';
+    hideUnless('view-admin', name === 'admin');
     el('view-company').hidden = name !== 'company';
     // The company view is reached from a card, not from a tab, so no tab
     // is active while it is open. Leaving Feed lit would say the reader is
     // somewhere they are not.
-    el('tab-brief').className = 'tab' + (name === 'brief' ? ' active' : '');
-    el('tab-feed').className = 'tab' + (name === 'feed' ? ' active' : '');
-    // The count is a child of the tab, so the class is set rather than the
-    // whole element rebuilt - assigning textContent here would delete it.
-    el('tab-watching').className = 'tab' + (name === 'watching' ? ' active' : '');
-    el('tab-admin').className = 'tab' + (name === 'admin' ? ' active' : '');
-    el('tab-brief').setAttribute('aria-selected', String(name === 'brief'));
-    el('tab-feed').setAttribute('aria-selected', String(name === 'feed'));
-    el('tab-watching').setAttribute('aria-selected', String(name === 'watching'));
-    el('tab-admin').setAttribute('aria-selected', String(name === 'admin'));
+    markTab('tab-brief', name === 'brief');
+    markTab('tab-feed', name === 'feed');
+    markTab('tab-watching', name === 'watching');
+    markTab('tab-admin', name === 'admin');
     // THE DECK OWNS THE VIEWPORT WHILE IT IS OPEN: it is a scroll container
     // sized to the window, so the page behind it must not scroll too. Written
     // as one class on the body rather than inferred in CSS, so exactly one
@@ -70,10 +82,12 @@ export const SCRIPT_VIEWS = `
     showView('watching');
     refresh(true);
   });
-  el('tab-admin').addEventListener('click', function () {
-    showView('admin');
-    refresh(true);
-  });
+  if (ADMIN_ENABLED) {
+    el('tab-admin').addEventListener('click', function () {
+      showView('admin');
+      refresh(true);
+    });
+  }
 
   // --------------------------------------------------------------- chips ----
   // The group filter, twice: chips in the feed and a select in Admin. They
@@ -161,7 +175,10 @@ export const SCRIPT_VIEWS = `
       if (LIMIT_STEPS[i] > state.limit) { state.limit = LIMIT_STEPS[i]; grew = true; break; }
     }
     if (!grew) return;
-    el('limit').value = String(state.limit);
+    // Admin's select is the other writer of this filter and is absent on a host
+    // without the panel; 'setControl' is what makes the feed's own Load more
+    // independent of it.
+    setControl('limit', String(state.limit));
     refresh(true);
   }
   el('feed-more').addEventListener('click', growFeed);

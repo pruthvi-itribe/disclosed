@@ -35,7 +35,7 @@ import { SCRIPT_POLL } from './script/script-poll';
  * that renders a string.
  */
 
-const html = renderDashboardPage();
+const html = renderDashboardPage(true);
 
 describe('renderDashboardPage — self-containment', () => {
   it('references no external host at all', () => {
@@ -252,7 +252,7 @@ describe('renderDashboardPage — content', () => {
   it('is stable — two renders produce the same document', () => {
     // Nothing in the shell is time- or data-dependent; every value arrives
     // from the JSON routes at runtime.
-    expect(renderDashboardPage()).toBe(html);
+    expect(renderDashboardPage(true)).toBe(html);
   });
 
   it('carries no filing data in the shell', () => {
@@ -393,13 +393,20 @@ describe('renderDashboardPage — outcome, group and confidence', () => {
   });
 
   it.each(['group', 'tier'])('applies the %s filter on change', (id) => {
-    expect(html).toContain(
-      `el('${id}').addEventListener('change', applyFilters);`,
-    );
+    // THROUGH `onControl`, NOT `el(...).addEventListener`, and the indirection
+    // is the deployment gate rather than a style. Both selects live in the
+    // Admin section, which a host built without the panel does not have — and
+    // `el('group').addEventListener` on a missing node is a TypeError at load,
+    // in a scope the feed, the deck and the search box all share.
+    expect(html).toContain(`onControl('${id}', 'change', applyFilters);`);
   });
 
   it.each(['group', 'tier'])('clears the %s filter with the rest', (id) => {
-    expect(html).toContain(`el('${id}').value = '';`);
+    // Cleared in `state` as well as in the control, for the same reason: Clear
+    // is the one button whose job is to put every filter back, and a control
+    // that is not there cannot be the record of what a filter is set to.
+    expect(html).toContain(`setControl('${id}', '');`);
+    expect(html).toContain(`state.${id === 'group' ? 'group' : 'tier'} = '';`);
   });
 
   it('names the parser only when it was not the ordinary one', () => {
@@ -608,7 +615,7 @@ describe('renderDashboardPage — the plans filter', () => {
   it('lets Clear reach the plans chip too', () => {
     // A Clear that left this chip lit would leave the feed narrowed by a
     // control the reader believes they just reset.
-    const clear = /el\('clear'\)\.addEventListener\([\s\S]*?\}\);/.exec(script);
+    const clear = /onControl\('clear', 'click',[\s\S]*?\}\);/.exec(script);
     expect(clear?.[0]).toContain('state.plans = false;');
     expect(clear?.[0]).toContain('syncTopics();');
   });
@@ -1210,9 +1217,11 @@ describe('renderDashboardPage — the Brief', () => {
 
     it('is a fourth view the tabs switch between', () => {
       expect(script).toContain("el('view-brief').hidden = name !== 'brief';");
-      expect(script).toContain(
-        "el('tab-brief').className = 'tab' + (name === 'brief' ? ' active' : '');",
-      );
+      // THROUGH `markTab`, which tolerates a tab that is not there: the Admin
+      // one is absent on a host built without the panel, and `showView` runs on
+      // every tab press.
+      expect(script).toContain("markTab('tab-brief', name === 'brief');");
+      expect(script).toContain("markTab('tab-admin', name === 'admin');");
     });
 
     it('lands on the deck at 430px and on the feed above it', () => {
@@ -1703,7 +1712,7 @@ describe('renderDashboardPage — the account', () => {
  * draws.
  */
 describe('the focus card', () => {
-  const html = renderDashboardPage();
+  const html = renderDashboardPage(true);
 
   it('ships an empty dialog shell, outside the feed', () => {
     // OUTSIDE `#feed` ON PURPOSE. The feed rebuilds every four seconds and no
@@ -1826,5 +1835,118 @@ describe('the focus card', () => {
   it('links the source only through safeHref', () => {
     expect(SCRIPT_FOCUS).toContain('safeHref(f.attachmentUrl)');
     expect(SCRIPT_FOCUS).toContain("rel = 'noopener noreferrer nofollow'");
+  });
+});
+
+/**
+ * THE PANEL AS A DEPLOYMENT DECISION, asserted on the served document.
+ *
+ * `renderDashboardPage(false)` is what a non-local host serves. The claim is
+ * not that the Admin tab is hidden — it is that nothing of it is in the
+ * document, because a section that is not there cannot be un-hidden from a
+ * console, and a `<select>` that is not there cannot be read by a script.
+ */
+describe('renderDashboardPage — without the operator panel', () => {
+  const off = renderDashboardPage(false);
+  const on = renderDashboardPage(true);
+
+  it('ships no Admin tab and no Admin section', () => {
+    expect(off).not.toContain('id="tab-admin"');
+    expect(off).not.toContain('id="view-admin"');
+    expect(off).not.toContain('data-ui="view-admin"');
+    // ABSENT, NOT HIDDEN. `hidden` is one attribute away from visible.
+    expect(off).not.toMatch(/id="view-admin"[^>]*hidden/);
+  });
+
+  it('ships none of the panel filter controls', () => {
+    for (const id of [
+      'category',
+      'group',
+      'state',
+      'amount',
+      'tier',
+      'limit',
+    ]) {
+      expect(off).not.toContain(`<select id="${id}">`);
+    }
+    expect(off).not.toContain('id="clear"');
+    expect(off).not.toContain('id="prev"');
+    expect(off).not.toContain('id="next"');
+    expect(off).not.toContain('id="rows"');
+    expect(off).not.toContain('id="diagnostics"');
+  });
+
+  it('ships none of the Admin client fragment', () => {
+    // The renderers, not merely the markup. A page that carried the code but
+    // not the elements would be dead weight that still describes the panel.
+    expect(off).not.toContain('function renderFilings(');
+    expect(off).not.toContain('function renderEnrichment(');
+    expect(off).not.toContain('function renderDaily(');
+    expect(off).not.toContain('function renderCategories(');
+    // And with the panel, all four are there — so the assertions above are
+    // about this switch rather than about a name that never existed.
+    expect(on).toContain('function renderFilings(');
+    expect(on).toContain('function renderEnrichment(');
+    expect(on).toContain('function renderDaily(');
+    expect(on).toContain('function renderCategories(');
+  });
+
+  it('asks for none of the three routes only the panel reads', () => {
+    // The server answers them 404 on this host, so a request would turn every
+    // slow cycle into a red banner over a feed that is working perfectly.
+    for (const route of ['api/categories', 'api/daily', 'api/enrichment']) {
+      expect(off).not.toContain(route);
+      expect(on).toContain(route);
+    }
+    // The routes the PRODUCT reads are untouched.
+    expect(off).toContain('api/filings');
+    expect(off).toContain('api/summary');
+    expect(off).toContain('api/suggest');
+  });
+
+  it('states the decision to the script, from the server', () => {
+    // Server-rendered, never guessed at in the browser: a page that decided
+    // this for itself would have to ship the panel in order to decide against
+    // shipping it.
+    expect(off).toContain('var ADMIN_ENABLED = false;');
+    expect(on).toContain('var ADMIN_ENABLED = true;');
+  });
+
+  it('keeps the three reader views, their tabs and the feed chrome', () => {
+    for (const id of [
+      'view-brief',
+      'view-feed',
+      'view-watching',
+      'view-company',
+    ]) {
+      expect(off).toContain(`id="${id}"`);
+    }
+    for (const id of ['tab-brief', 'tab-feed', 'tab-watching']) {
+      expect(off).toContain(`id="${id}"`);
+    }
+    expect(off).toContain('id="symbol"');
+    expect(off).toContain('id="only-insights"');
+    expect(off).toContain('id="topics"');
+    expect(off).toContain('id="feed-more"');
+  });
+
+  it('reads a missing control as its default rather than as empty', () => {
+    // THE FAILURE THIS AVOIDS. `el('limit').value` on a missing node is a
+    // TypeError thrown at load, in the one scope the feed, the deck and the
+    // search box share — so the whole page would be blank because an operator
+    // panel was switched off.
+    expect(off).toContain('function controlValue(id, fallback)');
+    expect(off).toContain('return node === null ? fallback : node.value;');
+    expect(off).toContain(
+      "state.limit = Number(controlValue('limit', state.limit)) || DEFAULT_LIMIT;",
+    );
+    // And the feed still grows through the same steps it always did.
+    expect(off).toContain('var LIMIT_STEPS = [25, 50, 100, 200, 500];');
+  });
+
+  it('is still one self-contained document that references no external host', () => {
+    expect(off).not.toMatch(/https?:\/\//);
+    expect((off.match(/<link/g) ?? []).length).toBe(1);
+    expect((off.match(/<script/g) ?? []).length).toBe(1);
   });
 });

@@ -3,6 +3,7 @@ import {
   Get,
   Header,
   Inject,
+  NotFoundException,
   Query,
   Req,
   Res,
@@ -13,7 +14,7 @@ import type { Request, Response } from 'express';
 import { ok, okWith, type ApiEnvelope } from '../http/envelope';
 import { CLAIM_TOPICS } from '@app/filings';
 import { ApiErrorFilter } from '../auth/api-error';
-import { AUTH_CONFIG } from '../auth/auth.tokens';
+import { ADMIN_ENABLED, AUTH_CONFIG } from '../auth/auth.tokens';
 import { SessionGuard } from '../auth/session.guard';
 import { SessionService } from '../auth/session.service';
 import type { AuthConfig } from '../config/auth-config';
@@ -120,6 +121,15 @@ export class DashboardController {
     private readonly directory: CompanyDirectory,
     private readonly sessions: SessionService,
     @Inject(AUTH_CONFIG) private readonly authConfig: AuthConfig,
+    /**
+     * Whether this process was built with the operator panel — see
+     * `config/configuration.ts` for the rule and why it is two signals.
+     *
+     * READ IN TWO PLACES AND THEY MUST AGREE: the page it renders, and the
+     * three routes only that page reads. A document without the panel whose
+     * routes still answered would be the surface removed and the data left.
+     */
+    @Inject(ADMIN_ENABLED) private readonly adminEnabled: boolean,
   ) {}
 
   /**
@@ -148,7 +158,9 @@ export class DashboardController {
   @Header('Cache-Control', 'no-store')
   async getPage(@Req() request: Request): Promise<string> {
     const who = await this.sessions.resolve(request);
-    return who === null ? renderLandingPage() : renderDashboardPage();
+    return who === null
+      ? renderLandingPage()
+      : renderDashboardPage(this.adminEnabled);
   }
 
   /**
@@ -287,6 +299,35 @@ export class DashboardController {
   }
 
   /**
+   * The three routes below exist only where the operator panel does.
+   *
+   * ================================================================
+   * 404 RATHER THAN 403, AND THE DIFFERENCE IS THE WHOLE POINT
+   * ================================================================
+   *
+   * A 403 says "this exists and you may not have it", which is an answer about
+   * our machinery given to whoever asked. A 404 says what is true on this host:
+   * there is no such route here. It is the same statement the page makes by not
+   * containing the panel, and the two must not disagree — a document without the
+   * tab whose routes still answered would be the surface removed and the data
+   * left behind it.
+   *
+   * WHY THESE THREE AND NO OTHERS. They are exactly what the Admin fragment
+   * reads and nothing else on the page touches: `api/enrichment` fills the
+   * refusal, state and parse-route panels; `api/categories` fills Admin's
+   * category select and its panel; `api/daily` fills the per-day bars. Checked
+   * by grep at the call sites, not assumed — `api/summary` is on this list's
+   * doorstep and stays off it, because the feed's hero reads it too.
+   *
+   * The guard stays. This is a second condition on top of the session, never a
+   * replacement for one.
+   */
+  private refuseWithoutAdmin(): void {
+    if (this.adminEnabled) return;
+    throw new NotFoundException('Cannot GET this route on this host.');
+  }
+
+  /**
    * How the attachment worker is doing, and every reason it refused something.
    *
    * A separate route from `api/summary` rather than more fields on it: this one
@@ -297,6 +338,7 @@ export class DashboardController {
   @Header('Cache-Control', 'no-store')
   @UseGuards(SessionGuard)
   async getEnrichment(): Promise<ApiEnvelope<EnrichmentSummaryView>> {
+    this.refuseWithoutAdmin();
     return ok(await this.filings.getEnrichmentSummary());
   }
 
@@ -307,6 +349,7 @@ export class DashboardController {
   async getCategories(
     @Query() query: RawQuery,
   ): Promise<ApiEnvelope<readonly CategoryCount[]>> {
+    this.refuseWithoutAdmin();
     return ok(
       await this.filings.getCategories(
         readBoundedInteger('limit', query, {
@@ -325,6 +368,7 @@ export class DashboardController {
   async getDaily(
     @Query() query: RawQuery,
   ): Promise<ApiEnvelope<readonly DailyCount[]>> {
+    this.refuseWithoutAdmin();
     return ok(
       await this.filings.getDaily(
         readBoundedInteger('days', query, {

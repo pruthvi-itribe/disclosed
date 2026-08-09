@@ -1,4 +1,8 @@
-import { BadRequestException, RequestMethod } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  RequestMethod,
+} from '@nestjs/common';
 import {
   GUARDS_METADATA,
   METHOD_METADATA,
@@ -23,6 +27,16 @@ import type { EnrichmentSummaryView, SummaryView } from './dashboard.types';
 
 /** Flipped by the front-door tests to choose which document `GET /` returns. */
 let signedIn = true;
+
+/**
+ * Builds a controller for a host with the operator panel, or without it.
+ *
+ * `beforeEach` builds the WITH one, because that is the local host every other
+ * test in this file is about. The tests that are about the panel being absent
+ * ask for their own, which is why this is a function rather than a flag: a flag
+ * read by `beforeEach` cannot be set from inside the test that needs it.
+ */
+let makeController: (admin: boolean) => DashboardController;
 
 const SIGNED_IN: Signedin = {
   userId: 'u1',
@@ -183,11 +197,16 @@ beforeEach(() => {
     resolve: async () => (signedIn ? SIGNED_IN : null),
   } as unknown as SessionService;
 
-  controller = new DashboardController(service, directory, sessions, {
-    mode: 'local',
-    firebase: null,
-    missing: [],
-  });
+  makeController = (admin: boolean) =>
+    new DashboardController(
+      service,
+      directory,
+      sessions,
+      { mode: 'local', firebase: null, missing: [] },
+      admin,
+    );
+
+  controller = makeController(true);
 });
 
 describe('DashboardController — routes', () => {
@@ -563,5 +582,97 @@ describe('DashboardController — enrichment summary', () => {
 
     expect(body.data.byRefusal).toEqual([{ key: 'no-candidate', count: 500 }]);
     expect(body.data.byUnparseable).toEqual([{ key: 'not-a-pdf', count: 40 }]);
+  });
+});
+
+describe('DashboardController — the panel is a deployment decision', () => {
+  const ADMIN_ONLY = ['getEnrichment', 'getCategories', 'getDaily'] as const;
+
+  /** Calls one of the three with the arguments Nest would pass it. */
+  const call = async (
+    on: DashboardController,
+    handler: (typeof ADMIN_ONLY)[number],
+  ): Promise<unknown> =>
+    handler === 'getEnrichment' ? on.getEnrichment() : on[handler]({});
+
+  it.each(ADMIN_ONLY)(
+    'answers %s normally where the panel exists',
+    async (handler) => {
+      await expect(call(makeController(true), handler)).resolves.toBeDefined();
+    },
+  );
+
+  it.each(ADMIN_ONLY)(
+    'answers %s with 404 where it does not',
+    async (handler) => {
+      // 404 RATHER THAN 403. A 403 says "this exists and you may not have it",
+      // which is a fact about our machinery told to whoever asked. A 404 says
+      // what is true on this host, and matches what the page says by not
+      // containing the panel.
+      const off = makeController(false);
+
+      await expect(call(off, handler)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(call(off, handler)).rejects.toMatchObject({ status: 404 });
+    },
+  );
+
+  it('reaches the database for none of them when it refuses', async () => {
+    // REFUSED BEFORE THE READ, not after. `getEnrichment` runs seven grouped
+    // aggregations, and a route that did the work and then threw would be the
+    // load without the answer.
+    const off = makeController(false);
+
+    await expect(off.getCategories({})).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(off.getDaily({})).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(calls.categories).toEqual([]);
+    expect(calls.days).toEqual([]);
+  });
+
+  it('leaves every route the product reads alone', async () => {
+    // The gate is on the three the panel reads and on nothing else. `summary`
+    // in particular stays: the feed's hero is drawn from it.
+    const off = makeController(false);
+
+    await expect(off.getSummary()).resolves.toBeDefined();
+    await expect(off.getFilings({})).resolves.toBeDefined();
+    await expect(off.getSuggestions({})).resolves.toBeDefined();
+    expect(off.getHealth()).toBeDefined();
+  });
+
+  it.each(ADMIN_ONLY)('keeps the session guard on %s as well', (handler) => {
+    // A SECOND CONDITION, NEVER A REPLACEMENT. Removing the surface must not
+    // quietly remove the sign-in requirement from the route underneath it.
+    expect(guardsOn(handler)).toContain(SessionGuard);
+  });
+
+  it('serves the page built the way it was configured', async () => {
+    signedIn = true;
+    const request = {} as unknown as Request;
+
+    const withPanel = await makeController(true).getPage(request);
+    const without = await makeController(false).getPage(request);
+
+    expect(withPanel).toContain('id="tab-admin"');
+    expect(without).not.toContain('id="tab-admin"');
+    expect(without).toContain('var ADMIN_ENABLED = false;');
+  });
+
+  it('serves the landing page to a signed-out visitor either way', async () => {
+    // The panel decision is about what a SIGNED-IN reader gets. A signed-out
+    // one still reads nothing, which is a property of the routing table.
+    signedIn = false;
+    const request = {} as unknown as Request;
+
+    for (const admin of [true, false]) {
+      const page = await makeController(admin).getPage(request);
+      expect(page).not.toContain('id="view-feed"');
+    }
+
+    signedIn = true;
   });
 });

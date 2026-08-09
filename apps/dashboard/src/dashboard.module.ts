@@ -29,7 +29,11 @@ import { FilingSchema, type FilingDocument } from '@app/filings';
 import { ApiErrorFilter } from './auth/api-error';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
-import { AUTH_CONFIG, FIREBASE_SIGN_IN } from './auth/auth.tokens';
+import {
+  ADMIN_ENABLED,
+  AUTH_CONFIG,
+  FIREBASE_SIGN_IN,
+} from './auth/auth.tokens';
 import { FirebaseSignInService } from './auth/firebase-sign-in';
 import { AdminSdkVerifier } from './auth/firebase-verifier';
 import { OriginGuard, SessionGuard } from './auth/session.guard';
@@ -272,6 +276,20 @@ export const FILING_MODEL = 'Filing';
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
         config.getOrThrow<AuthConfig>('auth'),
+    },
+    {
+      /**
+       * WHETHER THE OPERATOR PANEL EXISTS HERE, resolved once at boot.
+       *
+       * `getOrThrow` rather than `get`, so a configuration that somehow did
+       * not produce the key stops the process instead of defaulting. The two
+       * possible defaults are both wrong to guess: `false` silently removes a
+       * surface a local developer expects, and `true` ships it to the internet.
+       */
+      provide: ADMIN_ENABLED,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        config.getOrThrow<boolean>('adminEnabled'),
     },
     {
       /**

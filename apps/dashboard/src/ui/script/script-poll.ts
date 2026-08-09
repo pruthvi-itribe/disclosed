@@ -97,16 +97,17 @@ export const SCRIPT_POLL = `
           return;
         }
         renderFeed(b.data, b.meta);
-        renderFilings(b.data, b.meta);
+        // The same rows, drawn a second way for the operator. On a host built
+        // without the panel there is no table to draw them into and no
+        // 'renderFilings' in this scope at all.
+        if (ADMIN_ENABLED) renderFilings(b.data, b.meta);
       })
     ];
-    if (slow) {
-      jobs.push(getJson('api/categories').then(function (b) { renderCategories(b.data); }));
-      jobs.push(getJson('api/daily').then(function (b) { renderDaily(b.data); }));
-      // Seven grouped aggregations, so it rides the slow cycle rather than the
-      // four-second one. It is a shape, not a live number.
-      jobs.push(getJson('api/enrichment').then(function (b) { renderEnrichment(b.data); }));
-    }
+    // THE THREE ROUTES ONLY THE PANEL READS, asked for by the panel's own
+    // fragment. They are not merely skipped when it is absent — the fragment
+    // that names them is not in the document, so the page a non-local host
+    // serves contains no mention of a route that answers 404 there.
+    if (slow && ADMIN_ENABLED) pushAdminJobs(jobs);
 
     return Promise.all(jobs).then(function () {
       if (!fresh()) return;
@@ -152,18 +153,46 @@ export const SCRIPT_POLL = `
     window.setTimeout(loop, FAST_MS);
   }
 
+  // ------------------------------------------------- the panel's controls ----
+  //
+  // SIX SELECTS AND FOUR BUTTONS THAT LIVE INSIDE THE ADMIN SECTION, so on a
+  // host built without it none of them is in the document. Every read and every
+  // wiring below goes through these two helpers rather than through 'el()'
+  // directly, because 'el('limit').value' on a missing node is a TypeError
+  // thrown at load — and the fragments share one scope, so it would take the
+  // feed, the deck and the search box down with it.
+  //
+  // A MISSING CONTROL READS AS ITS DEFAULT, never as empty. 'state' is the one
+  // description of what the feed is asking for and the selects are one way to
+  // write it; where they are absent the state simply keeps what it was born
+  // with, which is what 'script-base.ts' set.
+  function controlValue(id, fallback) {
+    var node = el(id);
+    return node === null ? fallback : node.value;
+  }
+
+  function onControl(id, event, handler) {
+    var node = el(id);
+    if (node !== null) node.addEventListener(event, handler);
+  }
+
+  function setControl(id, value) {
+    var node = el(id);
+    if (node !== null) node.value = value;
+  }
+
   function applyFilters() {
     // DELIBERATELY DOES NOT READ '#symbol'. It used to, and that was the whole
     // search: the box's text was the exact-symbol filter. It now drives two
     // different filters depending on whether a suggestion was picked, so it has
     // its own handlers - and a stray read here would overwrite 'state.symbol'
     // with the display text of a category every time a select changed.
-    state.category = el('category').value;
-    state.group = el('group').value;
-    state.tier = el('tier').value;
-    state.enrichState = el('state').value;
-    state.amount = el('amount').value;
-    state.limit = Number(el('limit').value) || DEFAULT_LIMIT;
+    state.category = controlValue('category', state.category);
+    state.group = controlValue('group', state.group);
+    state.tier = controlValue('tier', state.tier);
+    state.enrichState = controlValue('state', state.enrichState);
+    state.amount = controlValue('amount', state.amount);
+    state.limit = Number(controlValue('limit', state.limit)) || DEFAULT_LIMIT;
     state.offset = 0;
     // Admin's select and the feed's chips are two controls over one filter.
     // Whichever moved, both must show the same answer afterwards.
@@ -171,19 +200,19 @@ export const SCRIPT_POLL = `
     refresh(true);
   }
 
-  el('category').addEventListener('change', applyFilters);
-  el('group').addEventListener('change', applyFilters);
-  el('tier').addEventListener('change', applyFilters);
-  el('state').addEventListener('change', applyFilters);
-  el('amount').addEventListener('change', applyFilters);
-  el('limit').addEventListener('change', applyFilters);
-  el('clear').addEventListener('click', function () {
+  onControl('category', 'change', applyFilters);
+  onControl('group', 'change', applyFilters);
+  onControl('tier', 'change', applyFilters);
+  onControl('state', 'change', applyFilters);
+  onControl('amount', 'change', applyFilters);
+  onControl('limit', 'change', applyFilters);
+  onControl('clear', 'click', function () {
     el('symbol').value = '';
-    el('category').value = '';
-    el('group').value = '';
-    el('tier').value = '';
-    el('state').value = '';
-    el('amount').value = '';
+    setControl('category', '');
+    setControl('group', '');
+    setControl('tier', '');
+    setControl('state', '');
+    setControl('amount', '');
     // Cleared through the same three fields the search box owns, rather than
     // by emptying the input and hoping: 'symbol' and 'q' are state, not markup,
     // and a Clear that left one of them set would leave the feed filtered by a
@@ -192,6 +221,15 @@ export const SCRIPT_POLL = `
     state.q = '';
     state.picked = null;
     state.refusal = '';
+    // WRITTEN TO STATE AS WELL AS TO THE SELECTS, because the selects are not
+    // always there. 'applyFilters' below reads a missing control as "leave this
+    // as it was", which is right for a control nobody touched and wrong for the
+    // one button whose entire job is to put every filter back.
+    state.category = '';
+    state.group = '';
+    state.tier = '';
+    state.enrichState = '';
+    state.amount = '';
     // The topic row is a filter like any other, so Clear must reach it. A
     // Clear that left one chip lit would leave the feed narrowed by a control
     // the reader believes they just reset. Both axes in that row are cleared,
@@ -201,14 +239,14 @@ export const SCRIPT_POLL = `
     syncTopics();
     closeSuggest();
     renderSearchNote();
-    renderRefusalChip();
+    if (ADMIN_ENABLED) renderRefusalChip();
     applyFilters();
   });
-  el('prev').addEventListener('click', function () {
+  onControl('prev', 'click', function () {
     state.offset = Math.max(0, state.offset - state.limit);
     refresh(true);
   });
-  el('next').addEventListener('click', function () {
+  onControl('next', 'click', function () {
     state.offset = state.offset + state.limit;
     refresh(true);
   });
