@@ -67,9 +67,17 @@ export const SCRIPT_BASE = `
   // What each tier permits, in the words of libs/filings/src/logic/confidence
   // -tier.ts. Carried as tooltips rather than as visible prose because the badge
   // appears on every row and three explanatory sentences per row is a wall.
+  //
+  // AND THIS IS NOW WHERE THE TRACEABILITY CLAIM LIVES. It used to be the first
+  // three lines of a twelve-line methodology block standing at the bottom of a
+  // view - copy a reader scrolled past daily and an operator read once. The
+  // badge is the right home for it: it is on every card and every row, it is
+  // the element the claim is ABOUT, and it is read at the moment somebody
+  // wonders how far to trust the line above it. Nothing was cut; it moved from
+  // where nobody was reading it to where the question gets asked.
   var TIER_TITLE = {
-    verified: 'a span of the source document was matched character for character, and the period, basis, column and scale were checked against the document. The only tier allowed near an alert.',
-    stated: 'the exchange said this in its own summary line. Strong provenance, but nobody has checked it against the attached document.',
+    verified: 'a span of the source document was matched character for character, and the period, basis, column and scale were checked against the document. The only tier allowed near an alert. Traceable end to end: the symbol and category are stored verbatim, the action phrase is a fixed lookup, and every amount and counterparty quotes the source document.',
+    stated: "the exchange said this in its own summary line. Strong provenance, but nobody has checked it against the attached document. A refused amount degrades the headline to the exchange's own words, which is this tier.",
     labelled: 'all that is known is what kind of filing this is. An honest floor, not a failure - an investor presentation nobody verified is still an investor presentation.'
   };
 

@@ -310,8 +310,16 @@ ${BRAND_FAVICON_LINK}
          spend a reader's attention on every visit; the regulatory core — the
          mark is the filing's word, never a view on the company — survives in
          nine words, and the long form lives in the title for whoever hovers. -->
+    <!-- AND THIS TITLE IS NOW WHERE THE ARROW RULE LIVES IN FULL. The
+         methodology block that carried it stood at the bottom of every view,
+         which is the one place on a page nobody reads. This element is the
+         legend for the marks themselves, shown exactly when a marked card is on
+         screen, so the rule is one hover from the glyph it governs rather than
+         twelve lines below the fold. The measurement is kept because it is the
+         argument: the marks follow the figure, and a third of the marked
+         decreases are decreases every reader would call an improvement. -->
     <div id="dir-legend" class="dirlegend" data-ui="direction-legend" hidden
-         title="The direction word and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and ${BRAND} publishes none.">
+         title="The direction word and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and ${BRAND} publishes none. A fall is not bad news and a rise is not good news: these marks follow the figure, not the company. In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions — a decrease every reader would call an improvement. Read the claim, not the arrow. Where a filing did not print both a direction and a size, no mark appears: an absent mark means the filing was silent, not that nothing happened. ${BRAND} does not rate companies or securities. It reports what documents say and shows you where they say it.">
       ▲ ▼ ◆ mark movement the document itself printed — not a view on the company or its shares.
     </div>
     <div id="search-note" class="searchnote" hidden></div>

@@ -37,6 +37,19 @@ import { SCRIPT_POLL } from './script/script-poll';
 
 const html = renderDashboardPage(true);
 
+/**
+ * The inlined client script, sliced out of the document.
+ *
+ * Several describes below cut their own copy of this; this is the one for the
+ * tests that live outside them. Sliced rather than imported from
+ * `page-script.ts`, because what has to be true is true of the SERVED page —
+ * see CLAUDE.md on why a fragment that compiled is not a fragment that shipped.
+ */
+const SCRIPT = html.slice(
+  html.indexOf('<script>') + '<script>'.length,
+  html.lastIndexOf('</script>'),
+);
+
 describe('renderDashboardPage — self-containment', () => {
   it('references no external host at all', () => {
     // The moment this page is most needed is the moment the network is the
@@ -187,20 +200,31 @@ describe('renderDashboardPage — content', () => {
   it('keeps IST the stated basis for every absolute time', () => {
     // The row's own time column reads "14 min ago" now, because that is what a
     // reader scanning the day wants. The exact IST instant did not go away — it
-    // is the cell's title and a line in the detail row — and the footer still
-    // states the basis, because a page of times with no timezone on it is a
-    // page of times somebody will read in their own.
+    // is the cell's title and a line in the detail row.
+    //
+    // ASSERTED ON EVERY TIME RATHER THAN ON ONE SENTENCE. A standing line
+    // saying "All times are IST" is a promise; a timezone suffix on each
+    // absolute instant is the promise kept, and it is the one a reader is
+    // looking at when the question arises. The server writes the text — see
+    // `page-script.ts` rule 3 — so the browser cannot disagree about it.
     expect(html).toContain('per IST day');
-    expect(html).toContain('All times are IST');
+    expect(html).toContain("when.title = f.disseminatedAtIst + ' IST';");
+    expect(html).toContain("'updated ' + d.generatedAtIst + ' IST'");
   });
 
-  it('states that the view never writes a filing', () => {
-    // The first two words used to be "Read-only." and they had to go: this
-    // process now writes `users`, `sessions` and `watchlists`. What did not
-    // change is the claim the narrowed `FilingReadModel` actually enforces, and
-    // it is the one the sentence still makes.
-    expect(html).toContain('never writes');
+  it('makes no claim about writing that the page is not the enforcer of', () => {
+    // THE SENTENCE IS GONE AND THE GUARANTEE IS NOT. "This view never writes to
+    // the filings collection" was copy; what enforces it is `FilingReadModel`,
+    // a `Model<FilingDocument>` narrowed to four read methods, so a write is a
+    // compile error rather than a promise in a footer. The claim is asserted
+    // where it is true: `filing-read.model.ts` for the type, and
+    // `configuration.spec.ts` for `filings=read-only` in the startup line.
+    //
+    // What must not come back is the version that was WRONG — this process
+    // writes users, sessions and watchlists — so the old wording stays pinned
+    // out.
     expect(html).not.toContain('Read-only. This view');
+    expect(html).not.toContain('never writes to the filings collection');
   });
 
   it('gives the row to what was said, not to how we read it', () => {
@@ -237,9 +261,22 @@ describe('renderDashboardPage — content', () => {
     }
   });
 
-  it('says on the page what makes a headline traceable', () => {
-    expect(html).toContain('traceable');
-    expect(html).toContain("degrades the headline to the exchange's own words");
+  it('says on the page what makes a headline traceable, on the badge it is about', () => {
+    // MOVED OUT OF THE METHODOLOGY BLOCK AND ONTO THE TIER BADGE. The badge is
+    // on every card and every row, it is the element the claim is about, and it
+    // is read at the moment somebody wonders how far to trust the line above
+    // it — which is not true of twelve lines standing under the fold.
+    expect(SCRIPT).toContain('var TIER_TITLE = {');
+    expect(SCRIPT).toContain('Traceable end to end');
+    expect(SCRIPT).toContain('the symbol and category are stored verbatim');
+    expect(SCRIPT).toContain('the action phrase is a fixed lookup');
+    expect(SCRIPT).toContain(
+      "degrades the headline to the exchange's own words",
+    );
+    // And it reaches a reader: both surfaces put it in the badge's title.
+    expect(SCRIPT).toContain(
+      'tier.title = describe(TIER_TITLE, f.confidenceTier);',
+    );
   });
 
   it('contains no emoji', () => {
@@ -459,8 +496,14 @@ describe('renderDashboardPage — outcome, group and confidence', () => {
   });
 
   it('says on the page what a confidence tier means', () => {
-    expect(html).toContain('the only tier allowed near an alert');
-    expect(html).toContain('an honest floor, not a failure');
+    // In `TIER_TITLE`, which is where these two sentences already partly lived
+    // before the methodology block was deleted. Three tiers, three tooltips,
+    // each on the badge it explains.
+    expect(SCRIPT).toContain('The only tier allowed near an alert');
+    expect(SCRIPT).toContain('An honest floor, not a failure');
+    expect(SCRIPT).toContain(
+      'nobody has checked it against the attached document',
+    );
   });
 });
 
@@ -541,18 +584,27 @@ describe('renderDashboardPage — the movement mark', () => {
     expect(script).toContain("el('dir-legend').hidden = marks === 0;");
   });
 
-  it('says in the footer that a fall is not bad news', () => {
-    // The page's own account of itself. A mark a reader misreads as a rating is
-    // worse than no mark, and this paragraph is the whole mitigation.
-    const prose = html.replace(/\s+/g, ' ');
-    expect(prose).toContain(
+  it('carries the whole arrow rule in the legend the marks answer to', () => {
+    // A mark a reader misreads as a rating is worse than no mark, and this is
+    // the whole mitigation. It used to be four sentences in a methodology block
+    // at the bottom of every view — under the fold, on a page whose reader
+    // never scrolls there. It is now the title of `#dir-legend`, which is the
+    // legend for these glyphs and is shown exactly when a marked card is on
+    // screen: one hover from the triangle it governs.
+    const legend = /<div id="dir-legend"[\s\S]*?<\/div>/
+      .exec(html)?.[0]
+      .replace(/\s+/g, ' ');
+
+    expect(legend).toBeDefined();
+    expect(legend).toContain(
       'A fall is not bad news and a rise is not good news',
     );
-    expect(prose).toContain(
+    expect(legend).toContain(
       '13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions',
     );
-    expect(prose).toContain(`${BRAND} does not rate companies or securities`);
-    expect(prose).toContain('an absent mark means the filing was silent');
+    expect(legend).toContain(`${BRAND} does not rate companies or securities`);
+    expect(legend).toContain('an absent mark means the filing was silent');
+    expect(legend).toContain('Read the claim, not the arrow');
   });
 
   it('uses none of the sentiment vocabulary anywhere on the page', () => {
@@ -1162,24 +1214,36 @@ describe('renderDashboardPage — amount refusals demoted to diagnostics', () =>
     });
   });
 
-  it('says on the page what was demoted and why', () => {
-    // The footer is the page's own account of itself. A change to what a reader
-    // sees that the footer does not mention is a page lying about its own rules.
+  it('keeps the demotion a mechanism rather than a paragraph about one', () => {
+    // The methodology block used to END with a paragraph explaining this, and
+    // the paragraph was never the protection — every claim it made is a
+    // structural fact, and a structural fact can be asserted rather than
+    // recited. So each sentence is pinned to the thing that makes it true:
     //
-    // Asserted against whitespace-collapsed prose, so that hard-wrapping a
-    // paragraph is a reflow rather than a red build. What is pinned is the
-    // sentence, not where it breaks.
-    const prose = html.replace(/\s+/g, ' ');
-
-    expect(prose).toContain(
-      'Amount-path refusals are diagnostics, not headlines',
+    //   "collapsed and not removed"   -> a <details>, not a deleted panel
+    //   "its summary carries the live
+    //    refusal total"               -> #diag-count, written every slow cycle
+    //   "still counted"               -> the refusal rows still render
+    //   "still filterable"            -> the 'why' control still applies one
+    //   "no-candidate and
+    //    ambiguity-keyword"           -> the two quiet reasons, by name
+    //
+    // A page that stopped doing any of these would now fail here, which the
+    // paragraph could not manage: prose stays green while the thing it
+    // describes rots.
+    expect(html).toContain(
+      '<details class="panel diagnostics" id="diagnostics">',
     );
-    expect(prose).toContain('no-candidate and ambiguity-keyword');
-    expect(prose).toContain(
-      'still counted and still filterable under Diagnostics',
+    expect(html).toContain('id="diag-count"');
+    expect(html).toContain('id="refusals"');
+    expect(SCRIPT).toContain('function renderDiagnosticsCount(d)');
+    expect(SCRIPT).toContain('function renderRefusalChip()');
+    expect(SCRIPT).toContain(
+      "node.addEventListener('click', pickRefusal(reason));",
     );
-    expect(prose).toContain(
-      'an extractor whose refusals are invisible is indistinguishable from one that is not running',
+    // The two reasons the demotion was measured on, still named in one place.
+    expect(SCRIPT).toContain(
+      "var QUIET_AMOUNT_REFUSALS = { 'no-candidate': true, 'ambiguity-keyword': true };",
     );
   });
 });
