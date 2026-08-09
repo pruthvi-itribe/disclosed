@@ -82,7 +82,15 @@ input, select, button {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
   border-radius: 6px; padding: 6px 9px; font-size: 13px; font-family: inherit;
 }
-input:focus, select:focus, button:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* BUTTONS RING FOR THE KEYBOARD ONLY. A mouse click focuses a button too, so
+   ':focus' left an accent ring on every Copy, star, chip and toggle after
+   every click — selection-coloured noise on controls that were merely used.
+   ':focus-visible' is exactly the distinction the browser already keeps:
+   keyboard focus rings, pointer focus does not. Inputs keep the ':focus'
+   ring — a text field is focused to be typed in, and saying so is the point. */
+button:focus { outline: none; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button { cursor: pointer; }
 button:hover:enabled { border-color: var(--accent); }
 button:disabled { opacity: 0.4; cursor: default; }
@@ -1020,6 +1028,14 @@ button.sym:hover { color: var(--accent); }
 .roster {
   list-style: none; margin: 0 0 28px; padding: 0;
   display: grid; gap: 1px;
+  /* COLUMNS, NOT LINES. A full-width row per company put five words on a
+     1,400px line and called the rest structure — the founder read it as
+     wasted space, and it was. 320px holds the row's worst case (an 11-char
+     ticker, a truncating name, "last filed yesterday", the star), so a
+     laptop shows three or four companies per line and fifty fit without a
+     scroll. The 1px gap over the line colour keeps the hairline grid the
+     single-column version had. */
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   background: var(--line); border: 1px solid var(--line);
   border-radius: 10px; overflow: hidden;
 }
