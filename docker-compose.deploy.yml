@@ -1,0 +1,172 @@
+# The droplet's stack: mongo, the two workers, the dashboard, and the edge.
+#
+# ================================================================
+# WHY THIS IS NOT `docker-compose.yml`
+# ================================================================
+#
+# `docker-compose.yml` in this repository is the DEVELOPMENT stack, and it is
+# holding the live collection: `redbox-mongo-1` on 127.0.0.1:27117, with the
+# data in the `turret-mongo` volume. A `docker compose down` run in this
+# directory against a file that had been replaced would take that container
+# with it. So the deployment stack has its own filename and its own project
+# name, and the two can never be confused for one another on a command line.
+#
+#   docker compose -f docker-compose.deploy.yml up -d --build
+#
+# ================================================================
+# THE DASHBOARD HAS NO NETWORK OF ITS OWN
+# ================================================================
+#
+# It binds 127.0.0.1, hard-coded and deliberately not configurable — see
+# `apps/dashboard/src/config/configuration.ts`. In a container that means it is
+# reachable from inside its own network namespace and nowhere else, so the
+# usual `reverse_proxy dashboard:7717` cannot work and `0.0.0.0` is not on
+# offer. `network_mode: service:caddy` puts the dashboard INSIDE Caddy's
+# namespace: Caddy reaches it at 127.0.0.1:7717, nothing else can reach it at
+# all, and the invariant is kept rather than worked around.
+#
+# The cost, stated: the two share a lifecycle. Restarting Caddy tears down the
+# namespace the dashboard is living in, so `docker compose restart caddy` must
+# be `docker compose restart caddy dashboard`. The update procedure in
+# docs/deploy-digitalocean.md restarts both.
+
+name: disclosed
+
+services:
+  # --------------------------------------------------------------- mongo ---
+  #
+  # NO PUBLISHED PORT, and that is the whole of its access control. This
+  # instance has no authentication — the same arrangement the development
+  # stack runs, and the reason its host binding there is loopback — so it is
+  # reachable only from the `internal` network, which holds exactly the four
+  # containers below.
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # The workers assume a collection they can write to; starting them
+      # against a mongo that is still building its data files produces a
+      # connection-refused loop that reads like a configuration error.
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # A first boot initialises the data directory, which is slower than any
+      # later one.
+      start_period: 40s
+    networks: [internal]
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+  # -------------------------------------------------------------- ingest ---
+  #
+  # The poller, and its budget is two seconds from dissemination to stored.
+  #
+  # ENRICH_IN_PROCESS=false IS THE ONE SETTING THAT MAKES THAT BUDGET REAL.
+  # With the default (true) the enrichment lane runs inside this process, and
+  # Node runs both loops on one thread: parsing a PDF is CPU work inside pdf.js
+  # with no await for the event loop to escape through, so the poller's timers
+  # do not fire while it runs. See
+  # `apps/ingest/src/enrichment/in-process-lane.ts`.
+  ingest:
+    build:
+      context: .
+      target: ingest
+    image: disclosed-ingest:local
+    restart: unless-stopped
+    env_file: [.env.deploy]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/turret
+      ENRICH_IN_PROCESS: 'false'
+    depends_on:
+      mongo: { condition: service_healthy }
+    networks: [internal]
+    logging: *logging
+
+  # ---------------------------------------------------------- enrichment ---
+  #
+  # The lane the setting above moved out here. It reads documents, proposes
+  # claims and matches every one of them against a verbatim span of the source.
+  # It is where the Anthropic key is spent and where DOCLING_URL is read.
+  enrichment:
+    build:
+      context: .
+      target: enrichment
+    image: disclosed-enrichment:local
+    restart: unless-stopped
+    env_file: [.env.deploy]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/turret
+    depends_on:
+      mongo: { condition: service_healthy }
+    networks: [internal]
+    logging: *logging
+
+  # ----------------------------------------------------------- dashboard ---
+  #
+  # No `networks` and no `ports` on purpose: see the header. It reaches mongo
+  # through Caddy's namespace, which is attached to `internal`.
+  dashboard:
+    build:
+      context: .
+      target: dashboard
+    image: disclosed-dashboard:local
+    restart: unless-stopped
+    env_file: [.env.deploy]
+    environment:
+      MONGO_URI: mongodb://mongo:27017/turret
+      # THE ORIGIN EVERY MUTATION IS GUARDED AGAINST. Left at its default this
+      # is the process's own loopback URL, and every POST from the real page is
+      # refused — so this is not optional decoration.
+      PUBLIC_ORIGIN: https://disclosed.live
+      # EXPLICIT, THOUGH THE DEFAULT WOULD ALREADY BE off. The operator panel
+      # and its four routes are not built into a process that has this false;
+      # the two-signal default (NODE_ENV plus a non-loopback PUBLIC_ORIGIN)
+      # would reach the same answer, and saying it out loud costs one line and
+      # removes the argument.
+      ADMIN_ENABLED: 'false'
+    depends_on:
+      mongo: { condition: service_healthy }
+      caddy: { condition: service_started }
+    network_mode: 'service:caddy'
+    logging: *logging
+
+  # --------------------------------------------------------------- caddy ---
+  #
+  # The only container with anything published. Automatic TLS: it answers the
+  # ACME HTTP-01 challenge on 80 and serves the site on 443, renewing without
+  # being asked. `caddy-data` holds the account key and the certificates and is
+  # the one volume besides mongo's whose loss costs something — a rebuild
+  # without it re-issues from Let's Encrypt and burns rate limit.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      # HTTP/3. Harmless if the droplet's firewall drops UDP; browsers fall
+      # back to TCP.
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [internal]
+    logging: *logging
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  # NOT `turret-mongo`. That name belongs to the development stack in
+  # `docker-compose.yml`, and under a different project name it would still be
+  # one more chance to confuse the two.
+  mongo-data:
+  caddy-data:
+  caddy-config:

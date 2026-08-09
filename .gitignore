@@ -2,6 +2,10 @@ node_modules/
 dist/
 coverage/
 .env
+# The droplet's environment file, which holds the Anthropic key, the Telegram
+# token and the Firebase pair. `docker-compose.deploy.yml` reads it; its layout
+# is in docs/deploy-digitalocean.md and only the layout belongs in git.
+.env.deploy
 *.log
 data/corpus/
 .superpowers/

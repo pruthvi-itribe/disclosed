@@ -1,0 +1,41 @@
+# What never belongs in a build context.
+#
+# THE FIRST TWO LINES ARE THE ONES THAT MATTER. `node_modules` is 1.1 GB of
+# darwin-arm64 binaries that would be uploaded to the daemon on every build and
+# then overwritten by the image's own linux-musl install; `.env` holds the
+# Anthropic key, the Telegram token and the Firebase pair, and a build context
+# is not a secret store — a file copied into a layer is in the image for anyone
+# who pulls it, whatever a later `rm` does.
+node_modules
+.env
+.env.*
+!.env.example
+
+# Build output. The image compiles its own from source; copying a host build in
+# would ship whatever was last on this laptop.
+dist
+coverage
+*.tsbuildinfo
+
+# Test and tooling residue.
+test-results
+playwright-report
+data/corpus
+*.log
+
+# Version control and editor state.
+.git
+.gitignore
+.idea
+.vscode
+.superpowers
+
+# Docs and CI: nothing in the image reads them, and every byte here is a byte
+# sent to the daemon on every build.
+docs
+README.md
+CLAUDE.md
+Dockerfile
+.dockerignore
+docker-compose*.yml
+Caddyfile

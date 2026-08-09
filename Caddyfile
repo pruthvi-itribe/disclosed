@@ -1,0 +1,94 @@
+# The public edge for disclosed.live.
+#
+# CADDY AND THE DASHBOARD SHARE ONE NETWORK NAMESPACE, which is why the
+# upstream below is `127.0.0.1` and not a service name. The dashboard binds
+# loopback and that is hard-coded rather than configurable — see
+# `apps/dashboard/src/config/configuration.ts`: it is a read-only view over an
+# unauthenticated database, and making the bind address an environment variable
+# would make `0.0.0.0` a one-line mistake. `docker-compose.deploy.yml` honours
+# that invariant instead of routing around it, by giving the dashboard container
+# no network of its own and putting it inside Caddy's.
+#
+# So the only process that can reach the dashboard is this one, and the only
+# thing published to the droplet's public interface is Caddy's 80 and 443.
+{
+	# Where Let's Encrypt sends expiry warnings. Replace before the first
+	# deploy: an unset address means the only notice of a stalled renewal is
+	# the site going down.
+	email ops@disclosed.live
+}
+
+disclosed.live {
+	# ONE UPSTREAM, INSIDE THIS CONTAINER'S OWN NETWORK NAMESPACE.
+	#
+	# X-Forwarded-Proto is set by reverse_proxy itself and needs no directive
+	# here (`caddy validate` says so out loud if one is added). It is NOT READ
+	# at the other end today: the dashboard never calls
+	# `app.set('trust proxy', ...)`, so express reports `req.secure` false and
+	# the session cookie ships without `Secure`. The header arriving correctly
+	# is half of that fix already being in place. See
+	# docs/deploy-digitalocean.md, "What a real deploy still needs".
+	reverse_proxy 127.0.0.1:7717
+
+	encode zstd gzip
+
+	header {
+		# The page is one self-contained document — no CDN, no external font,
+		# no third-party script — so the policy that describes it is short and
+		# can be strict. 'unsafe-inline' is required by construction: the whole
+		# stylesheet and the whole client script are inlined into the document
+		# on purpose (see CLAUDE.md, "The dashboard is self-contained").
+		#
+		# THE ONE EXCEPTION IS /auth IN FIREBASE MODE, which loads the Firebase
+		# Web SDK from gstatic.com at a pinned version and nothing else from
+		# anywhere. That is why gstatic is in script-src and connect-src
+		# reaches Google's identity endpoints; if this deployment runs
+		# AUTH_MODE=local, delete those three origins and the policy gets
+		# shorter.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		# Two years, and it is a commitment: once a browser has seen this it
+		# will refuse plain http for disclosed.live until it expires. Do not
+		# add `preload` until the domain is settled.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		# Caddy's own advertisement, removed for the same reason the app
+		# disables x-powered-by.
+		-Server
+	}
+
+	# CACHING, AND THE TWO RULES THAT BITE BEHIND CLOUDFLARE.
+	#
+	# Every `/api/*` read is behind the session cookie, so a cached response is
+	# one reader's watchlist served to another. This says so explicitly rather
+	# than relying on an upstream default, because Cloudflare's default cache
+	# rules ignore Set-Cookie on some plan tiers and `private` is the token
+	# that stops an edge storing it.
+	#
+	# THE `>` IS LOAD-BEARING: it REPLACES the header rather than adding a
+	# second one. The app already sends `Cache-Control: no-store` on its API
+	# responses, and without the `>` the response leaves here carrying two
+	# Cache-Control lines — which is legal, agrees with itself today, and is
+	# exactly the sort of thing an edge parses in whichever order it likes.
+	@api path /api/*
+	header @api >Cache-Control "private, no-store, max-age=0"
+
+	# The document itself is generated per reader — signed out it is the
+	# landing page, signed in it is the app — so it is not cacheable either.
+	# There are no static asset paths to cache: there are no static assets.
+	@root path /
+	header @root >Cache-Control "private, no-store, max-age=0"
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# One canonical origin. PUBLIC_ORIGIN is https://disclosed.live and every
+# mutation is Origin-guarded against it, so a reader who arrived on www would
+# have every POST refused rather than merely seeing a different hostname.
+www.disclosed.live {
+	redir https://disclosed.live{uri} permanent
+}
