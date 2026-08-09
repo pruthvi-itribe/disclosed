@@ -19,6 +19,18 @@ const watchConsole = (page: Page): string[] => {
   return errors;
 };
 
+/**
+ * Whether this host was built with the operator panel.
+ *
+ * `ADMIN_ENABLED` decides it at boot and the suite runs against one already
+ * running dashboard, so a test about the panel asks the page rather than
+ * assuming. The panel's own contract — that the markup and the routes agree
+ * whichever way it went — is `e2e/admin.spec.ts`; these four are about what
+ * the panel DOES, which is only a question where it exists.
+ */
+const adminBuilt = async (page: Page): Promise<boolean> =>
+  (await page.locator('#tab-admin').count()) > 0;
+
 test.describe('the feed', () => {
   test('loads, runs its script, and renders cards from live data', async ({
     page,
@@ -47,6 +59,7 @@ test.describe('the feed', () => {
 
   test('switches to Admin and back without a reload', async ({ page }) => {
     await page.goto('/');
+    test.skip(!(await adminBuilt(page)), 'no operator panel on this host');
     await page.locator('#tab-admin').click();
     await expect(page.locator('#view-admin')).toBeVisible();
     await expect(page.locator('#view-feed')).toBeHidden();
@@ -63,6 +76,7 @@ test.describe('the feed', () => {
     page,
   }) => {
     await page.goto('/');
+    test.skip(!(await adminBuilt(page)), 'no operator panel on this host');
     await expect(page.locator('#live-text')).not.toHaveText('connecting');
 
     // The Admin table is populated even while the feed is the visible view.
@@ -215,6 +229,9 @@ test.describe('the group chips', () => {
     // chip named "Results" one line apart, returning different sets, is a trap
     // rather than a second axis. The group filter lives in Admin now.
     await expect(page.locator('#view-feed .chip[data-group]')).toHaveCount(0);
+    // THE FIRST HALF HOLDS EVERYWHERE: the chips are gone from the feed on
+    // every host. Where they went is only a question where Admin was built.
+    test.skip(!(await adminBuilt(page)), 'no operator panel on this host');
     await page.locator('#tab-admin').click();
     await expect(page.locator('#group')).toBeVisible();
   });
@@ -736,6 +753,11 @@ test.describe('the topic chips', () => {
       /active/,
     );
 
+    // Clear lives in Admin's filter bar and goes with it. Nothing is stranded
+    // by that: the only filters a reader can set without the panel are the
+    // search box, which has its own clear, the topic row, whose "Everything"
+    // chip is a clear, and the insight toggle.
+    test.skip(!(await adminBuilt(page)), 'no operator panel on this host');
     await page.locator('#tab-admin').click();
     await page.locator('#clear').click();
     await page.locator('#tab-feed').click();
