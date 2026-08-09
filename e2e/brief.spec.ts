@@ -130,7 +130,7 @@ test.describe('the deck', () => {
     await expect(page.locator('[data-ui="brief-rail-seg"]')).toHaveCount(count);
   });
 
-  test('gives every card the whole viewport, and snaps to it', async ({
+  test('gives every card the whole screen, in a row that snaps sideways', async ({
     page,
   }) => {
     await openBrief(page);
@@ -143,26 +143,127 @@ test.describe('the deck', () => {
     const geometry = await card.evaluate((node) => {
       const deck = node.parentElement as HTMLElement;
       const style = getComputedStyle(node);
+      const deckStyle = getComputedStyle(deck);
       return {
         cardHeight: node.getBoundingClientRect().height,
+        cardWidth: node.getBoundingClientRect().width,
         deckHeight: deck.clientHeight,
+        deckWidth: deck.clientWidth,
         snapAlign: style.scrollSnapAlign,
-        deckSnapType: getComputedStyle(deck).scrollSnapType,
-        deckOverflow: getComputedStyle(deck).overflowY,
+        deckSnapType: deckStyle.scrollSnapType,
+        deckOverflowX: deckStyle.overflowX,
+        deckOverflowY: deckStyle.overflowY,
+        touchAction: deckStyle.touchAction,
+        overscroll: deckStyle.overscrollBehavior,
       };
     });
 
-    // One card is one viewport. Asserted as measured pixels rather than as a
-    // CSS declaration, because `min-height: 100%` only resolves if the deck's
-    // own height is definite — which is the whole reason the body carries a
-    // class while the deck is open.
+    // One card is one screen, on both axes now: the deck pages sideways, so a
+    // card that was not exactly the deck's width would let the reader stop
+    // between two of them. Measured pixels rather than CSS declarations,
+    // because a percentage only resolves if the deck's own box is definite —
+    // which is the whole reason the body carries a class while the deck is
+    // open.
     expect(geometry.cardHeight).toBeGreaterThanOrEqual(
       geometry.deckHeight - 1,
     );
     expect(geometry.cardHeight).toBeLessThanOrEqual(geometry.deckHeight + 1);
+    expect(geometry.cardWidth).toBeGreaterThanOrEqual(geometry.deckWidth - 1);
+    expect(geometry.cardWidth).toBeLessThanOrEqual(geometry.deckWidth + 1);
+
     expect(geometry.snapAlign).toBe('start');
-    expect(geometry.deckSnapType).toContain('mandatory');
-    expect(geometry.deckOverflow).toBe('auto');
+    expect(geometry.deckSnapType).toBe('x mandatory');
+    expect(geometry.deckOverflowX).toBe('auto');
+    // Sideways only: a vertical drag has nowhere to go, which is what keeps
+    // the gesture unambiguous.
+    expect(geometry.deckOverflowY).toBe('hidden');
+    expect(geometry.touchAction).toBe('pan-x');
+    // A swipe past the last card must not become the browser's own back.
+    expect(geometry.overscroll).toContain('contain');
+  });
+
+  test('advances on a tap in the right third and goes back on the left', async ({
+    page,
+  }) => {
+    // THE STORY GESTURE, AND IT IS STILL SOMETHING THE READER DID. No timer
+    // moves a card here; these are taps.
+    const errors = watchConsole(page);
+    await openBrief(page);
+
+    const at = async (): Promise<number> =>
+      page.evaluate(() =>
+        Math.round(
+          (document.getElementById('brief-deck') as HTMLElement).scrollLeft,
+        ),
+      );
+    expect(await at()).toBe(0);
+
+    // ONE CARD PER TAP, so the landing offset is exactly the deck's width. The
+    // scroll is smooth, so this is polled to its resting place rather than
+    // read once — a reading taken mid-flight is a number on the way somewhere.
+    const step = await page.evaluate(
+      () => (document.getElementById('brief-deck') as HTMLElement).clientWidth,
+    );
+
+    // The right third, well clear of the foot's controls.
+    await page.mouse.click(PHONE.width - 24, 420);
+    await expect.poll(at, { timeout: 5_000 }).toBe(step);
+
+    // The middle third is not a control: it is where the claim is, and where a
+    // thumb rests while reading it.
+    await page.mouse.click(PHONE.width / 2, 420);
+    await page.waitForTimeout(400);
+    expect(await at()).toBe(step);
+
+    // And the left third goes back.
+    await page.mouse.click(24, 420);
+    await expect.poll(at, { timeout: 5_000 }).toBe(0);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('leaves the controls on a card tappable inside the tap zones', async ({
+    page,
+  }) => {
+    // THE FAILURE THIS WOULD SHIP. Copy and Source sit in the bottom corners
+    // of the card — squarely inside the two live thirds — so a tap handler
+    // that did not stand down for them would advance the card instead of
+    // copying the claim.
+    await openBrief(page);
+
+    const at = async (): Promise<number> =>
+      page.evaluate(() =>
+        Math.round(
+          (document.getElementById('brief-deck') as HTMLElement).scrollLeft,
+        ),
+      );
+    const step = await page.evaluate(
+      () => (document.getElementById('brief-deck') as HTMLElement).clientWidth,
+    );
+
+    // Onto the first company card, whose foot carries the controls.
+    await page.mouse.click(PHONE.width - 24, 420);
+    await expect.poll(at, { timeout: 5_000 }).toBe(step);
+
+    const copy = page
+      .locator('#brief-deck [data-ui="brief-card"] .copy')
+      .first();
+    const box = await copy.boundingBox();
+    expect(box).not.toBeNull();
+    // IT REALLY IS IN A LIVE THIRD, asserted rather than assumed: the whole
+    // point is that the tap zone had to stand down for it.
+    expect(box!.x + box!.width).toBeGreaterThan(PHONE.width * (2 / 3));
+
+    await copy.click();
+    // THE BUTTON ANSWERED. Which answer it gives is the clipboard's business —
+    // headless Chromium refuses the write and the button honestly says so —
+    // and either way it is proof the click reached the button rather than the
+    // deck.
+    await expect(copy).not.toHaveText(/^copy$/i);
+    // AND THE DECK DID NOT MOVE UNDER IT, which is the assertion this test is
+    // for.
+    await page.waitForTimeout(400);
+    expect(await at()).toBe(step);
   });
 
   test('moves the rail from the scroll, not from a counter', async ({
@@ -182,10 +283,38 @@ test.describe('the deck', () => {
       const card = deck.querySelector(
         '[data-ui="brief-card"][data-symbol="' + sym + '"]',
       ) as HTMLElement;
-      deck.scrollTop = card.offsetTop;
+      // The deck pages sideways on a phone, so this is the axis the reader's
+      // thumb moves and the axis the observer watches.
+      deck.scrollLeft = card.offsetLeft;
     }, symbol);
 
     await expect(page.locator('[data-ui="brief-rail-seg"].on')).toHaveCount(3);
+  });
+
+  test('keeps the arrow keys driving the deck, whichever way it lies', async ({
+    page,
+  }) => {
+    // A phone-width window with a keyboard attached is a real configuration,
+    // and a reader on one should not have to work out that this deck turned
+    // sideways. Right and Down both mean forward.
+    await openBrief(page);
+    await page.locator('#brief-deck').focus();
+
+    const at = async (): Promise<number> =>
+      page.evaluate(() =>
+        Math.round(
+          (document.getElementById('brief-deck') as HTMLElement).scrollLeft,
+        ),
+      );
+
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(at, { timeout: 5_000 }).toBeGreaterThan(0);
+    await page.keyboard.press('ArrowLeft');
+    await expect.poll(at, { timeout: 5_000 }).toBe(0);
+
+    // The vertical pair still works, because one stepper answers all four.
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(at, { timeout: 5_000 }).toBeGreaterThan(0);
   });
 
   test('orders the deck on countable evidence, with every tie broken', async ({
@@ -254,19 +383,54 @@ test.describe('the deck', () => {
     expect(drawn).toEqual(expected);
   });
 
-  test('never scrolls sideways', async ({ page }) => {
-    // Vertical only, ever: a horizontal gesture at the left edge is the phone's
-    // own back navigation, and a deck that competes with it loses and takes the
-    // reader out of the app.
+  test('scrolls sideways in the deck and nowhere else on the page', async ({
+    page,
+  }) => {
+    // THIS TEST USED TO SAY THE OPPOSITE, and the reason it gave is still
+    // true: a horizontal gesture at the left EDGE of the screen is the phone's
+    // own back navigation, and a deck that competes with it loses. What
+    // changed is that the deck now wants that axis, so the two are separated
+    // rather than one of them given up — `overscroll-behavior: contain` stops
+    // the swipe propagating out of the deck, and the tap zones give a reader
+    // who never swipes a way through that no edge gesture can take.
+    //
+    // ON iOS SAFARI THE EDGE SWIPE IS SYSTEM-LEVEL and cannot be verified in
+    // headless Chromium. A real-device pass is the only thing that settles it;
+    // the tap zones are what makes the deck usable if it turns out the first
+    // card cannot be swiped backwards there.
     await openBrief(page);
     const width = await page.evaluate(() => ({
       body: document.body.scrollWidth,
       deck: (document.getElementById('brief-deck') as HTMLElement).scrollWidth,
       client: (document.getElementById('brief-deck') as HTMLElement)
         .clientWidth,
+      cards: (document.getElementById('brief-deck') as HTMLElement)
+        .getElementsByClassName('bcard').length,
     }));
+
+    // THE PAGE ITSELF STILL DOES NOT MOVE SIDEWAYS. Only the deck does, and it
+    // moves exactly one card's width per card.
     expect(width.body).toBeLessThanOrEqual(PHONE.width);
-    expect(width.deck).toBeLessThanOrEqual(width.client + 1);
+    expect(width.deck).toBe(width.client * width.cards);
+  });
+
+  test('scrolls the deck and not the page, on either axis', async ({
+    page,
+  }) => {
+    // The body is height:100dvh and overflow:hidden while the deck is open, so
+    // there is no page scroll for the horizontal deck to fight — which is the
+    // other half of why the axis could be taken at all.
+    await openBrief(page);
+    const body = await page.evaluate(() => {
+      const style = getComputedStyle(document.body);
+      return {
+        overflow: style.overflow,
+        scrollHeight: document.body.scrollHeight,
+        clientHeight: document.body.clientHeight,
+      };
+    });
+    expect(body.overflow).toBe('hidden');
+    expect(body.scrollHeight).toBeLessThanOrEqual(body.clientHeight + 1);
   });
 });
 

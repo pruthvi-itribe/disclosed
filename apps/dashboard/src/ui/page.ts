@@ -169,7 +169,16 @@ ${BRAND_FAVICON_LINK}
       <div id="brief-mix" class="mix"></div>
       <div id="brief-cover-line" class="bcoverline"></div>
       <div id="brief-cover-rule" class="bcoverrule"></div>
-      <div class="bhint">Scroll for the cards. There is an end.</div>
+      <!-- THE GESTURE, NAMED FOR THE DEVICE HOLDING IT. The deck pages
+           sideways on a phone and down a reading column above 900px, so one
+           sentence cannot be true of both: "scroll" is wrong on a thumb and
+           "swipe" is wrong on a mouse. Two spans and a media query, rather
+           than a branch in the script — the stylesheet already owns which
+           deck this is. -->
+      <div class="bhint">
+        <span class="bhintnear">Swipe, or tap the sides. There is an end.</span>
+        <span class="bhintwide">Scroll for the cards. There is an end.</span>
+      </div>
     </article>
 
     <!-- The company cards are inserted here, before the end card. -->

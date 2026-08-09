@@ -22,10 +22,19 @@ export const PAGE_STYLE_BRIEF = `
    THE MECHANISM IS scroll-snap AND NOTHING ELSE. No timer advances a card and
    no script hijacks a scroll: a reader who looks away must not lose their
    place, and a deck that plays itself is a video, which is a different product
-   with a different cost. This is also the least portable thing in the
-   codebase — iOS Safari, Android Chrome and Firefox differ on dvh during
-   URL-bar collapse and on overscroll inside a snap container — and the
-   alternative, JS-driven paging, is worse and is what everyone regrets.
+   with a different cost. That principle survives the story layout below
+   unchanged — the axis moved, the autoplay did not arrive. This is also the
+   least portable thing in the codebase — iOS Safari, Android Chrome and
+   Firefox differ on dvh during URL-bar collapse and on overscroll inside a
+   snap container — and the alternative, JS-driven paging, is worse and is what
+   everyone regrets.
+
+   ON A PHONE THE DECK PAGES SIDEWAYS, like the story format every reader of
+   this view already has the gesture for. Above 900px it pages down the reading
+   column, which is what a pointer and a wheel expect. ONE STYLESHEET DECIDES
+   WHICH; the script reads the resolved scroll-snap-type off the deck and steps
+   along whichever axis it names, so there is one stepper, one rail and one
+   keyboard handler for both.
    ======================================================================== */
 
 /* THE DECK OWNS THE VIEWPORT WHILE IT IS OPEN, and the class is set by
@@ -65,12 +74,20 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 
 /* A PROMISE ABOUT TIME, drawn as one segment per card: twelve of these is
    about a minute. Suppressed below three cards by the script, because a
-   two-segment progress bar is chrome rather than information. */
+   two-segment progress bar is chrome rather than information.
+
+   IT IS THE STORY RAIL ON A PHONE, at the top of the view above the deck,
+   which is where the format that taught everyone this gesture puts it. It
+   already had that shape; what it gains here is the room to be read as one —
+   a segment thick enough to see at arm's length and a gap wide enough to
+   count. It indexes the COMPANY cards, not the cover and the end: those two
+   are the deck's covers rather than its content, and a rail that lit a segment
+   for the cover would promise thirteen cards where there are eleven. */
 #brief-rail {
   display: flex;
-  gap: 3px;
+  gap: 4px;
   flex: 0 0 auto;
-  padding: 0 16px 10px;
+  padding: 8px 16px 10px;
 }
 #brief-rail[hidden] { display: none; }
 [data-ui="brief-rail-seg"] {
@@ -84,32 +101,48 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 
 /* --- the deck ----------------------------------------------------------- */
 
-/* position: relative so a card's offsetTop is measured against the deck's own
-   content box, which is what the keyboard step compares to scrollTop. */
+/* A ROW OF FULL-WIDTH CARDS THAT SNAPS SIDEWAYS. A thumb swipes left and right
+   for this format everywhere else it meets it, and the tap zones the script
+   adds sit on the same axis: forward is right, back is left, in the gesture
+   and in the tap.
+
+   position: relative so a card's offsetLeft (offsetTop above 900px) is
+   measured against the deck's own content box, which is what the step compares
+   the scroll offset to.
+
+   touch-action: pan-x TELLS THE COMPOSITOR WHICH GESTURE THIS IS before the
+   first move event, so a vertical drag is not spent hunting for a scroller
+   that will not move. THE COST IS THAT A CARD TALLER THAN THE DECK CANNOT BE
+   DRAGGED UPWARDS, so a card has to fit, and that is measured rather than
+   hoped for: at 390x844 over the live deck of fourteen cards on 2026-08-09 the
+   content of a card needs between 195px and 523px against 734px of deck, so
+   the tallest card of the day clears by 211px. The card keeps overflow-y: auto
+   below as a valve for a keyboard, a trackpad and a screen reader; if the
+   measurement ever closes, this line becomes pan-x pan-y and the swipe gets
+   less certain rather than a card getting unreadable.
+
+   overscroll-behavior: contain on BOTH axes: a swipe past the last card must
+   not become the browser's own navigation, and a flick down must not rubber-
+   band the page behind the deck. */
 #brief-deck {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  scroll-snap-type: y mandatory;
-  overscroll-behavior-y: contain;
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior: contain;
+  touch-action: pan-x;
   scroll-behavior: smooth;
-  /* THIN, BECAUSE THE RAIL IS THE PROGRESS INDICATOR. The deck already draws
-     its own twelve-segment rail; a full-width desktop scrollbar beside it is a
-     second, uglier copy of the same information. On phones — the deck's home —
-     the overlay scrollbar never shows and none of this fires. 'thin' is the
-     whole vocabulary Firefox offers; the -webkit- rules bring Chromium and
-     Safari to the same weight, themed so the thumb is a line and not a slab. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
+  /* NO SCROLLBAR, BECAUSE THE RAIL IS THE PROGRESS INDICATOR. The deck draws
+     its own segment-per-card rail above itself; a scrollbar under the cards is
+     a second, uglier copy of the same information, and a horizontal one on a
+     tablet-width window would sit across the bottom of every card. */
+  scrollbar-width: none;
 }
-#brief-deck::-webkit-scrollbar { width: 6px; }
-#brief-deck::-webkit-scrollbar-track { background: transparent; }
-#brief-deck::-webkit-scrollbar-thumb {
-  background: var(--line);
-  border-radius: 3px;
-}
-#brief-deck::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+#brief-deck::-webkit-scrollbar { width: 0; height: 0; }
 #brief-deck[hidden] { display: none; }
 
 /* EVERY CARD IS EXACTLY ONE VIEWPORT, which is what lets the lede be set at
@@ -119,14 +152,25 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 
    100% of the deck rather than of the window, because the tab bar is above the
    deck and a card measured against the window would hide its own footer behind
-   it. The deck's own height comes from body.briefing's 100dvh. */
+   it. The deck's own height comes from body.briefing's 100dvh.
+
+   height RATHER THAN min-height now that the cards sit in a row: a card that
+   grew taller than the deck would be clipped by the deck's overflow-y rather
+   than extending it, so it scrolls inside itself instead. That is a valve, not
+   a layout — see the measurement on the deck above.
+
+   NO BORDER BETWEEN CARDS. The top border separated cards stacked in a column;
+   with one card on screen at a time it is a line across the top of every
+   screen belonging to nothing. */
 .bcard {
-  min-height: 100%;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
   scroll-snap-align: start;
   display: flex;
   flex-direction: column;
   padding: 20px 22px calc(20px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line);
 }
 .bcard:focus { outline: none; }
 .bcard:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
@@ -290,6 +334,8 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
    selection is only honest when it comes with a stated cut. */
 .bcoverrule { font-size: 12.5px; line-height: 1.55; color: var(--muted); }
 .bhint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+/* The phone's sentence is the default; the desktop query below swaps them. */
+.bhintwide { display: none; }
 
 /* --- the last card ------------------------------------------------------ */
 
@@ -343,12 +389,16 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 /* --- above a phone ------------------------------------------------------ */
 
 /* ONE CODEPATH, ONE SET OF BUGS. The same deck, centred in a reading column,
-   with cards a little shorter than the viewport so the next one shows its top
-   edge and the scroll affordance is visible on a device with no thumb. */
+   so a tablet held in two hands reads at a phone's measure rather than at a
+   40-word line.
+
+   THE 78% CARD IS GONE WITH THE VERTICAL AXIS. It existed so the next card
+   showed its top edge and the scroll had a visible affordance; sideways, the
+   card that is coming is off the side of the screen and the rail above says
+   how many are left. */
 @media (min-width: 431px) {
   #brief-deck { max-width: 480px; margin: 0 auto; width: 100%; }
   #brief-rail { max-width: 480px; margin: 0 auto; width: 100%; }
-  .bcard { min-height: 78%; }
 }
 
 /* --- a desktop ---------------------------------------------------------- */
@@ -400,15 +450,21 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
   }
   [data-ui="brief-rail-seg"] { width: 3px; height: auto; flex: 1 1 0; }
 
+  /* BACK TO A COLUMN, AND EVERY PART OF THE PHONE'S ROW IS UNDONE HERE. The
+     axis is the one thing that differs between the two decks, so it is spelled
+     out rather than left half-inherited: a display:flex left over from the
+     phone would lay the cards out side by side inside a 660px column. */
   #brief-deck {
+    display: block;
     max-width: 660px;
     flex: 1 1 660px;
     margin: 0;
-    /* The scrollbar is redundant beside a rail that says the same thing, and
-       on this width it is a slab down the side of the reading column. */
-    scrollbar-width: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+    /* A pointer has no swipe, so nothing here is a gesture to declare. */
+    touch-action: auto;
   }
-  #brief-deck::-webkit-scrollbar { width: 0; height: 0; }
 
   /* NATURAL HEIGHT WITH A FLOOR, not one viewport. 100% of the deck made every
      card the same height as the tallest thing a card could ever hold, and most
@@ -418,6 +474,11 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
   .bcard {
     /* Room for the lede, the topic and the foot without the void. */
     min-height: 340px;
+    /* The phone's card is a fixed-width, fixed-height panel in a row; here it
+       is a block that takes the column's width and its content's height. */
+    width: auto;
+    height: auto;
+    overflow-y: visible;
     padding: 30px 34px 26px;
     border: 1px solid var(--line);
     border-radius: 14px;
@@ -432,6 +493,11 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
   .bcover, .bend { min-height: 300px; }
   .blede { font-size: 27px; margin-top: 22px; }
   .brest { font-size: 15.5px; }
+
+  /* A pointer has no swipe and there are no tap zones up here: the pager and
+     the wheel are what move this deck, so the cover says so. */
+  .bhintnear { display: none; }
+  .bhintwide { display: inline; }
 
   /* THE PAGER SITS BESIDE THE COLUMN, not against the window's edge. Pinned to
      the right margin it was 330px from the card it pages — a control that far

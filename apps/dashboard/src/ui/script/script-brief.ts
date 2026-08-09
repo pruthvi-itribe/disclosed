@@ -457,29 +457,65 @@ export const SCRIPT_BRIEF = `
   }
 
   /**
-   * One card per key press.
+   * WHICH WAY THIS DECK PAGES, ASKED OF THE STYLESHEET.
+   *
+   * The phone deck is a row that snaps on x and the desktop deck is a column
+   * that snaps on y; the media query that decides is in the stylesheet, and
+   * this reads its answer off the resolved style rather than re-deciding it
+   * with a width the script would then have to keep in step. One breakpoint,
+   * in one place.
+   *
+   * NOT MEASURED FROM scrollWidth. A deck of one card overflows on neither
+   * axis, so a measurement would call it vertical and the tap zones would go
+   * missing on exactly the deck where a reader most needs to be told there is
+   * nothing more.
+   */
+  function deckPagesAcross(deck) {
+    var snap = window.getComputedStyle(deck).scrollSnapType || '';
+    return snap.indexOf('x') === 0;
+  }
+
+  /** Where a card starts along the axis the deck pages on. */
+  function cardStart(card, across) {
+    return across ? card.offsetLeft : card.offsetTop;
+  }
+
+  /**
+   * One card per press, per tap, per click.
    *
    * WITHOUT THIS A KEYBOARD READER CANNOT MOVE AT ALL: scroll-snap-type
    * mandatory pulls the 40px an arrow key scrolls straight back to the card it
-   * started on. Compared against offsetTop rather than counted, for the reason
-   * the rail is: the deck's scroll position is the truth about where a reader
-   * is, and anything else is a second copy of it that can be wrong.
+   * started on. Compared against the card's own offset rather than counted,
+   * for the reason the rail is: the deck's scroll position is the truth about
+   * where a reader is, and anything else is a second copy of it that can be
+   * wrong.
+   *
+   * ONE STEPPER FOR BOTH AXES. The tap zones, the pager and the four arrow
+   * keys all arrive here, and the only thing the axis changes is which offset
+   * is read. A second stepper would be a second definition of 'the next card'.
    */
   function briefStep(deck, forward) {
     var cards = deck.getElementsByClassName('bcard');
-    var at = deck.scrollTop;
+    var across = deckPagesAcross(deck);
+    var at = across ? deck.scrollLeft : deck.scrollTop;
     var target = null;
     if (forward) {
       for (var i = 0; i < cards.length; i++) {
-        if (cards[i].offsetTop > at + 4) { target = cards[i]; break; }
+        if (cardStart(cards[i], across) > at + 4) { target = cards[i]; break; }
       }
     } else {
       for (var j = cards.length - 1; j >= 0; j--) {
-        if (cards[j].offsetTop < at - 4) { target = cards[j]; break; }
+        if (cardStart(cards[j], across) < at - 4) { target = cards[j]; break; }
       }
     }
     if (target === null) return;
-    target.scrollIntoView({ block: 'start' });
+    // 'nearest' on the cross axis, so bringing a card into view never also
+    // moves something else on the page. Smoothness is the stylesheet's, which
+    // is how prefers-reduced-motion turns it into an instant jump without this
+    // function knowing anything about it.
+    target.scrollIntoView(
+      across ? { block: 'nearest', inline: 'start' } : { block: 'start' }
+    );
     // Focus follows the card, so a screen reader announces the one that
     // arrived rather than leaving the reader on the card they left.
     if (target.focus) target.focus({ preventScroll: true });
@@ -616,13 +652,16 @@ export const SCRIPT_BRIEF = `
     var prev = el('brief-prev');
     var next = el('brief-next');
     if (!deck || !prev || !next) return;
-    var at = deck.scrollTop;
+    var across = deckPagesAcross(deck);
+    var at = across ? deck.scrollLeft : deck.scrollTop;
+    var span = across ? deck.clientWidth : deck.clientHeight;
+    var total = across ? deck.scrollWidth : deck.scrollHeight;
     prev.disabled = at <= 1;
-    // A pixel of tolerance: a snapped scrollTop plus clientHeight lands a
-    // fraction short of scrollHeight on a fractional-density display, and a
-    // Next that stays live on the last card is the page claiming a card it
-    // does not have.
-    next.disabled = at + deck.clientHeight >= deck.scrollHeight - 2;
+    // A pixel of tolerance: a snapped offset plus the deck's own span lands a
+    // fraction short of the total on a fractional-density display, and a Next
+    // that stays live on the last card is the page claiming a card it does not
+    // have.
+    next.disabled = at + span >= total - 2;
   }
 
   function briefPage(forward) {
@@ -639,15 +678,57 @@ export const SCRIPT_BRIEF = `
   el('brief-next').addEventListener('click', function () { briefPage(true); });
   el('brief-deck').addEventListener('scroll', syncBriefPager);
 
+  /**
+   * THE TAP ZONES, AND THEY ARE THE PHONE'S SECOND GESTURE.
+   *
+   * A swipe moves a card and so does a tap on the third of the screen nearest
+   * the direction of travel - right for the next card, left for the previous,
+   * the way every story deck a reader has met behaves. The middle third does
+   * NOTHING on purpose: it is where the claim is, it is where a reader's thumb
+   * rests while reading, and a deck that advances under a resting thumb has
+   * taken the card away mid-sentence.
+   *
+   * STILL NO AUTOPLAY. Every one of these is a thing the reader did.
+   *
+   * ACROSS ONLY. Above 900px the pager is the pointer's affordance and a click
+   * on the right of a card would fight the reader selecting the text on it.
+   */
+  var BRIEF_TAP_ZONE = 1 / 3;
+  el('brief-deck').addEventListener('click', function (event) {
+    var deck = el('brief-deck');
+    if (!deckPagesAcross(deck)) return;
+    // EVERY CONTROL ON A CARD STAYS A CONTROL. The ticker opens the company,
+    // Copy copies, Source is the only link to the document the claim was
+    // matched against, and the topic dot filters the feed - all of them inside
+    // one of the two live thirds. A tap that reached one of them has already
+    // been answered.
+    if (event.target && event.target.closest &&
+        event.target.closest('a, button, input, select, textarea, summary')) return;
+    // A tap that finished a text selection is not a tap. Claim text is the
+    // point of this view and a reader who highlighted a figure to copy it must
+    // not lose the card doing so.
+    var selection = window.getSelection ? window.getSelection() : null;
+    if (selection && String(selection).length > 0) return;
+    var box = deck.getBoundingClientRect();
+    if (box.width <= 0) return;
+    var across = (event.clientX - box.left) / box.width;
+    if (across >= 1 - BRIEF_TAP_ZONE) briefStep(deck, true);
+    else if (across <= BRIEF_TAP_ZONE) briefStep(deck, false);
+  });
+
   el('brief-deck').addEventListener('keydown', function (event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     var key = event.key;
-    if (key === 'ArrowDown' || key === 'PageDown' || key === ' ') {
+    // BOTH AXES, WHICHEVER WAY THE DECK IS LAID OUT. The keyboard is the one
+    // way in that is not a gesture, and a reader on a phone-width window with
+    // a keyboard attached should not have to work out that this deck moved
+    // sideways. 'briefStep' resolves the axis; these only say forward or back.
+    if (key === 'ArrowDown' || key === 'ArrowRight' || key === 'PageDown' || key === ' ') {
       event.preventDefault();
       briefStep(el('brief-deck'), true);
       return;
     }
-    if (key === 'ArrowUp' || key === 'PageUp') {
+    if (key === 'ArrowUp' || key === 'ArrowLeft' || key === 'PageUp') {
       event.preventDefault();
       briefStep(el('brief-deck'), false);
     }

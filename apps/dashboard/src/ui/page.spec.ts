@@ -1408,13 +1408,64 @@ describe('renderDashboardPage — the Brief', () => {
     it('scrolls by snapping, with no timer and no hijack', () => {
       // scroll-snap is the entire mechanism. A deck that plays itself is a
       // video, and a reader who looks away must not lose their place.
+      //
+      // BOTH AXES ARE DECLARED, and which one a reader gets is the media
+      // query's answer: a phone pages sideways like the story format it
+      // borrows from, a desktop pages down its reading column.
+      expect(html).toContain('scroll-snap-type: x mandatory');
       expect(html).toContain('scroll-snap-type: y mandatory');
       expect(html).toContain('scroll-snap-align: start');
-      expect(html).toContain('overscroll-behavior-y: contain');
+      expect(html).toContain('overscroll-behavior: contain');
       // No card advances itself. The only timer the deck is allowed is the one
-      // that puts the word "Copy" back on the Copy button.
+      // that puts the word "Copy" back on the Copy button. THE STORY LAYOUT
+      // DID NOT BRING AUTOPLAY WITH IT: a deck that plays itself is a video.
       expect(SCRIPT_BRIEF).not.toContain('setInterval');
       expect(SCRIPT_BRIEF).not.toContain('requestAnimationFrame');
+      expect(SCRIPT_BRIEF).not.toContain('setTimeout(briefStep');
+    });
+
+    it('advances only on something the reader did', () => {
+      // The four ways forward, and every one of them is an action: a swipe
+      // (the snap container itself), a tap on a third of the screen, an arrow
+      // key, and the pager above 900px. All four land in one stepper.
+      expect(SCRIPT_BRIEF).toContain('function briefStep(deck, forward)');
+      expect(SCRIPT_BRIEF).toContain('var BRIEF_TAP_ZONE = 1 / 3;');
+      expect(SCRIPT_BRIEF).toContain("key === 'ArrowRight'");
+      expect(SCRIPT_BRIEF).toContain("key === 'ArrowLeft'");
+      // The middle third is not a control. It is where the claim is, and where
+      // a thumb rests while reading it.
+      expect(SCRIPT_BRIEF).toContain(
+        'if (across >= 1 - BRIEF_TAP_ZONE) briefStep(deck, true);',
+      );
+      expect(SCRIPT_BRIEF).toContain(
+        'else if (across <= BRIEF_TAP_ZONE) briefStep(deck, false);',
+      );
+    });
+
+    it('leaves every control on a card tappable inside a tap zone', () => {
+      // THE FAILURE THIS WOULD SHIP: the ticker, Copy, Source and the topic
+      // dot all sit inside one of the two live thirds, so a tap handler that
+      // did not stand down for them would advance the card instead of opening
+      // the source document.
+      expect(SCRIPT_BRIEF).toContain(
+        "event.target.closest('a, button, input, select, textarea, summary')",
+      );
+    });
+
+    it('declares the gesture it wants, and contains the overscroll', () => {
+      // pan-x so a vertical drag is not spent hunting for a scroller that will
+      // not move, contain so a swipe past the last card does not become the
+      // browser's own back navigation.
+      expect(html).toContain('touch-action: pan-x;');
+      expect(html).toContain('overscroll-behavior: contain;');
+    });
+
+    it('names the gesture the device actually has', () => {
+      // "Scroll" is wrong on a thumb and "swipe" is wrong on a mouse, so the
+      // cover carries both sentences and the stylesheet picks one.
+      expect(html).toContain('Swipe, or tap the sides. There is an end.');
+      expect(html).toContain('Scroll for the cards. There is an end.');
+      expect(html).toContain('.bhintwide { display: none; }');
     });
 
     it('measures the viewport in dvh, never vh', () => {
@@ -2159,19 +2210,28 @@ describe('renderDashboardPage — the deck on a desktop', () => {
     for (const glyph of ['▲', '▼', '◆']) expect(pager).not.toContain(glyph);
   });
 
-  it('leaves the phone deck untouched, and adds nothing to it', () => {
-    // EVERY DESKTOP RULE IS BEHIND 900px. The deck a phone gets — one card per
-    // viewport, the rail above it, no pager — is the same stylesheet it was.
+  it('keeps the two decks apart, and undoes the row above 900px', () => {
+    // EVERY DESKTOP RULE IS BEHIND 900px, and the axis is the one thing the
+    // two decks disagree about — so the desktop block restates it rather than
+    // inheriting half of it. A `display: flex` left over from the phone would
+    // lay fourteen cards side by side inside a 660px column.
     const desktop = html.slice(html.indexOf('@media (min-width: 900px)'));
 
     expect(desktop).toContain('max-width: 660px;');
     expect(desktop).toContain('flex-direction: column;');
-    // And the phone's own rules are still there, ahead of it.
+    expect(desktop).toContain('display: block;');
+    expect(desktop).toContain('overflow-y: auto;');
+    expect(desktop).toContain('scroll-snap-type: y mandatory;');
+    expect(desktop).toContain('touch-action: auto;');
+
+    // And the phone's own rules are ahead of it: one full-width card per
+    // screen, in a row that snaps sideways.
     const phone = html.slice(
       html.indexOf('.bcard {'),
       html.indexOf('@media (min-width: 431px)'),
     );
-    expect(phone).toContain('min-height: 100%;');
+    expect(phone).toContain('flex: 0 0 100%;');
+    expect(phone).toContain('height: 100%;');
     expect(phone).toContain('scroll-snap-align: start;');
     // The pager is display:none until the media query turns it on.
     expect(html).toContain('.bpager { display: none; }');
@@ -2190,14 +2250,17 @@ describe('renderDashboardPage — the deck on a desktop', () => {
   });
 
   it('takes the pager ends from the scroll position, not from a counter', () => {
-    // The same rule the rail follows: the deck's scrollTop is the truth about
-    // where a reader is, and anything else is a copy that can disagree with
-    // the screen. The rail cannot answer this one — it indexes company cards,
-    // and the deck also holds the cover and the end card.
+    // The same rule the rail follows: the deck's scroll offset is the truth
+    // about where a reader is, and anything else is a copy that can disagree
+    // with the screen. The rail cannot answer this one — it indexes company
+    // cards, and the deck also holds the cover and the end card.
+    //
+    // READ ALONG WHATEVER AXIS THE DECK PAGES ON. The pager only exists above
+    // 900px, where that is y; taking the axis from the same helper the stepper
+    // uses is what stops the two ever disagreeing about which end is the end.
     expect(SCRIPT).toContain('prev.disabled = at <= 1;');
-    expect(SCRIPT).toContain(
-      'next.disabled = at + deck.clientHeight >= deck.scrollHeight - 2;',
-    );
+    expect(SCRIPT).toContain('next.disabled = at + span >= total - 2;');
+    expect(SCRIPT).toContain('var across = deckPagesAcross(deck);');
     expect(SCRIPT).toContain(
       "el('brief-deck').addEventListener('scroll', syncBriefPager);",
     );
