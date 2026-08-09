@@ -1122,20 +1122,29 @@ button.sym:hover { color: var(--text); text-decoration: underline; }
    companies that have no recent filing to build one from. */
 .roster {
   list-style: none; margin: 0 0 28px; padding: 0;
-  display: grid; gap: 1px;
+  display: grid;
   /* COLUMNS, NOT LINES. A full-width row per company put five words on a
      1,400px line and called the rest structure — the founder read it as
      wasted space, and it was. 320px holds the row's worst case (an 11-char
      ticker, a truncating name, "last filed yesterday", the star), so a
      laptop shows three or four companies per line and fifty fit without a
-     scroll. The 1px gap over the line colour keeps the hairline grid the
-     single-column version had. */
+     scroll. */
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  background: var(--line); border: 1px solid var(--line);
-  border-radius: 10px; overflow: hidden;
+  /* NO BOX, NO BACKDROP, NO GAP. It used to be a bordered rounded panel whose
+     grid gap showed the line colour between panel-coloured rows — three
+     surfaces to draw a list of names, and it sat heavier than the cards listed
+     below it. The roster is a list on the page, so it is drawn on the page:
+     rows on the page background, separated by the one hairline each row
+     already needs. The heading above it and the cards below it are the only
+     boxes in the section now. */
+  column-gap: 24px;
 }
 .roster[hidden] { display: none; }
-.rosterrow { display: flex; align-items: center; gap: 12px; background: var(--panel); padding: 9px 12px; }
+.rosterrow {
+  display: flex; align-items: center; gap: 12px;
+  background: transparent; padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+}
 .rosterrow button.sym { flex: 0 0 auto; font-size: 14px; }
 /* The name yields the row's spare width and truncates; the ticker and the two
    controls never do, because they are what the row is for. */
