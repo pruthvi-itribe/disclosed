@@ -6,6 +6,7 @@ import {
 } from './auth-script';
 import { AUTH_PAGE_STYLE } from './auth-page-style';
 import { BRAND } from './brand';
+import { jsonForScript, sdkModule } from './firebase-sdk';
 import { escapeHtml } from './landing';
 import { LANDING_STYLE } from './landing-style';
 import { BRAND_FAVICON_LINK, BRAND_LOGO, BRAND_LOGO_STYLE } from './logo';
@@ -58,42 +59,6 @@ import { BRAND_FAVICON_LINK, BRAND_LOGO, BRAND_LOGO_STYLE } from './logo';
  * keeps it out of the startup log, because a key in a log file outlives the
  * process that wrote it and the habit is worth more than the exception.
  */
-
-/**
- * The pinned SDK version.
- *
- * PINNED, NEVER `latest`. A floating version means the code this page executes
- * changes without a deploy, on the one page where somebody types a password —
- * which is the supply-chain shape the self-contained rule exists to avoid, and
- * the reason a version bump here is a commit rather than a Tuesday.
- */
-export const FIREBASE_SDK_VERSION = '10.14.1';
-
-/** The only external origin this application ever references. */
-export const FIREBASE_SDK_ORIGIN = 'https://www.gstatic.com';
-
-const sdkModule = (name: string): string =>
-  `${FIREBASE_SDK_ORIGIN}/firebasejs/${FIREBASE_SDK_VERSION}/firebase-${name}.js`;
-
-/**
- * JSON safe to place between `<script>` tags.
- *
- * `</script>` inside a script element ends it, whatever the element's type and
- * whatever quoting the JSON uses — the HTML tokeniser does not parse JavaScript
- * or JSON, it looks for the closing sequence. So the three characters that can
- * start one are escaped as `\\uXXXX`, which `JSON.parse` reads back identically.
- *
- * These values come from environment variables set by an operator, not from a
- * caller, so this is a bug-catcher rather than a defence against an attacker.
- * It is here because "the input is trusted" is how every injection ships:
- * `FIREBASE_PROJECT_ID` is a string somebody types, and a page that breaks
- * confusingly on a typo is worse than one that does not.
- */
-export const jsonForScript = (value: unknown): string =>
-  JSON.stringify(value)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026');
 
 /**
  * The panel shown when somebody asked for Firebase and the keys never arrived.

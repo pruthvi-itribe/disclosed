@@ -4,13 +4,13 @@ import {
   AUTH_SCRIPT_LOCAL,
   AUTH_SCRIPT_SHARED,
 } from './auth-script';
+import { renderAuthPage } from './auth-page';
+import { AUTH_PAGE_STYLE } from './auth-page-style';
 import {
   FIREBASE_SDK_ORIGIN,
   FIREBASE_SDK_VERSION,
   jsonForScript,
-  renderAuthPage,
-} from './auth-page';
-import { AUTH_PAGE_STYLE } from './auth-page-style';
+} from './firebase-sdk';
 import { LANDING_STYLE } from './landing-style';
 import { BRAND_FAVICON_LINK, BRAND_LOGO } from './logo';
 
