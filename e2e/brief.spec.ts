@@ -599,7 +599,7 @@ test.describe('the cover and the end', () => {
     expect(numbers?.[0]).toBe(shown);
     // "N of M companies in this window", and M is at least what is drawn.
     expect(numbers?.[1]).toBeGreaterThanOrEqual(shown);
-    expect(line).toContain('said something a document verified');
+    expect(line).toContain('filed something a document verified');
     if ((numbers?.[1] ?? 0) > shown) {
       expect(line).toContain('The rest are in the feed');
       expect(numbers?.[2]).toBe((numbers?.[1] ?? 0) - shown);

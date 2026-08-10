@@ -32,7 +32,7 @@ export const SCRIPT_POLL = `
     if (state.view === 'brief') {
       return 'api/filings?tier=verified&offset=0&limit=' + BRIEF_WINDOW;
     }
-    // The feed's "said something" toggle IS the verified tier. Expressed here
+    // The feed's "verified claims" toggle IS the verified tier. Expressed here
     // rather than as a separate parameter because the server already filters on
     // exactly this set, and inventing a second name for it would be two ways to
     // ask one question — which is how the two views start disagreeing.

@@ -137,7 +137,7 @@ beforeAll(async () => {
     }),
     // THE CASE TASK #45 NAMES, as it stands on the live collection. Zen
     // Technologies has filed and neither filing carries a verified line, so
-    // under the feed's shipped "said something" toggle its own rows are gone —
+    // under the feed's shipped "verified claims" toggle its own rows are gone —
     // and a filing by somebody else that NAMES it is not.
     makeFiling(10, {
       symbol: 'ZENTEC',

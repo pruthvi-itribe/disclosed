@@ -86,9 +86,10 @@ const aKnownSymbol = async (page: Page): Promise<string> => {
  * A symbol that is ON SCREEN, which is not the same question.
  *
  * `aKnownSymbol` asks the server for the newest filing; the feed shows only
- * filings carrying a verified claim, because "Only filings that said something"
- * is on by default. The two disagree whenever the newest filing said nothing
- * verifiable — which is most of them, and which is how this test came to be
+ * filings carrying a verified claim, because "Only filings with verified
+ * claims" is on by default. The two disagree whenever the newest filing said
+ * nothing verifiable — which is most of them, and which is how this test came
+ * to be
  * looking for a star on a card that was never drawn. A test about a control
  * has to find the control the way a reader does.
  */

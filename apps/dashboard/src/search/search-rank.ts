@@ -60,7 +60,7 @@ import { normaliseQuery, toTextSearch } from './search-terms';
  * own filings lead the page only while they are in that set — and the reader's
  * other filters are applied to the same set. Measured on the live collection
  * (3,937 filings, 1,289 companies, 2026-08-09) with the feed's shipped default
- * — the "said something" toggle, which sends `tier=verified`:
+ * — the "verified claims" toggle, which sends `tier=verified`:
  *
  *   q=ACC     →  6 filings, every one of them STUDDS
  *   q=CERA    →  2 filings: KAJARIACER, ORIENTCER

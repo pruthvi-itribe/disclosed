@@ -184,7 +184,7 @@ ${BRAND_FAVICON_LINK}
     <!-- The company cards are inserted here, before the end card. -->
 
     <!-- THE REMAINDER, STATED. Twelve cards is about five per cent of the
-         companies that said something a document verified, and a reader who
+         companies that filed something a document verified, and a reader who
          only ever opens the Brief would otherwise believe they had seen the
          market. This is the mitigation, and it lives in copy, which is the
          weakest place to put a guarantee — so it is also the loudest thing on
@@ -239,11 +239,16 @@ ${BRAND_FAVICON_LINK}
     FILINGS over the SAME IST DAY now, and the second is a subset of the first
     by construction (see SummaryView.todayVerified in dashboard.types.ts).
 
-    THE COPY CARRIES THE RELATION, not just the values. "of them said something"
-    cannot be read as an independent total the way "verified insights" could,
-    and it is the feed toggle's own words for the same set. Each window is
-    stated in a title rather than in standing copy, which is where this page
-    puts the long form of everything.
+    THE COPY CARRIES THE RELATION, not just the values. "with verified claims"
+    counts the same unit as "filings today" — filings — so it cannot be read
+    as an independent total the way "verified insights" could, and it is the
+    feed toggle's own words for the same set. It also attributes the
+    distinction to VERIFICATION rather than to speech: an earlier label read
+    "of them said something", which implied the other filings were silent,
+    when every filing says something — these are the ones with at least one
+    claim matched against a span the document printed. Each window is stated
+    in a title rather than in standing copy, which is where this page puts
+    the long form of everything.
   -->
   <div class="hero" data-ui="feed-hero">
     <div class="herostat" title="Filings the exchange disseminated in the current IST day, 00:00 to 24:00 at UTC+05:30. Counted by the server, which is the process that owns the one definition of an IST day.">
@@ -252,7 +257,7 @@ ${BRAND_FAVICON_LINK}
     </div>
     <div class="herostat" title="How many of today's filings carry a claim or a results line matched against the source document — the two things a card prints as an insight. One filing counts once, over the same IST day, so this can never be larger than the number beside it.">
       <div id="hero-insights" class="herovalue accent">—</div>
-      <div class="herolabel">of them said something</div>
+      <div class="herolabel">with verified claims</div>
     </div>
     <div class="herostat" title="Since the newest filing held, which on a quiet morning is earlier than today. Deliberately not scoped to today: it is the only one of these three that tells a quiet market from a stopped pipeline.">
       <div id="hero-lag" class="herovalue">—</div>
@@ -292,7 +297,7 @@ ${BRAND_FAVICON_LINK}
     </div>
     <label class="onlyinsights">
       <input id="only-insights" type="checkbox" checked>
-      <span>Only filings that said something</span>
+      <span>Only filings with verified claims</span>
     </label>
     </div>
     <!--

@@ -444,7 +444,7 @@ export interface SummaryView {
   readonly todayCount: number;
   /** The IST day `todayCount` counts, as `YYYY-MM-DD`. */
   /**
-   * Today's filings by category group, and how many said something verified.
+   * Today's filings by category group, and how many carried a verified claim.
    *
    * TODAY'S SHAPE, not the collection's — the enrichment route counts groups
    * over everything ever stored, which is a true number answering a different

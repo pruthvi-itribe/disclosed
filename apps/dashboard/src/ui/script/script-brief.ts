@@ -613,9 +613,9 @@ export const SCRIPT_BRIEF = `
       'brief-end-line',
       rest === 0
         ? groupInt(shown.length) + ' of the ' + groupInt(candidates.length) +
-            ' companies in this window said something a document verified, and every one of them is in this deck.'
+            ' companies in this window filed something a document verified, and every one of them is in this deck.'
         : groupInt(shown.length) + ' of the ' + groupInt(candidates.length) +
-            ' companies in this window said something a document verified. The rest are in the feed: ' +
+            ' companies in this window filed something a document verified. The rest are in the feed: ' +
             groupInt(rest) + ' more.'
     );
 

@@ -38,7 +38,7 @@ export const SCRIPT_CELLS = `
     // The feed's three numbers, which are NOT the eight above them. Admin asks
     // "is the pipeline healthy"; the feed asks "is there anything to read". So
     // the cursor, the stored total and the parse backlog stay in Admin, and
-    // what surfaces here is how much arrived, how much of it said something,
+    // what surfaces here is how much arrived, how much of it we could verify,
     // and how long since the last one — the last of those being the only
     // honest way to tell a quiet market from a stopped pipeline.
     //

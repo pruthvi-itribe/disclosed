@@ -710,7 +710,7 @@ describe('FilingQueryService — read-only', () => {
 /**
  * THE HERO'S TRIPLET, and the one relation that makes it a sentence.
  *
- * The feed prints "N filings today" beside "M of them said something". Read as
+ * The feed prints "N filings today" beside "M with verified claims". Read as
  * English that says M is a subset of N, so the two have to be the same UNIT
  * (filings, not claims) over the same WINDOW (one IST day). They were not:
  * the first came from here and the second was counted in the browser over
@@ -720,7 +720,7 @@ describe('FilingQueryService — read-only', () => {
  * This suite pins the half that lives on the server, which is the half that can
  * be pinned: same window, same unit, and therefore M <= N whatever is stored.
  */
-describe('getSummary — today, and how much of it said something', () => {
+describe('getSummary — today, and how much of it carried a verified claim', () => {
   /** A filing inside the 2026-08-05 IST day, with whatever enrichment. */
   const inDay = (
     seqId: number,

@@ -2076,7 +2076,7 @@ describe('renderDashboardPage — without the operator panel', () => {
 /**
  * THE FEED'S THREE NUMBERS, and the one thing that makes them a sentence.
  *
- * "N filings today" beside "M of them said something" reads as a subset claim.
+ * "N filings today" beside "M with verified claims" reads as a subset claim.
  * It was not one: N came from the server's IST day and M was counted in the
  * browser over whatever rows the feed had loaded, so the pair printed "8"
  * beside "22" on the live collection at 10:36 IST on 2026-08-09 — and Load
@@ -2125,14 +2125,15 @@ describe('renderDashboardPage — the feed hero', () => {
   });
 
   it('carries the subset relation in the visible copy, not only in a title', () => {
-    // "verified insights" reads as a total in its own right; "of them said
-    // something" cannot. It is also the feed toggle's own words for the same
-    // set, so one screen has one name for one idea.
+    // "verified insights" reads as a total in its own right; "with verified
+    // claims" counts filings, the same unit as the number beside it. It is
+    // also the feed toggle's own words for the same set, so one screen has
+    // one name for one idea. An earlier label read "of them said something",
+    // which implied the unverified filings were silent — every filing says
+    // something; these are the ones we could match against a printed span.
     expect(html).toContain('<div class="herolabel">filings today</div>');
-    expect(html).toContain(
-      '<div class="herolabel">of them said something</div>',
-    );
-    expect(html).toContain('Only filings that said something');
+    expect(html).toContain('<div class="herolabel">with verified claims</div>');
+    expect(html).toContain('Only filings with verified claims');
     expect(html).not.toContain(
       '<div class="herolabel">verified insights</div>',
     );
