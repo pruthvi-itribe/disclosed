@@ -1,6 +1,10 @@
+import type { AuthConfig } from '../config/auth-config';
+import { AUTH_SCRIPT_FIREBASE } from './auth-script';
 import { BRAND, BRAND_DOMAIN } from './brand';
+import { FIREBASE_SDK_ORIGIN, FIREBASE_SDK_VERSION } from './firebase-sdk';
 import { escapeHtml, renderLandingPage } from './landing';
 import { SAMPLE_CARDS } from './landing-samples';
+import { LANDING_SCRIPT_FIREBASE } from './landing-script';
 import { BRAND_FAVICON_LINK, BRAND_LOGO } from './logo';
 
 /**
@@ -8,12 +12,48 @@ import { BRAND_FAVICON_LINK, BRAND_LOGO } from './logo';
  *
  * This is the only page on the origin served to somebody who has not signed in,
  * so the properties worth holding are: it reads nothing, it references nothing
- * off-origin, it runs nothing, and no visitor can mistake an example for a
- * filing. Every one of those is a property a well-meaning edit could remove
- * without anything else noticing.
+ * off-origin but the pinned SDK that signs people in, it runs nothing else, and
+ * no visitor can mistake an example for a filing. Every one of those is a
+ * property a well-meaning edit could remove without anything else noticing.
+ *
+ * TWO DOCUMENTS, AND MOST ASSERTIONS BELONG TO BOTH. `html` is what a `local`
+ * host serves — no script, no external anything, which is what this file
+ * asserted about every host before the sign-in popup existed. `firebaseHtml` is
+ * the same document plus the two script elements that open Google's popup in
+ * place, and the pair of tests on the copy proves that "plus" is the whole
+ * difference.
  */
 
-const html = renderLandingPage();
+const FIREBASE: AuthConfig = {
+  mode: 'firebase',
+  firebase: {
+    projectId: 'disclosed-live',
+    webApiKey: 'AIza-not-a-secret',
+    authDomain: 'disclosed-live.firebaseapp.com',
+  },
+  missing: [],
+};
+
+const LOCAL: AuthConfig = { mode: 'local', firebase: null, missing: [] };
+
+/** Firebase asked for, keys not arrived: no SDK, because there is no project. */
+const UNCONFIGURED: AuthConfig = {
+  mode: 'firebase',
+  firebase: null,
+  missing: ['FIREBASE_PROJECT_ID', 'FIREBASE_WEB_API_KEY'],
+};
+
+const html = renderLandingPage(LOCAL);
+const firebaseHtml = renderLandingPage(FIREBASE);
+
+/** Every absolute URL the document references, deduplicated. */
+const externalOrigins = (document: string): string[] => [
+  ...new Set(
+    [...document.matchAll(/https?:\/\/[^\s"'<>]+/g)].map(
+      (match) => new URL(match[0]).origin,
+    ),
+  ),
+];
 
 /**
  * Everything a visitor can actually read: tags stripped, entities resolved for
@@ -78,11 +118,29 @@ describe('it is written for somebody who has never read a filing', () => {
 });
 
 describe('the landing page is self-contained', () => {
-  it('references no external host at all', () => {
-    // The same assertion `page.spec.ts` makes about the dashboard. The ONE
-    // relaxation on this origin is `/auth`, which is a link away — this document
-    // must not reach gstatic or anywhere else itself.
-    expect(html).not.toMatch(/https?:\/\//);
+  it('references NOTHING external without live Firebase keys', () => {
+    // A host that never asked for Firebase never ships a byte of it, and
+    // neither does one whose keys have not arrived. This is what makes "one
+    // relaxation, two pages, one mode" true of a deployment rather than of a
+    // file — the same pair `auth-page.spec.ts` makes about the sign-in page.
+    expect(externalOrigins(html)).toEqual([]);
+    expect(html).not.toContain('firebase');
+    expect(externalOrigins(renderLandingPage(UNCONFIGURED))).toEqual([]);
+  });
+
+  it('loads the Firebase SDK from gstatic and from nowhere else', () => {
+    // THE EDGE OF THE EXCEPTION. Not "no external host" — this document has one
+    // in this mode — but "exactly one external host, exactly in this mode".
+    expect(externalOrigins(firebaseHtml)).toEqual([FIREBASE_SDK_ORIGIN]);
+  });
+
+  it('pins the SDK version rather than floating it', () => {
+    // A floating version means the code this page executes changes without a
+    // deploy, on the most-served page on the origin.
+    expect(firebaseHtml).toContain(
+      `${FIREBASE_SDK_ORIGIN}/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`,
+    );
+    expect(firebaseHtml).not.toContain('/latest/');
   });
 
   it('loads no stylesheet, script or font from anywhere', () => {
@@ -91,26 +149,38 @@ describe('the landing page is self-contained', () => {
     // pointing anywhere but `data:`, is a font or a stylesheet arriving from a
     // third party — on the one page served to people who have not agreed to
     // anything yet, which is what this assertion has always been for.
-    expect([...html.matchAll(/<link[^>]*>/g)].map((match) => match[0])).toEqual(
-      [BRAND_FAVICON_LINK],
-    );
+    for (const document of [html, firebaseHtml]) {
+      expect(
+        [...document.matchAll(/<link[^>]*>/g)].map((match) => match[0]),
+      ).toEqual([BRAND_FAVICON_LINK]);
+      expect(document).not.toContain('@font-face');
+      // A FRAGMENT IS NOT A FETCH. The brand mark's gradient is
+      // 'url(#brandtile)' and the favicon's is 'url(#f)' arriving
+      // percent-encoded as 'url(%23f)' inside the data URI — both name a node
+      // in the very document that carries them. The flat ban this replaces
+      // could not tell either from a CDN image and would have refused all three.
+      expect(document).not.toMatch(/url\(\s*(?!#|%23)/);
+      expect(document).not.toContain('<img');
+    }
     expect(BRAND_FAVICON_LINK).toContain('href="data:image/svg+xml,');
-    expect(html).not.toMatch(/<script/);
-    expect(html).not.toContain('@font-face');
-    // A FRAGMENT IS NOT A FETCH. The brand mark's gradient is 'url(#brandtile)'
-    // and the favicon's is 'url(#f)' arriving percent-encoded as 'url(%23f)'
-    // inside the data URI — both name a node in the very document that carries
-    // them. The flat ban this replaces could not tell either from a CDN image
-    // and would have refused all three.
-    expect(html).not.toMatch(/url\(\s*(?!#|%23)/);
   });
 
-  it('carries no script element of any kind', () => {
-    // NOT AN OVERSIGHT — see the header. The page has one interaction and a
-    // link needs no JavaScript, so the least-authenticated page on the origin
-    // is also the one with no client code on it.
-    expect(html).not.toContain('</script>');
+  it('carries no script element at all without live Firebase keys', () => {
+    // NOT AN OVERSIGHT — see the header. Without a Firebase project there is
+    // nothing for a script to do here: the buttons are links, and a link needs
+    // no JavaScript.
+    for (const document of [html, renderLandingPage(UNCONFIGURED)]) {
+      expect(document).not.toContain('</script>');
+    }
+  });
+
+  it('wires the popup through addEventListener, never through markup', () => {
+    // NO INLINE HANDLER, IN EITHER MODE. An `onclick=` attribute is the shape
+    // every other page here refuses, and the one that would make this page's
+    // single script element an argument about what else may go in an attribute.
     expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+    expect(firebaseHtml).not.toMatch(/\son[a-z]+\s*=/i);
+    expect(LANDING_SCRIPT_FIREBASE).toContain('addEventListener');
   });
 
   it('inlines its stylesheet', () => {
@@ -120,13 +190,15 @@ describe('the landing page is self-contained', () => {
 });
 
 describe('it performs no read', () => {
-  it('is a constant: two renders are the same bytes', () => {
-    // A landing page that varied with request state would be a landing page
-    // with request state to get wrong. It takes no arguments and holds none.
-    expect(renderLandingPage()).toBe(html);
+  it('holds no request state: two renders of a mode are the same bytes', () => {
+    // A landing page that varied with the REQUEST would be a landing page with
+    // request state to get wrong. It takes the server's own auth configuration
+    // and nothing else, so every signed-out visitor to a host gets one document.
+    expect(renderLandingPage(LOCAL)).toBe(html);
+    expect(renderLandingPage(FIREBASE)).toBe(firebaseHtml);
   });
 
-  it('names no API route', () => {
+  it('names no API route without live Firebase keys', () => {
     // There is nothing for it to call. If a fetch ever appears here it will be
     // the one unauthenticated route returning filing data, added for a
     // screenshot — which is the hole the whole gate exists to not have.
@@ -134,16 +206,170 @@ describe('it performs no read', () => {
     expect(html).not.toContain('fetch(');
   });
 
-  it('links only to the sign-in page', () => {
+  it('names exactly one API route in firebase mode, and it is a write', () => {
+    // THE READ ROUTES ARE THE POINT. The sign-in exchange posts an ID token and
+    // gets a session cookie back; it returns no filing and reads no collection.
+    // A second path appearing in this list is the hole the gate exists to not
+    // have, whatever it is called.
+    const paths = [
+      ...new Set(
+        [...firebaseHtml.matchAll(/api\/[a-z/-]+/g)].map((match) => match[0]),
+      ),
+    ];
+
+    expect(paths).toEqual(['api/auth/firebase']);
+  });
+
+  it('links only to the sign-in page, in both modes', () => {
     // ANCHORS ONLY. The head carries one more `href` — the favicon's `data:`
     // URI — and it goes nowhere; the property worth holding is that every place
     // a visitor can CLICK leads to `/auth` and to nothing else.
-    const hrefs = [...html.matchAll(/<a [^>]*href="([^"]*)"/g)].map(
-      (m) => m[1],
-    );
+    //
+    // TRUE IN FIREBASE MODE TOO, and that is not an accident: the popup is an
+    // intercepted click on the same anchor, so a broken or blocked script
+    // leaves every button on this page the working link it was.
+    for (const document of [html, firebaseHtml]) {
+      const hrefs = [...document.matchAll(/<a [^>]*href="([^"]*)"/g)].map(
+        (m) => m[1],
+      );
 
-    expect(hrefs.length).toBeGreaterThan(0);
-    expect([...new Set(hrefs)]).toEqual(['/auth']);
+      expect(hrefs.length).toBeGreaterThan(0);
+      expect([...new Set(hrefs)]).toEqual(['/auth']);
+    }
+  });
+});
+
+describe('the sign-in popup, in firebase mode only', () => {
+  it('adds the popup and its lines, and changes not one word of the copy', () => {
+    // THE STRONGEST THING THIS FILE SAYS ABOUT THE RELAXATION, and it says it
+    // by subtraction: everything firebase mode adds to this document is the two
+    // script elements and, around each sign-in anchor, the slot and the empty
+    // line it speaks into. Take those away and the byte-for-byte `local`
+    // document is what remains — so no copy, no card, no disclaimer, no link
+    // and no anchor attribute differs between a host with a Firebase project
+    // and one without.
+    const withoutPopup = firebaseHtml
+      .replace(/\n<script[\s\S]*?<\/script>/g, '')
+      .replace(
+        /<span class="ctaslot">([\s\S]*?)<span class="ctaerr"[^>]*><\/span><\/span>/g,
+        '$1',
+      );
+
+    expect(withoutPopup).toBe(html);
+    expect(firebaseHtml).toContain(
+      '<script type="application/json" id="firebase-config">',
+    );
+    expect(firebaseHtml).toContain('AIza-not-a-secret');
+  });
+
+  it('gives every call to action a line to speak into', () => {
+    // ONE SLOT PER BUTTON, because the message has to appear under the button
+    // that was pressed — a marketing page's three calls to action are metres
+    // apart and a single shared error line would report the failure somewhere
+    // the reader is not looking.
+    const slots = firebaseHtml.split('class="ctaslot"').length - 1;
+
+    expect(slots).toBe(3);
+    expect(firebaseHtml).toContain('data-ui="signin-error-hero"');
+    expect(firebaseHtml).toContain('role="alert"');
+    // AND NO SUCH ELEMENT on a host with no popup to fail. The two RULES ship
+    // in both modes because there is one stylesheet — the same way `/auth`
+    // carries `.gmark` on a host that draws no Google button — but a hidden
+    // element with no script to fill it would be furniture.
+    expect(html).not.toContain('class="ctaslot"');
+    expect(html).not.toContain('class="ctaerr"');
+  });
+
+  it('answers a blocked popup by going to the page that does not need one', () => {
+    // THE FALLBACK IS THE HREF, ARRIVED AT THE LONG WAY. `/auth` signs people
+    // in exactly as it did before this existed, so a browser that refuses
+    // popups loses nothing but a page load.
+    expect(LANDING_SCRIPT_FIREBASE).toContain("'auth/popup-blocked'");
+    expect(LANDING_SCRIPT_FIREBASE).toContain(
+      "'auth/operation-not-supported-in-this-environment'",
+    );
+    expect(LANDING_SCRIPT_FIREBASE).toContain(
+      "window.location.assign('/auth')",
+    );
+  });
+
+  it('says nothing when the reader closes the window, or presses again', () => {
+    // Both are decisions rather than failures. The second one is why there is
+    // no "one popup at a time" latch: Firebase took a measured 10.0s to notice
+    // a closed window, and a latch held that long is a button that does nothing
+    // for ten seconds after somebody changes their mind. See `landing-script.ts`.
+    expect(LANDING_SCRIPT_FIREBASE).toContain("'auth/popup-closed-by-user'");
+    expect(LANDING_SCRIPT_FIREBASE).toContain("'auth/cancelled-popup-request'");
+    expect(LANDING_SCRIPT_FIREBASE).toContain(
+      'if (Object.prototype.hasOwnProperty.call(SILENT, code)) return;',
+    );
+  });
+
+  it('shows the sentences the sign-in page shows, and no others', () => {
+    // THE TWO PAGES MUST NOT DISAGREE about what a failure means. These are
+    // `auth-script.ts`'s own lines for the codes a popup can still produce once
+    // it has opened, and its fallback sentence for everything unmapped.
+    for (const line of [
+      'Could not reach the sign-in service. Check your connection.',
+      'Too many attempts. Wait a few minutes and try again.',
+      'That sign-in did not work. Try again.',
+    ]) {
+      expect([line, AUTH_SCRIPT_FIREBASE.includes(line)]).toEqual([line, true]);
+      expect([line, LANDING_SCRIPT_FIREBASE.includes(line)]).toEqual([
+        line,
+        true,
+      ]);
+    }
+  });
+
+  it('ships no password call and no verification lane', () => {
+    // The verification mail is `/auth`'s job — Google asserts the address, so a
+    // copy of that lane here would be a branch nobody reaches maintained on the
+    // marketing page. An unverified record is handed over instead.
+    for (const gone of [
+      'sendEmailVerification',
+      'signInWithEmailAndPassword',
+      'createUserWithEmailAndPassword',
+      'password',
+    ]) {
+      expect([gone, firebaseHtml.includes(gone)]).toEqual([gone, false]);
+    }
+    expect(LANDING_SCRIPT_FIREBASE).toContain('emailVerified');
+  });
+
+  it('drops the Firebase session the moment our cookie exists', () => {
+    // Our opaque cookie is the session from there. Nothing in `localStorage`,
+    // and no Google session left alive behind a signed-out reader on a shared
+    // machine — the same exchange `auth-script.ts` performs.
+    expect(LANDING_SCRIPT_FIREBASE).toContain('signOut(auth)');
+    expect(LANDING_SCRIPT_FIREBASE).toContain("window.location.replace('/')");
+  });
+});
+
+describe('the landing fragment obeys the template-literal rules', () => {
+  // THE SAME GUARD `script-fragments.spec.ts` PUTS ON THE DASHBOARD'S TEN and
+  // `auth-page.spec.ts` puts on the sign-in page's three. It is here rather
+  // than in either of those because this fragment belongs to this page: those
+  // files import their own page's modules and a fragment guarded somewhere else
+  // is a guard the next person deletes with the import.
+  it('carries no backtick of its own', () => {
+    // The one that ends the fragment's template literal early, taking the rest
+    // of the file into TypeScript and out of the browser.
+    expect(LANDING_SCRIPT_FIREBASE).not.toContain('`');
+  });
+
+  it('carries no interpolation', () => {
+    // Evaluated by the compiler and gone before a browser sees it. This is why
+    // the Firebase keys arrive through a JSON element instead.
+    expect(LANDING_SCRIPT_FIREBASE).not.toContain('${');
+  });
+
+  it('parses as JavaScript', () => {
+    // The failure this guards is the one that has shipped here more than once:
+    // a document that serves 200, contains every id a test looks for, and
+    // throws on load. The SDK imports are free identifiers to `new Function`,
+    // which is fine — it compiles the body, it does not resolve names.
+    expect(() => new Function(LANDING_SCRIPT_FIREBASE)).not.toThrow();
   });
 });
 

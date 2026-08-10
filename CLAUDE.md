@@ -57,23 +57,27 @@ These override any habit of writing more, sooner, or cleverer.
   addition has to argue with the list.
 - **The dashboard is self-contained.** No CDN, no external request, no web
   font. Inline everything.
-  - **The one relaxation is `/auth`, in firebase mode only.** It loads the
-    Firebase Web SDK from `gstatic.com` at a pinned version, and nothing else
-    from anywhere. The app and the landing page are unchanged — `page.spec.ts`
-    and `landing.spec.ts` both assert their documents contain no `https?://` at
-    all — and `auth-page.spec.ts` asserts the set of external origins on the
-    sign-in page is exactly `[gstatic]` in firebase mode and exactly `[]` in the
-    other two. The argument is in `ui/auth-page.ts`'s header: that page renders
-    no filing, calls no read route and has no database access, and the
-    alternative is hand-writing Google's OAuth dance. A font, a stylesheet, an
-    image or an analytics tag there is still refused; the Google mark is CSS.
+  - **The one relaxation is the two signed-out surfaces — the landing page and
+    `/auth` — in firebase mode only.** Both load the Firebase Web SDK from
+    `gstatic.com` at one pinned version (`ui/firebase-sdk.ts`), and nothing else
+    from anywhere: the landing page's sign-in buttons open Google's popup where
+    the visitor already is, and `/auth` does the same behind a deep link and a
+    blocked-popup fallback. The app is unchanged — `page.spec.ts` asserts the
+    signed-in document contains no `https?://` at all — and `landing.spec.ts`
+    and `auth-page.spec.ts` each assert the set of external origins on their
+    page is exactly `[gstatic]` in firebase mode and exactly `[]` in the other
+    two. The argument is in `ui/auth-page.ts`'s header and holds for both pages
+    for the same reason: neither renders a filing, calls a read route or has
+    database access, and the alternative is hand-writing Google's OAuth dance.
+    A font, a stylesheet, an image or an analytics tag on either is still
+    refused; the Google mark is CSS.
 - **Fail open on categories.** Never key a fail-closed gate on a category name
   NSE controls (`claim-eligibility.ts` records why).
 
 ## Sharp edges (each has shipped a real breakage)
 
-- `apps/dashboard/src/ui/script/*.ts`, `auth-script.ts`, `page-style*.ts` and
-  `landing-style.ts` are **TypeScript template literals**: a backtick or `${` inside the string body — including in
+- `apps/dashboard/src/ui/script/*.ts`, `auth-script.ts`, `landing-script.ts`,
+  `page-style*.ts` and `landing-style.ts` are **TypeScript template literals**: a backtick or `${` inside the string body — including in
   a comment — is consumed by the compiler and breaks the page while serving
   200. `script-fragments.spec.ts` guards this; keep fragments free of both.
 - Client-script regexes need **doubled backslashes** (`\\d`), because the

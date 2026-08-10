@@ -1,4 +1,7 @@
+import type { AuthConfig, FirebaseConfig } from '../config/auth-config';
 import { BRAND, BRAND_DOMAIN, BRAND_TAGLINE } from './brand';
+import { jsonForScript, sdkModule } from './firebase-sdk';
+import { LANDING_SCRIPT_FIREBASE } from './landing-script';
 import { LANDING_STYLE } from './landing-style';
 import { BRAND_FAVICON_LINK, BRAND_LOGO, BRAND_LOGO_STYLE } from './logo';
 import {
@@ -17,9 +20,9 @@ import {
  * Not a throttled read, not a cached read, not a read of aggregates — none.
  * Every filing route on this application is behind the session guard, and this
  * page is what makes that a complete statement rather than an almost-complete
- * one: it is a constant string, it fetches nothing, and it carries no script at
- * all. There is no endpoint it could call and no state it could leak, so the
- * gate has no exception to argue about.
+ * one: the document is a constant, and the only request it can make is the
+ * sign-in POST below, after somebody presses a button. There is no read route it
+ * names and no state it could leak, so the gate has no exception to argue about.
  *
  * The consequence, accepted deliberately: every number and every card on this
  * page is an EXAMPLE, and the page says so beside each of them rather than in
@@ -46,21 +49,31 @@ import {
  * reader would repeat it to somebody else.
  *
  * ================================================================
- * NO SCRIPT, AND THAT IS THE SECURITY POSTURE
+ * ONE INTERACTION, AND IN FIREBASE MODE IT IS A GOOGLE POPUP
  * ================================================================
  *
  * `page.ts` inlines 100 KB of client code because the dashboard is live. This
- * page is not live. It has one interaction — a link to `/auth` — and a link
- * needs no JavaScript, so this document contains no `<script>` element of any
- * kind. It is the most-served, least-authenticated page on the origin and it is
- * the one with the smallest attack surface, which is the right way round.
+ * page is not live. It has one interaction — sign in — and in `local` mode, and
+ * on a host that asked for Firebase before its keys arrived, that is a link to
+ * `/auth` and this document contains no `<script>` element of any kind.
  *
- * SELF-CONTAINED, like everything else here: no CDN, no font, no external host.
- * `landing.spec.ts` asserts the document contains no `https?://` at all, which
- * is the same assertion `page.spec.ts` makes about the dashboard. The one
- * relaxation on this origin is `/auth`, which loads the Firebase Web SDK from
- * gstatic — stated in `auth-page.ts`'s header and in CLAUDE.md, and reachable
- * from here only by following a link.
+ * IN FIREBASE MODE THE SAME BUTTONS OPEN GOOGLE'S POPUP HERE. Sending somebody
+ * to `/auth` to press one button and come back is a navigation, a second page
+ * paint and a back button pointing at a sign-in page they have finished with —
+ * for a flow whose whole content is a popup that can just as well open from
+ * here. The anchors keep their `href="/auth"`, so with the script broken,
+ * blocked or still loading every button on this page is still the link it was;
+ * `landing-script.ts` has the failure table.
+ *
+ * SELF-CONTAINED EVERYWHERE ELSE: no CDN, no font, no external host, and in
+ * `local` mode no external anything — `landing.spec.ts` asserts the set of
+ * external origins on this document is exactly `[gstatic]` in firebase mode and
+ * exactly `[]` in the other two, the same pair of assertions
+ * `auth-page.spec.ts` makes about the sign-in page. The argument for the
+ * relaxation is in `auth-page.ts`'s header and in CLAUDE.md, and it covers both
+ * pages for the same reason: neither renders a filing, calls a read route or
+ * has database access. `page.spec.ts` still asserts the signed-in document
+ * contains no `https?://` at all.
  *
  * ================================================================
  * THE MARKUP IS A CONSTANT, WHICH IS WHY INTERPOLATION IS SAFE HERE
@@ -270,13 +283,76 @@ const NEVERS: ReadonlyArray<{ head: string; body: string }> = [
 ];
 
 /**
- * The landing page: one self-contained HTML document, no script, no reads.
+ * One call to action, and there are three of them down the page.
  *
- * Returns a constant. It takes no arguments on purpose — a landing page that
- * varied with request state would be a landing page with request state to get
- * wrong, and this one is served identically to everyone who is not signed in.
+ * ALWAYS AN ANCHOR TO `/auth`, in every mode. In firebase mode the fragment
+ * intercepts the click and opens Google's popup here instead, and the `href` is
+ * what happens when that script is broken, blocked or has not loaded yet.
+ *
+ * THE SLOT AND ITS EMPTY LINE ARE THE POPUP'S ONLY MARKUP, and they are only
+ * rendered where a popup can happen: a popup fails in ways a link cannot — the
+ * browser blocks it, the reader closes it, the network drops — and the line
+ * under the button is where that is said. A hidden element on a page with no
+ * script to fill it would be furniture.
  */
-export const renderLandingPage = (): string => `<!doctype html>
+const cta = (
+  where: string,
+  className: string,
+  label: string,
+  popup: boolean,
+): string => {
+  const link = `<a class="${className}" href="/auth" data-ui="signin-${where}">${label}</a>`;
+
+  return popup
+    ? `<span class="ctaslot">${link}<span class="ctaerr" data-ui="signin-error-${where}" role="alert" hidden></span></span>`
+    : link;
+};
+
+/**
+ * The sign-in code, in firebase mode only: two script elements and nothing else.
+ *
+ * THE KEYS TRAVEL AS DATA RATHER THAN AS CODE, for the reason `auth-page.ts`
+ * gives at length: interpolating a value into a script fragment is the sharp
+ * edge CLAUDE.md records, and a JSON element the fragment parses has no such
+ * failure mode. That argument is not repeated as an HTML comment here, so that
+ * this function's whole contribution to the document is the two elements —
+ * which is what lets `landing.spec.ts` assert the firebase document is the
+ * local one plus these, word for word, with no copy changed between modes.
+ */
+const firebaseSignIn = (live: FirebaseConfig): string => `
+<script type="application/json" id="firebase-config">${jsonForScript({
+  apiKey: live.webApiKey,
+  authDomain: live.authDomain,
+  projectId: live.projectId,
+})}</script>
+<script type="module">
+import { initializeApp } from "${sdkModule('app')}";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut
+} from "${sdkModule('auth')}";
+(function () {
+  'use strict';
+${LANDING_SCRIPT_FIREBASE}
+})();
+</script>`;
+
+/**
+ * The landing page: one self-contained HTML document, no reads.
+ *
+ * Takes the resolved `AuthConfig` and nothing else — the same argument
+ * `renderAuthPage` takes, and for the same reason: which door this page draws is
+ * decided here at render time rather than by client code asking the server what
+ * mode it is in, so a `local` host never ships a line of Firebase code. It holds
+ * no request state; two visitors to the same server get the same bytes.
+ */
+export const renderLandingPage = (auth: AuthConfig): string => {
+  const live = auth.firebase;
+  const popup = live !== null;
+
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -295,7 +371,7 @@ ${BRAND_FAVICON_LINK}
   <div class="wrap" style="display:flex;align-items:center;gap:12px">
     ${BRAND_LOGO}
     <span class="grow"></span>
-    <a class="go small" href="/auth" data-ui="signin-top">Sign in</a>
+    ${cta('top', 'go small', 'Sign in', popup)}
   </div>
 </header>
 
@@ -319,7 +395,7 @@ ${BRAND_FAVICON_LINK}
     line from the document underneath. Never our opinion.</strong>
   </p>
   <div class="cta">
-    <a class="go" href="/auth" data-ui="signin-hero">Sign in or create an account</a>
+    ${cta('hero', 'go', 'Sign in or create an account', popup)}
     <span class="ctanote">Free while in early access.</span>
   </div>
 
@@ -403,7 +479,7 @@ ${NEVERS.map(
       they file collects in one place.
     </p>
     <div class="cta">
-      <a class="go" href="/auth" data-ui="signin-close">Sign in or create an account</a>
+      ${cta('close', 'go', 'Sign in or create an account', popup)}
     </div>
   </div>
 </section>
@@ -417,7 +493,8 @@ ${NEVERS.map(
     recommendation about any company or security. All times are IST.
   </div>
 </footer>
-
+${live === null ? '' : firebaseSignIn(live)}
 </body>
 </html>
 `;
+};

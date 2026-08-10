@@ -128,6 +128,30 @@ a:hover { text-decoration: underline; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 26px; }
 .ctanote { color: var(--muted); font-size: 13px; }
 
+/* FIREBASE MODE ONLY, and only the three sign-in buttons have one. The link
+   becomes a Google popup there, and a popup fails in ways a link cannot, so
+   each button carries a line under it to say so — see landing-script.ts.
+
+   A COLUMN, so the message lands under its own button rather than beside it.
+   The slot itself is inline-flex and therefore shrink-wraps the button, which
+   is what keeps the header row and the centred closing block laid out exactly
+   as they are without the slot. The line is hidden until something happens and
+   takes no space when it is.
+
+   'align-items: flex-start' RATHER THAN THE DEFAULT STRETCH, and this was a
+   real wart: stretched, the button took the width of the message beside it, so
+   showing an error visibly grew the button it was about. */
+.ctaslot { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+/* The closing block is centred, so its slot is too — everything else on this
+   page is left-aligned and inherits the default above. */
+.close .ctaslot { align-items: center; }
+.ctaerr {
+  max-width: 34ch; padding: 8px 11px; border-radius: 9px;
+  border: 1px solid rgba(248, 81, 73, .5); background: rgba(248, 81, 73, .09);
+  font-size: 13px; line-height: 1.5; text-align: left; white-space: normal;
+}
+.ctaerr[hidden] { display: none; }
+
 /* -------------------------------------------------------------- stats ---- */
 /* THE THREE ARE INVARIANTS, NOT MEASUREMENTS, and the styling follows from
    that: no live dot, no "as of", nothing that implies a clock. A landing page

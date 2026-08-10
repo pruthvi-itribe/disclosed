@@ -138,11 +138,15 @@ export class DashboardController {
    * Signed in: the dashboard — one self-contained HTML document with its CSS and
    * JavaScript inline, no CDN, no external font, no build step.
    *
-   * Signed out: the landing page, which is a constant and performs no read at
-   * all. Not a trimmed dashboard, not the feed with the data blanked: a
-   * different document with no client code and nothing to fetch. That is what
-   * makes "signed-out visitors read nothing" a property of the routing table
-   * rather than a promise about what the client asks for.
+   * Signed out: the landing page, which performs no read at all. Not a trimmed
+   * dashboard, not the feed with the data blanked: a different document, with no
+   * read route in it to call. That is what makes "signed-out visitors read
+   * nothing" a property of the routing table rather than a promise about what
+   * the client asks for.
+   *
+   * Rendered from the resolved `AuthConfig`, like the sign-in page: in firebase
+   * mode its buttons open Google's popup where the visitor already is, and a
+   * `local` host ships no Firebase code at all. See `ui/landing.ts`.
    *
    * NOT `SessionGuard`. The guard's job is to refuse and this route's job is to
    * answer — the same split `api/me` makes. A 401 here would mean an anonymous
@@ -159,7 +163,7 @@ export class DashboardController {
   async getPage(@Req() request: Request): Promise<string> {
     const who = await this.sessions.resolve(request);
     return who === null
-      ? renderLandingPage()
+      ? renderLandingPage(this.authConfig)
       : renderDashboardPage(this.adminEnabled);
   }
 

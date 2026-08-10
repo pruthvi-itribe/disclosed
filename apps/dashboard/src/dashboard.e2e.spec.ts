@@ -224,7 +224,14 @@ describe('dashboard over HTTP — no access without sign-in', () => {
     // The tell: the dashboard's admin table. A landing page that shipped the
     // app's markup with the data blanked would pass a weaker assertion.
     expect(html).not.toContain('<table>');
-    expect(html).not.toContain('<script');
+    // THE APP'S CLIENT CODE, NOT "A SCRIPT ELEMENT". Like the `/auth` test
+    // below, this suite boots the real config loader, so a host whose
+    // environment carries Firebase keys serves the landing page's sign-in
+    // popup — two script elements that name one write route and no read route.
+    // `landing.spec.ts` owns that boundary; what must never appear here is the
+    // 100 KB that reads the collection.
+    expect(html).not.toContain('ADMIN_ENABLED');
+    expect(html).not.toContain('id="view-feed"');
   });
 
   it('leaks no filing to a signed-out visitor, anywhere in the document', async () => {
