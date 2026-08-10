@@ -1,0 +1,121 @@
+name: Build and Lint Checks
+
+# The four gates CLAUDE.md names, in the order that fails cheapest first:
+# lint, types, Jest, build. Structured after tralk-nest-server's `lint.yaml`
+# — same workflow name, same push/pull_request pair, same concurrency group —
+# so one habit reads both repositories.
+#
+# ================================================================
+# PLAYWRIGHT IS DELIBERATELY NOT HERE
+# ================================================================
+#
+# `npm run test:e2e` needs three things this runner does not have and should
+# not be given: a Mongo the dashboard can write to, the dashboard process
+# actually listening on 7717, and `AUTH_MODE=local` — because global setup
+# REGISTERS A THROWAWAY ACCOUNT THROUGH THE REAL REGISTER ROUTE and deletes it
+# afterwards. There is deliberately no test bypass in the server (`e2e/session.ts`),
+# so the suite cannot be made to run against a stub; it can only be made to run
+# against a real stack.
+#
+# Standing that stack up in CI is a mongo service container, a build, a
+# backgrounded server, a readiness wait and a browser download — five moving
+# parts whose failures look like product failures. The suite stays a
+# pre-deploy step run by a human against a real dashboard, and
+# docs/deploy-kubernetes.md says so with the command.
+#
+# WHAT THIS COSTS, STATED: the specs that assert the SERVED document — that
+# `page.spec.ts` and `landing.spec.ts` contain no `https?://` at all, and that
+# `auth-page.spec.ts` sees exactly `[gstatic]` in firebase mode — are the
+# guard on the self-contained-dashboard invariant, and CI does not run them.
+# Jest's `script-fragments.spec.ts` still catches the backtick/`${` class of
+# breakage at unit level, which is the one that has actually shipped.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/**
+      - libs/**
+      - tools/**
+      - package.json
+      - package-lock.json
+      - tsconfig.json
+      - nest-cli.json
+      - jest.config.js
+      - .eslintrc.js
+      - .github/workflows/ci.yaml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/**
+      - libs/**
+      - tools/**
+      - package.json
+      - package-lock.json
+      - tsconfig.json
+      - nest-cli.json
+      - jest.config.js
+      - .eslintrc.js
+      - .github/workflows/ci.yaml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: lint, types, tests, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 20, matching the Dockerfile's `node:20-alpine` and `@types/node ^20`.
+      # tralk pins 18 for its own dependency reasons; the number that matters
+      # here is the one the images actually run.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # `mongodb-memory-server` downloads a mongod binary and 30-odd suites
+      # boot one. Uncached that is ~100 MB fetched from a CDN on every run,
+      # and a CDN having a day reads as a test failure. Keyed on the lockfile
+      # because that is what pins the version of the binary it wants.
+      - name: Cache mongod binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: ${{ runner.os }}-mongod-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-mongod-
+
+      # `npm ci` and not `npm install`: the lockfile is what pins production,
+      # and a CI run that quietly resolves a different tree is testing
+      # something nobody will deploy. Scripts are NOT disabled here — unlike
+      # the Dockerfile, which turns them off precisely because no runtime
+      # needs mongod — because the postinstall is how the binary above lands.
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run lint` carries `--fix`, which in CI would rewrite the working
+      # tree and then report success on code nobody wrote. `lint:ci` is the
+      # same rule set with nothing mutated.
+      - name: Lint
+        run: npm run lint:ci
+
+      - name: Types
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Tests
+        run: npm test
+
+      # The same three `nest build` passes the image's build stage runs. A
+      # break here is the same break, found before three image builds pay for
+      # it.
+      - name: Build
+        run: npm run build

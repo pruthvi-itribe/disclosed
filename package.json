@@ -18,6 +18,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "lint": "eslint \"{apps,libs,tools}/**/*.ts\" --fix",
+    "lint:ci": "eslint \"{apps,libs,tools}/**/*.ts\"",
     "corpus:fetch": "ts-node -r tsconfig-paths/register tools/corpus/fetch-corpus.ts",
     "corpus:analyse": "ts-node -r tsconfig-paths/register tools/corpus/analyse-corpus.ts",
     "amount:measure": "ts-node -r tsconfig-paths/register tools/extraction/measure-amount-precision.ts",
