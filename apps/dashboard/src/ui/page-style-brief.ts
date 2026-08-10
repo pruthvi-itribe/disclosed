@@ -52,7 +52,11 @@ body.briefing {
   flex-direction: column;
   max-width: none;
 }
-body.briefing .topbar { padding: 10px 16px; margin: 0; gap: 12px; }
+/* THE SAME BAR IN BOTH MODES, to the pixel. The deck removes the body's
+   padding, so the bar carries the identical metrics itself: 16px above,
+   20px sides, 12px below, gap 16 — switching Feed to Brief must not move
+   the brand or resize anything, or the tab feels like a page change. */
+body.briefing .topbar { padding: 16px 20px 12px; margin: 0; gap: 16px; }
 /* The page's own account of itself is eight paragraphs. It belongs under the
    feed and the admin panel; under a deck sized to the viewport it is content
    nobody can reach and a scrollbar nobody asked for.
