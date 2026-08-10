@@ -1,0 +1,82 @@
+# The public entrance: disclosed.live to the dashboard Service.
+#
+# Shaped exactly like tralk-infra's `kubernetes_ingress_v1.tralkserver` —
+# ingressClassName `nginx`, the `letsencrypt-prod` ClusterIssuer annotation,
+# a `tls` block whose secretName cert-manager fills in. Both of those already
+# exist on this cluster in the `platform` namespace (ingress-nginx and
+# cert-manager, installed by tralk-infra's `prod/platform.tf`), which is why
+# this file installs neither.
+#
+# The issuer solves DNS-01 against the DO DNS zone, so the certificate is
+# issued BEFORE disclosed.live resolves at the ingress load balancer. That is
+# the whole reason DNS-01 was chosen there and it is worth the same here: the
+# cert can be in place before the A record moves off the droplet, which makes
+# the cutover a DNS change rather than a downtime window.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard
+  namespace: disclosed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - disclosed.live
+      secretName: disclosed-tls
+  rules:
+    - host: disclosed.live
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard
+                port:
+                  number: 8080
+---
+# One canonical origin.
+#
+# PUBLIC_ORIGIN is `https://disclosed.live` and every mutation is
+# Origin-guarded against it, so a reader who arrived on www would have every
+# POST refused rather than merely seeing a different hostname. The droplet's
+# `Caddyfile` does this in a second site block; here it is a second Ingress,
+# because `permanent-redirect` is a per-Ingress annotation and cannot be
+# scoped to one rule inside a shared object.
+#
+# ITS OWN CERTIFICATE, and it needs one: a browser completes the TLS
+# handshake before it is told to go somewhere else, so a redirect served
+# without a valid certificate for `www.disclosed.live` is a warning page
+# rather than a redirect.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard-www
+  namespace: disclosed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/permanent-redirect: https://disclosed.live$request_uri
+    nginx.ingress.kubernetes.io/permanent-redirect-code: '301'
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - www.disclosed.live
+      secretName: disclosed-www-tls
+  rules:
+    - host: www.disclosed.live
+      http:
+        paths:
+          # The backend is never reached — the redirect is issued before
+          # nginx proxies anything — but a rule needs one, and naming the
+          # real Service keeps the Ingress from being rejected for pointing
+          # at something that does not exist.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard
+                port:
+                  number: 8080

@@ -1,0 +1,32 @@
+# The namespace everything below lives in.
+#
+# ================================================================
+# WHY `disclosed` AND NOT `prod`
+# ================================================================
+#
+# tralk-infra names its namespaces after the environment — `prod` holds
+# tralkserver, `stage` holds the staging copy — because that cluster runs one
+# product. The DOKS `prod` cluster this deploys to is the same one, so a
+# second product landing in `prod` would put two unrelated things in one
+# ServiceAccount's default blast radius and one `kubectl -n prod delete` away
+# from each other.
+#
+# One namespace per product, environment in the cluster name. `tofu` still
+# owns `prod`; nothing here touches it.
+#
+# Numbered filename because `kubectl apply -f k8s/` reads the directory in
+# alphabetical order and a namespace that sorts after its own contents fails
+# the apply. Terraform resolves that from the dependency graph; kubectl does
+# not, so the ordering is written into the names.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: disclosed
+  labels:
+    # `managed-by: kubectl` and not `tofu`, and the difference is the point:
+    # tralk's manifests are Terraform resources in tralk-infra, these are
+    # files in the application repository applied by hand. See
+    # docs/deploy-kubernetes.md, "What stays manual".
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/part-of: disclosed
+    env: prod

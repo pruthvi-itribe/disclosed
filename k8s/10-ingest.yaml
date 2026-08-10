@@ -1,0 +1,121 @@
+# The poller. Its budget is two seconds from dissemination to stored.
+#
+# NO SERVICE, and that is not an omission. `apps/ingest/src/main.ts` opens no
+# socket — the Dockerfile's `ingest` target publishes no port and has no
+# healthcheck for the same reason — so there is nothing for a Service to
+# select and nothing for a probe to GET. Whether it is alive is a question for
+# its logs and for the dashboard's feed-lag number.
+#
+# The image tag below is a placeholder. CI does `kubectl set image` on every
+# deploy, exactly as tralk's does, so the tag in this file is only ever the
+# one a first `kubectl apply` starts from — see the `ignore_changes` comment
+# on tralk-infra's `kubernetes_deployment.tralkserver` for the same
+# arrangement expressed in Terraform.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest
+  namespace: disclosed
+  labels:
+    app: ingest
+spec:
+  # EXACTLY ONE, AND IT IS A CORRECTNESS BOUND RATHER THAN A COST ONE. Two
+  # pollers are two NSE sessions pulling the same page, storing the same
+  # filings and sending the operator two of every Telegram alert. There is no
+  # lease on the poll loop the way there is on enrichment's documents.
+  replicas: 1
+
+  # Recreate, NOT the RollingUpdate tralkserver uses. A rolling update with
+  # maxSurge=1 starts the new poller before the old one stops, which is the
+  # two-pollers state above for the length of a rollout. The cost is a gap of
+  # a few seconds in the poll during a deploy, and the drain loop
+  # (NSE_DRAIN_INTERVAL_MS, five minutes) reconciles anything disseminated
+  # inside it.
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app: ingest
+
+  template:
+    metadata:
+      labels:
+        app: ingest
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-pull
+
+      # 30s is Kubernetes' default and is left explicit because it is load
+      # bearing: `main.ts` handles SIGTERM by stopping the loops and closing
+      # the Nest app, and a poll in flight has a 30s fetch ceiling.
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: ingest
+          image: docker.io/investorstribe/disclosed-ingest-prod:doks-prod-latest
+          imagePullPolicy: IfNotPresent
+
+          env:
+            # THE ONE SETTING THAT MAKES THE TWO-SECOND BUDGET REAL. With the
+            # default (true) the enrichment lane runs inside this process, and
+            # Node runs both loops on one thread: parsing a PDF is CPU work
+            # inside pdf.js with no await for the event loop to escape
+            # through, so this poller's timers do not fire while it runs. See
+            # `apps/ingest/src/enrichment/in-process-lane.ts`.
+            #
+            # Its consequence is the enrichment Deployment next door. BOTH
+            # MUST BE RUNNING, or nothing reads a source PDF and the queue
+            # grows silently — this container says exactly that at boot.
+            - name: ENRICH_IN_PROCESS
+              value: 'false'
+            # IST is server-owned: UTC+05:30, day rolls at 18:30 UTC. The
+            # process derives that itself, but a container whose clock says
+            # UTC makes every log line an arithmetic problem for whoever is
+            # reading it at 2am. Same value tralkserver carries.
+            - name: TZ
+              value: Asia/Kolkata
+
+          envFrom:
+            # MONGO_URI, and it is a secret because the managed-Mongo URI
+            # carries the password in it.
+            - secretRef:
+                name: disclosed-mongo
+            # ANTHROPIC_API_KEY, OPENROUTER_API_KEY, TELEGRAM_BOT_TOKEN,
+            # TELEGRAM_CHAT_ID.
+            #
+            # THE KEYS ARE GROUPED BY PROCESS FAMILY, NOT BY CONSUMER, and
+            # that is deliberate. This process does not spend the Anthropic
+            # key — with ENRICH_IN_PROCESS=false its enrichment lane never
+            # runs — but it and the enrichment process share ONE config
+            # loader (`apps/ingest/src/config/configuration.ts`), so handing
+            # them different environments would make their boot lines
+            # disagree about `claims=` and `docling=` for a deployment where
+            # nothing is actually different. Two processes reading one file
+            # get one Secret.
+            #
+            # The dashboard is a different loader and gets a different
+            # Secret; the Anthropic key does not reach the only pod with a
+            # route in from the internet.
+            - secretRef:
+                name: disclosed-pipeline
+
+          # Measured, not estimated — docs/deploy-digitalocean.md section 1,
+          # `docker stats` against this same image plus `ps -o rss` over a
+          # longer run:
+          #
+          #   49.2 MiB fresh, 127.5 MiB after 32 h continuous.
+          #
+          # Request covers the steady state, limit is 2x the 32-hour figure.
+          #
+          # THE CPU LIMIT IS GENEROUS ON PURPOSE. CFS throttling is charged
+          # in 100ms slices, and this is the one process in the repository
+          # with a latency budget measured in seconds; a tight limit would
+          # spend that budget on the scheduler. 50m is what it costs at rest.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 256Mi

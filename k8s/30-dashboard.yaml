@@ -1,0 +1,338 @@
+# The dashboard, and the one arrangement in this directory that is not a
+# straight copy of how tralkserver is deployed.
+#
+# ================================================================
+# WHY THERE ARE TWO CONTAINERS IN THIS POD
+# ================================================================
+#
+# The dashboard binds 127.0.0.1, hard-coded and deliberately not configurable
+# — `apps/dashboard/src/config/configuration.ts` says why: it is a read-only
+# view over an unauthenticated database, and making the bind address an
+# environment variable would make `0.0.0.0` a one-line mistake.
+#
+# A Kubernetes Service sends traffic to the POD IP. A process bound to
+# loopback is not reachable at the pod IP, so the ordinary shape — Service to
+# container port, which is all tralkserver needs because it binds every
+# interface — cannot work here and no annotation makes it work.
+#
+# EVERY CONTAINER IN A POD SHARES ONE NETWORK NAMESPACE. That is the same
+# primitive `docker-compose.deploy.yml` reaches for with
+# `network_mode: service:caddy`, and this is the same answer written in
+# Kubernetes: Caddy sits in the pod, reaches the dashboard at 127.0.0.1:7717
+# because it is in the dashboard's namespace, and listens on 0.0.0.0:8080 for
+# the Service. The invariant is kept rather than routed around.
+#
+# The cost, stated: one more container's memory (13.8 MiB measured) and one
+# more image to keep current. What it buys back is that the security headers
+# and the cache rules stay one authored policy instead of moving into ingress
+# annotations.
+---
+# The sidecar's configuration.
+#
+# DERIVED FROM THE REPOSITORY'S `Caddyfile`, NOT A COPY OF IT, and the
+# differences are all of the same kind: on the droplet Caddy is the public
+# edge and terminates TLS itself; here ingress-nginx terminates TLS and Caddy
+# is an in-pod proxy. So this file has no `email`, no TLS, no `www` redirect
+# (an Ingress does that in 40-ingress.yaml) and a port-only site address.
+#
+# The `reverse_proxy` line, the header block and the two `Cache-Control`
+# replacements are the shipped Caddyfile's, unchanged. If either file's
+# policy moves, both have to.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-edge
+  namespace: disclosed
+  labels:
+    app: dashboard
+data:
+  Caddyfile: |
+    {
+    	# TLS is the Ingress's job. Without this Caddy would try to provision
+    	# a certificate for a site address it cannot prove ownership of.
+    	auto_https off
+    	# The admin API binds localhost:2019 by default, and in a shared pod
+    	# namespace "localhost" includes the dashboard container. Nothing
+    	# reconfigures Caddy at runtime, so the endpoint is surface with no
+    	# user.
+    	admin off
+    }
+
+    :8080 {
+    	# ONE UPSTREAM, INSIDE THIS POD'S OWN NETWORK NAMESPACE — the whole
+    	# reason the sidecar exists. See the file header.
+    	#
+    	# X-Forwarded-Proto is set by reverse_proxy itself and needs no
+    	# directive. It is NOT READ at the other end today: the dashboard
+    	# never calls `app.set('trust proxy', ...)`, so express reports
+    	# `req.secure` false and the session cookie ships without `Secure`.
+    	# On the droplet that was one hop; here it is two (ingress-nginx,
+    	# then this). docs/deploy-kubernetes.md carries the open item.
+    	reverse_proxy 127.0.0.1:7717
+
+    	encode zstd gzip
+
+    	header {
+    		# The page is one self-contained document — no CDN, no external
+    		# font, no third-party script — so the policy that describes it
+    		# is short and can be strict. 'unsafe-inline' is required by
+    		# construction: the stylesheet and the client script are inlined
+    		# into the document on purpose.
+    		#
+    		# THE ONE EXCEPTION IS /auth IN FIREBASE MODE, which loads the
+    		# Firebase Web SDK from gstatic.com at a pinned version and
+    		# nothing else from anywhere. Running AUTH_MODE=local instead?
+    		# Delete those three origins and the policy gets shorter.
+    		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    		# Two years, and it is a commitment: once a browser has seen this
+    		# it will refuse plain http for disclosed.live until it expires.
+    		# ingress-nginx emits an HSTS header of its own — which one
+    		# reaches the browser is the first thing to check after the first
+    		# deploy, and is written down as an open item rather than
+    		# asserted here.
+    		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+    		X-Content-Type-Options "nosniff"
+    		Referrer-Policy "strict-origin-when-cross-origin"
+    		X-Frame-Options "DENY"
+    		# Caddy's own advertisement, removed for the same reason the app
+    		# disables x-powered-by.
+    		-Server
+    	}
+
+    	# Every `/api/*` read is behind the session cookie, so a cached
+    	# response is one reader's watchlist served to another.
+    	#
+    	# THE `>` IS LOAD-BEARING: it REPLACES the header rather than adding
+    	# a second one. The app already sends `Cache-Control: no-store` on
+    	# its API responses, and without the `>` the response leaves here
+    	# carrying two Cache-Control lines — legal, in agreement today, and
+    	# exactly the sort of thing an edge parses in whichever order it
+    	# likes.
+    	@api path /api/*
+    	header @api >Cache-Control "private, no-store, max-age=0"
+
+    	# The document itself is generated per reader — signed out it is the
+    	# landing page, signed in it is the app — so it is not cacheable
+    	# either. There are no static asset paths to cache: there are no
+    	# static assets.
+    	@root path /
+    	header @root >Cache-Control "private, no-store, max-age=0"
+
+    	log {
+    		output stdout
+    		format console
+    	}
+    }
+---
+# The only Service in this namespace. ingest and enrichment listen on nothing.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: disclosed
+  labels:
+    app: dashboard
+spec:
+  # ClusterIP by omission, like tralkserver's. The Ingress is the only way in
+  # from outside; a LoadBalancer here would be a second public entrance with
+  # no TLS and no cert-manager in front of it.
+  selector:
+    app: dashboard
+  ports:
+    - name: http
+      port: 8080
+      # THE SIDECAR'S PORT, NOT THE APP'S. 7717 is bound to loopback and is
+      # not reachable at the pod IP by anything, this Service included.
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: disclosed
+  labels:
+    app: dashboard
+spec:
+  # One. A second replica is safe — sessions live in Mongo, not in process
+  # memory — and is the first thing to raise when a rollout's few seconds of
+  # 502 start to matter. It needs a second node to be worth anything: the
+  # prod pool is one node, so two replicas today buy a rolling update and no
+  # availability.
+  replicas: 1
+
+  # RollingUpdate, unlike the two workers. Nothing about a second dashboard is
+  # incorrect, so this is the one workload where tralkserver's strategy
+  # applies unchanged.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  selector:
+    matchLabels:
+      app: dashboard
+
+  template:
+    metadata:
+      labels:
+        app: dashboard
+      annotations:
+        # Rolls the pod when the sidecar's Caddyfile changes. A ConfigMap
+        # mounted as a volume updates in place on a delay and Caddy does not
+        # watch the file, so without this a policy edit applies at the next
+        # unrelated deploy and nobody can say when it took effect.
+        #
+        # THE VALUE IS UPDATED BY HAND when the ConfigMap above changes —
+        # `kubectl apply` does not compute it. docs/deploy-kubernetes.md says
+        # so under "What stays manual".
+        disclosed.live/edge-config-revision: '1'
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-pull
+
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        # ----------------------------------------------------- dashboard ---
+        - name: dashboard
+          image: docker.io/investorstribe/disclosed-dashboard-prod:doks-prod-latest
+          imagePullPolicy: IfNotPresent
+
+          # NO `ports:` ENTRY. It would be documentation and a lie: a
+          # containerPort declares a port on the POD IP, and this process is
+          # on loopback. The port that exists is the sidecar's.
+
+          env:
+            # Explicit, though 7717 is the shipped default, because the
+            # sidecar's `reverse_proxy 127.0.0.1:7717` is a second copy of
+            # this number and a silent default is a worse place to keep the
+            # other half of a pair. Changing one means changing both.
+            - name: DASHBOARD_PORT
+              value: '7717'
+            # THE ORIGIN EVERY MUTATION IS GUARDED AGAINST. Left at its
+            # default this is the process's own loopback URL, and every POST
+            # from the real page is refused with 403 BAD_ORIGIN — so this is
+            # not optional decoration.
+            - name: PUBLIC_ORIGIN
+              value: https://disclosed.live
+            # EXPLICIT, THOUGH THE DEFAULT WOULD ALREADY BE off. The
+            # operator panel and its four routes are not built into a
+            # process that has this false; the two-signal default (NODE_ENV
+            # plus a non-loopback PUBLIC_ORIGIN) would reach the same
+            # answer, and saying it out loud costs one line and removes the
+            # argument.
+            - name: ADMIN_ENABLED
+              value: 'false'
+            # Which identity provider signs people in. Here rather than in
+            # the Secret beside its keys, so `kubectl get deploy dashboard`
+            # answers "which mode is prod in" without reading a Secret.
+            # An unconfigured firebase mode is a NAMED STATE and not a
+            # crash: the page says which keys are missing, verbatim.
+            - name: AUTH_MODE
+              value: firebase
+            - name: TZ
+              value: Asia/Kolkata
+
+          envFrom:
+            - secretRef:
+                name: disclosed-mongo
+            # FIREBASE_PROJECT_ID and FIREBASE_WEB_API_KEY, and nothing else.
+            #
+            # THIS IS THE ONE POD WITH A ROUTE IN FROM THE INTERNET, and it
+            # is the reason the Anthropic key lives in a different Secret
+            # that this pod does not mount. Neither value here is a
+            # service-account key — verifying an ID token is a signature
+            # check against Google's public certificates — and the Web API
+            # key is printed into /auth by design.
+            - secretRef:
+                name: disclosed-dashboard
+
+          # THE PROBE THE KUBELET CANNOT GET TO OVER HTTP, done the way the
+          # Dockerfile's HEALTHCHECK does it: over the loopback the process
+          # actually binds. Same expression, deliberately, because two
+          # spellings of one check drift.
+          #
+          # It restarts THIS container, which is the point: a readiness probe
+          # on the sidecar would notice a hung dashboard and then restart the
+          # sidecar, which fixes nothing. A dashboard that EXITS needs no
+          # probe at all — the kubelet restarts it — so this covers the case
+          # where it is alive and not answering.
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "require('http').get('http://127.0.0.1:'+(process.env.DASHBOARD_PORT||7717)+'/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Measured — docs/deploy-digitalocean.md section 1:
+          #
+          #   50.1 MiB idle, 153.4 MiB after a full browser suite.
+          #
+          # The second figure is a whole Playwright run against one process,
+          # which is heavier than any reader will make it; the limit is 2x
+          # that rather than 2x the idle figure.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 320Mi
+
+        # ---------------------------------------------------------- edge ---
+        - name: edge
+          # Pinned by MAJOR only, on the same reasoning as the Dockerfile's
+          # `node:20-alpine`: a digest pin would freeze the security patches
+          # this image gets for free on every pull. Nothing here is bumped by
+          # CI — `kubectl set image` names the `dashboard` container.
+          image: caddy:2-alpine
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8080
+
+          volumeMounts:
+            - name: edge-config
+              mountPath: /etc/caddy
+              readOnly: true
+
+          # THE ONE PROBE THE SERVICE ACTUALLY KEYS ON. It goes to the pod IP
+          # on 8080, so it exercises the whole path a reader takes: Caddy,
+          # then loopback, then the app. A green answer here proves both
+          # containers; a red one takes the pod out of the Service's
+          # endpoints, which is exactly what should happen while the app
+          # behind it is restarting.
+          #
+          # `/api/health` is one of the four routes outside the session
+          # guard, which is why a monitor can use it without a credential.
+          # Numbers mirror tralkserver's readiness probe.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Measured at 13.8 MiB in the same run as the others. Caddy holds
+          # no certificates in this arrangement — TLS is the Ingress's — so
+          # this is a proxy and a header rewriter and nothing else.
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+
+      volumes:
+        - name: edge-config
+          configMap:
+            name: dashboard-edge

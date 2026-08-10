@@ -1,0 +1,101 @@
+# The lane ENRICH_IN_PROCESS=false moved out of the poller.
+#
+# It reads documents, proposes claims and matches every one of them against a
+# verbatim span of the source. It is where the Anthropic key is spent and
+# where DOCLING_URL is read. Like the poller it listens on nothing, so it has
+# no Service and no probe.
+#
+# THE POLLER IS NOT OPTIONAL COMPANY. With ingest running and this Deployment
+# scaled to zero, filings are still stored, still categorised and still shown
+# — they simply carry no verified claim, and the queue grows without saying
+# so anywhere except in the ingest container's boot line.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enrichment
+  namespace: disclosed
+  labels:
+    app: enrichment
+spec:
+  # One, for now. Unlike the poller this one COULD be scaled: documents are
+  # claimed under a lease (ENRICH_LEASE_MS, ten minutes) precisely so two
+  # workers cannot both write a verdict onto one filing. What stops it is
+  # arithmetic rather than safety — a second worker doubles the Anthropic
+  # spend against a queue that a single worker drains, and the prod node pool
+  # is one node.
+  replicas: 1
+
+  # Recreate rather than RollingUpdate. The lease makes an overlap safe, so
+  # this is not the correctness bound it is next door — it is that a
+  # single-node pool has nowhere to surge a second pod TO, so maxSurge buys a
+  # pending pod rather than a smoother rollout, and matching the poller means
+  # one rollout story instead of two.
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app: enrichment
+
+  template:
+    metadata:
+      labels:
+        app: enrichment
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-pull
+
+      # LONGER THAN THE DEFAULT 30s, AND LONGER THAN THE POLLER'S. A tick can
+      # hold a document through a fetch (30s ceiling), a parse, a claims call
+      # and a results call (120s ceiling each) — up to about five minutes, per
+      # the ENRICH_LEASE_MS note in `apps/ingest/src/config/configuration.ts`.
+      # 120s is not that ceiling, and it is not meant to be: it covers the
+      # common case so a rollout does not SIGKILL a worker mid-document, and
+      # the lease is what covers the rest. A killed worker's documents free up
+      # when the lease expires; nothing is lost, it is retried.
+      terminationGracePeriodSeconds: 120
+
+      containers:
+        - name: enrichment
+          image: docker.io/investorstribe/disclosed-enrichment-prod:doks-prod-latest
+          imagePullPolicy: IfNotPresent
+
+          env:
+            # This process IS the separate lane, so it does not carry
+            # ENRICH_IN_PROCESS: `enrichment.main.ts` runs the worker
+            # directly and never consults the flag. Setting it here would
+            # read as though it did.
+            - name: TZ
+              value: Asia/Kolkata
+
+          envFrom:
+            - secretRef:
+                name: disclosed-mongo
+            # The same Secret the poller gets, for the reason in its file:
+            # one config loader, one environment, two boot lines that agree.
+            - secretRef:
+                name: disclosed-pipeline
+
+          # Measured — docs/deploy-digitalocean.md section 1:
+          #
+          #   57.9 MiB between batches, 210.2 MiB PEAK WHILE PARSING PDFs.
+          #
+          # THE PEAK IS THE NUMBER THAT MATTERS AND THE ONE THAT MOVES.
+          # `pdf-parse` holds a whole PDF and its page objects in memory, so
+          # this figure tracks the size of a filing rather than traffic — it
+          # is the only resource number in this directory that a single
+          # unusual document can push. The 512Mi limit is 2.4x the measured
+          # peak rather than the 2x used elsewhere, because the consequence of
+          # getting it wrong here is an OOMKill in the middle of a document
+          # rather than a slow response. Bytes are bounded separately by
+          # ENRICH_MAX_BYTES and pages by MAX_PDF_PAGES.
+          #
+          # The request sits above the between-batches figure because that is
+          # the floor it returns to, not the floor it runs at.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi
