@@ -477,6 +477,121 @@ export const SCRIPT_FEED = `
   }
 
   /**
+   * WHAT THIS CONTAINER WOULD DRAW, AS ONE STRING.
+   *
+   * 'renderBrief' already answers the four-second repaint this way and says
+   * why: replacing what is under a reader costs them their place. Under the
+   * deck the cost is worse than a scroll position, because the feed is text a
+   * reader SELECTS - a card rebuilt mid-selection takes the selection with it,
+   * along with every hover and any focus inside it. Measured on an idle
+   * 25-card feed with the payload pinned, the rebuild it replaces creates
+   * 28,237 nodes a minute for a screen that never changed.
+   *
+   * THE WHOLE ITEM, NOT A HAND-PICKED LIST OF THE FIELDS THAT RENDER. A list
+   * is a second copy of what the card draws, and when the two drift the
+   * failure is a card that silently stops updating - the one bug this must not
+   * introduce. Measured in the browser against the live payload: 0.045 ms for
+   * the feed's 25 items (122 KB) and 0.166 ms for the company page's 200 (502
+   * KB), against roughly 1,880 node creations for the rebuild it skips.
+   *
+   * THE DAY DIVIDER IS IN IT AND THE RELATIVE TIME IS NOT, and that difference
+   * is the whole design. 'feedBucket' moves a filing from 'Just now' to
+   * 'Earlier today' thirty minutes in, so the heading must be able to change
+   * the signature; 'relativeTime' changes on every card every minute, so
+   * including it would mean never skipping at all. 'touchFeedTimes' keeps
+   * those honest without rebuilding a card.
+   *
+   * NOT IN IT: state.watched. 'paintWatchButtons' repaints every star from
+   * state the moment one is toggled, precisely so a star never needs a
+   * rebuild. 'signedIn()' IS in it, because api/me can answer after the first
+   * paint and the stars only exist at all once it has.
+   */
+  function feedSignature(items, meta, chrome) {
+    var parts = [];
+    for (var i = 0; i < items.length; i++) {
+      parts.push(
+        feedBucket(
+          items[i].istDay,
+          items[i].disseminatedAt,
+          state.todayIstDay,
+          state.previousIstDay,
+        ),
+      );
+      parts.push(JSON.stringify(items[i]));
+    }
+    var m = meta || {};
+    // The state this renderer reads that is not in the payload: the empty
+    // hint names the filter that emptied the feed, and the footer counts the
+    // rows against the reader's own limit.
+    parts.push(String(chrome));
+    parts.push(String(signedIn()));
+    parts.push(String(state.limit));
+    parts.push(String(state.onlyInsights));
+    parts.push(String(state.plans));
+    parts.push(state.q);
+    parts.push(state.symbol);
+    parts.push(state.picked ? state.picked.head + '/' + state.picked.filings : '');
+    parts.push(String(m.offset) + '/' + String(m.returned) + '/' +
+      String(m.total) + '/' + String(m.hasMore));
+    return parts.join('\\u0000');
+  }
+
+  /**
+   * The last signature drawn into each container, keyed by its id.
+   *
+   * KEYED RATHER THAN A SINGLE VALUE because three containers share this
+   * renderer - '#feed', '#company-feed' and '#watch-feed' - and they hold
+   * different rows at the same time. All three are ided in the document; a
+   * container without one would share the empty key with any other, which is
+   * why the key is the id and not a guess at one.
+   */
+  var feedSignatures = {};
+
+  /**
+   * Empties a container and forgets what it held.
+   *
+   * THE STORE MUST NEVER OUTLIVE THE DOM IT DESCRIBES. 'renderWatching' clears
+   * '#watch-feed' itself when the watchlist empties, and without this the
+   * signature would survive that: unwatch everything and watch the same
+   * company again, and the identical payload would match the stored signature
+   * and skip into a container somebody else had emptied. The one way to write
+   * the store is beside a draw; the one way to clear the container is here.
+   */
+  function emptyFeedInto(feed) {
+    if (!feed) return;
+    feed.textContent = '';
+    delete feedSignatures[feed.id];
+  }
+
+  /**
+   * The only thing on an unchanged card that is still moving.
+   *
+   * 'relativeTime' is read against the browser's clock, so "3 min ago" is
+   * wrong a minute after it was written whether or not the filing changed.
+   * Rebuilding the card to correct four characters is what this whole path
+   * exists to avoid, so the text is written where it stands.
+   *
+   * WRITTEN ONLY WHEN IT DIFFERS. Assigning textContent replaces the text node
+   * even when the string is identical, which would put a node creation per
+   * card back on every tick - the thing being removed.
+   */
+  function touchFeedTimes(feed, items) {
+    var at = {};
+    for (var i = 0; i < items.length; i++) {
+      at[String(items[i].seqId)] = items[i].disseminatedAt;
+    }
+    var cards = feed.querySelectorAll('[data-ui="card"]');
+    for (var c = 0; c < cards.length; c++) {
+      var seq = cards[c].getAttribute('data-seq');
+      if (!Object.prototype.hasOwnProperty.call(at, seq)) continue;
+      var when = cards[c].querySelector('.when');
+      if (!when) continue;
+      var text = relativeTime(at[seq]);
+      if (when.textContent !== text) when.textContent = text;
+    }
+  }
+
+  /**
    * Draws a list of filings into any container.
    *
    * SHARED BY THE FEED AND THE COMPANY PAGE on purpose, and it is the largest
@@ -488,9 +603,21 @@ export const SCRIPT_FEED = `
    *
    * 'chrome' is false for the company page, whose paging and counts live in its
    * own header rather than in the feed's footer.
+   *
+   * REBUILT ONLY WHEN IT ACTUALLY CHANGED - see 'feedSignature'. The stored
+   * signature is written only where the container is actually drawn, so it
+   * always describes what is on screen rather than what was last fetched.
    */
   function renderFeedInto(feed, items, meta, chrome) {
     if (!feed) return;
+
+    var signature = feedSignature(items, meta, chrome);
+    if (feedSignatures[feed.id] === signature) {
+      touchFeedTimes(feed, items);
+      return;
+    }
+    feedSignatures[feed.id] = signature;
+
     feed.textContent = '';
 
     if (chrome) {

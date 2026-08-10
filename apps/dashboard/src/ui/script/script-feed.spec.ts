@@ -1,17 +1,20 @@
 import { renderDashboardPage } from '../page';
 
 /**
- * `feedBucket`, run as the browser runs it.
+ * `feedBucket` and `feedSignature`, run as the browser runs them.
  *
  * SLICED OUT OF THE SERVED DOCUMENT rather than imported from the fragment,
  * for the reason in CLAUDE.md: these fragments are TypeScript template
  * literals, and a fragment that compiled is not a fragment that shipped. What
  * is asserted here is the function the page actually hands a browser.
  *
- * It is the one function in the client script worth running in Jest: it is
- * pure, it touches no DOM, and it is the whole of a rule the server owns —
- * which IST day a filing belongs to. Everything else in the fragment builds
- * nodes and is the e2e suite's job.
+ * They are the two functions in the client script worth running in Jest: both
+ * are pure and touch no DOM. `feedBucket` is the whole of a rule the server
+ * owns — which IST day a filing belongs to. `feedSignature` is the whole of
+ * the rule that decides whether the feed is rebuilt at all, and every one of
+ * its failures is silent: too coarse and a card stops updating, too fine and
+ * nothing is ever skipped. Everything else in the fragment builds nodes and is
+ * the e2e suite's job.
  */
 
 const html = renderDashboardPage(true);
@@ -133,5 +136,208 @@ describe('feedBucket — the day a filing is filed under', () => {
     expect(source).not.toContain('getTimezoneOffset');
     expect(source).not.toContain('toISOString');
     expect(source).not.toContain('86400000');
+  });
+});
+
+/**
+ * The reader-visible state `feedSignature` reads that is not in the payload.
+ * Only the fields it names; the real `state` carries thirty more.
+ */
+type FeedState = {
+  todayIstDay: string | null;
+  previousIstDay: string | null;
+  limit: number;
+  onlyInsights: boolean;
+  plans: boolean;
+  q: string;
+  symbol: string;
+  picked: { head: string; filings: number } | null;
+};
+
+type Filing = Record<string, unknown>;
+type Meta = Record<string, unknown>;
+type FeedSignature = (items: Filing[], meta: Meta, chrome: boolean) => string;
+
+/**
+ * `feedSignature` with its two collaborators supplied.
+ *
+ * `feedBucket` comes out of the same served script rather than being stubbed —
+ * the day divider is part of the signature and a stub would prove the wrong
+ * function. `state` and `signedIn` are injected as parameters because they are
+ * the page's, and a test that reached for the real ones would be asserting
+ * against whatever the last test left behind.
+ */
+const signatureWith = (
+  state: FeedState,
+  signedIn: () => boolean,
+): FeedSignature =>
+  new Function(
+    'state',
+    'signedIn',
+    `${cutFunction(SCRIPT, 'function feedBucket(')}
+${cutFunction(SCRIPT, 'function feedSignature(')}
+return feedSignature;`,
+  )(state, signedIn) as FeedSignature;
+
+const feedState = (over: Partial<FeedState> = {}): FeedState => ({
+  todayIstDay: TODAY,
+  previousIstDay: YESTERDAY,
+  limit: 25,
+  onlyInsights: true,
+  plans: false,
+  q: '',
+  symbol: '',
+  picked: null,
+  ...over,
+});
+
+/** One filing shaped as `api/filings` sends it, with only what a card draws. */
+const filing = (over: Filing = {}): Filing => ({
+  seqId: 106_734_488,
+  symbol: 'SKIPPER',
+  companyName: 'Skipper Limited',
+  istDay: TODAY,
+  disseminatedAt: ago(45 * 60 * 1000),
+  disseminatedAtIst: '09 Aug 2026, 09:15:00',
+  category: 'Financial Results',
+  categoryGroup: 'results',
+  categoryGroupLabel: 'Results',
+  confidenceTier: 'verified',
+  confidenceTierLabel: 'Verified',
+  outcome: 'Results declared',
+  attachmentUrl: 'https://nsearchives.test/skipper.pdf',
+  enrichment: {
+    state: 'done',
+    claims: [{ text: 'Revenue was 1,204 crore', direction: '', echo: false }],
+  },
+  ...over,
+});
+
+const META: Meta = {
+  offset: 0,
+  returned: 1,
+  total: 4_354,
+  hasMore: true,
+  limit: 25,
+};
+
+describe('feedSignature — whether the feed is rebuilt at all', () => {
+  it('is the same string for the same screen', () => {
+    // The whole point: the four-second poll usually brings back exactly what
+    // is already drawn.
+    const sign = signatureWith(feedState(), () => true);
+    const items = [filing()];
+    expect(sign(items, META, true)).toBe(sign([filing()], { ...META }, true));
+  });
+
+  it("moves when a claim's text changes", () => {
+    const sign = signatureWith(feedState(), () => true);
+    const before = sign([filing()], META, true);
+    const after = sign(
+      [
+        filing({
+          enrichment: {
+            state: 'done',
+            claims: [
+              { text: 'Revenue was 1,240 crore', direction: '', echo: false },
+            ],
+          },
+        }),
+      ],
+      META,
+      true,
+    );
+    expect(after).not.toBe(before);
+  });
+
+  it('moves when a filing arrives, and when one is reordered', () => {
+    const sign = signatureWith(feedState(), () => true);
+    const one = filing();
+    const two = filing({ seqId: 106_734_489, symbol: 'SAGILITY' });
+    const before = sign([one], META, true);
+    expect(sign([two, one], META, true)).not.toBe(before);
+    // ORDER IS PART OF THE SCREEN. The feed is sorted newest first and two
+    // filings swapping places is a different feed, not the same one.
+    expect(sign([two, one], META, true)).not.toBe(sign([one, two], META, true));
+  });
+
+  it('does not move as the clock runs inside a divider', () => {
+    // THE PROPERTY THE WHOLE SKIP RESTS ON. Every card's "3 min ago" is a
+    // minute out of date a minute later, and if that reached the signature
+    // nothing would ever be skipped. `touchFeedTimes` writes those in place.
+    const sign = signatureWith(feedState(), () => true);
+    const items = [filing()];
+    const before = sign(items, META, true);
+    jest.spyOn(Date, 'now').mockReturnValue(NOW + 5 * 60 * 1000);
+    expect(sign(items, META, true)).toBe(before);
+  });
+
+  it('moves when a filing crosses out of Just now', () => {
+    // The divider above the card IS in the signature, because half an hour in
+    // the heading changes and no light pass rewrites a heading.
+    const sign = signatureWith(feedState(), () => true);
+    const items = [filing({ disseminatedAt: ago(29 * 60 * 1000) })];
+    const before = sign(items, META, true);
+    expect(feedBucket(TODAY, ago(29 * 60 * 1000), TODAY, YESTERDAY)).toBe(
+      'Just now',
+    );
+    jest.spyOn(Date, 'now').mockReturnValue(NOW + 2 * 60 * 1000);
+    expect(sign(items, META, true)).not.toBe(before);
+  });
+
+  it('moves when the counts under the feed change', () => {
+    const sign = signatureWith(feedState(), () => true);
+    const items = [filing()];
+    const before = sign(items, META, true);
+    expect(sign(items, { ...META, total: 4_355 }, true)).not.toBe(before);
+    expect(sign(items, { ...META, hasMore: false }, true)).not.toBe(before);
+  });
+
+  it('moves when the reader grows the feed', () => {
+    // `state.limit` decides whether Load more is drawn at the server's ceiling,
+    // and it is not in the payload.
+    const state = feedState();
+    const sign = signatureWith(state, () => true);
+    const before = sign([filing()], META, true);
+    state.limit = 50;
+    expect(sign([filing()], META, true)).not.toBe(before);
+  });
+
+  it('moves when api/me finally answers', () => {
+    // The watch star does not exist until it does, and that answer arrives
+    // after the first paint on a cold load.
+    let signedIn = false;
+    const sign = signatureWith(feedState(), () => signedIn);
+    const before = sign([filing()], META, true);
+    signedIn = true;
+    expect(sign([filing()], META, true)).not.toBe(before);
+  });
+
+  it("tells an empty feed's reasons apart", () => {
+    // With no rows the whole screen is the hint, and the hint is written from
+    // state rather than from the payload — so two empties are two screens.
+    const state = feedState({ onlyInsights: false, q: 'britannia' });
+    const sign = signatureWith(state, () => true);
+    const searched = sign([], { ...META, returned: 0, total: 0 }, true);
+    state.q = '';
+    state.plans = true;
+    expect(sign([], { ...META, returned: 0, total: 0 }, true)).not.toBe(
+      searched,
+    );
+    state.plans = false;
+    state.picked = { head: 'BRITANNIA', filings: 12 };
+    expect(sign([], { ...META, returned: 0, total: 0 }, true)).not.toBe(
+      searched,
+    );
+  });
+
+  it('keeps the feed and the company page apart', () => {
+    // One renderer, two containers, and only one of them draws the footer
+    // counts. The signature has to say which, or a container could inherit the
+    // other's answer about whether it had changed.
+    const sign = signatureWith(feedState(), () => true);
+    expect(sign([filing()], META, false)).not.toBe(
+      sign([filing()], META, true),
+    );
   });
 });

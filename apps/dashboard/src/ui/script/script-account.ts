@@ -298,6 +298,31 @@ export const SCRIPT_ACCOUNT = `
     return li;
   }
 
+  /** The signature of the roster on screen. See 'renderWatching'. */
+  var drawnRoster = '';
+
+  /**
+   * "last filed 3 min ago", rewritten where it stands on a tick that drew
+   * nothing. The same job 'touchFeedTimes' does for a card, against the row's
+   * own symbol - which is the identity a roster row carries, because the list
+   * is one row per COMPANY rather than one per filing.
+   */
+  function touchRosterTimes(roster, rows) {
+    var at = {};
+    for (var i = 0; i < rows.length; i++) at[rows[i].symbol] = rows[i].lastFiledAt;
+    var drawn = roster.getElementsByClassName('rosterrow');
+    for (var r = 0; r < drawn.length; r++) {
+      var symbol = drawn[r].getAttribute('data-symbol');
+      if (!Object.prototype.hasOwnProperty.call(at, symbol)) continue;
+      // The row that has never filed says so in words that do not age.
+      if (!at[symbol]) continue;
+      var when = drawn[r].getElementsByClassName('rosterwhen')[0];
+      if (!when) continue;
+      var text = 'last filed ' + relativeTime(at[symbol]);
+      if (when.textContent !== text) when.textContent = text;
+    }
+  }
+
   // THE WATCHLIST FIRST, THEN WHAT IT SAID.
   //
   // 'items' is a page of FILINGS - the newest meta.limit of them across the
@@ -329,8 +354,23 @@ export const SCRIPT_ACCOUNT = `
     // it, and every poll of this route carries the session it checked.
     applyWatchCounts({ used: rows.length, cap: state.me.watchCap });
 
-    clear(roster);
-    for (var i = 0; i < rows.length; i++) roster.appendChild(watchRow(rows[i]));
+    // REBUILT ONLY WHEN THE ROSTER ACTUALLY CHANGED, the answer
+    // 'renderFeedInto' and 'renderBrief' already give the four-second repaint.
+    // The roster is the only node-building part of this view; the feed below
+    // it carries its own signature and the two notes are single text writes.
+    //
+    // A watchlist changes when a reader presses a star, and 'toggleWatch'
+    // repaints the stars from state itself - so between presses this list is
+    // identical on every tick, and rebuilding it took the reader's text
+    // selection with it.
+    var signature = JSON.stringify(rows);
+    if (signature === drawnRoster) {
+      touchRosterTimes(roster, rows);
+    } else {
+      drawnRoster = signature;
+      clear(roster);
+      for (var i = 0; i < rows.length; i++) roster.appendChild(watchRow(rows[i]));
+    }
 
     // Everything above the feed belongs to the watchlist and is hidden with it,
     // so an empty view is one sentence rather than two headings over nothing.
@@ -339,7 +379,9 @@ export const SCRIPT_ACCOUNT = `
     el('watch-feed-head').hidden = rows.length === 0;
 
     if (rows.length === 0) {
-      feed.textContent = '';
+      // Emptied through the feed renderer's own helper, so the signature it
+      // holds for this container cannot outlive the cards it describes.
+      emptyFeedInto(feed);
       note.hidden = true;
       clear(empty);
       var head = document.createElement('strong');
@@ -356,7 +398,7 @@ export const SCRIPT_ACCOUNT = `
       // A DIFFERENT SENTENCE FROM THE ONE ABOVE, and now it can be a stronger
       // one: the roster is on screen, so the reader can see the watches exist
       // and this only has to say what is missing.
-      feed.textContent = '';
+      emptyFeedInto(feed);
       note.hidden = true;
       clear(empty);
       var quiet = document.createElement('strong');
