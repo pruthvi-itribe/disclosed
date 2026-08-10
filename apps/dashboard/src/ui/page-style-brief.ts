@@ -43,14 +43,22 @@ export const PAGE_STYLE_BRIEF = `
    dvh, NOT vh. iOS Safari's collapsing URL bar makes a card measured in vh
    taller than the visible viewport, which would put the footer of every card
    under the browser chrome — the one part of a card a reader has to be able to reach,
-   because it holds the source document. */
+   because it holds the source document.
+
+   ONE CONTAINER FOR EVERY TAB. This used to set max-width: none, so the deck
+   spanned the whole window while every other view sat inside the body's
+   centred 1680px box — and the topbar went with it, which put the brand mark
+   at a different x in Brief than in Feed on any monitor wider than the cap.
+   Keeping the body's own cap aligns the bar by construction rather than by a
+   second rule about the bar: the deck is centred inside a centred box, which
+   is the same place on screen it was before, and below 1680px the viewport is
+   narrower than the cap so nothing anywhere changes. */
 body.briefing {
   padding: 0;
   height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-width: none;
 }
 /* THE SAME BAR IN BOTH MODES, to the pixel. The deck removes the body's
    padding, so the bar carries the identical metrics itself: 16px above,
