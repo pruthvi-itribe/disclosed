@@ -399,8 +399,8 @@ ${NEVERS.map(
   <div class="close">
     <h2 class="h2">See what companies said today.</h2>
     <p class="body">
-      Sign in with Google, or with an email address and a password. Follow the
-      companies you care about and everything they file collects in one place.
+      Sign in with Google. Follow the companies you care about and everything
+      they file collects in one place.
     </p>
     <div class="cta">
       <a class="go" href="/auth" data-ui="signin-close">Sign in or create an account</a>
