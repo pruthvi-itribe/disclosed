@@ -1,0 +1,172 @@
+name: Deploy Disclosed to DOKS prod
+
+# A port of tralk-nest-server's `deploy-doks-prod.yaml`, and deliberately the
+# same shape: Docker Hub under `investorstribe`, short-SHA plus a moving
+# `doks-prod-latest` tag, a registry buildcache, then doctl for the kubeconfig
+# and `kubectl set image` against the `prod` cluster. One deploy habit reads
+# both repositories.
+#
+# ================================================================
+# WHAT IS DIFFERENT, AND WHY
+# ================================================================
+#
+# ONE WORKFLOW, THREE IMAGES, AS A MATRIX. tralk has a file per service
+# because each service has its own Dockerfile. Here the three processes come
+# out of ONE Dockerfile as three `--target`s, over one `npm ci` and one
+# `nest build`, and that file argues its own case: "Three Dockerfiles would be
+# three copies of the same eleven lines and three chances for them to drift
+# apart on the node version or the install flags." Three workflow files would
+# be the same three copies one layer up.
+#
+# ================================================================
+# MANUAL-ONLY, AND CI DOES NOT APPLY MANIFESTS
+# ================================================================
+#
+# `workflow_dispatch` and nothing else, matching what tralk's prod workflow
+# says it wants ("Manual-only for now") until a few deploys have gone cleanly.
+# A push trigger on main is a two-line change once they have.
+#
+# And like tralk's, this workflow only ever BUMPS AN IMAGE. The manifests in
+# `k8s/` are applied by a human — there they are Terraform in another
+# repository, here they are files in this one, but the split is the same and
+# it is worth keeping: the token this workflow holds can roll out a new build
+# of code that was reviewed, and cannot rewrite an Ingress or delete a
+# namespace.
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: docker.io
+  # Same Docker Hub account tralkserver publishes under, so one access token
+  # and one set of repositories. See docs/deploy-kubernetes.md, "Open
+  # questions", for whether Disclosed should eventually have its own.
+  REGISTRY_NAMESPACE: investorstribe
+  DOKS_CLUSTER: prod
+  # NOT `prod`. That namespace is tralkserver's and is owned by tofu in
+  # tralk-infra; this product gets its own. See k8s/00-namespace.yaml.
+  KUBE_NAMESPACE: disclosed
+
+jobs:
+  # The short SHA, computed once. tralk computes it inline in each job, which
+  # works when there is one build job and one deploy job; with a build matrix
+  # a matrix job cannot hand a single value to the deploy job, so it is a job
+  # of its own and both consume it. One value, no chance of two jobs
+  # disagreeing about which commit they shipped.
+  version:
+    name: Resolve image tag
+    runs-on: ubuntu-latest
+    outputs:
+      short_sha: ${{ steps.sha.outputs.short }}
+    steps:
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+  build-push:
+    name: Build & push ${{ matrix.service }}
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      # One failing image must not leave the other two pushed and a deploy
+      # half-shipped. All three or none.
+      fail-fast: true
+      matrix:
+        service: [ingest, enrichment, dashboard]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.REGISTRY_NAMESPACE }}
+          password: ${{ secrets.ARG_INVESTORSTRIBEDEV_ACCESS_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          # The Dockerfile's three named stages. This is the whole reason a
+          # matrix works here: `--target` is the only thing that differs.
+          target: ${{ matrix.service }}
+          # amd64 only. The DOKS worker pool is s-4vcpu-8gb droplets, and a
+          # multi-arch build would spend QEMU minutes on an architecture
+          # nothing runs. docs/deploy-digitalocean.md flags this as the one
+          # thing that bites when building on an Apple laptop instead.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/disclosed-${{ matrix.service }}-prod:${{ needs.version.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/disclosed-${{ matrix.service }}-prod:doks-prod-latest
+          # A cache tag per service, in that service's own repository, so
+          # three parallel matrix legs do not overwrite each other's cache.
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/disclosed-${{ matrix.service }}-prod:doks-buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/disclosed-${{ matrix.service }}-prod:doks-buildcache,mode=max
+
+  deploy-doks:
+    name: Deploy to DOKS
+    needs: [version, build-push]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save kubeconfig
+        run: doctl kubernetes cluster kubeconfig save "${{ env.DOKS_CLUSTER }}"
+
+      # THE CONTAINER NAME ON THE RIGHT OF THE `=` IS NOT COSMETIC. The
+      # dashboard pod has two containers and only `dashboard` is ours to bump;
+      # naming it wrong either errors or, worse, replaces the Caddy sidecar
+      # with a Node image.
+      - name: Update images
+        run: |
+          for service in ingest enrichment dashboard; do
+            kubectl -n "${{ env.KUBE_NAMESPACE }}" set image \
+              "deployment/${service}" \
+              "${service}=${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/disclosed-${service}-prod:${{ needs.version.outputs.short_sha }}"
+          done
+
+      # For the two workers this is the ONLY verification there is: they open
+      # no socket, so a green rollout means the process started and did not
+      # exit, and nothing more. What they are actually doing is a question for
+      # their logs and for the dashboard's feed-lag number.
+      #
+      # ingest is `strategy: Recreate`, so its rollout stops the old pod
+      # before starting the new one and takes longer than a surge would. 5m
+      # matches tralk's timeout and is far more than either has ever needed.
+      - name: Wait for rollouts
+        run: |
+          for service in ingest enrichment dashboard; do
+            kubectl -n "${{ env.KUBE_NAMESPACE }}" rollout status \
+              "deployment/${service}" --timeout=5m
+          done
+
+      # Asks the deployed dashboard the same question a monitor would, from
+      # inside the cluster, exactly as tralk's does. 8080 is the Caddy
+      # sidecar's port and therefore the Service's — 7717 is bound to loopback
+      # and is not reachable from this pod or any other.
+      #
+      # `/api/health` is one of the four routes outside the session guard,
+      # which is why this needs no credential.
+      - name: Post-deploy health check
+        run: |
+          kubectl -n "${{ env.KUBE_NAMESPACE }}" run deploy-verify-${{ github.run_id }} \
+            --rm -i --restart=Never \
+            --image=curlimages/curl:latest \
+            -- curl -fsS --max-time 10 http://dashboard:8080/api/health
