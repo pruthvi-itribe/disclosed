@@ -246,8 +246,14 @@ describe('dashboard over HTTP — no access without sign-in', () => {
   it('leaves the sign-in page open, because gating it is a lockout', async () => {
     const response = await fetch(`${origin}/auth`, { redirect: 'manual' });
 
+    // THE PANEL, NOT THE DOOR INSIDE IT. This suite boots the real config
+    // loader, so which body `/auth` renders follows whatever Firebase keys the
+    // environment happens to carry — the Google button with keys, the in-house
+    // form without them. What this test is about is that a browser with no
+    // cookie is served the page at all, and `auth-page.spec.ts` owns the three
+    // bodies.
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('id="auth-form"');
+    expect(await response.text()).toContain('class="authpanel"');
   });
 
   it('sends a signed-in browser away from the sign-in page', async () => {

@@ -117,12 +117,35 @@ describe('the CDN relaxation, and its edges', () => {
 });
 
 describe('what each mode renders', () => {
-  it('offers Google and a password form in firebase mode', () => {
+  it('offers Google and NOTHING ELSE in firebase mode', () => {
+    // ONE DOOR IN PRODUCTION. The Firebase password form is gone: Google
+    // asserts an address and a Firebase password sign-up does not, so the
+    // second door bought a verification lane and an oracle to avoid, for an
+    // identity Google was already vouching for.
     const html = renderAuthPage(FIREBASE);
 
     expect(html).toContain('Continue with Google');
-    expect(html).toContain('id="auth-form"');
     expect(html).toContain('id="auth-google"');
+    expect(html).not.toContain('id="auth-form"');
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain('id="auth-email"');
+  });
+
+  it('ships no Firebase password call on the page at all', () => {
+    // The imports as well as the fragment: a module that still imports
+    // `createUserWithEmailAndPassword` is one edit away from a second door.
+    const html = renderAuthPage(FIREBASE);
+
+    for (const gone of [
+      'signInWithEmailAndPassword',
+      'createUserWithEmailAndPassword',
+    ]) {
+      expect([gone, html.includes(gone)]).toEqual([gone, false]);
+      expect([gone, AUTH_SCRIPT_FIREBASE.includes(gone)]).toEqual([
+        gone,
+        false,
+      ]);
+    }
   });
 
   it('offers only the password form in local mode', () => {
@@ -192,26 +215,35 @@ describe('the fragments obey the template-literal rules', () => {
     ).not.toThrow();
   });
 
-  it('reaches every element it addresses', () => {
-    // A fragment that calls `el('auth-ok')` on a page with no such id fails at
-    // the first message rather than at load, which is the kind of break a
-    // string test can catch and a smoke test cannot.
-    const html = renderAuthPage(FIREBASE);
-    const ids = [
-      ...new Set(
-        [
-          ...(AUTH_SCRIPT_SHARED + AUTH_SCRIPT_FIREBASE).matchAll(
-            /el\('([a-z-]+)'\)/g,
-          ),
-        ].map((match) => match[1]),
-      ),
-    ];
+  // BOTH MODES, because the two bodies are now different documents. The
+  // sign-in / create-an-account toggle moved out of the shared fragment when
+  // the firebase body stopped rendering a form, and the failure that move could
+  // have shipped is exactly this one: `el('auth-go').textContent` on a page
+  // whose only element is a button.
+  it.each([
+    ['firebase', AUTH_SCRIPT_FIREBASE, FIREBASE],
+    ['local', AUTH_SCRIPT_LOCAL, LOCAL],
+  ] as ReadonlyArray<readonly [string, string, AuthConfig]>)(
+    'reaches every element the %s page addresses',
+    (_mode, fragment, config) => {
+      // A fragment that calls `el('auth-ok')` on a page with no such id fails at
+      // the first message rather than at load, which is the kind of break a
+      // string test can catch and a smoke test cannot.
+      const html = renderAuthPage(config);
+      const ids = [
+        ...new Set(
+          [
+            ...(AUTH_SCRIPT_SHARED + fragment).matchAll(/el\('([a-z-]+)'\)/g),
+          ].map((match) => match[1]),
+        ),
+      ];
 
-    expect(ids.length).toBeGreaterThan(4);
-    for (const id of ids) {
-      expect([id, html.includes(`id="${id}"`)]).toEqual([id, true]);
-    }
-  });
+      expect(ids.length).toBeGreaterThan(3);
+      for (const id of ids) {
+        expect([id, html.includes(`id="${id}"`)]).toEqual([id, true]);
+      }
+    },
+  );
 });
 
 describe('the project keys in the page', () => {
@@ -262,14 +294,14 @@ describe('the same rules as every other page here', () => {
     expect(renderAuthPage(FIREBASE)).toContain('href="/"');
   });
 
-  it('collapses the four credential failures into one sentence', () => {
-    // Firebase distinguishes user-not-found from wrong-password, which is a
-    // registered-address oracle. This product's password path spends its whole
-    // header refusing to build one.
-    expect(AUTH_SCRIPT_FIREBASE).toContain('auth/user-not-found');
-    expect(AUTH_SCRIPT_FIREBASE).toContain('auth/wrong-password');
-    expect(AUTH_SCRIPT_FIREBASE).toContain(
-      "return 'Email or password is incorrect.';",
-    );
+  it('names no credential failure, because there are no credentials here', () => {
+    // This fragment used to collapse user-not-found and wrong-password into one
+    // sentence, so the page could not be asked which addresses are registered.
+    // With no password form the codes cannot arrive, and the property now rests
+    // where the only remaining password door is: `auth.service.ts`, whose
+    // header argues the same refusal on the server.
+    expect(AUTH_SCRIPT_FIREBASE).not.toContain('auth/user-not-found');
+    expect(AUTH_SCRIPT_FIREBASE).not.toContain('auth/wrong-password');
+    expect(AUTH_SCRIPT_FIREBASE).not.toContain('password');
   });
 });

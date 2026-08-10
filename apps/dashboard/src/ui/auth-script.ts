@@ -84,7 +84,23 @@ export const AUTH_SCRIPT_SHARED = `
       });
     });
   }
+`;
 
+/**
+ * The in-house path: the same two routes the dashboard's panel has always
+ * posted to.
+ *
+ * DORMANT ON A FIREBASE HOST, not deleted — this fragment is simply not emitted
+ * there, and the routes answer 409. It is what runs before the founder's keys
+ * arrive and what the browser suite signs in through.
+ *
+ * IT OWNS THE SIGN-IN / CREATE-AN-ACCOUNT TOGGLE, which used to sit in the
+ * shared fragment because both modes rendered the same form. Only this mode
+ * renders one now, and every element the toggle addresses — `auth-go`,
+ * `auth-alt`, `auth-password` — is inside that form, so leaving it in the shared
+ * half would make the Firebase page throw on load at `el('auth-go').textContent`.
+ */
+export const AUTH_SCRIPT_LOCAL = `
   // Which form is showing. Held in a variable rather than read back off the
   // button labels: the labels are copy and the mode is behaviour, and reading
   // one from the other is how a rewording starts registering people who meant
@@ -116,17 +132,7 @@ export const AUTH_SCRIPT_SHARED = `
   });
 
   applyMode();
-`;
 
-/**
- * The in-house path: the same two routes the dashboard's panel has always
- * posted to.
- *
- * DORMANT ON A FIREBASE HOST, not deleted — this fragment is simply not emitted
- * there, and the routes answer 409. It is what runs before the founder's keys
- * arrive and what the browser suite signs in through.
- */
-export const AUTH_SCRIPT_LOCAL = `
   el('auth-form').addEventListener('submit', function (event) {
     // MUST NOT SUBMIT NATIVELY. A native POST would navigate to a JSON body,
     // and the password would be in the URL if the form ever gained a GET.
@@ -166,15 +172,29 @@ export const AUTH_SCRIPT_LOCAL = `
  * out reader.
  *
  * ================================================================
+ * ONE DOOR: GOOGLE. NO PASSWORD PATH HERE AT ALL
+ * ================================================================
+ *
+ * This fragment used to drive a Firebase email+password form beside the button,
+ * and everything awkward in it came from that half — a verification lane, and
+ * four credential codes collapsed into one sentence so the page did not become
+ * a registered-address oracle. The form is gone from this mode, so the code
+ * behind it is gone too, imports included. `AUTH_SCRIPT_LOCAL` still has a
+ * password path and the server still has both routes; what changed is which
+ * doors this page draws.
+ *
+ * ================================================================
  * A VERIFIED ADDRESS, AND THE PAGE HELPS RATHER THAN SCOLDS
  * ================================================================
  *
  * The server requires `email_verified` on every sign-in — `firebase-sign-in.ts`
  * has the argument, and the short version is that requiring it only when
- * linking turns the refusal into a registered-address oracle. The cost lands
- * here, on the person who just made a password account, so this fragment sends
- * the verification email itself rather than leaving them at a wall. Firebase
- * sends it; this product still has no mail lane of its own.
+ * linking turns the refusal into a registered-address oracle. Google asserts the
+ * address, so a sign-in through this button arrives verified and the branch
+ * below is not the common path. It stays because the server's rule is
+ * unconditional and its refusal tells the reader to open a link: if a record
+ * ever does reach here unverified, somebody has to have sent one. Firebase
+ * sends it, from here; this product still has no mail lane of its own.
  */
 export const AUTH_SCRIPT_FIREBASE = `
   var settings = JSON.parse(el('firebase-config').textContent);
@@ -187,32 +207,19 @@ export const AUTH_SCRIPT_FIREBASE = `
 
   // Firebase's own codes, translated once.
   //
-  // THE FOUR CREDENTIAL FAILURES COLLAPSE INTO ONE SENTENCE. Firebase
-  // distinguishes 'user-not-found' from 'wrong-password', which is a
-  // registered-address oracle; this product's password path spends its whole
-  // header refusing to build one and this page is not the place it reappears.
+  // ONLY THE ONES A GOOGLE POPUP CAN PRODUCE. The four credential codes this
+  // map used to carry belong to the form this mode no longer draws, and an
+  // entry for a code that cannot arrive is a sentence nobody will ever read,
+  // maintained forever. Anything unmapped gets the last line.
   var MESSAGES = {
-    'auth/invalid-email': 'That does not look like an email address.',
-    'auth/weak-password': 'Pick a longer password - at least six characters.',
-    'auth/email-already-in-use': 'That address already has an account. Sign in instead.',
     'auth/popup-closed-by-user': 'The Google window closed before sign-in finished.',
     'auth/popup-blocked': 'Your browser blocked the Google window. Allow pop-ups for this site and try again.',
     'auth/network-request-failed': 'Could not reach the sign-in service. Check your connection.',
     'auth/too-many-requests': 'Too many attempts. Wait a few minutes and try again.'
   };
 
-  var SAME_ANSWER = {
-    'auth/user-not-found': true,
-    'auth/wrong-password': true,
-    'auth/invalid-credential': true,
-    'auth/invalid-login-credentials': true
-  };
-
   function explain(error) {
     var code = error && error.code ? String(error.code) : '';
-    if (Object.prototype.hasOwnProperty.call(SAME_ANSWER, code)) {
-      return 'Email or password is incorrect.';
-    }
     if (Object.prototype.hasOwnProperty.call(MESSAGES, code)) return MESSAGES[code];
     return 'That sign-in did not work. Try again.';
   }
@@ -228,7 +235,7 @@ export const AUTH_SCRIPT_FIREBASE = `
   }
 
   // An unverified address, handled rather than reported. Firebase sends the
-  // mail; we sign the browser out again so a half-finished sign-up leaves no
+  // mail; we sign the browser out again so a half-finished sign-in leaves no
   // Google session behind on a shared machine.
   function askForVerification(user) {
     return sendEmailVerification(user)
@@ -244,12 +251,6 @@ export const AUTH_SCRIPT_FIREBASE = `
       });
   }
 
-  function afterFirebase(credential) {
-    var user = credential.user;
-    if (user.emailVerified !== true) return askForVerification(user);
-    return handOver(user);
-  }
-
   el('auth-google').addEventListener('click', function () {
     clearMessages();
     busy(true);
@@ -259,27 +260,10 @@ export const AUTH_SCRIPT_FIREBASE = `
     // wrong person's watchlist.
     provider.setCustomParameters({ prompt: 'select_account' });
     signInWithPopup(auth, provider)
-      .then(afterFirebase)
-      .catch(function (error) { fail(explain(error)); })
-      .then(function () { busy(false); });
-  });
-
-  el('auth-form').addEventListener('submit', function (event) {
-    event.preventDefault();
-    clearMessages();
-    busy(true);
-
-    var email = el('auth-email').value;
-    var password = el('auth-password').value;
-    var attempt = mode === 'register'
-      ? createUserWithEmailAndPassword(auth, email, password)
-      : signInWithEmailAndPassword(auth, email, password);
-
-    attempt
       .then(function (credential) {
-        // A brand new account is never verified, so this always lands in the
-        // "check your inbox" branch rather than in a refusal.
-        return afterFirebase(credential);
+        var user = credential.user;
+        if (user.emailVerified !== true) return askForVerification(user);
+        return handOver(user);
       })
       .catch(function (error) { fail(explain(error)); })
       .then(function () { busy(false); });

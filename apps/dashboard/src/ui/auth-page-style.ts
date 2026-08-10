@@ -73,15 +73,6 @@ export const AUTH_PAGE_STYLE = `
   font-weight: 700; font-size: 13px; line-height: 20px; text-align: center;
 }
 
-.authsep {
-  display: flex; align-items: center; gap: 12px;
-  margin: 18px 0; color: var(--muted); font-size: 12px;
-  text-transform: uppercase; letter-spacing: .1em;
-}
-.authsep::before, .authsep::after {
-  content: ""; flex: 1 1 auto; height: 1px; background: var(--line);
-}
-
 .authfield { display: block; margin-bottom: 13px; }
 .authfield span {
   display: block; margin-bottom: 5px;
