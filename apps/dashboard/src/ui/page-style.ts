@@ -20,6 +20,16 @@ export const PAGE_STYLE = `
   --text: #e6edf3;
   --muted: #8b949e;
   --accent: #58a6ff;
+  /* THE MARK'S OWN COLOURS, read off logo/disclosed-logo.png and named here
+     because logo.ts draws with them: the tile's gradient runs #4338ca to
+     #7c3aed, its folded corner is #22d3ee, and the artwork on it is white.
+     --brand-gradient and --brand-ink have one caller each today — the mark —
+     and the palette pass that follows gives them the rest. */
+  --brand-1: #4338ca;
+  --brand-2: #7c3aed;
+  --brand-gradient: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+  --brand-ink: #ffffff;
+  --flash: #22d3ee;
   --ok: #3fb950;
   --warn: #d29922;
   --bad: #f85149;

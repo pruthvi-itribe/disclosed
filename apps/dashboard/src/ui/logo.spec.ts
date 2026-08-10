@@ -1,4 +1,6 @@
 import { BRAND, BRAND_MARK } from './brand';
+import { LANDING_STYLE } from './landing-style';
+import { PAGE_STYLE } from './page-style';
 import {
   BRAND_FAVICON_DATA_URI,
   BRAND_FAVICON_LINK,
@@ -23,17 +25,36 @@ describe('the mark is drawn here, not fetched', () => {
     expect(BRAND_LOGO_SVG.startsWith('<svg')).toBe(true);
     expect(BRAND_LOGO_SVG).not.toMatch(/https?:\/\//);
     expect(BRAND_LOGO_SVG).not.toContain('<image');
-    expect(BRAND_LOGO_SVG).not.toMatch(/url\s*\(/);
+    // EVERY url() MUST BE A FRAGMENT. This was a flat ban on 'url(' until the
+    // mark gained a gradient, which is referenced as 'url(#brandtile)' and
+    // fetches nothing — the ban had been standing in for the rule rather than
+    // stating it. The rule is that nothing here names a resource outside this
+    // document, so what is asserted is the '#'.
+    expect(BRAND_LOGO_SVG).not.toMatch(/url\(\s*[^#]/);
   });
 
-  it('takes its non-brand colour from the text around it', () => {
-    // What makes one drawing work on the dark app, the dark landing page and
-    // anywhere either of them is later re-themed: the frame and the two quiet
-    // lines inherit, and only the two brand colours are named.
-    expect(BRAND_LOGO_SVG).toContain('currentColor');
-    expect(BRAND_LOGO_SVG).toContain('var(--accent)');
-    expect(BRAND_LOGO_SVG).toContain('var(--bad)');
+  it('names every colour as a palette token, and none as a hex', () => {
+    // WHAT REPLACED currentColor, AND WHY THE PROPERTY SURVIVED THE CHANGE.
+    // The old line-and-dot mark inherited the surrounding text colour, which is
+    // how one drawing worked on the app and on the landing page at once. The
+    // tile carries its own ground instead, so it does not need to inherit — it
+    // is legible against ANY text colour rather than against the one it copies.
+    // The invariant asserted here is the one that did not change: not one hex
+    // literal, so a re-theme is a change to :root and to nothing else.
+    for (const token of ['--brand-1', '--brand-2', '--brand-ink', '--flash']) {
+      expect(BRAND_LOGO_SVG).toContain(`var(${token})`);
+    }
     expect(BRAND_LOGO_SVG).not.toMatch(/#[0-9a-f]{3,6}/i);
+  });
+
+  it('fills the tile and the document from one gradient in user space', () => {
+    // The document reads as a hole punched through the D only while it samples
+    // the SAME ramp as the tile behind it. Under the SVG default the gradient
+    // restarts inside the document's own box and the hole shows a violet the
+    // tile does not have two pixels away — a bug that looks like a rendering
+    // artefact and is a missing attribute.
+    expect(BRAND_LOGO_SVG).toContain('gradientUnits="userSpaceOnUse"');
+    expect(BRAND_LOGO_SVG.match(/url\(#brandtile\)/g)).toHaveLength(2);
   });
 
   it('is hidden from a screen reader, because the wordmark is text', () => {
@@ -84,12 +105,40 @@ describe('the artwork obeys the template-literal rules', () => {
 
 describe('the favicon', () => {
   it('names its own colours, because a tab has no stylesheet', () => {
-    // THE ONE PLACE HEX IS RIGHT. `var(--accent)` resolves against the document
-    // that declared it; a favicon is rendered outside every document, so the
-    // same trick that makes the inline mark themeable would make this invisible.
-    expect(BRAND_FAVICON_SVG).toContain('#58a6ff');
-    expect(BRAND_FAVICON_SVG).toContain('#f85149');
+    // THE ONE PLACE HEX IS RIGHT. `var(--brand-1)` resolves against the
+    // document that declared it; a favicon is rendered outside every document,
+    // so the same trick that makes the inline mark themeable would make this
+    // invisible.
+    expect(BRAND_FAVICON_SVG).toContain('#4338ca');
+    expect(BRAND_FAVICON_SVG).toContain('#7c3aed');
+    expect(BRAND_FAVICON_SVG).toContain('#22d3ee');
     expect(BRAND_FAVICON_SVG).not.toContain('var(--');
+  });
+
+  it('carries the palette values, not a second set that looks like them', () => {
+    // THE COST OF THE EXEMPTION ABOVE, PAID HERE. Three hexes copied out of
+    // :root drift the moment somebody re-tunes the brand and greps for
+    // '--brand-1' — which finds two stylesheets and not this file. So the copy
+    // is checked against the original rather than trusted.
+    expect(PAGE_STYLE).toContain('--brand-1: #4338ca;');
+    expect(PAGE_STYLE).toContain('--brand-2: #7c3aed;');
+    expect(PAGE_STYLE).toContain('--flash: #22d3ee;');
+    // And the app and the landing page declare one palette, not two.
+    for (const token of ['--accent', '--brand-1', '--brand-2', '--flash']) {
+      const read = (sheet: string) =>
+        new RegExp(`${token}: (#[0-9a-f]{6});`).exec(sheet)?.[1];
+      expect(read(LANDING_STYLE)).toBe(read(PAGE_STYLE));
+    }
+  });
+
+  it('drops what a 16px tile cannot hold, and keeps the silhouette', () => {
+    // The document's two text lines are 1.8 units of 32 — under a pixel at tab
+    // size, where they render as haze over the D. The tile, the D and the fold
+    // are the identity and they all survive, so the icon is the mark rather
+    // than a different drawing that shares its colours.
+    expect(BRAND_FAVICON_SVG).not.toContain('stroke');
+    expect(BRAND_FAVICON_SVG.match(/<path/g)).toHaveLength(3);
+    expect(BRAND_LOGO_SVG.match(/<path/g)).toHaveLength(4);
   });
 
   it('is a data URI: the icon travels in the attribute', () => {

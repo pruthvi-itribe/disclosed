@@ -27,6 +27,14 @@ export const LANDING_STYLE = `
   --text: #e6edf3;
   --muted: #8b949e;
   --accent: #58a6ff;
+  /* The mark's own colours, copied token for token from page-style.ts the way
+     every other token here already is — the logo is drawn on all three pages
+     and would otherwise render with nothing to fill it. */
+  --brand-1: #4338ca;
+  --brand-2: #7c3aed;
+  --brand-gradient: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+  --brand-ink: #ffffff;
+  --flash: #22d3ee;
   --ok: #3fb950;
   --warn: #d29922;
   --bad: #f85149;

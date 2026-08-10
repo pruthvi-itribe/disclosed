@@ -97,7 +97,12 @@ describe('the landing page is self-contained', () => {
     expect(BRAND_FAVICON_LINK).toContain('href="data:image/svg+xml,');
     expect(html).not.toMatch(/<script/);
     expect(html).not.toContain('@font-face');
-    expect(html).not.toMatch(/url\s*\(/);
+    // A FRAGMENT IS NOT A FETCH. The brand mark's gradient is 'url(#brandtile)'
+    // and the favicon's is 'url(#f)' arriving percent-encoded as 'url(%23f)'
+    // inside the data URI — both name a node in the very document that carries
+    // them. The flat ban this replaces could not tell either from a CDN image
+    // and would have refused all three.
+    expect(html).not.toMatch(/url\(\s*(?!#|%23)/);
   });
 
   it('carries no script element of any kind', () => {

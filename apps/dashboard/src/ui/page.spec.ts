@@ -73,7 +73,14 @@ describe('renderDashboardPage — self-containment', () => {
   });
 
   it('embeds no remote asset through a CSS url()', () => {
-    expect(html).not.toMatch(/url\s*\(/);
+    // EVERY url() MUST NAME A FRAGMENT OF THIS DOCUMENT. This was a flat ban on
+    // the token until the brand mark gained a gradient, referenced as
+    // 'url(#brandtile)' — which fetches nothing, and which the flat ban would
+    // have refused along with the CDN background image it was written to catch.
+    // The rule is the origin, not the spelling, so the '#' is what is asserted
+    // — and '%23' with it, because the favicon's own 'url(#f)' is carried
+    // through encodeURIComponent on its way into the href.
+    expect(html).not.toMatch(/url\(\s*(?!#|%23)/);
   });
 
   it('inlines its own stylesheet and script', () => {

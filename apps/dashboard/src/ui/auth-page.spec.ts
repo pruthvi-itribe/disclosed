@@ -95,7 +95,12 @@ describe('the CDN relaxation, and its edges', () => {
     );
     expect(BRAND_FAVICON_LINK).toContain('href="data:image/svg+xml,');
     expect(html).not.toContain('@font-face');
-    expect(html).not.toMatch(/url\s*\(/);
+    // A FRAGMENT IS NOT A FETCH. The brand mark's gradient is 'url(#brandtile)'
+    // and the favicon's is 'url(#f)', percent-encoded to 'url(%23f)' by the
+    // data URI. This page's one relaxation is the Firebase SDK and nothing
+    // else, and that is unchanged: the assertion below still refuses every
+    // url() that points anywhere but into this document.
+    expect(html).not.toMatch(/url\(\s*(?!#|%23)/);
     expect(html).not.toContain('<img');
   });
 
