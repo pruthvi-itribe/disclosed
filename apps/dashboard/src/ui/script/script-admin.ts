@@ -30,8 +30,65 @@ export const SCRIPT_ADMIN = `
     jobs.push(getJson('api/enrichment').then(function (b) { renderEnrichment(b.data); }));
   }
 
+  /**
+   * The last table drawn, as one string.
+   *
+   * THE SAME ANSWER 'renderFeedInto' GIVES, and here it also fixes a bug
+   * rather than only saving work: every row carries a detail row under it, and
+   * the four-second rebuild closed any a reader had opened. Reading a detail
+   * row takes longer than four seconds, so the panel's one expandable surface
+   * could not be used at all while the page was polling.
+   *
+   * NO DAY DIVIDER TO CARRY: the table has no headings, so the only
+   * time-dependent thing in it is the relative time, which 'touchFilingTimes'
+   * writes in place for the reason 'touchFeedTimes' does.
+   */
+  function filingsSignature(items, meta) {
+    var parts = [];
+    for (var i = 0; i < items.length; i++) parts.push(JSON.stringify(items[i]));
+    parts.push(String(meta.offset) + '/' + String(meta.returned) + '/' +
+      String(meta.total) + '/' + String(meta.hasMore));
+    return parts.join('\\u0000');
+  }
+
+  var drawnFilings = '';
+
+  /**
+   * The relative time in each row, and the arrival mark that goes with it.
+   *
+   * 'fresh' MEANS "ARRIVED SINCE THE LAST PAINT", and a skipped paint is still
+   * a paint at which nothing arrived. Clearing it here is what keeps the mark
+   * lasting exactly one tick, which is what the rebuild used to do by throwing
+   * the row away - without it a row would stay green until the next filing.
+   */
+  function touchFilingTimes(body, items) {
+    var at = {};
+    for (var i = 0; i < items.length; i++) {
+      at[String(items[i].seqId)] = items[i].disseminatedAt;
+    }
+    var rows = body.getElementsByTagName('tr');
+    for (var r = 0; r < rows.length; r++) {
+      if (rows[r].className === 'fresh') rows[r].className = '';
+      var seq = rows[r].getAttribute('data-seq');
+      if (seq === null) continue;
+      if (!Object.prototype.hasOwnProperty.call(at, seq)) continue;
+      var when = rows[r].getElementsByClassName('time')[0];
+      if (!when) continue;
+      var text = relativeTime(at[seq]);
+      if (when.textContent !== text) when.textContent = text;
+    }
+  }
+
   function renderFilings(items, meta) {
     var body = el('rows');
+
+    var signature = filingsSignature(items, meta);
+    if (signature === drawnFilings) {
+      touchFilingTimes(body, items);
+      return;
+    }
+    drawnFilings = signature;
+
     clear(body);
 
     if (items.length === 0) {
@@ -57,6 +114,11 @@ export const SCRIPT_ADMIN = `
 
       var row = document.createElement('tr');
       if (previousHigh !== null && f.seqId > previousHigh) row.className = 'fresh';
+      // THE SAME STABLE IDENTITY THE FEED CARD CARRIES, and for the same
+      // reason: the row now survives a poll, so the only honest way to find
+      // the one belonging to a filing is to ask for it by seqId rather than by
+      // position. 'touchFilingTimes' is its only reader.
+      row.setAttribute('data-seq', String(f.seqId));
 
       var when = cell(row, 'time', relativeTime(f.disseminatedAt));
       // The exact IST timestamp is one hover away rather than gone. "14m ago"
