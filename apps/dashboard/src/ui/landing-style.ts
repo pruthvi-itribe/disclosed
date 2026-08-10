@@ -26,10 +26,12 @@ export const LANDING_STYLE = `
   --line: #2a323d;
   --text: #e6edf3;
   --muted: #8b949e;
-  --accent: #58a6ff;
-  /* The mark's own colours, copied token for token from page-style.ts the way
-     every other token here already is — the logo is drawn on all three pages
-     and would otherwise render with nothing to fill it. */
+  /* THE SAME BRAND FAMILY AS THE APP, token for token. page-style.ts carries
+     the derivation and the measured ratios; this file carries the copy, the way
+     it already carries a second copy of every other token here. A landing page
+     whose violet is a shade off the product's is the promise this page makes
+     being broken one click later. */
+  --accent: #a78bfa;
   --brand-1: #4338ca;
   --brand-2: #7c3aed;
   --brand-gradient: linear-gradient(135deg, var(--brand-1), var(--brand-2));
@@ -78,11 +80,19 @@ a:hover { text-decoration: underline; }
 .grow { flex: 1 1 auto; }
 
 /* The one control in the header, and it is the same control as the one in the
-   hero. Two different-looking sign-in buttons on one page is two products. */
+   hero. Two different-looking sign-in buttons on one page is two products.
+
+   AND IT IS THE BRAND MOMENT ON THIS PAGE. It is the one control a visitor is
+   asked to press, on the one page served to someone who has not agreed to
+   anything yet, so it takes the tile's own gradient rather than a flat fill of
+   the accent. --brand-ink measures 7.90:1 at the indigo end and 5.70:1 at the
+   violet end; the label clears AA across the whole button. The border goes
+   transparent rather than accent — a 1px violet outline around a violet
+   gradient is a seam, not an edge — and '.ghost' below still sets its own. */
 .go {
   display: inline-block;
-  background: var(--accent); color: #08111f;
-  border: 1px solid var(--accent); border-radius: 10px;
+  background: var(--brand-gradient); color: var(--brand-ink);
+  border: 1px solid transparent; border-radius: 10px;
   font: inherit; font-weight: 620; font-size: 15px;
   padding: 11px 22px; cursor: pointer; text-decoration: none;
   white-space: nowrap;
@@ -236,8 +246,8 @@ a:hover { text-decoration: underline; }
    the reason the page exists, so it is always open. */
 .span {
   margin: 7px 0 0 14px; padding: 8px 12px;
-  border-left: 2px solid rgba(88, 166, 255, .35);
-  background: rgba(88, 166, 255, .045);
+  border-left: 2px solid rgba(167, 139, 250, .35);
+  background: rgba(167, 139, 250, .045);
   border-radius: 0 8px 8px 0;
   color: var(--muted); font-size: 13px; line-height: 1.55;
 }

@@ -22,9 +22,23 @@ export const AUTH_PAGE_STYLE = `
   align-items: center; justify-content: center;
   padding: 28px 20px 40px;
 }
+/* THE BRAND MOMENT ON THIS PAGE IS THE PANEL'S TOP EDGE. A 3px band of the
+   tile's gradient, drawn as the panel's own background-image rather than as a
+   border or an extra element: 'background-size: 100% 3px' with no repeat paints
+   the band and lets --panel show through everywhere else, and the panel's
+   18px radius clips its ends for free.
+
+   ORDER MATTERS IN THESE FOUR DECLARATIONS. 'background' is a shorthand and
+   resets background-image to none, so it has to come FIRST; the longhand then
+   puts the gradient back over the colour it just set. Written the other way
+   round the band silently disappears. */
 .authpanel {
   width: 100%; max-width: 400px;
-  background: var(--panel); border: 1px solid var(--line);
+  background: var(--panel);
+  background-image: var(--brand-gradient);
+  background-repeat: no-repeat;
+  background-size: 100% 3px;
+  border: 1px solid var(--line);
   border-radius: 18px; padding: 26px 24px 22px;
 }
 .authback { margin-bottom: 22px; font-size: 13px; }
@@ -45,14 +59,14 @@ export const AUTH_PAGE_STYLE = `
 }
 .authbtn:hover:enabled { border-color: var(--muted); }
 .authbtn:disabled { opacity: .5; cursor: default; }
-.authbtn.primary { background: var(--accent); border-color: var(--accent); color: #08111f; }
-.authbtn.primary:hover:enabled { filter: brightness(1.08); border-color: var(--accent); }
+.authbtn.primary { background: var(--brand-gradient); border-color: transparent; color: var(--brand-ink); }
+.authbtn.primary:hover:enabled { filter: brightness(1.08); border-color: transparent; }
 .authbtn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
 /* Google's mark, drawn in CSS. NO REMOTE IMAGE and no emoji: the SDK may come
    from gstatic, a logo file may not, and the emoji range is rejected by the
-   page tests. A bordered "G" in the brand's own blue is unmistakable at this
-   size and costs one element. */
+   page tests. A bordered "G" in GOOGLE's own blue — #4285f4, theirs, not a
+   token of ours — is unmistakable at this size and costs one element. */
 .gmark {
   flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
   background: #fff; color: #4285f4;

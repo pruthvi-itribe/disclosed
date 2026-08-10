@@ -96,8 +96,8 @@ export const PAGE_STYLE_FOCUS = `
   color: var(--muted); font: inherit; font-size: 11px; line-height: 1.5;
 }
 .spantoggle:hover { color: var(--text); border-color: var(--muted); }
-/* The global button rule outlines EVERY focus in accent blue, and a mouse
-   click focuses too — so the toggle wore a blue ring that read as selection,
+/* The global button rule outlines EVERY focus in the accent, and a mouse
+   click focuses too — so the toggle wore an accent ring that read as selection,
    not affordance. Mouse focus shows nothing; the ring stays for keyboard
    focus only (:focus-visible), in grey, because a control inside a grey
    dialog should whisper in the dialog's own palette. */
@@ -111,8 +111,8 @@ export const PAGE_STYLE_FOCUS = `
    sentence, which is the rule 'script-cells.ts' states for the detail row. */
 .focusspan {
   margin: 7px 0 0; padding: 8px 12px;
-  border-left: 2px solid rgba(88, 166, 255, .32);
-  background: rgba(88, 166, 255, .05);
+  border-left: 2px solid rgba(167, 139, 250, .32);
+  background: rgba(167, 139, 250, .05);
   border-radius: 0 8px 8px 0;
   color: var(--muted); font-size: 13px; line-height: 1.55;
   overflow-wrap: anywhere;

@@ -19,17 +19,36 @@ export const PAGE_STYLE = `
   --line: #2a323d;
   --text: #e6edf3;
   --muted: #8b949e;
-  --accent: #58a6ff;
-  /* THE MARK'S OWN COLOURS, read off logo/disclosed-logo.png and named here
-     because logo.ts draws with them: the tile's gradient runs #4338ca to
-     #7c3aed, its folded corner is #22d3ee, and the artwork on it is white.
-     --brand-gradient and --brand-ink have one caller each today — the mark —
-     and the palette pass that follows gives them the rest. */
+  /* THE BRAND FAMILY, DERIVED FROM logo/disclosed-logo.png. The tile's gradient
+     runs #4338ca to #7c3aed and its fold is #22d3ee, and those three are held
+     verbatim as --brand-1, --brand-2 and --flash.
+
+     --accent IS NOT ONE OF THEM, and cannot be. It is the colour of link text,
+     of the focus ring and of the small type on a chip, so it has to clear
+     4.5:1 against every ground it lands on. Measured on this palette:
+     #4338ca is 2.39:1 on --bg and #7c3aed is 3.32:1 — both fail, and fail
+     worst on --panel-2 (1.98 and 2.74), which is where the chips and the
+     inputs are. Walking the same hue up in lightness: #8b5cf6 gives 3.69 on
+     --panel-2, #8b7cf6 gives 4.69, #a78bfa gives 5.74. #a78bfa is taken
+     because it is the first that clears the bar on the DARKEST panel with
+     room to spare rather than by a tenth, and it still reads violet rather
+     than lavender at 12px. Ratios on the three grounds: 6.95 on --bg, 6.36 on
+     --panel, 5.74 on --panel-2.
+
+     The saturated pair is not lost — it moves to --brand-gradient, which is a
+     BACKGROUND and therefore judged by what sits on it: --brand-ink is 7.90:1
+     on --brand-1 and 5.70:1 on --brand-2, so white text clears AA at every
+     point along the ramp. */
+  --accent: #a78bfa;
   --brand-1: #4338ca;
   --brand-2: #7c3aed;
   --brand-gradient: linear-gradient(135deg, var(--brand-1), var(--brand-2));
   --brand-ink: #ffffff;
   --flash: #22d3ee;
+  /* THE SEMANTIC THREE ARE UNCHANGED, and deliberately: they are not brand
+     colours and must not follow one. Green/amber/red mean live, stale and
+     down on the header dot and pass, warn and fail on a stat — a meaning a
+     reader already has, which a repaint in the brand's hue would take away. */
   --ok: #3fb950;
   --warn: #d29922;
   --bad: #f85149;
@@ -102,10 +121,12 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 button:focus { outline: none; }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button { cursor: pointer; }
-/* HOVER IS GREY, EVERYWHERE. Accent blue on hover made every control shout
+/* HOVER IS GREY, EVERYWHERE. The accent on hover made every control shout
    its most saturated colour for the least meaningful event — the pointer
-   passing by. Hover now brightens within the neutral palette; accent is
-   reserved for what IS blue: links, the active chip, keyboard focus. */
+   passing by. Hover now brightens within the neutral palette; the accent is
+   reserved for the three things that mean something: links, the active chip,
+   keyboard focus. (It said "accent blue" until the palette moved to the
+   mark's violet. The rule was never about the hue.) */
 button:hover:enabled { border-color: var(--muted); }
 button:disabled { opacity: 0.4; cursor: default; }
 select { max-width: 330px; }
@@ -129,23 +150,23 @@ thead th {
 }
 tbody td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: rgba(88, 166, 255, 0.06); }
+tbody tr:hover { background: rgba(167, 139, 250, 0.06); }
 /* Relative now ("14 min ago"), so it is prose rather than a monospaced instant.
    The exact IST time is the cell's title and a line in the detail row. */
 td.time { white-space: nowrap; font-size: 12px; color: var(--muted); }
 
 /* A row opens. Say so with the cursor rather than with an affordance column. */
 tbody tr.clickable { cursor: pointer; }
-tbody tr.open { background: rgba(88, 166, 255, 0.08); }
+tbody tr.open { background: rgba(167, 139, 250, 0.08); }
 tbody tr.open td { border-bottom-color: transparent; }
 
-tr.detail td { padding: 0 12px 12px; background: rgba(88, 166, 255, 0.04); }
+tr.detail td { padding: 0 12px 12px; background: rgba(167, 139, 250, 0.04); }
 .detailbox {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: .35rem 1.5rem;
   padding: .7rem .8rem;
-  border-left: 2px solid rgba(88, 166, 255, .35);
+  border-left: 2px solid rgba(167, 139, 250, .35);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -188,8 +209,8 @@ tr.fresh td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .n { font-family: var(--mono); color: var(--muted); }
 .row.clickable { cursor: pointer; }
-.row.clickable:hover { background: rgba(88, 166, 255, 0.08); }
-.row.active { background: rgba(88, 166, 255, 0.14); }
+.row.clickable:hover { background: rgba(167, 139, 250, 0.08); }
+.row.active { background: rgba(167, 139, 250, 0.14); }
 .meter { grid-column: 1 / -1; height: 3px; background: var(--accent); border-radius: 2px; opacity: 0.55; }
 
 .days { display: flex; align-items: flex-end; gap: 3px; height: 110px; padding: 12px 14px 6px; }
@@ -212,7 +233,14 @@ footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
 .headline.enriched { color: var(--text); }
 /* A degraded headline is the exchange's own words, and it reads as such. */
 .headline.verbatim { color: var(--muted); font-weight: 500; }
-.claimline{font-weight:600;letter-spacing:.01em;color:var(--claim,#7dd3fc);margin-top:.25rem;line-height:1.35}
+/* THE LAST OF THE OLD ACCENT'S FAMILY, and the reason it survived the grep for
+   'rgba(88, 166, 255' is that it was spelled #7dd3fc — a sky blue one step off
+   the GitHub blue, reached through a '--claim' custom property that is declared
+   nowhere, so the fallback WAS the value. The indirection is deleted rather
+   than re-pointed: a var() whose only definition is its own fallback is a name
+   pretending to be a setting. --accent measures 6.36:1 on --panel, which is the
+   ground this line is drawn on. */
+.claimline{font-weight:600;letter-spacing:.01em;color:var(--accent);margin-top:.25rem;line-height:1.35}
 /* The results line leads its cell and is deliberately unlike the claim line
    beside it: the two were admitted by different gates. */
 .resultsline{color:var(--results,#fcd34d);margin-bottom:.3rem}
@@ -280,7 +308,7 @@ td.amt .party { display: block; font-size: 11px; color: var(--muted); white-spac
 .tag.state-unparseable { color: var(--bad); border-color: rgba(248, 81, 73, 0.45); }
 .tag.state-failed { color: var(--bad); border-color: rgba(248, 81, 73, 0.45); }
 .tag.refusal { color: var(--warn); border-color: rgba(210, 153, 34, 0.35); }
-.tag.active { background: rgba(88, 166, 255, 0.18); border-color: var(--accent); color: var(--accent); }
+.tag.active { background: rgba(167, 139, 250, 0.18); border-color: var(--accent); color: var(--accent); }
 
 td.enr { white-space: nowrap; font-size: 12px; }
 .evidence {
@@ -377,7 +405,7 @@ td.grp { white-space: nowrap; }
   border: 1px solid var(--line); color: var(--muted); white-space: nowrap; margin-top: 4px;
 }
 .tier-verified { color: var(--ok); border-color: rgba(63, 185, 80, 0.55); background: rgba(63, 185, 80, 0.12); }
-.tier-stated { color: var(--accent); border-color: rgba(88, 166, 255, 0.4); }
+.tier-stated { color: var(--accent); border-color: rgba(167, 139, 250, 0.4); }
 .tier-labelled { color: var(--muted); border-color: var(--line); }
 
 /* Which parser read the document. A neutral fact and not a refusal, and not
@@ -419,7 +447,13 @@ td.grp { white-space: nowrap; }
   white-space: nowrap;
 }
 .tab:hover { color: var(--text); background: var(--panel); }
-.tab.active { color: var(--bg); background: var(--text); }
+/* A BRAND MOMENT, AND ONE OF FOUR. The selected view is the one thing in this
+   header that is about identity rather than about data, so it carries the tile's
+   own gradient. It used to be a white pill — correct, legible, and the same
+   white pill every dashboard has. --brand-ink on the ramp measures 7.90:1 at
+   the indigo end and 5.70:1 at the violet end, so the label clears AA wherever
+   the pill's width happens to put it. */
+.tab.active { color: var(--brand-ink); background: var(--brand-gradient); }
 
 .view[hidden] { display: none; }
 
@@ -517,7 +551,7 @@ td.grp { white-space: nowrap; }
  * as WELL as the one Enter would actually pick — two highlighted rows, one of
  * which is lying about what the next keypress does.
  */
-.sopt.active { background: rgba(88, 166, 255, 0.16); }
+.sopt.active { background: rgba(167, 139, 250, 0.16); }
 .ssym { font-weight: 650; font-size: 13px; white-space: nowrap; }
 .sname {
   color: var(--muted); font-size: 12px; min-width: 0;
@@ -548,7 +582,10 @@ td.grp { white-space: nowrap; }
   padding: 5px 13px; font: inherit; font-size: 12.5px; cursor: pointer;
 }
 .chip:hover { color: var(--text); border-color: var(--muted); }
-.chip.active { background: var(--accent); border-color: var(--accent); color: #06101f; font-weight: 600; }
+/* #06101f was a near-black mixed to sit on the old blue. Re-derived on the new
+   accent it is simply --bg, which measures 6.95:1 on #a78bfa — so the bespoke
+   literal goes and the token stays. */
+.chip.active { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
 
 .onlyinsights { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
 .onlyinsights input { accent-color: var(--accent); }
@@ -818,9 +855,15 @@ td.grp { white-space: nowrap; }
    it qualifies the word beside it rather than competing with it — and it is
    drawn only on the 357 companies whose industry came from BSE's scrip header,
    so an unmarked chip still reads exactly as it always has. */
+/* .65 WAS TOO QUIET TO READ, which the palette pass measured rather than
+   guessed: --muted composited onto --bg at .65 is #5f666f, which is 3.26:1 —
+   under AA on the smallest type this product sets, at 9.5px. The opacities that
+   clear 4.5 start at .80 (4.35, still short) and .85 (4.73). .85 is taken.
+   NOTHING ABOUT THE INTENT CHANGES: it is still smaller, still tracked, still
+   dimmer than the 12px value it qualifies, which sits at the full 6.15. */
 #co-industry .tagfrom {
   margin-left: 6px; font-size: 9.5px; letter-spacing: .08em;
-  text-transform: uppercase; opacity: .65;
+  text-transform: uppercase; opacity: .85;
 }
 .cocoverage { margin-left: auto; color: var(--muted); font-size: 12px; }
 
@@ -1000,7 +1043,13 @@ button.sym:hover { color: var(--text); text-decoration: underline; }
    what a filing is ABOUT rather than what KIND it is. Same control, one step
    back, so two rows of chips do not compete for the same attention. */
 .chips.topics .chip { font-size: 12px; opacity: .85; }
-.chips.topics .chip.active { opacity: 1; background: var(--claim, #7dd3fc); border-color: var(--claim, #7dd3fc); color: #06101f; }
+/* SAME TWO LITERALS AS .claimline ABOVE, same removal. This is the only chip
+   row on the page — the group filter is a select in Admin — so the sky blue
+   here was the single loudest survivor of the old palette, sitting six pixels
+   under a violet gradient tab. It is the accent now, which is what '.chip.active'
+   already said; what this rule still does is restore the full opacity the
+   quieter topic chips are drawn at. --bg on --accent measures 6.95:1. */
+.chips.topics .chip.active { opacity: 1; background: var(--accent); border-color: var(--accent); color: var(--bg); }
 
 /* ===================== ACCOUNT, WATCH STAR, WATCHING ==================== */
 
@@ -1014,10 +1063,16 @@ button.sym:hover { color: var(--text); text-decoration: underline; }
 .account .tab[hidden] { display: none; }
 
 /* The unread count on the Watching tab. Absent, not zero, when there is
-   nothing new: a badge reading 0 is furniture. */
+   nothing new: a badge reading 0 is furniture.
+
+   THE ONE PLACE --flash EARNS ITS KEEP IN THE APP, and it is 15px wide. The
+   cyan is the loudest colour in the palette (10.47:1 on --bg), which is exactly
+   why it is spent on the single element that means "this changed while you were
+   not looking" and on nothing else. --bg on #22d3ee measures 10.47:1, which a
+   10.5px bold numeral needs. */
 .tabcount {
   display: inline-block; margin-left: 6px; padding: 0 5px;
-  border-radius: 8px; background: var(--accent); color: var(--bg);
+  border-radius: 8px; background: var(--flash); color: var(--bg);
   font-size: 10.5px; font-weight: 700; line-height: 15px; min-width: 15px;
   text-align: center;
 }
@@ -1094,8 +1149,12 @@ button.sym:hover { color: var(--text); text-decoration: underline; }
 }
 .authpanel input:focus { outline: none; border-color: var(--accent); }
 .authrow { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+/* The same brand moment as the sign-in page's primary button, because it is the
+   same act. Two differently-coloured "Sign in" buttons in one product is the
+   drift auth-page-style.ts opens by warning about. */
 .authgo {
-  background: var(--accent); color: var(--bg); border: 0; border-radius: 9px;
+  background: var(--brand-gradient); color: var(--brand-ink);
+  border: 0; border-radius: 9px;
   font: inherit; font-weight: 600; padding: 9px 18px; cursor: pointer;
 }
 .authgo:disabled { opacity: .5; cursor: default; }
