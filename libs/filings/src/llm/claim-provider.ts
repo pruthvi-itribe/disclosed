@@ -118,6 +118,27 @@ export const DEFAULT_CLAIM_MODEL: Readonly<Record<ClaimProviderName, string>> =
 export const CLAIM_MAX_TOKENS = 32_000;
 
 /**
+ * What a reply cut off at the ceiling says, and the test for having said it.
+ *
+ * THE TWO ARE HERE TOGETHER BECAUSE THEY MUST NOT DRIFT. The message is written
+ * by an adapter and read by the enrichment worker, which retries this failure
+ * and no other (`enrichment.worker.ts` argues which and why). A predicate that
+ * matched a string spelled somewhere else would go quietly false the first time
+ * the wording changed, and the symptom would be truncations silently becoming
+ * terminal again — the exact defect the retry exists to fix.
+ *
+ * The ceiling is in the message rather than the predicate: the historic 8,000
+ * and 16,000 replies are in the live collection and read the same way, and a
+ * pattern pinned to today's 32,000 would stop recognising the failure the next
+ * time the budget moves.
+ */
+export const truncatedReplyMessage = (maxTokens: number): string =>
+  `the reply was truncated at ${maxTokens} tokens`;
+
+export const isTruncatedReply = (message: string): boolean =>
+  /^the reply was truncated at \d+ tokens$/.test(message);
+
+/**
  * Wall-clock ceiling for one call, shared.
  *
  * The worker is not latency-critical — the filing has already been stored and

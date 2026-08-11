@@ -27,6 +27,7 @@ import {
   openAiEffort,
   redactSecrets,
   resultsFromText,
+  truncatedReplyMessage,
   type ClaimProviderOptions,
   type ClaimUsage,
 } from './claim-provider';
@@ -365,9 +366,9 @@ export class OpenRouterClaimExtractor
       if (choice.finish_reason === 'length') {
         return {
           outcome: 'failed',
-          message: `the reply was truncated at ${
-            this.options.maxTokens ?? CLAIM_MAX_TOKENS
-          } tokens`,
+          message: truncatedReplyMessage(
+            this.options.maxTokens ?? CLAIM_MAX_TOKENS,
+          ),
         };
       }
 

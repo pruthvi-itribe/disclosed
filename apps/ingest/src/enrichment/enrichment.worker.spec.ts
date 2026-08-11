@@ -1,4 +1,9 @@
-import { categoryGroupFor, composeOutcome } from '@app/filings';
+import {
+  categoryGroupFor,
+  composeOutcome,
+  CLAIM_MAX_TOKENS,
+  truncatedReplyMessage,
+} from '@app/filings';
 import type {
   AttachmentFetcher,
   AttachmentResult,
@@ -1228,12 +1233,12 @@ const TRUE_CLAIM = {
 
 const claimHarness = (
   extractor: StubExtractor | null,
-  overrides: { category?: string; text?: string } = {},
+  overrides: { category?: string; text?: string; attempts?: number } = {},
 ) => {
   const repository = new StubRepository([
     {
       filing: filing({ category: overrides.category ?? 'Press Release' }),
-      attempts: 1,
+      attempts: overrides.attempts ?? 1,
       parseAttempts: 0,
     },
   ]);
@@ -1989,14 +1994,14 @@ const PROPOSED_RESULTS = {
 
 const resultsHarness = (
   extractor: StubResultsExtractor | null,
-  overrides: { category?: string; text?: string } = {},
+  overrides: { category?: string; text?: string; attempts?: number } = {},
 ) => {
   const repository = new StubRepository([
     {
       filing: filing({
         category: overrides.category ?? 'Outcome of Board Meeting',
       }),
-      attempts: 1,
+      attempts: overrides.attempts ?? 1,
       parseAttempts: 0,
     },
   ]);
@@ -2126,6 +2131,120 @@ describe('EnrichmentWorker — financial results', () => {
     );
     await worker.tick(NOW);
     expect(telegram.sent).toHaveLength(0);
+  });
+});
+
+/**
+ * The one extractor failure that is read again instead of being recorded.
+ *
+ * A reply cut off at the token ceiling says nothing about the document: the
+ * 2026-08-11 sweep measured 10,021 output tokens and 490 on the SAME document at
+ * the SAME settings. It ends 4.2% of live calls and 15.1% of results calls, and
+ * before this the filing kept a terminal zero. Every other extractor failure is
+ * a statement about the request and stays terminal, which is what the last case
+ * here pins.
+ */
+describe('EnrichmentWorker — a reply truncated at the token ceiling', () => {
+  const TRUNCATED = truncatedReplyMessage(CLAIM_MAX_TOKENS);
+
+  it('puts the filing back with a backoff when the CLAIM lane truncates', async () => {
+    const { worker, repository } = claimHarness(
+      new StubExtractor({ outcome: 'failed', message: TRUNCATED }),
+    );
+
+    const result = await worker.tick(NOW);
+
+    expect(result).toMatchObject({ retried: 1, enriched: 0, failed: 0 });
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'pending',
+      nextAttemptAt: new Date(NOW.getTime() + OPTIONS.retryBaseMs),
+      lastError: `the claim lane: ${TRUNCATED}`,
+      claimRefusalReason: null,
+    });
+  });
+
+  it('puts the filing back with a backoff when the RESULTS lane truncates', async () => {
+    const { worker, repository } = resultsHarness(
+      new StubResultsExtractor({ outcome: 'failed', message: TRUNCATED }),
+    );
+
+    const result = await worker.tick(NOW);
+
+    expect(result).toMatchObject({ retried: 1, enriched: 0, failed: 0 });
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'pending',
+      nextAttemptAt: new Date(NOW.getTime() + OPTIONS.retryBaseMs),
+      lastError: `the results lane: ${TRUNCATED}`,
+      resultsRefusalReason: null,
+    });
+  });
+
+  it('sends no alert about a read it is going to do again', async () => {
+    // The verdict is provisional, so anything derived from it is too. A message
+    // about claims that the next read may not propose is a message that cannot
+    // be explained afterwards.
+    const { worker, telegram } = resultsHarness(
+      new StubResultsExtractor({ outcome: 'failed', message: TRUNCATED }),
+    );
+    await worker.tick(NOW);
+    expect(telegram.sent).toHaveLength(0);
+  });
+
+  it('doubles the backoff per attempt, like every other retry', async () => {
+    const { worker, repository } = claimHarness(
+      new StubExtractor({ outcome: 'failed', message: TRUNCATED }),
+      { attempts: 2 },
+    );
+
+    await worker.tick(NOW);
+    expect(onlyRecorded(repository).nextAttemptAt).toEqual(
+      new Date(NOW.getTime() + OPTIONS.retryBaseMs * 2),
+    );
+  });
+
+  it('records the verdict, terminally, once the attempt budget is spent', async () => {
+    // TERMINAL AS `enriched`, NOT AS `failed`. A document that truncates every
+    // time has still been fetched, parsed and read for its amount, its outcome
+    // and its headline — and `failed` would store a blank verdict, throwing all
+    // three away to record a model's inability to stop reasoning.
+    const { worker, repository } = claimHarness(
+      new StubExtractor({ outcome: 'failed', message: TRUNCATED }),
+      { attempts: OPTIONS.maxAttempts },
+    );
+
+    const result = await worker.tick(NOW);
+
+    expect(result).toMatchObject({ enriched: 1, retried: 0, failed: 0 });
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'enriched',
+      nextAttemptAt: null,
+      claimRefusalReason: 'extractor-error',
+      claimRefusalDetail: TRUNCATED,
+      outcome: composeOutcome(filing({ category: 'Press Release' })).text,
+    });
+  });
+
+  it.each([
+    ['an auth failure', 'OpenRouter responded 401: no auth credentials found'],
+    ['a rejected request', 'OpenRouter responded 400: bad request'],
+    ['an empty reply', 'the model returned no text'],
+    ['a refusal', 'the model declined to answer for this document'],
+  ])('keeps %s terminal on the first attempt', async (_label, message) => {
+    // These are statements about the request, and asking again buys the same
+    // answer at the price of the attempt budget.
+    const { worker, repository } = claimHarness(
+      new StubExtractor({ outcome: 'failed', message }),
+    );
+
+    const result = await worker.tick(NOW);
+
+    expect(result).toMatchObject({ enriched: 1, retried: 0 });
+    expect(onlyRecorded(repository)).toMatchObject({
+      state: 'enriched',
+      claimRefusalReason: 'extractor-error',
+      claimRefusalDetail: message,
+      nextAttemptAt: null,
+    });
   });
 });
 

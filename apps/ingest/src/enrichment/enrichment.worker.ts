@@ -14,6 +14,7 @@ import {
   extractZipText,
   hasUsableTextLayer,
   isNotRoutine,
+  isTruncatedReply,
   isWatchedByOperator,
   isWithinAlertWindow,
   nextAttemptDelayMs,
@@ -94,6 +95,41 @@ export interface EnrichmentOptions {
 }
 
 /** What one tick did, counted by outcome. */
+
+/**
+ * Which lane's reply was cut off at the token ceiling, or null when neither was.
+ *
+ * ONE ANSWER FOR BOTH LANES, because what gets retried is the document rather
+ * than a lane — `readAndRecord` argues why. When both were truncated the claim
+ * lane is the one named: the string is a record of what happened, not an
+ * instruction to anything.
+ *
+ * MATCHED ON THE MESSAGE, WHICH IS THE ONLY THING THE FAILURE CARRIES.
+ * `ClaimExtractionResult` has an outcome and a message and nothing else, so a
+ * typed failure kind would have to be threaded through both adapters and both
+ * lanes to reach here. `isTruncatedReply` lives beside the function that writes
+ * the message so the two cannot drift apart.
+ */
+const truncatedLane = (
+  claims: ClaimOutcome,
+  results: ResultsOutcome,
+): string | null => {
+  if (
+    claims.refusalReason === 'extractor-error' &&
+    claims.refusalDetail !== null &&
+    isTruncatedReply(claims.refusalDetail)
+  ) {
+    return `the claim lane: ${claims.refusalDetail}`;
+  }
+  if (
+    results.refusalReason === 'extractor-error' &&
+    results.refusalDetail !== null &&
+    isTruncatedReply(results.refusalDetail)
+  ) {
+    return `the results lane: ${results.refusalDetail}`;
+  }
+  return null;
+};
 
 /**
  * Reads filings' source PDFs in the background and records what they say.
@@ -657,6 +693,62 @@ export class EnrichmentWorker {
       this.resultsFor(filing, documentText, routed.route),
     ]);
 
+    // ================================================================
+    // A TRUNCATED REPLY IS AN EVENT, NOT A FACT ABOUT THE DOCUMENT
+    // ================================================================
+    //
+    // Every other extractor failure says something about the request: a 401 is
+    // a key, a 4xx is a body this provider will refuse identically forever, a
+    // `content_filter` is a classifier that fired on this document's own words.
+    // Repeating those buys the same answer and spends the attempt budget to get
+    // it, so they stay terminal exactly as they are today — the filing records
+    // `extractor-error` with the provider's message and the reader loses that
+    // lane. `the model returned no text` (37 live occurrences) stays terminal
+    // too, and that is a measurement gap rather than a judgement: nothing has
+    // measured whether asking again changes it.
+    //
+    // Truncation is the one signature with a measurement saying the opposite.
+    // The 2026-08-11 speed sweep asked the same document at the same settings
+    // twice and got 10,021 output tokens on one call and 490 on the other — a
+    // 20x spread with nothing changed — so hitting the 32,000-token ceiling is
+    // a property of that generation, not of the document. It ends 4.2% of all
+    // calls (54 of 1,283 over three days) and 15.1% of results calls, and every
+    // one of them is stored as a terminal zero: seqId 106737449, EIEL's
+    // 31,837-character quarterly results filing, has BOTH lanes recording `the
+    // reply was truncated at 32000 tokens` after one attempt, and publishes
+    // nothing.
+    //
+    // THE WHOLE DOCUMENT IS RE-READ, NOT THE LANE THAT FAILED, and the trade is
+    // measured rather than assumed. Over the 249 live filings carrying a
+    // truncated lane: 96 truncated the claim lane alone and NONE of them had a
+    // results table to lose; 146 truncated the results lane alone and 93 of
+    // those (37% of all 249) had already stored a verified claim. So roughly
+    // one truncation in three re-pays a lane that had succeeded — about 100 s
+    // of model time by the same sweep, on a worker already hours behind — and
+    // the re-read is not guaranteed to reproduce it, because re-running
+    // production's own setting on production's own documents recovered 52% of
+    // production's claims. That is a real cost and it is accepted for a real
+    // return: the alternative is resuming one lane, which needs a schema field
+    // for which lane is outstanding, a half-written verdict for the dashboard
+    // to learn to read, and a second definition of what `enriched` means. The
+    // filing sits at `pending` in the meantime, which is what it already means
+    // everywhere else: not read yet.
+    //
+    // BOUNDED BY THE SAME BUDGET AS EVERY OTHER RETRY. When it is spent the
+    // code falls through and writes the verdict below — `extractor-error` with
+    // the truncation as its detail, exactly as today. It does NOT go to
+    // `failed`, because a blank verdict would throw away the outcome, the
+    // amount and the headline this document has already yielded, on the one
+    // path where they were read successfully.
+    const truncated = truncatedLane(claims, results);
+    if (truncated !== null && this.retryBudgetRemains(attempts)) {
+      this.logger.warn(
+        `seqId ${filing.seqId} (${filing.symbol}): ${truncated}; re-reading ` +
+          `the document (${attempts} of ${this.options.maxAttempts} attempts spent)`,
+      );
+      return this.recordRetry(filing, attempts, parseAttempts, now, truncated);
+    }
+
     const enrichment: FilingEnrichment = {
       state: 'enriched',
       attempts,
@@ -755,6 +847,9 @@ export class EnrichmentWorker {
    * is: a failing extractor costs the claims and never the enrichment, because
    * the amount, the counterparty and the headline are already worth storing and
    * re-running the filing would spend another NSE request to reach them again.
+   * THE ONE EXCEPTION IS A REPLY TRUNCATED AT THE TOKEN CEILING, which
+   * `readAndRecord` sends back round for another read: that failure is worth
+   * the extra request, and it is the only one measured to be.
    *
    * EVERY OUTCOME IS RECORDED WITH A REASON. "Nothing was found", "nothing was
    * looked for", "nothing is configured" and "everything found was refused" are
@@ -880,7 +975,10 @@ export class EnrichmentWorker {
    * Contained exactly as the claim lane is: a failing results extractor costs
    * the results and never the enrichment, because the amount, the claims and the
    * headline are already worth storing and re-running the filing would spend
-   * another NSE request to reach them again.
+   * another NSE request to reach them again. And with the same one exception: a
+   * reply truncated at the token ceiling is re-read rather than recorded, which
+   * matters most here — 15.1% of results calls end that way against 2.6% of
+   * claim calls.
    */
   private async resultsFor(
     filing: Filing,
@@ -1190,6 +1288,31 @@ export class EnrichmentWorker {
       lastError,
     });
     return { unparseable: 1 };
+  }
+
+  /**
+   * Whether another attempt is allowed at all.
+   *
+   * ASKS THE FUNCTION `recordRetry` ASKS, rather than copying the arithmetic:
+   * one pure module owns the attempt budget and is consulted twice — here for
+   * "is there any left", there for "how long until the next one". The two
+   * cannot disagree, because the inputs are the same.
+   *
+   * It exists because the truncation retry needs the question WITHOUT the
+   * answer `recordRetry` gives when the budget is spent. That answer is
+   * `failed` with a blank verdict, which is right for a document that could
+   * never be fetched and wrong for one that was read, understood and lost only
+   * its model reply.
+   */
+  private retryBudgetRemains(attempts: number): boolean {
+    return (
+      nextAttemptDelayMs({
+        attempts,
+        maxAttempts: this.options.maxAttempts,
+        baseMs: this.options.retryBaseMs,
+        maxMs: this.options.retryMaxMs,
+      }) !== null
+    );
   }
 
   /** Puts a transient failure back with a backoff, or gives up on it. */

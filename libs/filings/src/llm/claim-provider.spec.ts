@@ -8,8 +8,10 @@ import {
   countOf,
   DEFAULT_CLAIM_MODEL,
   describeProviderFailure,
+  isTruncatedReply,
   openAiEffort,
   redactSecrets,
+  truncatedReplyMessage,
 } from './claim-provider';
 
 describe('the provider vocabulary', () => {
@@ -51,6 +53,38 @@ describe('the provider vocabulary', () => {
     // both must stay inside the ten-minute enrichment lease.
     expect(CLAIM_TIMEOUT_MS).toBeGreaterThanOrEqual(CLAIM_MAX_TOKENS / 200);
     expect(CLAIM_TIMEOUT_MS).toBeLessThan(10 * 60 * 1000);
+  });
+});
+
+describe('the truncated-reply signature', () => {
+  it('recognises the message it writes, at the live ceiling', () => {
+    // THE BINDING THE RETRY RESTS ON. The worker retries this failure and no
+    // other, by matching the string an adapter wrote — so if the two ever stop
+    // agreeing, truncations go back to being terminal zeros in silence.
+    expect(isTruncatedReply(truncatedReplyMessage(CLAIM_MAX_TOKENS))).toBe(
+      true,
+    );
+  });
+
+  it.each([[8_000], [16_000], [32_000], [64_000]])(
+    'recognises it at a ceiling of %d',
+    (ceiling) => {
+      // 8,000 and 16,000 are the historic ceilings and both are still in the
+      // live collection; the next raise must not need this pattern edited.
+      expect(isTruncatedReply(truncatedReplyMessage(ceiling))).toBe(true);
+    },
+  );
+
+  it.each([
+    ['an auth failure', 'OpenRouter responded 401: no auth credentials found'],
+    ['a rejected request', 'OpenRouter responded 400: bad request'],
+    ['an empty reply', 'the model returned no text'],
+    ['a refusal', 'the model declined to answer for this document'],
+    ['a bad body', 'Unexpected token < in JSON at position 0'],
+    ['a routing failure', 'the provider returned an error: no instances'],
+    ['prose that merely mentions it', 'the reply was truncated at some point'],
+  ])('does not recognise %s', (_label, message) => {
+    expect(isTruncatedReply(message)).toBe(false);
   });
 });
 
