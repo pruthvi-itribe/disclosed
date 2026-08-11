@@ -43,5 +43,13 @@ services:
       # THE WORK — a live run lost a 15-page scan that took 131 s exactly this
       # way (docs/deploy-digitalocean.md §7).
       DOCLING_SERVE_MAX_SYNC_WAIT: '300'
+      # ONE conversion at a time, because concurrency multiplies MEMORY here
+      # and nowhere else in the pipeline: several fleet workers feeding heavy
+      # requeued results filings simultaneously is what OOM-killed this
+      # container on 2026-08-11. Excess requests queue inside the service and
+      # wait — bounded by MAX_SYNC_WAIT above — rather than stacking
+      # allocations under the 5g cap. Raise only together with the cap, and
+      # with a measurement.
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: '1'
 volumes:
   turret-mongo:
