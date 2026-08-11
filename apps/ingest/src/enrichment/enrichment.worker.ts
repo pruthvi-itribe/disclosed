@@ -692,6 +692,9 @@ export class EnrichmentWorker {
     return {
       enriched: 1,
       refused: verdict.amountRupees === null ? 1 : 0,
+      // READ OFF THE STORED FIELD, not off the eligibility call, so the batch
+      // line and the filing can never disagree about whether a model read it.
+      skipped: enrichment.coverageSkip === null ? 0 : 1,
       claimed_lines: enrichment.claimLine === null ? 0 : 1,
       claimLinesMuted:
         enrichment.claimLine !== null && wireClaimLine === null ? 1 : 0,
@@ -709,8 +712,12 @@ export class EnrichmentWorker {
    * ================================================================
    *
    * `claimEligibility` is deterministic, runs over text already in memory, and
-   * removes the large majority of filings — newspaper scans, record dates,
-   * covering letters — before anything is spent. Only what survives it reaches
+   * removes the large majority of filings — covering letters, shared pages, and
+   * the two low-yield kinds it triages out by name — before anything is spent.
+   * The document is already fetched and parsed by the time it runs, and that is
+   * not waste: the amount, the counterparty, the headline and `documentChars`
+   * are read off the same text by `readDocument` above, for every filing,
+   * whether or not a model ever sees it. Only what survives it reaches
    * a model. Everything after that is contained the same way the context query
    * is: a failing extractor costs the claims and never the enrichment, because
    * the amount, the counterparty and the headline are already worth storing and
