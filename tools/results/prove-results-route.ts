@@ -24,6 +24,7 @@ import {
   FilingSchema,
   readWithRouting,
   resultsEligibility,
+  scaleReachFor,
   verifyResults,
   type FilingDocument,
   type ParseRoute,
@@ -73,6 +74,7 @@ const runLane = async (
     // THE WHOLE POINT OF THIS TOOL: the bound follows the parser that produced
     // the text. 400 for pdf-parse, 2,400 for Docling, both measured.
     basisReach: basisReachFor(attempt.route),
+    scaleReach: scaleReachFor(attempt.route),
   });
 
   if (verified.outcome === 'refused') {

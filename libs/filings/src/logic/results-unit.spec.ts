@@ -1,4 +1,5 @@
 import {
+  DOCLING_SCALE_REACH,
   governingScale,
   ROW_CURRENCY,
   ROW_PERCENT,
@@ -128,6 +129,48 @@ describe('governingScale', () => {
   it('never reads a scale declared BELOW the table', () => {
     const text = '30.06.202630.06.2025 and later, (₹ in Crores)';
     expect(governingScale(text, 0, 20)).toMatchObject({ outcome: 'none' });
+  });
+
+  it('reads a declaration the Docling bound reaches and the default does not', () => {
+    // THE LIVE DEFECT. Docling emits markdown — pipes, cell padding, spanning
+    // header rows — so the same real `(₹ in Lakhs)` sits physically further
+    // from the same real table. 59 of the 85 live `unit-not-determinable`
+    // refusals are on that route, every one of them refused over the 400
+    // characters this default looks across.
+    const far = table('₹ Million', 900);
+    expect(governingScale(far.text, far.offset, 20)).toMatchObject({
+      outcome: 'none',
+    });
+    expect(
+      governingScale(far.text, far.offset, 20, DOCLING_SCALE_REACH),
+    ).toMatchObject({ outcome: 'ok', token: 'MN' });
+  });
+
+  it('bounds the Docling reach at its own measured distance', () => {
+    // Literal as well as constant, and the two bounds are genuinely different
+    // numbers — which is why the route is stored beside the text.
+    expect(DOCLING_SCALE_REACH).toBe(2_400);
+    expect(DOCLING_SCALE_REACH).toBeGreaterThan(SCALE_REACH);
+
+    const gap = DOCLING_SCALE_REACH - '₹ Million'.length;
+    const just = table('₹ Million', gap);
+    const past = table('₹ Million', gap + 2);
+    expect(
+      governingScale(just.text, just.offset, 20, DOCLING_SCALE_REACH),
+    ).toMatchObject({ outcome: 'ok' });
+    expect(
+      governingScale(past.text, past.offset, 20, DOCLING_SCALE_REACH),
+    ).toMatchObject({ outcome: 'none' });
+  });
+
+  it('says how far it actually looked, in the refusal', () => {
+    // The refusal is what an operator reads. One that says "400 characters" on
+    // a document Docling produced is the bug, not the document.
+    expect(
+      governingScale('30.06.202630.06.2025', 0, 20, DOCLING_SCALE_REACH),
+    ).toMatchObject({
+      detail: `no currency scale is declared in the ${DOCLING_SCALE_REACH} characters above the table's column header`,
+    });
   });
 });
 

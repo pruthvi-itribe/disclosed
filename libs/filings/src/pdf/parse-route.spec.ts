@@ -2,6 +2,7 @@ import {
   BASIS_HEADING_REACH,
   DOCLING_BASIS_HEADING_REACH,
 } from '../logic/results-basis';
+import { DOCLING_SCALE_REACH, SCALE_REACH } from '../logic/results-unit';
 import {
   carriesNoStatement,
   basisReachFor,
@@ -10,6 +11,7 @@ import {
   looksLikeResultsStatement,
   PARSE_ROUTES,
   routeAfterFirstRead,
+  scaleReachFor,
   type ParseRoute,
   type ParseRouteInput,
 } from './parse-route';
@@ -383,6 +385,46 @@ describe('basisReachFor', () => {
     ]);
     for (const route of PARSE_ROUTES) {
       expect(basisReachFor(route)).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('scaleReachFor', () => {
+  it.each<[ParseRoute, number]>([
+    ['pdf-parse', 400],
+    ['docling-ocr', 2400],
+    ['docling-layout', 2400],
+  ])('gives %s a reach of %i characters', (route, expected) => {
+    // Literals as well as constants, for the reason `basisReachFor`'s cases
+    // give: reading one parser's output with the other's bound is how a real
+    // table gets refused. At 400 the Docling sweep read 26 of 103 measured
+    // table headers; at this bound it reads 39.
+    expect(scaleReachFor(route)).toBe(expected);
+  });
+
+  it('takes the bounds from the module that measured them', () => {
+    expect(scaleReachFor('pdf-parse')).toBe(SCALE_REACH);
+    expect(scaleReachFor('docling-layout')).toBe(DOCLING_SCALE_REACH);
+    expect(SCALE_REACH).not.toBe(DOCLING_SCALE_REACH);
+  });
+
+  it('answers for every route the pipeline can record', () => {
+    for (const route of PARSE_ROUTES) {
+      expect(scaleReachFor(route)).toBeGreaterThan(0);
+    }
+  });
+
+  it('moves with the basis reach, route for route', () => {
+    // THE PAIRING THAT WENT MISSING. The basis bound was retuned for Docling
+    // and the scale bound was not, so one gate read the markdown and the other
+    // read it with `pdf-parse`'s number. A route that is cheap for one and
+    // expensive for the other is the state this asserts against.
+    for (const route of PARSE_ROUTES) {
+      const sameAsPdfParse =
+        basisReachFor(route) === basisReachFor('pdf-parse');
+      expect(scaleReachFor(route) === scaleReachFor('pdf-parse')).toBe(
+        sameAsPdfParse,
+      );
     }
   });
 });

@@ -75,8 +75,86 @@ export interface ScaleDeclaration {
   readonly token: string;
 }
 
-/** How far above a column header a scale declaration may sit. */
+/**
+ * How far above a column header a scale declaration may sit, in `pdf-parse`
+ * output.
+ *
+ * NO SWEEP STANDS BEHIND THIS 400, and saying so is the point of these four
+ * lines. It is `BASIS_HEADING_REACH`'s number, which measured the distance from
+ * a statement HEADING to its column header in `pdf-parse` output — a different
+ * pairing in the same text. It is left where it is rather than moved on a
+ * guess: the on-disk text cache holds 9 results-eligible `pdf-parse` documents,
+ * which is not a distribution. `DOCLING_SCALE_REACH` below is the one that was
+ * measured, because that is where the refusals are.
+ */
 export const SCALE_REACH = 400;
+
+/**
+ * The same bound, for text Docling produced.
+ *
+ * ================================================================
+ * WHAT PUTS A DECLARATION 1,784 CHARACTERS ABOVE ITS OWN TABLE
+ * ================================================================
+ *
+ * Not the document. Docling emits markdown, and a wide statement's own header
+ * row plus its separator row of dashes run to well over a thousand characters
+ * of padding before the row carrying the column dates ever appears. ENERGYDEV
+ * (seqId 106734890) prints `(Rs. in lakhs, unless otherwise stated)` directly
+ * under its statement title and the dates land 1,784 characters later; ASHIANA
+ * (seqId 106737436) prints `{INR in Lakhs except stated otherwise)` and the
+ * dates land 1,097 later. That padding is the difference between the two
+ * parsers on those documents: 91,233 characters against `pdf-parse`'s 46,036,
+ * and 126,860 against 53,508. So the bound is a property of the parser, exactly
+ * as `DOCLING_BASIS_HEADING_REACH` is, and 400 was never measured against this
+ * output.
+ *
+ * MEASURED over 42 live results filings re-converted by `docling-serve` with
+ * `do_ocr=false` — the production route and settings, and all 42 re-conversions
+ * returned the exact character count the filing already had stored. 103 markdown
+ * table headers (a row of pipes carrying two or more column dates, which is
+ * what the extractor quotes as `columnsSpan`), paired with the nearest scale
+ * declaration above them. 37 have none anywhere in the document; the other 66:
+ *
+ *     0, 0, 0, 0, 0, 0, 0, 14, 14, 15, 15, 175, 192, 270, 280, 287, 296, 309,
+ *     310, 348, 351, 352, 355, 364, 365, 385, 446, 466, 469, 471, 496, 538,
+ *     718, 978, 990, 1027, 1031, 1097, 1784, | 5070, 5847, 6263, 6405, 7105,
+ *     7144, 7495, 8866, 9070, 9127, 9208, 9501, 11374, 11665, 12168, 13314,
+ *     13905, 15285, 15640, 16816, 17614, 22217, 27604, 28555, 28989, 34892,
+ *     101300
+ *
+ * The hole is 1,784 to 5,070 — 3,286 characters wide, where no other gap below
+ * 17,000 exceeds 1,873. Everything above it is a table no declaration governs:
+ * HGS's second statement (seqId 106731968) sits 5,070 characters below the only
+ * `(Rs.in Crores)` above it with six notes about social-security codes, tax
+ * proceedings and a dividend in between; MAN INDUSTRIES' consolidated SEGMENT
+ * REPORT (seqId 106737655) sits 8,866 below its statement's `Rs. in Lakhs`.
+ * Reaching those would be inheriting a magnitude across a document.
+ *
+ * 2,400 sits in the LOW half of that hole on purpose. It clears the furthest
+ * genuine pairing by 1.35x and stops 2.1x short of the nearest ungoverned one,
+ * and the asymmetry is the same one `results-basis.ts` argues: a table refused
+ * is a line nobody sees, a table scaled from someone else's declaration is a
+ * wrong number about a named listed company. On this sample 2,000, 2,400 and
+ * 3,000 are indistinguishable — 39 of 103 headers read, against 26 at 400 — and
+ * 4,000 starts pulling a SECOND, disagreeing declaration into reach on 2 of
+ * them, which the gate refuses. It is the same number as
+ * `DOCLING_BASIS_HEADING_REACH` and that is a coincidence of two distributions
+ * rather than a copy: the basis gap runs 2,370 to 2,948 and this one runs 1,784
+ * to 5,070.
+ *
+ * WHAT THIS DOES NOT FIX, so the next reader does not expect 59 refusals to
+ * vanish. Of the six `unit-not-determinable` filings in the sample, one
+ * (KPIGREEN, seqId 106736172) gains a readable scale here; the other five
+ * declare none anywhere, and no reach reaches what is not written. SENCO (seqId
+ * 106737696) writes `(Amount in millions, unless otherwise stated)`, which
+ * `SCALE_DECLARATION` deliberately refuses without a currency marker. The other
+ * four are worse and are a defect of their own: Docling loses the rupee glyph
+ * on those documents, so OIL's `₹ 289.56 crore` arrives as `t 289.56 crore`,
+ * HINDCOPPER's declaration as `(f in crore except EPS)`, TITAN's as
+ * `~20,753 crores` and NAUKRI's as `, 142.72 million`. That is a reading
+ * problem, not a distance problem, and this constant cannot answer it.
+ */
+export const DOCLING_SCALE_REACH = 2_400;
 
 /** Every scale declaration in a document, in the order written. NEVER THROWS. */
 export function scaleDeclarationsIn(

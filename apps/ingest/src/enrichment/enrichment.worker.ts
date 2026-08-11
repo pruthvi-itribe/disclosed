@@ -25,6 +25,7 @@ import {
   readDocument,
   readWithRouting,
   resultsEligibility,
+  scaleReachFor,
   verifyClaims,
   verifyResults,
   vetSummary,
@@ -1060,6 +1061,7 @@ export class EnrichmentWorker {
       documentText,
       proposed: extraction.results,
       basisReach: basisReachFor(route),
+      scaleReach: scaleReachFor(route),
     });
 
     if (verified.outcome === 'refused') {

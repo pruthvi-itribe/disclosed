@@ -25,6 +25,7 @@ import {
   ROW_CURRENCY,
   ROW_PERCENT,
   ROW_SCOPED_UNIT_METRICS,
+  SCALE_REACH,
   type GoverningScale,
 } from './results-unit';
 import {
@@ -127,6 +128,16 @@ export interface ResultsVerificationInput {
    * `basisReachFor` in `pdf/parse-route.ts`.
    */
   readonly basisReach?: number;
+  /**
+   * How far above its column header the table's scale declaration may sit.
+   *
+   * A SECOND PARAMETER RATHER THAN A REUSE OF `basisReach`, because the two
+   * bounds are measured over different things and came out different: a
+   * statement heading and a `(₹ in Lakhs)` line do not sit at the same distance
+   * from the same table. Defaulted to the `pdf-parse` value for the same reason
+   * `basisReach` is; the worker passes `scaleReachFor(route)`.
+   */
+  readonly scaleReach?: number;
 }
 
 export type ResultsVerification =
@@ -443,6 +454,7 @@ function frameTable(input: ResultsVerificationInput): Stage<TableFrame> {
     documentText,
     header.offset,
     header.evidence.length,
+    input.scaleReach ?? SCALE_REACH,
   );
   if (scale.outcome === 'none') {
     return stageRefusal(refuse('unit-not-determinable', scale.detail));

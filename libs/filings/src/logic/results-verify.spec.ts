@@ -465,6 +465,37 @@ describe('verifyResults — the adversarial cases', () => {
     ).toMatchObject({ outcome: 'refused', reason: 'unit-not-determinable' });
   });
 
+  it("reads a scale the caller's own reach makes reachable", () => {
+    // THE DOCLING SHAPE, in miniature: markdown pipes and cell padding push the
+    // declaration past the `pdf-parse` bound while the statement is unchanged.
+    // The default refuses it — 59 of 85 live `unit-not-determinable` refusals
+    // are exactly this — and the route's own reach reads it.
+    const columns = '30.06.2026 30.06.2025';
+    const row = 'Revenue from operations 100.00 90.00';
+    const text = [
+      '(₹ in Lakhs)',
+      '| --- | --- |'.repeat(60),
+      'UNAUDITED CONSOLIDATED FINANCIAL RESULTS',
+      columns,
+      row,
+    ].join('\n');
+    const proposed: ProposedResults = {
+      basis: 'consolidated',
+      columnsSpan: columns,
+      figures: [
+        { metric: 'revenue', current: '100.00', prior: '90.00', span: row },
+      ],
+    };
+
+    expect(verifyResults({ documentText: text, proposed })).toMatchObject({
+      outcome: 'refused',
+      reason: 'unit-not-determinable',
+    });
+    expect(
+      verifyResults({ documentText: text, proposed, scaleReach: 2_400 }),
+    ).toMatchObject({ outcome: 'ok' });
+  });
+
   it('REFUSES a period end that closes no statutory quarter', () => {
     const columns = '31.01.2026 31.01.2025';
     const row = 'Revenue from operations 100.00 90.00';

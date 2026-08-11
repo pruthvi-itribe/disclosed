@@ -5,6 +5,7 @@ import {
   BASIS_HEADING_REACH,
   DOCLING_BASIS_HEADING_REACH,
 } from '../logic/results-basis';
+import { DOCLING_SCALE_REACH, SCALE_REACH } from '../logic/results-unit';
 
 /**
  * Which parser reads a document, decided from what the cheap one already found.
@@ -301,6 +302,22 @@ const decide = (
  */
 export const basisReachFor = (route: ParseRoute): number =>
   route === 'pdf-parse' ? BASIS_HEADING_REACH : DOCLING_BASIS_HEADING_REACH;
+
+/**
+ * How far above its column header a scale declaration may sit, for this route.
+ *
+ * THE SECOND HALF OF THE SAME ARGUMENT, left behind when the first half
+ * shipped. `basisReachFor` retuned the statement-heading bound for Docling
+ * markdown and nothing retuned the scale bound, so `governingScale` went on
+ * reading Docling output with a `pdf-parse` number — 59 of the 85 live
+ * `unit-not-determinable` refusals are on the Docling route, and all 59 say
+ * `no currency scale is declared in the 400 characters above the table's
+ * column header`, word for word. A table refused for its units is a table
+ * nobody sees, so the two reaches now move together off the same stored
+ * `route`, or neither is trustworthy.
+ */
+export const scaleReachFor = (route: ParseRoute): number =>
+  route === 'pdf-parse' ? SCALE_REACH : DOCLING_SCALE_REACH;
 
 export function routeAfterFirstRead(
   input: ParseRouteInput,
