@@ -31,6 +31,7 @@ import {
   MIN_CLAIM_DOCUMENT_CHARS,
   type CategoryGroup,
   type ConfidenceTier,
+  type CoverageSkipReason,
   type FilingDocument,
 } from '@app/filings';
 import { loadConfig } from '../../apps/ingest/src/config/configuration';
@@ -138,8 +139,11 @@ function report(label: string, rows: readonly Row[]): void {
   let newRead = 0;
   let stated = 0;
   let outcomes = 0;
-  let skipLegal = 0;
-  let skipShort = 0;
+  // BY REASON, not two counters with an `else`. When the triage gate added two
+  // more skip codes an `else` would have filed both under "covering letter" and
+  // reported a length test doing a category's work — which is exactly the
+  // collapse this whole measurement exists to expose.
+  const bySkip = new Map<CoverageSkipReason, number>();
 
   for (const row of rows) {
     const outcome = composeOutcome(row);
@@ -158,14 +162,24 @@ function report(label: string, rows: readonly Row[]): void {
 
     if (oldGateWouldRead(row)) oldRead += 1;
 
-    // The new gate needs the document's TEXT, which is not stored; its two
-    // tests are reproduced from the stored character count and the legal block,
-    // which is exactly what they are — neither looks at the document's words.
+    // The new gate needs the document's TEXT, which is not stored; three of its
+    // four tests are reproduced from the stored character count, the legal block
+    // and the category, none of which looks at the document's words. The fourth,
+    // `shared-page`, cannot be reproduced — it counts company identities in the
+    // text — so the skip total below is a LOWER bound and "read for insights" is
+    // an upper one, in the same honest direction as the old gate's figure.
     const verdict = claimEligibility(row, 'x'.repeat(row.documentChars ?? 0));
     if (verdict.eligible) newRead += 1;
-    else if (verdict.skip === 'legal-exposure') skipLegal += 1;
-    else skipShort += 1;
+    else bump(bySkip, verdict.skip);
   }
+
+  const skipLines = [...bySkip.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .map(
+      ([skip, count]) =>
+        `skipped: ${skip.padEnd(35)}${String(count).padStart(6)}  ${pct(count, total)}\n`,
+    )
+    .join('');
 
   process.stdout.write(
     `\n=== ${label}: ${total} filing(s) ===\n\n` +
@@ -177,8 +191,7 @@ function report(label: string, rows: readonly Row[]): void {
       `AFTER   ...of which the category alone      ${String(total - stated).padStart(6)}  ${pct(total - stated, total)}\n\n` +
       `--- who gets a model call ---\n` +
       `read for insights                           ${String(newRead).padStart(6)}  ${pct(newRead, total)}\n` +
-      `skipped: legal exposure                     ${String(skipLegal).padStart(6)}  ${pct(skipLegal, total)}\n` +
-      `skipped: covering letter                    ${String(skipShort).padStart(6)}  ${pct(skipShort, total)}\n` +
+      skipLines +
       `cost at $${MEASURED_COST_PER_DOCUMENT}/document                  ` +
       `$${(newRead * MEASURED_COST_PER_DOCUMENT).toFixed(2)}\n\n` +
       `--- confidence tier ---\n`,

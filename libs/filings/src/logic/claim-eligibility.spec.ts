@@ -1,6 +1,8 @@
 import {
   claimEligibility,
+  CON_CALL_INTIMATION_CATEGORY,
   MIN_CLAIM_DOCUMENT_CHARS,
+  NEWSPAPER_PAGE_CATEGORY,
 } from './claim-eligibility';
 
 /** Long enough to clear the covering-letter bar. */
@@ -32,20 +34,20 @@ describe('claimEligibility', () => {
     // before a model was called, by a 22-name allowlist. `Outcome of Board
     // Meeting` alone is 1,346 of 17,442 corpus filings and is where a listed
     // company publishes its quarterly results.
+    //
+    // TWO NAMES LEFT THIS LIST when the triage gate shipped, and they left in
+    // the opposite direction from the one that caused the gap: they are refused
+    // BY name rather than for want of one. Their own tests are below, including
+    // the one that proves a rename is read.
     it.each([
       ['a board-meeting outcome', 'Outcome of Board Meeting'],
       ['an investor presentation', 'Investor Presentation'],
       ['a press release', 'Press Release'],
-      [
-        'an earnings-call update',
-        'Analysts/Institutional Investor Meet/Con. Call Updates',
-      ],
       ['an order win', 'Bagging/Receiving of orders/contracts'],
       ['a credit rating action', 'Credit Rating'],
       ['a record date', 'Record Date'],
       ['a board change', 'Change in Director(s)'],
       ['a shareholders meeting', 'Shareholders meeting'],
-      ['a newspaper scan', 'Copy of Newspaper Publication'],
       ['a trading window notice', 'Trading Window'],
       ['general updates', 'General Updates'],
       ['a clarification request', 'Clarification - Financial Results'],
@@ -157,6 +159,98 @@ describe('claimEligibility', () => {
       );
       if (verdict.eligible) throw new Error('expected a refusal');
       expect(verdict.skip).toBe('covering-letter');
+    });
+  });
+
+  describe('the two kinds triaged out by name', () => {
+    // The audit grouped on `$category` and counted 619 newspaper pages at a 6.8%
+    // claim yield and 1,022 con-call intimations at 16.7% — 35.1% of everything
+    // enriched, for 213 claim-bearing filings. These pin the SAME strings, so
+    // the gate refuses the population that was measured and not a near-miss.
+    it('uses the exact names NSE spells, normalised', () => {
+      expect(NEWSPAPER_PAGE_CATEGORY).toBe('copy of newspaper publication');
+      expect(CON_CALL_INTIMATION_CATEGORY).toBe(
+        'analysts/institutional investor meet/con. call updates',
+      );
+    });
+
+    it.each([
+      ['a newspaper page', 'Copy of Newspaper Publication', 'newspaper-page'],
+      [
+        'an earnings-call intimation',
+        'Analysts/Institutional Investor Meet/Con. Call Updates',
+        'con-call-intimation',
+      ],
+    ])('never sends %s to a model', (_label, category, skip) => {
+      const verdict = claimEligibility(filing(category), NARRATIVE);
+      expect(verdict.eligible).toBe(false);
+      if (verdict.eligible) throw new Error('expected a refusal');
+      expect(verdict.skip).toBe(skip);
+      // The reason carries the measured yield, so an operator reading one row
+      // sees the price rather than a bare code.
+      expect(verdict.reason).toMatch(/%/);
+    });
+
+    it.each([
+      ['a padded, shouted spelling', '  COPY OF NEWSPAPER PUBLICATION  '],
+      ['NSE’s own casing', 'Copy of Newspaper Publication'],
+    ])('matches %s', (_label, category) => {
+      expect(claimEligibility(filing(category), NARRATIVE).eligible).toBe(
+        false,
+      );
+    });
+
+    // THE FAIL-OPEN TEST, and the reason a category name is allowed to decide
+    // this at all. CLAUDE.md forbids keying a FAIL-CLOSED gate on a name NSE
+    // controls, because a rename then hides filings. Here a rename costs model
+    // calls and hides nothing: every near-miss below is READ.
+    it.each([
+      ['a pluralised rename', 'Copy of Newspaper Publications'],
+      ['a shortened rename', 'Newspaper Publication'],
+      ['the con-call name without its full stop', 'Analysts/Con Call Updates'],
+      ['a name NSE has not invented yet', 'Some Future Category'],
+    ])('READS %s rather than guessing at it', (_label, category) => {
+      expect(claimEligibility(filing(category), NARRATIVE)).toEqual({
+        eligible: true,
+      });
+    });
+
+    // Order. The category test runs after every test that reads the document, so
+    // a filing that can be refused on its own bytes is refused on its own bytes
+    // — and the two counters above then record exactly the model calls this gate
+    // removed and no others.
+    it('lets a short intimation say it is a covering letter', () => {
+      const verdict = claimEligibility(
+        filing('Analysts/Institutional Investor Meet/Con. Call Updates'),
+        'x'.repeat(MIN_CLAIM_DOCUMENT_CHARS - 1),
+      );
+      if (verdict.eligible) throw new Error('expected a refusal');
+      expect(verdict.skip).toBe('covering-letter');
+    });
+
+    it('lets a four-company newspaper page say it is a shared page', () => {
+      // 105 of the 619 measured newspaper pages are refused on their bytes by
+      // the attribution rule. Those must keep saying so: `shared-page` is a
+      // measured property and `newspaper-page` is a name.
+      const cins = Array.from(
+        { length: 4 },
+        (_, at) => `CIN: L24239MH1956PLC00000${at} `,
+      ).join(' ');
+      const verdict = claimEligibility(
+        filing('Copy of Newspaper Publication'),
+        NARRATIVE + cins,
+      );
+      if (verdict.eligible) throw new Error('expected a refusal');
+      expect(verdict.skip).toBe('shared-page');
+    });
+
+    it('lets a blocked newspaper page name the legal block', () => {
+      const verdict = claimEligibility(
+        filing('Copy of Newspaper Publication', 'SEBI show-cause notice'),
+        NARRATIVE,
+      );
+      if (verdict.eligible) throw new Error('expected a refusal');
+      expect(verdict.skip).toBe('legal-exposure');
     });
   });
 

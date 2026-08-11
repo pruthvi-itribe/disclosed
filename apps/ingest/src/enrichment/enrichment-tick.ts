@@ -2,7 +2,7 @@
  * What one pass of the enrichment loop did, and how two passes add up.
  *
  * SPLIT OUT OF THE WORKER because none of it needs the worker: a tick result is
- * a record of twelve counts, its log line is a pure function of that record, and
+ * a record of thirteen counts, its log line is a pure function of that record, and
  * adding two of them together is arithmetic. Keeping them beside 800 lines of
  * I/O made the file longer without making any of this easier to read, and the
  * comment explaining `merge` had drifted a hundred lines away from `merge`.
@@ -22,6 +22,21 @@ export interface EnrichmentTickResult {
   readonly retried: number;
   /** Transient failures that exhausted the attempt budget. */
   readonly failed: number;
+  /**
+   * Documents read and stored that NO MODEL was asked to read.
+   *
+   * Every `coverageSkip` this tick set, of any reason. The per-filing code is on
+   * the filing and the admin panel splits it five ways under "why no model read
+   * the document"; what the batch line needs is the total, because the number an
+   * operator is watching for is a share of the batch that suddenly moves. A
+   * category-keyed refusal fails open — a rename costs model calls rather than
+   * hiding filings — but it can still be wrong in the other direction if NSE
+   * keeps a name and changes what is filed under it, and this counter climbing is
+   * the first thing that would show.
+   *
+   * Counted only on the enriched path, which is the only path that runs the gate.
+   */
+  readonly skipped: number;
   /** Documents that produced at least one verified claim. */
   readonly claimed_lines: number;
   /**
@@ -57,7 +72,8 @@ export const describeTick = (result: EnrichmentTickResult): string =>
   `Enrichment tick: claimed ${result.claimed}, enriched ${result.enriched} ` +
   `(amount refused on ${result.refused}), unparseable ${result.unparseable}, ` +
   `parse-retried ${result.parseRetried}, retried ${result.retried}, ` +
-  `failed ${result.failed}, claim-lines ${result.claimed_lines} ` +
+  `failed ${result.failed}, no model read ${result.skipped}, ` +
+  `claim-lines ${result.claimed_lines} ` +
   `(${result.claimsDiscarded} claim(s) discarded, ` +
   `${result.claimLinesMuted} muted off the wire), ` +
   `results-lines ${result.resultsLines}, alerted ${result.alerted}`;
@@ -70,6 +86,7 @@ export const EMPTY_TICK: EnrichmentTickResult = {
   parseRetried: 0,
   retried: 0,
   failed: 0,
+  skipped: 0,
   claimed_lines: 0,
   claimLinesMuted: 0,
   claimsDiscarded: 0,
@@ -96,6 +113,7 @@ export const merge = (
   parseRetried: tally.parseRetried + delta.parseRetried,
   retried: tally.retried + delta.retried,
   failed: tally.failed + delta.failed,
+  skipped: tally.skipped + delta.skipped,
   claimed_lines: tally.claimed_lines + delta.claimed_lines,
   claimLinesMuted: tally.claimLinesMuted + delta.claimLinesMuted,
   claimsDiscarded: tally.claimsDiscarded + delta.claimsDiscarded,

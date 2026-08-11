@@ -35,6 +35,10 @@ import { companyIdentitiesIn, SHARED_PAGE_MIN_IDENTITIES } from './shared-page';
  *
  * Three tests, and NONE OF THEM LOOKS AT THE CATEGORY:
  *
+ * (A fourth was added later and does read the category, for two names. It is
+ * argued under TRIAGE below, and the argument is that a fail-OPEN test on a
+ * name is not the fail-closed one this rewrite deleted.)
+ *
  *   1. **Legal exposure.** Not a cost control and never was. A litigation,
  *      enforcement or insolvency filing must not reach an extractor at all,
  *      because the cheapest way to be sure nothing is drafted about a regulatory
@@ -85,6 +89,73 @@ import { companyIdentitiesIn, SHARED_PAGE_MIN_IDENTITIES } from './shared-page';
  * every filing this pipeline stores is on the order of **$0.80 a day** at the
  * live rate of ~1,000 filings — which is a Q1-results-season peak, not an
  * average. That is not a number worth going blind on quarterly results for.
+ *
+ * ================================================================
+ * TRIAGE: THE TWO KINDS THAT ARE NOT READ, AND WHAT THAT COSTS
+ * ================================================================
+ *
+ * Money was never the constraint. TIME is. `docs/measurements/2026-08-11-
+ * processing-audit.md` measured the worker at 20-40 documents an hour against
+ * 1,042 arrivals in a day, running 7.2 h behind at p50 and 30.4 h at p99, with
+ * 299 filings (5.9%) never read at all — and it measured where the time goes:
+ * 90-180 seconds a document, essentially all of it the model calls.
+ *
+ * Two NSE categories are a third of that spend and return almost nothing.
+ * Measured over the 4,680 enriched filings in the audit's window (§7b):
+ *
+ *   category                                  n     already   filings with   yield
+ *                                                   skipped     >=1 claim
+ *   Analysts/…/Con. Call Updates          1,022         250            171   16.7%
+ *   Copy of Newspaper Publication            619         105             42    6.8%
+ *
+ * 1,641 documents, 35.1% of everything enriched, returning 213 claim-bearing
+ * filings between them. Deducting what the covering-letter and shared-page
+ * tests already refuse, this gate removes 772 + 514 = **1,286 model calls** —
+ * 31.3% of the 4,113 that reached a model — at a cost of **the 213 claim-bearing
+ * filings those calls would have produced**. That is the price, it was decided
+ * with the number in front of it, and it is not a rounding error: at 1,286 calls
+ * over the audit's 6.36 days and the measured 90-180 s each, it is 5 to 10 hours
+ * of worker time given back per day.
+ *
+ * Re-run against the live collection on 2026-08-11 before this shipped, counting
+ * only the enriched filings a model was actually called on (`coverageSkip` null),
+ * the same two names select 518 newspaper pages returning 43 claim-bearing
+ * filings and 786 intimations returning 176 — **1,304 of the 4,172 model calls
+ * made, 31.3%, for 219 claim-bearing filings**. The audit's arithmetic and a
+ * direct count four days later agree to a third of a percent.
+ *
+ * ONE MODEL CALL IS REMOVED PER FILING, NOT TWO. `resultsEligibility` already
+ * refuses both names (`RESULTS_BEARING_CATEGORIES` does not contain either, and
+ * `results-eligibility.ts`'s header argues the newspaper case at length from a
+ * table-attribution sweep). Measured on the live collection the same day:
+ * `resultsRefusalReason` is `not-eligible` on 623 of 623 and 1,040 of 1,040.
+ *
+ * WHY A CATEGORY NAME IS ALLOWED TO DECIDE THIS AND NOT THAT. CLAUDE.md's
+ * invariant is "**Fail open on categories.** Never key a FAIL-CLOSED gate on a
+ * category name NSE controls", and the allowlist above was fail-closed: a name
+ * NSE invented or renamed fell OUT of the set, so the filing was silently
+ * dropped and the dashboard looked healthy. This gate is the mirror image. The
+ * names are in a REFUSAL set, so the failure direction is:
+ *
+ *   - NSE renames `Copy of Newspaper Publication` → the name misses the set →
+ *     the filing is READ. Cost: model calls this gate meant to save. Visible as
+ *     spend and latency. Nothing is hidden and no claim is lost.
+ *   - NSE invents a new low-yield category → it is READ, exactly as
+ *     `Some Future Category` is. There is no list for it to be missing from.
+ *
+ * The only way this gate loses a filing is if NSE keeps a name and changes what
+ * is filed under it — and that failure is visible too, because every skipped
+ * filing carries `coverageSkip` and the admin panel groups by it under "why no
+ * model read the document". "Nothing was found" and "nothing was looked for"
+ * stay separable, which is the whole reason the skip is a recorded code rather
+ * than an early return.
+ *
+ * NOT GENERALISED. The audit hand-checked three more near-zero kinds —
+ * `Trading Window` (17 filings, 0%), `Cessation` (25, 4.0%) and
+ * `Resignation of Director/KMP/SMP` (39, 7.7%) — and they are deliberately NOT
+ * here. Eighty-one filings between them buy no throughput worth the risk, and
+ * each name added is one more thing that has to keep meaning what it meant. Two
+ * names, 35.1% of the corpus, one measured decision.
  */
 
 /**
@@ -108,6 +179,28 @@ import { companyIdentitiesIn, SHARED_PAGE_MIN_IDENTITIES } from './shared-page';
  */
 export const MIN_CLAIM_DOCUMENT_CHARS = 1_500;
 
+/**
+ * NSE's name for a scan of a statutory advertisement, lowercased.
+ *
+ * The exact string the processing audit grouped on, so the population this
+ * refuses is the population that was counted: 619 enriched filings at a 6.8%
+ * claim yield in the audit's window, 623 on the live collection four days later.
+ * Compared against `category.trim().toLowerCase()`, which is how
+ * `results-eligibility.ts` compares its own names.
+ */
+export const NEWSPAPER_PAGE_CATEGORY = 'copy of newspaper publication';
+
+/**
+ * NSE's name for an earnings-call intimation, lowercased.
+ *
+ * Also verbatim from the audit, full stop in `Con.` and all — NSE's spelling,
+ * not a tidied version of it. 1,022 enriched filings at a 16.7% claim yield; 250
+ * of them were already refused as covering letters, so what this name adds is
+ * the 772 that are longer than a covering letter and say the same thing.
+ */
+export const CON_CALL_INTIMATION_CATEGORY =
+  'analysts/institutional investor meet/con. call updates';
+
 /** Why a document was not read for insights. */
 export type CoverageSkipReason =
   /** Litigation, enforcement, insolvency or fraud. A safety refusal. */
@@ -122,7 +215,26 @@ export type CoverageSkipReason =
    * `shared-page.ts` for the measurement and for the one that already shipped
    * wrong.
    */
-  | 'shared-page';
+  | 'shared-page'
+  /**
+   * A scan of a statutory newspaper advertisement. A triage refusal.
+   *
+   * DISTINCT FROM `shared-page`, which is a measured property of the bytes (four
+   * or more company identities) and refuses 105 of these on its own. This one is
+   * the category name, and it refuses the other 514 — pages that name too few
+   * companies to trip the attribution rule and still yielded a claim on 6.8% of
+   * the 619 measured. See TRIAGE in this module's header for the price.
+   */
+  | 'newspaper-page'
+  /**
+   * An intimation that an earnings call happened. A triage refusal.
+   *
+   * DISTINCT FROM `covering-letter`, which is a length test and already refuses
+   * 250 of these. The remaining 772 are longer than 1,500 characters — an
+   * agenda, a disclaimer, a transcript cover — and still state only that a
+   * recording exists: a 16.7% claim yield over 1,022 measured.
+   */
+  | 'con-call-intimation';
 
 export type ClaimEligibility =
   | { readonly eligible: true }
@@ -178,6 +290,33 @@ export function claimEligibility(
       'shared-page',
       `the document names ${identities.size} companies, so a sentence in it ` +
         'cannot be attributed to this filer',
+    );
+  }
+
+  // LAST OF ALL, and after every test that reads the document, so a filing that
+  // can be refused on its own bytes is refused on its own bytes. A category name
+  // is the weakest evidence in this file and it gets the last word rather than
+  // the first: the 105 newspaper pages the attribution rule catches keep saying
+  // `shared-page`, the 250 short intimations keep saying `covering-letter`, and
+  // what the two codes below count is exactly the model calls this gate — and
+  // nothing else — removed.
+  //
+  // Fail-OPEN, which is the whole argument for reading a name here at all. A
+  // renamed category misses this set and is READ; see TRIAGE in the header for
+  // the failure directions and for the 213 claim-bearing filings knowingly
+  // forgone.
+  const category = filing.category.trim().toLowerCase();
+  if (category === NEWSPAPER_PAGE_CATEGORY) {
+    return not(
+      'newspaper-page',
+      'the document is a newspaper page, which yields a claim on 6.8% of them',
+    );
+  }
+  if (category === CON_CALL_INTIMATION_CATEGORY) {
+    return not(
+      'con-call-intimation',
+      'the document is an earnings-call intimation, which yields a claim on ' +
+        '16.7% of them',
     );
   }
 

@@ -750,6 +750,7 @@ describe('EnrichmentWorker — containment', () => {
       parseRetried: 0,
       retried: 0,
       failed: 0,
+      skipped: 0,
       claimed_lines: 0,
       claimLinesMuted: 0,
       claimsDiscarded: 0,
@@ -1160,6 +1161,7 @@ describe('EnrichmentWorker — saying that it is alive', () => {
       parseRetried: 1,
       retried: 1,
       failed: 0,
+      skipped: 2,
       claimed_lines: 2,
       claimLinesMuted: 1,
       claimsDiscarded: 5,
@@ -1174,6 +1176,7 @@ describe('EnrichmentWorker — saying that it is alive', () => {
     expect(line).toContain('parse-retried 1');
     expect(line).toContain('retried 1');
     expect(line).toContain('failed 0');
+    expect(line).toContain('no model read 2');
     expect(line).toContain('claim-lines 2');
     expect(line).toContain('5 claim(s) discarded');
     expect(line).toContain('1 muted off the wire');
@@ -1359,6 +1362,59 @@ describe('EnrichmentWorker — notable claims', () => {
     const stored = onlyRecorded(repository);
     expect(stored.claimRefusalReason).toBe('not-eligible');
     expect(stored.claimRefusalDetail).toContain('covering letter');
+  });
+
+  // THE TRIAGE GATE, at the worker. The unit tests in `claim-eligibility.spec.ts`
+  // prove the verdict; these prove the wiring — that no request reaches the
+  // extractor, that the filing keeps an enrichment block saying why, and that the
+  // batch line counts it.
+  it.each([
+    ['a newspaper page', 'Copy of Newspaper Publication', 'newspaper-page'],
+    [
+      'an earnings-call intimation',
+      'Analysts/Institutional Investor Meet/Con. Call Updates',
+      'con-call-intimation',
+    ],
+  ])('never calls the model for %s', async (_label, category, skip) => {
+    const extractor = new StubExtractor();
+    const { worker, repository } = claimHarness(extractor, { category });
+
+    const result = await worker.tick(NOW);
+
+    expect(extractor.requests).toEqual([]);
+    expect(result.skipped).toBe(1);
+    const stored = onlyRecorded(repository);
+    expect(stored.state).toBe('enriched');
+    expect(stored.claimRefusalReason).toBe('not-eligible');
+    expect(stored.coverageSkip).toBe(skip);
+  });
+
+  it('still reads everything a skipped filing does not need a model for', async () => {
+    // THE POINT OF SKIPPING THE MODEL AND NOT THE DOCUMENT. The feed's row is
+    // built from fields `readDocument` derives off the same text with no model
+    // involved, and a triaged filing must keep every one of them — otherwise the
+    // gate stops being "nothing was looked for" and becomes "nothing is here".
+    const { worker, repository } = claimHarness(new StubExtractor(), {
+      category: 'Copy of Newspaper Publication',
+    });
+
+    await worker.tick(NOW);
+
+    const stored = onlyRecorded(repository);
+    expect(stored.documentChars).toBe(PRESS_RELEASE.length);
+    expect(stored.outcome).not.toBeNull();
+    expect(stored.categoryGroup).not.toBeNull();
+    expect(stored.parseRoute).toBe('pdf-parse');
+  });
+
+  it('counts a skip in the batch line rather than only on the filing', async () => {
+    // A skip nobody can count is a skip that can hide, and a category-keyed one
+    // is the kind whose share of a batch an operator has to be able to watch.
+    const { worker } = claimHarness(new StubExtractor(), {
+      category: 'Press Release',
+    });
+
+    expect((await worker.tick(NOW)).skipped).toBe(0);
   });
 
   it('invents no extractor when it is constructed without one', async () => {
