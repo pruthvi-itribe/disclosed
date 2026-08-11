@@ -21,7 +21,11 @@ services:
   # Loopback-bound like mongo: it has no auth and needs none from the LAN.
   docling:
     image: quay.io/docling-project/docling-serve:v1.30.0
-    ports: ['127.0.0.1:5001:5001']
+    # Host port 5501, NOT the service's native 5001: another project's dev
+    # server (dallaspuram-ui, react-scripts) binds *:5001 on this machine, and
+    # a lost binding here does not error - it silently serves that app's 404s
+    # to every convert call (77 fallbacks on 2026-08-11 before this moved).
+    ports: ['127.0.0.1:5501:5001']
     environment:
       # Seconds, and it must cover DOCLING_TIMEOUT_MS (300000): the server's
       # own default is 120 s and it answers 504 past that WHILE STILL FINISHING
