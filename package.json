@@ -41,6 +41,7 @@
     "results:prove": "ts-node -r tsconfig-paths/register tools/results/prove-results-route.ts",
     "attribution:measure": "ts-node -r tsconfig-paths/register tools/results/measure-table-attribution.ts",
     "tiers:measure": "ts-node -r tsconfig-paths/register tools/results/measure-header-tiers.ts",
+    "merge:prove": "ts-node -r tsconfig-paths/register tools/results/prove-header-merge.ts",
     "quality:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-text-quality.ts",
     "density:measure": "ts-node -r tsconfig-paths/register tools/parsing/measure-text-density.ts",
     "bse:overlap": "ts-node -r tsconfig-paths/register tools/bse/measure-overlap.ts",
