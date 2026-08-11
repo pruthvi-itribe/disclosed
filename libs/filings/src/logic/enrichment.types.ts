@@ -163,6 +163,19 @@ export interface FilingEnrichment {
    * answer for. A rising count here is how that is noticed.
    */
   readonly parseFallbackReason: string | null;
+  /**
+   * Why the router picked the route it picked, verbatim. Always written on an
+   * enriched filing; null only on blocks older than the field.
+   *
+   * `parseFallbackReason` above covers a Docling that was CHOSEN and failed —
+   * but a Docling that is absent is never chosen, so an unconfigured service
+   * produced blocks indistinguishable from healthy ones. That is how it ran
+   * unreachable for three days (2026-08-08 to -11) at a measured cost of
+   * halved results-table yield before anyone noticed: the router computed the
+   * sentence "no Docling service is available" on every filing and threw it
+   * away (2026-08-11 processing audit, finding 2).
+   */
+  readonly parseRouteReason: string | null;
 
   /**
    * Why no model read this document. Null when one did.
@@ -307,6 +320,7 @@ export const PENDING_ENRICHMENT: FilingEnrichment = {
   documentSource: null,
   parseRoute: null,
   parseFallbackReason: null,
+  parseRouteReason: null,
   coverageSkip: null,
   outcome: null,
   outcomeSource: null,

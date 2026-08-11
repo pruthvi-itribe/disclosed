@@ -66,6 +66,7 @@ export const blankVerdict = (
   documentSource: null,
   parseRoute: null,
   parseFallbackReason: null,
+  parseRouteReason: null,
   coverageSkip: null,
   ...outcomeFieldsFor(filing),
   amountRupees: null,

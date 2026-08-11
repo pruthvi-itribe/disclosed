@@ -162,6 +162,7 @@ const EnrichmentSchema = new Schema<FilingEnrichment>(
     // `pdf-parse` because that is what read them.
     parseRoute: { type: String, default: null },
     parseFallbackReason: { type: String, default: null },
+    parseRouteReason: { type: String, default: null },
     coverageSkip: { type: String, default: null },
     // What the filing SAYS, materialised from the exchange's own words so that
     // "every filing states an outcome" is a `countDocuments` rather than a claim

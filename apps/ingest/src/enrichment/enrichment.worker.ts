@@ -669,6 +669,7 @@ export class EnrichmentWorker {
       documentSource,
       parseRoute: routed.route,
       parseFallbackReason: routed.fallbackReason,
+      parseRouteReason: routed.routeReason,
       coverageSkip: claims.skip,
       ...outcomeFieldsFor(filing),
       amountRupees: verdict.amountRupees,
