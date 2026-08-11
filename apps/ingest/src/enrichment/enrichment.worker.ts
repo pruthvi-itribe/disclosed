@@ -81,6 +81,16 @@ export interface EnrichmentOptions {
   watchlist: readonly string[];
   /** The most verified claims one wire line may carry. */
   maxClaims: number;
+  /**
+   * The clock each claim is stamped from. Injectable so tests can freeze it;
+   * production takes the default. It exists because `drain` once stamped every
+   * claim in a batch from the TICK'S start time: at the measured ~100s per
+   * document (2026-08-11 sweep) a 20-document batch runs ~33 minutes, so with
+   * the 10-minute lease every document from position ~7 on was claimed with a
+   * lease already in the past — invisible with one worker, double-processed
+   * with two.
+   */
+  clock?: () => Date;
 }
 
 /** What one tick did, counted by outcome. */
@@ -117,10 +127,16 @@ export interface EnrichmentOptions {
  * reconcile after a restart because there is only one record of what is
  * outstanding.
  *
- * The load is ~400 filings a day against a p90 of 436 ms per document. A queue
- * exists to buy parallelism, and parallelism is the one thing this worker must
- * not have: it fetches from an exchange archive that has been measured at 60
- * polite sequential requests and never at more.
+ * A queue exists to buy parallelism, and the lease already sells it: several
+ * workers may run against the same collection, each claiming atomically. What
+ * bounds the worker count is NOT the exchange any more — the 2026-08-11 sweep
+ * measured ~100 s of model time per document against ~200 ms of fetch, so N
+ * workers ask the archive for one document every ~100/N seconds. Four workers
+ * is one fetch per ~25 s, far inside the 60-polite-sequential-requests
+ * envelope the archive was measured at; the politeness delay between one
+ * worker's own fetches stays. (This paragraph once said parallelism was the
+ * one thing this worker must not have — that was written when 436 ms of fetch
+ * WAS the document cost, before the model lanes existed.)
  *
  * ================================================================
  * WHAT IS LOAD-BEARING
@@ -318,9 +334,18 @@ export class EnrichmentWorker {
     for (let index = 0; index < this.options.batchSize; index += 1) {
       if (wasRunning && !this.running) break;
 
+      // A FRESH STAMP PER CLAIM, not the tick's. `now` above is the moment the
+      // batch began; by this document it can be half an hour old, and a lease
+      // computed from it may already be expired when written (see the clock
+      // option's comment for the arithmetic). The first document keeps `now`
+      // so a directly-invoked tick — a test, the backfill tool — stays
+      // deterministic for the case those callers actually exercise.
+      const at =
+        index === 0 ? now : (this.options.clock ?? (() => new Date()))();
+
       let claimed: ClaimedFiling | null;
       try {
-        claimed = await this.repository.claimNext(now, this.options.leaseMs);
+        claimed = await this.repository.claimNext(at, this.options.leaseMs);
       } catch (error) {
         // The database is the queue. If claiming fails there is no work to do
         // and no state to repair; the next tick tries again.
@@ -339,7 +364,7 @@ export class EnrichmentWorker {
         await this.sleep(this.options.requestDelayMs);
       }
 
-      tally = merge(tally, await this.processSafely(claimed, now));
+      tally = merge(tally, await this.processSafely(claimed, at));
     }
 
     return tally;
@@ -622,8 +647,15 @@ export class EnrichmentWorker {
       verdict.amountRupees,
     );
 
-    const claims = await this.claimsFor(filing, documentText);
-    const results = await this.resultsFor(filing, documentText, routed.route);
+    // IN FLIGHT TOGETHER. The two lanes read the same immutable text and write
+    // disjoint fields; nothing below looks at either before both resolve. They
+    // were sequential, which cost the full first call before the second began —
+    // the 2026-08-11 sweep measured 137.8 s saved per two-call document (~15%
+    // of the worker's day) from this line alone.
+    const [claims, results] = await Promise.all([
+      this.claimsFor(filing, documentText),
+      this.resultsFor(filing, documentText, routed.route),
+    ]);
 
     const enrichment: FilingEnrichment = {
       state: 'enriched',
