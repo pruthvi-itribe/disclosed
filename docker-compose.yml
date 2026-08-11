@@ -26,6 +26,17 @@ services:
     # a lost binding here does not error - it silently serves that app's 404s
     # to every convert call (77 fallbacks on 2026-08-11 before this moved).
     ports: ['127.0.0.1:5501:5001']
+    # Both lines exist because of one afternoon (2026-08-11): a large OCR job
+    # spiked past the Docker VM's free memory, the kernel OOM-killed the
+    # container at 14:06 IST, and with no restart policy it stayed dead for
+    # five hours while every eligible filing fell back to pdf-parse. The cap
+    # makes the kernel kill THIS container instead of destabilising the VM;
+    # the policy makes that death cost ~40s of model reload, not an afternoon.
+    # A document that cannot convert under 5g OOMs again on retry, the client's
+    # cooldown backs off, and the filing falls back visibly - the same honest
+    # degradation as any other Docling failure.
+    mem_limit: 5g
+    restart: unless-stopped
     environment:
       # Seconds, and it must cover DOCLING_TIMEOUT_MS (300000): the server's
       # own default is 120 s and it answers 504 past that WHILE STILL FINISHING
