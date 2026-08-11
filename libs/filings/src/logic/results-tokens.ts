@@ -85,9 +85,74 @@ const VALUE_TOKEN =
 /**
  * Dates in a column header, in every spelling this corpus prints.
  *
- * `30.06.2026`, `30/06/2026`, `30-06-2026`, `June 30, 2026` and `30 June 2026`.
- * The numeric branch is unanchored on purpose — see the module comment — and the
- * two-digit day and month are required so a bare `2026.06` cannot be read as one.
+ * ================================================================
+ * WHAT A DATE LOOKS LIKE AFTER DOCLING HAS BEEN THROUGH IT
+ * ================================================================
+ *
+ * For as long as this pipeline read `pdf-parse` output, five spellings were the
+ * whole world: `30.06.2026`, `30/06/2026`, `30-06-2026`, `June 30, 2026` and
+ * `30 June 2026`. Docling reads the same PDFs through a layout model, and the
+ * spellings it emits are the printed page's, not that tidy set — it drops the
+ * space beside a punctuation mark, keeps the two-digit year the filer typed, and
+ * splits a day from its own ordinal suffix.
+ *
+ * MEASURED, over the 137 Docling-routed results filings of the `npm run
+ * tiers:measure` sweep, counting cells in the header block of every statement
+ * table (six rows or more, two value columns or more). Each row is a spelling
+ * the document names a column with and `columnDatesIn` returned nothing for:
+ *
+ *     30-Jun-26      dashed, two-digit year         180 cells   14 filings
+ *     June 30,2026   no space after the comma        21          7
+ *     30.Jun-26      dotted day, dashed year          8          2
+ *     31-Mar26       no separator before the year     8          2
+ *     30 th June 2026  the ordinal is detached        8          3
+ *     March 31 , 2026  a space before the comma       4          2
+ *     30Jun26        no separator anywhere            2          1
+ *     June30, 2025   no space after the month         2          2
+ *     31.3.2026      a one-digit month                2          1
+ *     June 30. 2026  a dot for the comma              1          1
+ *
+ * plus LINDEINDIA 106737549 in `__fixtures__/results-header-corpus.json`, whose
+ * consolidated statement prints `30june 2026` and `30June 2025` — no space at
+ * all between the day and the month name — in a one-row four-date header. That
+ * filing is why this was found: its four-value rows met a two-date header and
+ * every figure in it was discarded as `columns-not-aligned`.
+ *
+ * Those are the spellings read below. FOUR MORE ARE REFUSED, and the refusal is
+ * the finding, not an omission:
+ *
+ *   - **A month and a year with no day** — `March 2026`, `Jun-26`, 11 cells in
+ *     4 filings. Which day the period ended is the filer's to state.
+ *   - **A month and a day with the year in another row** — `June 30` over
+ *     `2026`, 16 cells in 1 filing (106728262). Binding them needs a column
+ *     model, and that row states four years, not one.
+ *   - **A digit run** — `3006 2026`, `31032026`, `300672026`, 7 cells in 1
+ *     filing (106727461), which prints the first three in ONE header row. The
+ *     run is not a fixed width, so no split is determined by the text.
+ *   - **A damaged year** — `30/06/202S`, `30.06.202`, 6 cells in 4 filings.
+ *
+ * ================================================================
+ * A TWO-DIGIT YEAR, AND THE ONLY RULE THAT MAKES ONE SAFE
+ * ================================================================
+ *
+ * `30-Jun-26` is 30 June 2026. It resolves as `2000 + 26` and the same bound
+ * governs a four-digit year: a column date's year must be 2000-2099, or it is
+ * not read at all.
+ *
+ * WHY THAT IS NOT A GUESS. Section 2(41) of the Companies Act 2013 has required
+ * an Indian company's financial year to end on 31 March since 2014, and this
+ * pipeline reads filings as they are published; a period end in the 1900s cannot
+ * appear in a column of one. The sweep agrees: the only two-digit years in
+ * 137 documents are 26 (164 occurrences) and 25 (55), which are the year of
+ * these filings and the year before it. Where a two-digit year would be genuinely
+ * ambiguous the shape is refused instead — see the all-numeric case below.
+ *
+ * AND THE CENTURY BOUND EARNS ITS KEEP ON FOUR-DIGIT YEARS TOO. 106729290
+ * prints `30-06-21126`; the unanchored numeric scan reads `30-06-2112` out of
+ * that, a well-formed date the document does not state. The bound is what
+ * refuses it, and it has to be the bound rather than a "no digit after the year"
+ * guard, because run-together dates — `30.06.202631.03.2026`, the shape this
+ * whole module exists for — put a digit right after every year but the last.
  */
 const MONTHS: Readonly<Record<string, number>> = {
   jan: 1,
@@ -104,14 +169,79 @@ const MONTHS: Readonly<Record<string, number>> = {
   dec: 12,
 };
 
-const NUMERIC_DATE = /(\d{2})[./-](\d{2})[./-](\d{4})/g;
+/**
+ * The gap between a day, the month beside it and the year beside that.
+ *
+ * AT MOST ONE PUNCTUATION MARK WITH AT MOST ONE SPACE EITHER SIDE, and never a
+ * newline. Every width in the table above fits: none (`30june`), one space
+ * (`30 June`), one mark (`30-Jun`, `30.Jun`), or a space and a mark (`31 -Mar`,
+ * `30th .June`).
+ *
+ * BOUNDED RATHER THAN `\s*`, because an unbounded gap is a wrong date and not
+ * merely a missed one. One sweep cell prints `-27/` and then 120 spaces and then
+ * `August 05, 2026`; with `\s*` and a two-digit year that reads as 27 August
+ * 2005. No date inside a markdown table cell in the whole sweep has a gap wider
+ * than one space — measured, zero cells — so nothing real is given up. The
+ * `/` a slashed numeric date uses is deliberately absent: `30/Jun/2026` is a
+ * spelling this corpus never prints (zero cells) and dropping it removes the
+ * separator that made that 120-space run reachable.
+ */
+const DATE_GAP = String.raw`[ \t]?[.\-]?[ \t]?`;
+
+/**
+ * The all-numeric spelling. One or two digits of day and of month, and a
+ * four-digit year.
+ *
+ * UNANCHORED on purpose — see the module comment — which is why the day and
+ * month were pinned at two digits until now. Widening them to one reads
+ * `31.3.2026` (2 cells, 1 filing) and `1-4-2026`; the four-digit year is what
+ * keeps the widening safe, since it is the only thing separating a date from the
+ * `9.32.99` and `4.8.55` an OCR pass makes of a damaged value.
+ *
+ * THE YEAR IS NOT ALLOWED TO BE TWO DIGITS HERE, and that is measured rather
+ * than cautious: `DD.MM.YY` names ZERO columns in 137 documents, and the same
+ * corpus writes phone numbers (`+91-22-25`), circular and CIN references
+ * (`/26-27/47`, `/49/14/14`) and damaged values (`9.32.99`, `4-1.65`) in exactly
+ * that shape. A month NAME is what makes a two-digit year readable; without one
+ * there is nothing to tell a date from a fragment.
+ */
+const NUMERIC_DATE = /(\d{1,2})[./-](\d{1,2})[./-](\d{4})/g;
+
 const MONTH_NAMES = Object.keys(MONTHS).join('|');
+
+/**
+ * Day first, then the month name: `30 June 2026`, `30-Jun-26`, `30june 2026`.
+ *
+ * The day may NOT be preceded by a digit, so `111 August 2026` (106730901) is
+ * refused rather than read as the 11th — with the separators optional, a day
+ * taken from the tail of a longer number is a column the document never stated.
+ * The year may not be followed by one, for the same reason in the other
+ * direction; a named date never runs together with the next, so unlike the
+ * numeric branch this one can afford the guard.
+ */
 const NAMED_DATE_DMY = new RegExp(
-  String.raw`(\d{1,2})(?:st|nd|rd|th)?\s+(${MONTH_NAMES})[a-z]*\.?,?\s+(\d{4})`,
+  String.raw`(?<!\d)(\d{1,2})[ \t]?(?:st|nd|rd|th)?${DATE_GAP}(${MONTH_NAMES})` +
+    String.raw`[a-z]*\.?,?${DATE_GAP}(\d{4}|\d{2})(?!\d)`,
   'gi',
 );
+
+/**
+ * Month name first: `June 30, 2026`, `June 30,2026`, `June30, 2025`.
+ *
+ * THE SEPARATOR BEFORE THE YEAR IS THE ONE THING THAT STAYS MANDATORY, and it
+ * is what lets the one before the day become optional. `May 2026` and
+ * `March 2026` are header cells in this corpus (11 of them); with both gaps
+ * optional they would read as the 20th of May and the 20th of March, which is a
+ * period end invented out of a year. Requiring a comma, a dot or a space
+ * between the day and the year refuses both and still reads every spelling the
+ * sweep prints.
+ *
+ * The year stays four digits: no `June 30, 26` appears in the sweep, and adding
+ * it would put this branch back in reach of `May 2026`.
+ */
 const NAMED_DATE_MDY = new RegExp(
-  String.raw`(${MONTH_NAMES})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})`,
+  String.raw`(${MONTH_NAMES})[a-z]*\.?[ \t]?(\d{1,2})(?:st|nd|rd|th)?` +
+    String.raw`(?:[ \t]?[,.][ \t]?|[ \t])(\d{4})`,
   'gi',
 );
 
@@ -169,6 +299,14 @@ export const isNegativeValue = (raw: string): boolean => {
   return trimmed.startsWith('(') || trimmed.startsWith('-');
 };
 
+/** The century a column date is allowed to sit in. See the module comment. */
+const CENTURY_FIRST_YEAR = 2000;
+const CENTURY_LAST_YEAR = CENTURY_FIRST_YEAR + 99;
+
+/** `2026` as written, `26` resolved into this century. */
+const yearFrom = (written: string): number =>
+  written.length === 2 ? CENTURY_FIRST_YEAR + Number(written) : Number(written);
+
 const pushDate = (
   into: Map<number, ColumnDate>,
   index: number,
@@ -178,6 +316,7 @@ const pushDate = (
   year: number,
 ): void => {
   if (day < 1 || day > 31 || month < 1 || month > 12) return;
+  if (year < CENTURY_FIRST_YEAR || year > CENTURY_LAST_YEAR) return;
   into.set(index, { raw, day, month, year });
 };
 
@@ -200,7 +339,7 @@ export function columnDatesIn(header: string): readonly ColumnDate[] {
       match[0],
       Number(match[1]),
       Number(match[2]),
-      Number(match[3]),
+      yearFrom(match[3]),
     );
   }
   for (const match of header.matchAll(NAMED_DATE_DMY)) {
@@ -210,7 +349,7 @@ export function columnDatesIn(header: string): readonly ColumnDate[] {
       match[0],
       Number(match[1]),
       MONTHS[match[2].slice(0, 3).toLowerCase()],
-      Number(match[3]),
+      yearFrom(match[3]),
     );
   }
   for (const match of header.matchAll(NAMED_DATE_MDY)) {
@@ -220,7 +359,7 @@ export function columnDatesIn(header: string): readonly ColumnDate[] {
       match[0],
       Number(match[2]),
       MONTHS[match[1].slice(0, 3).toLowerCase()],
-      Number(match[3]),
+      yearFrom(match[3]),
     );
   }
 

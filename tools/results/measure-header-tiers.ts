@@ -19,7 +19,11 @@
  *   2. **A date spelling `columnDatesIn` does not read.** `31.3.2026` (one-digit
  *      month) and `30June 2026` (no space) are dates a human reads and the
  *      regexes do not, so a four-column header parses as two. No column model
- *      can fix that; the fix is in `results-tokens.ts`.
+ *      can fix that; the fix is in `results-tokens.ts`. THIS IS WHAT THE SWEEP
+ *      FOUND — 56 tables in 23 filings — and `results-tokens.ts` was widened
+ *      onto those spellings: re-run over the same 137 dumped conversions,
+ *      `dates-unreadable` falls to 7 tables in 4 filings, all of them presentation
+ *      tables naming a month with no day.
  *   3. **Two statement rows Docling merged onto one markdown line.** The row
  *      states 2x the values and no header can match it. Not fixable from the
  *      header end at all.
@@ -116,11 +120,15 @@ function dataArity(rows: readonly string[]): number {
 /**
  * A cell naming a period end that `columnDatesIn` cannot read.
  *
- * WIDER THAN THE PARSER ON PURPOSE. `results-tokens.ts` accepts
- * `30.06.2026`, `30/06/2026`, `30-06-2026`, `June 30, 2026` and `30 June 2026`
- * and nothing else; this matches everything a human reads as a date so the
- * difference between the two is countable. Every hit is a column the document
- * names and the gate cannot.
+ * WIDER THAN THE PARSER ON PURPOSE: this matches everything a human reads as a
+ * date, so the difference between the two is countable. Every hit is a column
+ * the document names and the gate cannot.
+ *
+ * It was wider by a lot when this was written — `results-tokens.ts` then read
+ * five spellings and this found ten more. What it still finds after that
+ * widening is the set that module refuses on purpose: a month with no day
+ * (`March 2026`, `Jun-26`), a day with its year in another row, a mashed digit
+ * run and a year with a letter in it.
  */
 const MONTH_NAMES =
   'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|june|july|sept';

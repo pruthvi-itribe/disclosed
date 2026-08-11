@@ -223,17 +223,19 @@ describe('a stacked column header, in real Docling output', () => {
     });
   });
 
-  describe('LINDEINDIA 106737549 — refused, and not for a tier', () => {
+  describe('LINDEINDIA 106737549 — refused for a spelling, not for a tier', () => {
     /**
-     * The filing this work started from. Its consolidated statement prints ONE
-     * header row with four date cells and `columnDatesIn` reads two of them:
-     * Docling emits `30june 2026` and `30June 2025` with no space between the
-     * day and the month name, and `NAMED_DATE_DMY` requires one. Four-value rows
+     * The filing this work started from, and the one that shows what the tier
+     * diagnosis missed. Its consolidated statement prints ONE header row with
+     * four date cells, and `columnDatesIn` used to read two of them: Docling
+     * emits `30june 2026` and `30June 2025` with no space between the day and
+     * the month name, and the day-first pattern required one. Four-value rows
      * against a two-date header is `columns-not-aligned`, and merging the tier
-     * above it changes nothing, because that tier states no date either.
+     * above changes nothing, because that tier states no date either.
      *
-     * The fix is a date spelling in `results-tokens.ts` and it is a different
-     * change. Pinned here so the next reader does not re-diagnose it as a tier.
+     * The fix was a date spelling in `results-tokens.ts`, where the same sweep
+     * found 56 unreadable header tables across 23 filings. This block is what it
+     * bought: the same bytes, the same proposal, and every figure placed.
      */
     const tier = rowContaining(LINDEINDIA.text, '(Rs. Million)');
     const header = rowContaining(LINDEINDIA.text, '| Particulars ');
@@ -247,21 +249,32 @@ describe('a stacked column header, in real Docling output', () => {
           prior: '5,754.18',
           span: rowContaining(LINDEINDIA.text, '3. Total income {1+2)'),
         },
+        {
+          metric: 'net-profit',
+          current: '1,045.94',
+          prior: '1,071.90',
+          span: rowContaining(LINDEINDIA.text, '9. Profit for the year/period'),
+        },
       ],
     };
 
-    it('names four columns and the parser reads two of them', () => {
+    it('names four columns and the parser reads all four', () => {
       // Both spellings exactly as Docling emitted them: no space between the
       // day and the month name, and the case of the `j` differs between the two.
       expect(header).toContain('30june 2026');
       expect(header).toContain('30June 2025');
       expect(columnDatesIn(header).map((date) => date.raw)).toEqual([
+        '30june 2026',
         '31 March 2026',
+        '30June 2025',
         '31 March 2026',
       ]);
     });
 
-    it('gains no column from the tier above it', () => {
+    it('gains nothing but the scale from the tier above it', () => {
+      // The tier was never the problem and still is not: it states the
+      // denomination and no date, so the merge that was proposed for it would
+      // have added no column here.
       const from = LINDEINDIA.text.indexOf(tier);
       const stacked = LINDEINDIA.text.slice(
         from,
@@ -269,28 +282,72 @@ describe('a stacked column header, in real Docling output', () => {
       );
 
       expect(stacked).toContain('(Rs. Million)');
-      expect(columnDatesIn(stacked).map((date) => date.raw)).toEqual([
-        '31 March 2026',
-        '31 March 2026',
+      expect(columnDatesIn(tier)).toHaveLength(0);
+      expect(columnDatesIn(stacked)).toHaveLength(4);
+    });
+
+    it('places every figure under the period column it was printed in', () => {
+      const verdict = verify(LINDEINDIA.text, proposed);
+
+      expect(verdict.outcome).toBe('ok');
+      if (verdict.outcome !== 'ok') return;
+      expect(verdict.discards).toEqual([]);
+      expect(verdict.results.period).toBe('Q1 FY27');
+      expect(verdict.results.priorPeriod).toBe('Q1 FY26');
+      expect(
+        verdict.results.figures.map((figure) => [
+          figure.metric,
+          figure.current,
+          figure.prior,
+          figure.unit,
+        ]),
+      ).toEqual([
+        ['net-profit', '1,045.94', '1,071.90', 'MN'],
+        ['total-income', '7,001.91', '5,754.18', 'MN'],
       ]);
     });
 
-    it('refuses every figure, and says four values against two columns', () => {
+    it('reads the year-ago column and not the previous quarter', () => {
+      // What the column order is worth on this filing. Profit FELL year on
+      // year, 1,045.94 against 1,071.90; read one column left it is 774.46 and
+      // the same verbatim row says profit rose by a third. Both numbers are in
+      // the document and only the header's third date tells them apart.
       const verdict = verify(LINDEINDIA.text, proposed);
+
+      expect(verdict.outcome).toBe('ok');
+      if (verdict.outcome !== 'ok') return;
+      const profit = verdict.results.figures.find(
+        (figure) => figure.metric === 'net-profit',
+      );
+      expect(profit?.prior).toBe('1,071.90');
+      expect(profit?.prior).not.toBe('774.46');
+    });
+
+    it('still refuses a row whose value count the header cannot match', () => {
+      // The widening did not weaken the alignment rule it unblocked. Docling
+      // merged rows 1 and 2 of this same statement onto one markdown line, so
+      // that line states eight values against four columns — and it is
+      // discarded on the same sentence the whole table used to be discarded on.
+      const verdict = verify(LINDEINDIA.text, {
+        ...proposed,
+        figures: [
+          {
+            metric: 'revenue',
+            current: '6,943.63',
+            prior: '5,710.80',
+            span: rowContaining(LINDEINDIA.text, '1. Revenue from operations'),
+          },
+        ],
+      });
 
       expect(verdict.outcome).toBe('refused');
       if (verdict.outcome !== 'refused') return;
-      expect(verdict.reason).toBe('all-discarded');
-      expect(verdict.discards).toEqual([
-        {
-          reason: 'columns-not-aligned',
-          metric: 'total-income',
-          figure: expect.stringContaining('3. Total income {1+2)'),
-          detail:
-            "the row states 4 value(s) against the header's 2 column(s), so " +
-            'no value can be placed in a column',
-        },
-      ]);
+      expect(verdict.discards[0]).toMatchObject({
+        reason: 'columns-not-aligned',
+        detail:
+          "the row states 8 value(s) against the header's 4 column(s), so " +
+          'no value can be placed in a column',
+      });
     });
   });
 });
