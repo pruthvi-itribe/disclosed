@@ -12,5 +12,21 @@ services:
   redis:
     image: redis:7-alpine
     ports: ['127.0.0.1:6479:6379']
+  # The layout-aware PDF reader behind DOCLING_URL. IN COMPOSE ON PURPOSE: it
+  # previously ran as a hand-started process with its URL in a shell export,
+  # and a Sat 03:32 restart of ingest (which read .env, where the URL was
+  # empty) silently dropped every filing to the fallback parser for three days
+  # — docs/measurements/2026-08-11-processing-audit.md, finding 2. A service
+  # the pipeline quietly degrades without has to outlive any one shell.
+  # Loopback-bound like mongo: it has no auth and needs none from the LAN.
+  docling:
+    image: quay.io/docling-project/docling-serve:v1.30.0
+    ports: ['127.0.0.1:5001:5001']
+    environment:
+      # Seconds, and it must cover DOCLING_TIMEOUT_MS (300000): the server's
+      # own default is 120 s and it answers 504 past that WHILE STILL FINISHING
+      # THE WORK — a live run lost a 15-page scan that took 131 s exactly this
+      # way (docs/deploy-digitalocean.md §7).
+      DOCLING_SERVE_MAX_SYNC_WAIT: '300'
 volumes:
   turret-mongo:
