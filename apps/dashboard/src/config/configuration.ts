@@ -80,6 +80,14 @@ export interface DashboardConfig {
    * BUILT — see `readAdminEnabled` for the rule and why it is two signals.
    */
   readonly adminEnabled: boolean;
+  /**
+   * What this process's `X-Forwarded-*` headers are worth, handed to express's
+   * `trust proxy` verbatim. `false` — express's own default — means they are
+   * not read at all.
+   *
+   * See `readTrustProxy` for the two forms and for why `true` is refused.
+   */
+  readonly trustProxy: boolean | number | string;
 }
 
 /**
@@ -304,6 +312,82 @@ export const readAdminEnabled = (
   return env.NODE_ENV !== 'production' && isLoopbackOrigin(publicOrigin);
 };
 
+/**
+ * Reads what the `X-Forwarded-*` headers are worth, or stops the process.
+ *
+ * ================================================================
+ * OFF UNLESS SET, AND OFF IS EXPRESS'S OWN DEFAULT
+ * ================================================================
+ *
+ * With `TRUST_PROXY` absent this returns `false`, which is the value express
+ * already holds, so the shipped loopback deployment reads no forwarded header
+ * at all. That is the correct posture there rather than a limitation: nothing
+ * stands between the browser and this process, so `X-Forwarded-Proto: https` is
+ * not a fact a proxy established but a sentence whoever connected chose to
+ * write.
+ *
+ * ================================================================
+ * THE VALUE IS THE SPECIFICATION, NOT A FLAG
+ * ================================================================
+ *
+ * How many proxies sit in front of this process is a property of the
+ * deployment, so the deployment states it. Two forms, both express's:
+ *
+ *   TRUST_PROXY=2                 hop count, counted back from this process
+ *   TRUST_PROXY=10.0.0.0/8,::1    comma-separated addresses, subnets, presets
+ *
+ * A digit string is CONVERTED rather than passed through, because express parses
+ * a string as a list of ADDRESSES: `TRUST_PROXY=2` handed over verbatim throws
+ * `invalid IP address: 2` from inside `app.set`, which is loud but names
+ * neither the variable nor the form. The address form is left to express to
+ * parse — it owns the syntax, and it throws at boot on junk.
+ *
+ * ================================================================
+ * `true` IS REFUSED, AND IT IS THE ONLY VALUE THIS REJECTS
+ * ================================================================
+ *
+ * `trust proxy: true` tells express every hop is trustworthy, and express then
+ * walks `X-Forwarded-For` all the way to its LEFTMOST entry — the one furthest
+ * from this process and the one the client wrote. The forwarded headers become
+ * a request the caller makes rather than a fact the chain established: a rate
+ * limiter keyed on an address the attacker picks, and a `Secure` decision made
+ * by whoever asked. A precise specification instead stops the walk at the first
+ * hop it does not recognise, which is what makes the resolved address
+ * unforgeable. Refused here rather than documented, because it is one word and
+ * it silently undoes the reason this setting exists.
+ */
+export const readTrustProxy = (
+  env: NodeJS.ProcessEnv,
+): boolean | number | string => {
+  const raw = env.TRUST_PROXY;
+
+  // `TRUST_PROXY=` is how a .env file spells "not set", and unset is off.
+  if (raw === undefined || raw.trim() === '') return false;
+
+  const value = raw.trim();
+
+  // Explicitly off, so a host can say so out loud rather than by omission.
+  if (value.toLowerCase() === 'false') return false;
+
+  if (value.toLowerCase() === 'true') {
+    throw new Error(
+      'TRUST_PROXY must not be "true". It trusts every hop, so the address ' +
+        'this process resolves is the leftmost X-Forwarded-For entry — which ' +
+        'the client writes, making the rate-limit identity and the Secure ' +
+        "cookie decision the caller's to choose. Give the number of proxies " +
+        'in front of this process (TRUST_PROXY=2), or the addresses they ' +
+        'connect from.',
+    );
+  }
+
+  // A hop count. `Number` rather than `parseInt` for the same reason `readPort`
+  // uses it, and the pattern has already excluded everything `Number` would
+  // misread — no sign, no decimal point, no trailing junk.
+  if (/^\d+$/.test(value)) return Number(value);
+
+  return value;
+};
+
 /** Whether an origin names this machine. Unparseable is not loopback. */
 const isLoopbackOrigin = (origin: string): boolean => {
   try {
@@ -335,6 +419,7 @@ export const loadDashboardConfig = (
     publicOrigin,
     auth: loadAuthConfig(env),
     adminEnabled: readAdminEnabled(env, publicOrigin),
+    trustProxy: readTrustProxy(env),
   };
 };
 
@@ -367,6 +452,13 @@ export const describeDashboardConfig = (config: DashboardConfig): string =>
     // the outside: an operator who cannot find the Admin tab reads this line
     // and learns whether it was refused or never made.
     `admin=${config.adminEnabled ? 'on' : 'off'}`,
+    // WHAT THE FORWARDED HEADERS ARE WORTH ON THIS HOST. Printed because the
+    // two things that key off it — which address the rate limiter counts, and
+    // whether the session cookie carries `Secure` — are both invisible until
+    // somebody is already locked out or already signed out. `proxy=off` beside
+    // an `origin=https://...` line is the shape of a misconfigured deployment,
+    // and this is where it shows.
+    `proxy=${config.trustProxy === false ? 'off' : String(config.trustProxy)}`,
     // WHICH WAY IN IS OPEN, and whether it actually works. A host running
     // `AUTH_MODE=firebase` with no project keys serves a sign-in page nobody
     // can sign in through, and this line is where an operator looks first.

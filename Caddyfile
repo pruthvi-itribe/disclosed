@@ -22,12 +22,23 @@ disclosed.live {
 	# ONE UPSTREAM, INSIDE THIS CONTAINER'S OWN NETWORK NAMESPACE.
 	#
 	# X-Forwarded-Proto is set by reverse_proxy itself and needs no directive
-	# here (`caddy validate` says so out loud if one is added). It is NOT READ
-	# at the other end today: the dashboard never calls
-	# `app.set('trust proxy', ...)`, so express reports `req.secure` false and
-	# the session cookie ships without `Secure`. The header arriving correctly
-	# is half of that fix already being in place. See
-	# docs/deploy-digitalocean.md, "What a real deploy still needs".
+	# here (`caddy validate` says so out loud if one is added), and here it is
+	# CORRECT WITHOUT ONE: on the droplet this Caddy is the public edge and
+	# terminates TLS, so the scheme it writes is the scheme the browser used.
+	#
+	# It is read at the other end only if this deployment sets `TRUST_PROXY`,
+	# which the dashboard now honours — `TRUST_PROXY=1` is the value for this
+	# arrangement, one hop, because this process is the only thing in front of
+	# the app. Left unset the cookie still ships without `Secure`, which is the
+	# same posture as before and is why this is a deployment decision rather
+	# than a default. NOTE that the app's rate-limit key then resolves to
+	# whatever connects to Caddy: behind Cloudflare that is a Cloudflare edge
+	# address, not the reader. `apps/dashboard/src/auth/client-key.ts` explains
+	# what reaches the reader instead.
+	#
+	# The k8s arrangement is NOT the same and needs a directive this does not:
+	# there Caddy is an in-pod proxy that did not terminate TLS, so it must be
+	# told to keep the scheme ingress-nginx wrote. See k8s/30-dashboard.yaml.
 	reverse_proxy 127.0.0.1:7717
 
 	encode zstd gzip

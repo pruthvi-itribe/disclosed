@@ -466,16 +466,39 @@ On a developer machine, no cluster involved:
    own. Check `curl -sSI https://disclosed.live` after the first deploy. If
    nginx's wins, changing it is a cluster-wide ConfigMap setting **shared with
    tralkserver**, which is a decision and not a fix.
-3. **`trust proxy` is still never set** — the open item from
-   `deploy-digitalocean.md`, unchanged and now with one more hop. The rate
-   limiter (10/min, 60/hour on auth) keys every request to the proxy's address,
-   which behind ingress-nginx *and* the sidecar means one person fumbling a
-   password rate-limits everyone. The session cookie still ships without
-   `Secure`. This is not made worse by Kubernetes and is not fixed by it.
-4. **No log aggregation and no uptime check.** Pod logs are lost with the pod.
+3. **`TRUST_PROXY=2` is set here and has never run against the cluster.** The
+   former open item — `trust proxy` never set, so no `Secure` on the cookie and
+   a rate limiter keyed to the proxy — is closed in code and proved by tests
+   (`apps/dashboard/src/auth/trust-proxy.e2e.spec.ts`), but every number in it
+   is derived from configuration read off disk rather than from a request that
+   actually made the trip. Three things to check with `kubectl exec` and one
+   `curl` after the first deploy:
+   - **The forwarded chain the app receives.** `TRUST_PROXY=2` assumes
+     ingress-nginx and the Caddy sidecar are the only hops that write
+     `X-Forwarded-For`. If a third appears, the count is wrong in the direction
+     that matters — see the manifest comment.
+   - **That the sidecar kept nginx's scheme.** Without
+     `trusted_proxies private_ranges` Caddy overwrites `X-Forwarded-Proto` with
+     `http` and the cookie ships without `Secure` while everything looks fine.
+     `curl -sSI https://disclosed.live` on a signed-in request is the check.
+   - **That `CF-Connecting-IP` arrives.** It is the production rate-limit key,
+     because ingress-nginx replaces `X-Forwarded-For` with the load balancer's
+     address at its default `use-forwarded-headers: false`.
+
+4. **The load balancer's public address bypasses Cloudflare, and nothing here
+   stops it.** A caller who reaches it directly traverses the same trusted hops
+   and can therefore send any `CF-Connecting-IP`, choosing its own rate-limit
+   bucket. There is no signal left at the app to distinguish that request:
+   nginx discarded the forwarded chain, so the Cloudflare edge address never
+   arrives either. The fix is a DigitalOcean firewall restricting the LB to
+   Cloudflare's published ranges — a change in `tralk-infra`, shared with
+   tralkserver, and a decision rather than a commit inside this task. What the
+   gap costs is evasion of a per-IP bucket, not entry: the per-account backoff
+   is persisted and reads no address at all.
+5. **No log aggregation and no uptime check.** Pod logs are lost with the pod.
    `/api/health` is outside the session guard precisely so a monitor can use it
    without a credential — point something at it.
-5. **The images have never been built for `linux/amd64`.** The droplet doc
+6. **The images have never been built for `linux/amd64`.** The droplet doc
    verified them on `linux/arm64`. The workflow builds amd64, which is right
    for the node pool, and that build has not run.
 

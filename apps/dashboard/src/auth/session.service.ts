@@ -170,9 +170,15 @@ export class SessionService {
  *
  * Reads `X-Forwarded-Proto` only through express's own `req.secure`, which
  * honours it only when `trust proxy` is set — so a client cannot claim https by
- * sending the header at a server that is not behind a proxy. On day one nothing
- * is, so this is false and the cookie is set without `Secure`: a `Secure`
- * cookie over plain loopback http is dropped silently, and the login then
- * appears to succeed and immediately forgets you.
+ * sending the header at a server that is not behind a proxy.
+ *
+ * WHICH IS STILL THE DEFAULT. `TRUST_PROXY` is unset unless a deployment sets
+ * it (`config/configuration.ts`), and on the loopback deployment it is unset:
+ * this is then false and the cookie ships without `Secure`, which is correct
+ * rather than a shortfall — a `Secure` cookie over plain http is dropped by the
+ * browser without a word, and the login presents as succeeding and immediately
+ * forgetting you. Behind the production chain `TRUST_PROXY=2` makes this true,
+ * and the argument for why the header cannot be forged into either answer is in
+ * `main.ts` beside where the setting is applied.
  */
 const isSecure = (request: Request): boolean => request.secure === true;
