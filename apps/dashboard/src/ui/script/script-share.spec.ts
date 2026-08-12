@@ -270,6 +270,31 @@ describe('the share fragments carry no copy that can drift silently', () => {
     expect(PAGE_STYLE).toContain(`--text: ${cutString('SHARE_INK')};`);
     expect(PAGE_STYLE).toContain(`--muted: ${cutString('SHARE_MUTED')};`);
     expect(PAGE_STYLE).toContain(`--accent: ${cutString('SHARE_ACCENT')};`);
+    // The figure colour is the palette's white, the one the mark's D is drawn
+    // in — a sixth name rather than a sixth colour.
+    expect(PAGE_STYLE).toContain(`--brand-ink: ${cutString('SHARE_WHITE')};`);
+  });
+
+  it('signs the picture with the sentence the message signs itself with', () => {
+    // A picture and a message of the same filing that described the pipeline
+    // differently would be two products. One sentence, two surfaces — and it
+    // names the model as the extractor and the filing as the thing each line
+    // was verified against.
+    expect(cutString('SHARE_FOOTER')).toBe(cutString('SHARE_TAIL'));
+    expect(cutString('SHARE_FOOTER')).toBe(
+      "AI-extracted. Every line verified against the company's filing.",
+    );
+  });
+
+  it('draws the timestamp the server spelled for a person to read', () => {
+    // Both strings arrive on the payload and neither is composed here. The
+    // picture takes the human one for the same reason the message does, and
+    // the fixed-width sibling stays on the card's tooltip.
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      "f.category + ' · ' + f.disseminatedAtIstHuman + ' IST'",
+    );
+    expect(SCRIPT_SHARE_IMAGE).not.toContain('toLocale');
+    expect(SCRIPT_SHARE_IMAGE).not.toContain('new Date(');
   });
 
   it('takes the mark from the document rather than redrawing it', () => {

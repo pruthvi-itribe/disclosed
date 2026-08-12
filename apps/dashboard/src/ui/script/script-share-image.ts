@@ -20,13 +20,16 @@ export const SCRIPT_SHARE_IMAGE = `
   // it is missing most of the document. This draws the filing instead — at a
   // size that reads at arm's length, with every part of it labelled.
   //
-  // SELF-CONTAINED, LIKE EVERYTHING ELSE ON THIS PAGE. No web font, no image
-  // request, no library. The type is the system stack the stylesheet already
-  // uses, and the mark is the favicon this document is already carrying.
+  // NO EXTERNAL HOST, AND ONE SAME-ORIGIN REQUEST. No web font, no library, no
+  // CDN: the type is the system stack the stylesheet already uses. The one
+  // thing this fetches is the brand mark, from this application's own guarded
+  // route ('/brand/logo.png'), because the founder's logo is a raster and the
+  // page's inline SVG is a redrawing of it — see the loader below for what
+  // happens when the request does not arrive.
   //
   // NOTHING IS COMPUTED INTO THE PICTURE. The claims are drawn as stored, the
-  // date is the server's IST string, and the only strings here that are ours
-  // are the two labels and the footer. A canvas cannot execute what it is
+  // date is the server's own IST string, and the only strings here that are
+  // ours are the two labels and the footer. A canvas cannot execute what it is
   // handed — 'fillText' is not a parser — but that is not why this is safe;
   // it is safe because it adds nothing.
 
@@ -40,6 +43,24 @@ export const SCRIPT_SHARE_IMAGE = `
   var SHARE_INK = '#e6edf3';
   var SHARE_MUTED = '#8b949e';
   var SHARE_ACCENT = '#a78bfa';
+  // The palette's own white — '--brand-ink', the colour the mark's D is drawn
+  // in. It is the FIGURE colour, and the reason it is a sixth name rather than
+  // a reuse of SHARE_INK is below, at SHARE_FIGURES.
+  var SHARE_WHITE = '#ffffff';
+
+  // WHAT IS BRIGHT AND WHAT IS NOT, decided once here rather than at each call.
+  //
+  // The picture had one text colour for almost everything, which is legible and
+  // says nothing: a reader scanning a card in a chat window has no idea which
+  // line is the filing and which is our chrome. Three tiers, and no more than
+  // three, because a fourth stops being a hierarchy and starts being a palette:
+  //
+  //   SHARE_WHITE   the figures inside a claim, and inside the results line
+  //   SHARE_INK     the claims themselves, and the company name
+  //   SHARE_MUTED   the category, the timestamp, the remainder, the footer
+  //
+  // The ticker keeps SHARE_ACCENT, which it already had, and the bullets take
+  // it too: one accent, on the two things that are not sentences.
 
   // The two stacks from ':root', minus one name. The stylesheet's sans begins
   // system-ui and includes "Segoe UI" behind it; a canvas font is CSS shorthand
@@ -54,6 +75,19 @@ export const SCRIPT_SHARE_IMAGE = `
   // fill a frame it did not need.
   var SHARE_W = 1080;
   var SHARE_PAD = 64;
+
+  // THE BULLET, AND WHY THE CLAIM IS INDENTED PAST IT. A wrapped claim used to
+  // begin under its own dash, so the second line of a two-line claim read as a
+  // third claim that had lost its mark. Every line of a claim now starts at
+  // SHARE_PAD + SHARE_HANG, and the disc sits in the space that leaves — a
+  // hanging indent, which is what a list has looked like since before paper.
+  //
+  // A DRAWN DISC RATHER THAN A BULLET GLYPH. The character is a font's opinion:
+  // it lands at a different size and a different height in each of the six
+  // families the sans stack falls through, and on a canvas there is no line box
+  // to align it against. An arc is 6 pixels wherever it renders.
+  var SHARE_HANG = 30;
+  var SHARE_DISC = 6;
 
   // HOW MANY CLAIMS THE PICTURE HOLDS BEFORE IT SAYS SO.
   //
@@ -79,20 +113,68 @@ export const SCRIPT_SHARE_IMAGE = `
   var SHARE_CLAIM_CAP = 8;
 
   var SHARE_IMAGE_LABEL = 'Copy as image';
-  var SHARE_FOOTER = 'Every line verified against the source document.';
 
-  // THE MARK, TAKEN FROM THE DOCUMENT RATHER THAN REDRAWN. 'logo.ts' already
-  // holds the geometry once and this page is already carrying it: the favicon
-  // is an inlined 'data:' SVG in the head, which is not a request and, unlike
-  // the inline wordmark's SVG, is written in hex rather than in custom
-  // properties — precisely because it has to survive being rendered outside a
-  // document. That is this canvas's situation exactly. Re-plotting the D's arcs
-  // in canvas calls would be a second copy of a drawing, and the two would
-  // differ the first time either changed.
+  // THE SAME SENTENCE THE MESSAGE SIGNS ITSELF WITH — 'script-share.ts' holds
+  // it as SHARE_TAIL and 'script-share.spec.ts' asserts the two are one string.
+  // A picture and a message of the same filing that described the pipeline
+  // differently would be two products. Double-quoted for the apostrophe.
+  var SHARE_FOOTER = "AI-extracted. Every line verified against the company's filing.";
+
+  // The mark's own route: same origin, and behind the session guard like every
+  // other read on this application.
+  var SHARE_LOGO_URL = '/brand/logo.png';
+
+  // WHERE THE TILE SITS INSIDE THE ARTWORK, measured by decoding
+  // 'logo/disclosed-logo.png' rather than by eye: on a 1,254px square the
+  // rounded tile's box is x 18..1235 and y 16..1235 — a margin of ~1.4% — and
+  // its corner radius is 222 of the tile's 1,218px side, which is 18.2%.
   //
-  // DECODED AT LOAD, not at the click. A picture that has to wait for an image
-  // before it can be written loses the user gesture Safari requires for a
-  // clipboard write, and this one has no network to wait for.
+  // THE MARGIN IS NOT TRANSPARENT, and this is the whole reason these two
+  // numbers exist. The file has no alpha channel and that ground is #fafafa, so
+  // drawn as it is on this card's #0d1117 it is a white square with a violet
+  // tile inside it and four white corners. The tile is therefore CLIPPED to its
+  // own rounded rectangle. Nothing is recoloured and no artwork is lost: what
+  // the clip excludes is the white the file was exported with.
+  //
+  // THE INSET IS 0.022 RATHER THAN THE MEASURED 0.014, which is the one number
+  // here that is not the file's own. Clipping exactly at the boundary leaves the
+  // antialiased edge pixel a blend of the card and the WHITE behind it: probed
+  // off a rendered card, the column into the tile read 13,17,23 then 108,112,137
+  // then 50,62,191. Half a percent further in and the blend is between the card
+  // and the violet, which is what an edge is supposed to look like.
+  var SHARE_TILE_INSET = 0.022;
+  var SHARE_TILE_RADIUS = 0.182;
+
+  // ================================================================
+  // TWO MARKS, AND WHICH ONE THE PICTURE GETS
+  // ================================================================
+  //
+  // THE REAL ONE IS A RASTER AND IT IS NOT IN THIS DOCUMENT. The founder's logo
+  // is 'logo/disclosed-logo.png', a 1,254px square lockup; the SVG the page
+  // draws is a REDRAWING of it, measured off that file and stated as such in
+  // 'logo.ts'. The redrawing is right for a 24px header — vector, 0.9 KB, exact
+  // at any size — and it is the wrong thing on a picture that leaves this
+  // product, where the mark is the only part a stranger recognises. So the card
+  // asks the server for the artwork itself, downscaled once to 256px.
+  //
+  // A SAME-ORIGIN REQUEST IS NOT AN EXTERNAL ONE. The invariant this page keeps
+  // is that it reaches no host but its own — no CDN, no font, no analytics —
+  // and '/brand/logo.png' is this application, behind the same session guard as
+  // every read route. The document itself is unchanged: no new link element, no
+  // absolute URL, nothing added to the head.
+  //
+  // BOTH ARE FETCHED AT LOAD, NOT AT THE CLICK. A picture that has to wait for
+  // an image before it can be written loses the user gesture Safari requires
+  // for a clipboard write. An Image element rather than fetch-then-blob for the
+  // same reason and one more: it is four lines, it carries the session cookie
+  // by itself, and there is no object URL to remember to revoke.
+  //
+  // AND THE FAVICON IS KEPT AS THE FALLBACK. If the raster has not arrived —
+  // a slow first paint, a 401 on a session that expired between load and click
+  // — the card draws the mark this document is already carrying rather than a
+  // hole where a logo goes. The two mastheads are not the same picture and are
+  // not pretending to be: the raster is the full lockup and carries the name
+  // inside it, so the fallback draws the wordmark beside the tile instead.
   var shareMark = null;
   var shareMarkReady = false;
   (function () {
@@ -102,6 +184,16 @@ export const SCRIPT_SHARE_IMAGE = `
     img.onload = function () { shareMarkReady = true; };
     shareMark = img;
     img.src = link.href;
+  })();
+
+  var shareLogo = null;
+  (function () {
+    var img = new Image();
+    // Assigned only once it has decoded, so 'shareLogo !== null' is the whole
+    // of the readiness test at paint time and there is no second flag to keep
+    // in step. A failed request leaves it null and the favicon draws.
+    img.onload = function () { shareLogo = img; };
+    img.src = SHARE_LOGO_URL;
   })();
 
   /** One string broken to fit a column, by measuring it. Words are never split. */
@@ -123,6 +215,172 @@ export const SCRIPT_SHARE_IMAGE = `
     return lines;
   }
 
+  // ================================================================
+  // THE FIGURES INSIDE A CLAIM
+  // ================================================================
+  //
+  // WHAT THIS IS FOR. A claim is a sentence and the number in it is the reason
+  // anybody opened the message: 'Revenue from operations was 1,204.35 crore'
+  // scans as a paragraph, and the same line with the amount in white scans as a
+  // number with its provenance attached. So each claim is segmented and drawn
+  // in two colours.
+  //
+  // WHAT IT MATCHES, in this order: a day-month-year date, a month-year or
+  // month-day-year, a fiscal label, and a number — with an optional rupee
+  // prefix and an optional unit or percent after it. The date branches come
+  // first because the year in '30 June 2026' would otherwise be a lone
+  // highlighted 2026 with the month left dark between two lit numbers.
+  //
+  // THE CURRENCY LIST AND THE SECOND DATE FORM ARE FROM THE CORPUS, not from
+  // guesswork: 'INR 8,044.51 mn' and 'July 21, 2026' are both spellings this
+  // collection actually prints. Over the 573 claims the feed was holding when
+  // this was swept, 478 (83.4%) carry at least one figure and the pattern lights
+  // 1,101 runs across them — a little under two a claim, which is a highlight
+  // rather than a highlighted sentence.
+  //
+  // IT NEVER MATCHES EMPTY, which is what makes the loop below safe: every
+  // branch requires at least one digit.
+  //
+  // THE BACKSLASHES ARE DOUBLED because this file is a template literal and the
+  // compiler eats single ones — the served page is what has to be right, and
+  // 'page.spec.ts' asserts the pattern in the document rather than here.
+  var SHARE_FIGURES = /\\d{1,2}\\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s\\d{4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s(?:\\d{1,2},\\s)?\\d{4}|(?:Q[1-4]\\s?)?FY\\s?\\d{2,4}|(?:(?:₹|Rs\\.?|INR)\\s?)?\\d[\\d,]*(?:\\.\\d+)?(?:\\s?(?:%|crore|crores|lakh|lakhs|cr|mn|bn|million|billion|bps))?/gi;
+
+  /** One run of a line in one colour, and the x the next run starts at. */
+  function shareRun(ctx, text, x, y, fill) {
+    if (text === '') return x;
+    ctx.fillStyle = fill;
+    ctx.fillText(text, x, y);
+    return x + ctx.measureText(text).width;
+  }
+
+  /**
+   * One line of a block, drawn — in two colours where the block asks for it.
+   *
+   * THE FONT DOES NOT CHANGE BETWEEN RUNS, only the fill. That is a constraint
+   * rather than a preference: the line was wrapped by measuring the whole
+   * string in one font, and a bold figure would be wider than the text that
+   * measurement was made of, so the last word of a long claim would overhang
+   * the column by however much the emphasis added. Colour costs no width.
+   */
+  function shareLine(ctx, block, text, x, y) {
+    if (!block.figures) {
+      shareRun(ctx, text, x, y, block.fill);
+      return;
+    }
+    var at = 0;
+    var cursor = x;
+    var found;
+    SHARE_FIGURES.lastIndex = 0;
+    while ((found = SHARE_FIGURES.exec(text)) !== null) {
+      cursor = shareRun(ctx, text.slice(at, found.index), cursor, y, block.fill);
+      cursor = shareRun(ctx, found[0], cursor, y, SHARE_WHITE);
+      at = found.index + found[0].length;
+    }
+    shareRun(ctx, text.slice(at), cursor, y, block.fill);
+  }
+
+  /**
+   * One measured block: its text wrapped to the column it will be drawn in.
+   *
+   * A SPEC OBJECT RATHER THAN EIGHT POSITIONAL ARGUMENTS. Blocks differ in
+   * seven ways now — font, fill, line height, the gap above them, the indent,
+   * whether they carry a bullet and whether their figures are lit — and
+   * 'block(font, fill, text, 42, 20, 30, true, true)' is a line nobody can read
+   * back.
+   */
+  function shareBlock(ctx, spec) {
+    ctx.font = spec.font;
+    var indent = spec.indent || 0;
+    return {
+      font: spec.font,
+      fill: spec.fill,
+      lineHeight: spec.lineHeight,
+      gap: spec.gap,
+      indent: indent,
+      bullet: spec.bullet === true,
+      figures: spec.figures === true,
+      lines: shareWrap(ctx, spec.text, SHARE_W - SHARE_PAD * 2 - indent)
+    };
+  }
+
+  /** Who filed, and when: the ticker, the company and the line under them. */
+  function shareHeadBlocks(ctx, f) {
+    return [
+      shareBlock(ctx, {
+        font: '600 26px ' + SHARE_SANS,
+        fill: SHARE_ACCENT,
+        text: f.symbol,
+        lineHeight: 34,
+        gap: 40
+      }),
+      shareBlock(ctx, {
+        font: '700 44px ' + SHARE_SANS,
+        fill: SHARE_INK,
+        text: f.companyName,
+        lineHeight: 54,
+        gap: 16
+      }),
+      // THE SERVER'S HUMAN SPELLING OF THE INSTANT — '12 Aug 2026, 8:48 am'.
+      // The fixed-width sibling is a machine's string and reads as one on a
+      // picture; the browser formats neither, because it is not necessarily on
+      // IST. Three letters are appended and no arithmetic is done, which is the
+      // same rule the message and the card's tooltip follow.
+      shareBlock(ctx, {
+        font: '400 24px ' + SHARE_SANS,
+        fill: SHARE_MUTED,
+        text: f.category + ' · ' + f.disseminatedAtIstHuman + ' IST',
+        lineHeight: 32,
+        gap: 16
+      })
+    ];
+  }
+
+  /** What the filing said: the claims, what was left out, and the figures. */
+  function shareBodyBlocks(ctx, claims, resultsLine) {
+    var blocks = [];
+    var shown = claims.length < SHARE_CLAIM_CAP ? claims.length : SHARE_CLAIM_CAP;
+    for (var i = 0; i < shown; i++) {
+      blocks.push(shareBlock(ctx, {
+        font: '400 29px ' + SHARE_SANS,
+        fill: SHARE_INK,
+        text: claims[i].text,
+        lineHeight: 42,
+        gap: i === 0 ? 44 : 20,
+        indent: SHARE_HANG,
+        bullet: true,
+        figures: true
+      }));
+    }
+    // STATED, NOT SWALLOWED. A picture that quietly stopped at eight would look
+    // like the whole filing, and 'the rest are in the app' is a fact a reader
+    // can act on.
+    if (claims.length > shown) {
+      blocks.push(shareBlock(ctx, {
+        font: '400 24px ' + SHARE_SANS,
+        fill: SHARE_MUTED,
+        text: '+ ' + (claims.length - shown) + ' more in the app',
+        lineHeight: 32,
+        gap: 24,
+        indent: SHARE_HANG
+      }));
+    }
+    // MONO, AND LIT THE SAME WAY A CLAIM IS. It was accent end to end, which
+    // made 'Revenue' as loud as the number beside it; the labels are chrome and
+    // the figures are the filing.
+    if (resultsLine) {
+      blocks.push(shareBlock(ctx, {
+        font: '400 24px ' + SHARE_MONO,
+        fill: SHARE_MUTED,
+        text: resultsLine,
+        lineHeight: 34,
+        gap: 36,
+        figures: true
+      }));
+    }
+    return blocks;
+  }
+
   /**
    * The picture as a list of measured blocks. NOTHING IS DRAWN HERE.
    *
@@ -139,59 +397,21 @@ export const SCRIPT_SHARE_IMAGE = `
   function shareBlocks(ctx, f) {
     var e = f.enrichment || {};
     var claims = e.claims || [];
-    var width = SHARE_W - SHARE_PAD * 2;
-    var blocks = [];
-
-    function block(font, fill, text, lineHeight, gap) {
-      ctx.font = font;
-      blocks.push({
-        font: font,
-        fill: fill,
-        lineHeight: lineHeight,
-        gap: gap,
-        lines: shareWrap(ctx, text, width)
-      });
-    }
-
-    block('600 26px ' + SHARE_SANS, SHARE_ACCENT, f.symbol, 34, 40);
-    block('700 44px ' + SHARE_SANS, SHARE_INK, f.companyName, 54, 16);
-    block(
-      '400 24px ' + SHARE_SANS,
-      SHARE_MUTED,
-      f.category + ' · ' + f.disseminatedAtIst + ' IST',
-      32,
-      16
+    return shareHeadBlocks(ctx, f).concat(
+      shareBodyBlocks(ctx, claims, e.resultsLine)
     );
-
-    var shown = claims.length < SHARE_CLAIM_CAP ? claims.length : SHARE_CLAIM_CAP;
-    for (var i = 0; i < shown; i++) {
-      block('400 29px ' + SHARE_SANS, SHARE_INK, '— ' + claims[i].text, 42, i === 0 ? 44 : 20);
-    }
-    // STATED, NOT SWALLOWED. A picture that quietly stopped at eight would look
-    // like the whole filing, and 'the rest are in the app' is a fact a reader
-    // can act on.
-    if (claims.length > shown) {
-      block(
-        '400 24px ' + SHARE_SANS,
-        SHARE_MUTED,
-        '+ ' + (claims.length - shown) + ' more in the app',
-        32,
-        24
-      );
-    }
-
-    if (e.resultsLine) {
-      block('400 24px ' + SHARE_MONO, SHARE_ACCENT, e.resultsLine, 34, 36);
-    }
-
-    return blocks;
   }
 
   // The header above the blocks: top padding, the mark, and the rule under it.
   // And the footer below them: rule, one line, bottom padding. Both are fixed
   // whatever the filing says, so they are two numbers rather than two more
   // blocks with nothing in them.
-  var SHARE_HEAD = 156;
+  //
+  // 188 rather than the 156 it was, which is the artwork's doing: the raster is
+  // the full lockup and is drawn at 132 where the redrawn favicon was drawn at
+  // 60. Both mastheads are centred in the same band, so the rest of the card is
+  // unmoved whichever one draws.
+  var SHARE_HEAD = 188;
   var SHARE_FOOT = 126;
 
   /** Where the blocks end, so the canvas can be made the height they need. */
@@ -213,30 +433,23 @@ export const SCRIPT_SHARE_IMAGE = `
     ctx.fillStyle = SHARE_BG;
     ctx.fillRect(0, 0, SHARE_W, height);
 
-    // The mark, then the word beside it. 'textBaseline' stays alphabetic — the
-    // default — so every y below is a baseline and the blocks stack by adding.
-    if (shareMarkReady) ctx.drawImage(shareMark, SHARE_PAD, 56, 60, 60);
-    ctx.fillStyle = SHARE_INK;
-    ctx.font = '600 34px ' + SHARE_SANS;
-    var word = SHARE_PAD + 78;
-    ctx.fillText(SHARE_BRAND, word, 98);
-    // The accent full stop, set after the word rather than derived from it:
-    // 'brand.ts' holds where the colour falls, and this measures the word to
-    // find the same place.
-    ctx.fillStyle = SHARE_ACCENT;
-    ctx.fillText('.', word + ctx.measureText(SHARE_BRAND).width, 98);
-
+    // 'textBaseline' stays alphabetic — the default — so every y below is a
+    // baseline and the blocks stack by adding.
+    shareMasthead(ctx);
     shareRule(ctx, SHARE_HEAD);
 
     var y = SHARE_HEAD;
     for (var i = 0; i < blocks.length; i++) {
       var b = blocks[i];
       ctx.font = b.font;
-      ctx.fillStyle = b.fill;
       y += b.gap;
       for (var line = 0; line < b.lines.length; line++) {
         y += b.lineHeight;
-        ctx.fillText(b.lines[line], SHARE_PAD, y);
+        // The disc goes beside the FIRST line only, which is the whole of what
+        // a hanging indent is: one mark, and the rest of the sentence lined up
+        // under the text rather than under the mark.
+        if (b.bullet && line === 0) shareDisc(ctx, y);
+        shareLine(ctx, b, b.lines[line], SHARE_PAD + b.indent, y);
       }
     }
 
@@ -246,6 +459,67 @@ export const SCRIPT_SHARE_IMAGE = `
     ctx.fillText(SHARE_FOOTER, SHARE_PAD, y + 86);
 
     return canvas;
+  }
+
+  /**
+   * The mark at the top: the founder's artwork, or the favicon and the word.
+   *
+   * THE TWO ARE NOT THE SAME PICTURE. The raster is the full lockup — tile, D,
+   * and the name inside it — so it is drawn alone; the favicon's tile carries no
+   * name, so that branch sets the word beside it as this card always did. Both
+   * fit the same 156px band, which is why the header is one number whichever
+   * one draws.
+   *
+   * 'roundRect' IS PART OF THE TEST, not an afterthought. It is what clips the
+   * artwork's white margin off, and without it the raster would land on this
+   * card as a white square — so a browser that lacks it gets the favicon
+   * masthead, which is a complete picture rather than a broken one.
+   */
+  function shareMasthead(ctx) {
+    if (shareLogo !== null && ctx.roundRect) {
+      // 132 rather than the 60 the favicon draws at: the artwork carries the
+      // name INSIDE the tile at about a sixth of its height, which at 60px is
+      // 10px of raster and unreadable. At 132 it is the lockup the founder
+      // exported, and it is still an eighth of this card's width.
+      var size = 132;
+      var inset = size * SHARE_TILE_INSET;
+      var side = size - inset * 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(SHARE_PAD + inset, 30 + inset, side, side, side * SHARE_TILE_RADIUS);
+      ctx.clip();
+      ctx.drawImage(shareLogo, SHARE_PAD, 30, size, size);
+      ctx.restore();
+      return;
+    }
+
+    if (shareMarkReady) ctx.drawImage(shareMark, SHARE_PAD, 72, 72, 72);
+    ctx.fillStyle = SHARE_INK;
+    ctx.font = '600 34px ' + SHARE_SANS;
+    var word = SHARE_PAD + 92;
+    ctx.fillText(SHARE_BRAND, word, 120);
+    // The accent full stop, set after the word rather than derived from it:
+    // 'brand.ts' holds where the colour falls, and this measures the word to
+    // find the same place.
+    ctx.fillStyle = SHARE_ACCENT;
+    ctx.fillText('.', word + ctx.measureText(SHARE_BRAND).width, 120);
+  }
+
+  /**
+   * The bullet: a disc in the accent, in the space the hanging indent leaves.
+   *
+   * PLACED OFF THE BASELINE BY EYE AT THE CLAIM'S OWN SIZE. 29px system sans
+   * has an x-height of about 15px, so the middle of a lower-case letter is
+   * roughly 8px above the baseline and the disc's centre sits there. Deriving
+   * it from a measurement would mean 'measureText' metrics that Safari only
+   * grew recently, for a number that moves when the type size does and is
+   * checked by looking at the picture either way.
+   */
+  function shareDisc(ctx, baseline) {
+    ctx.fillStyle = SHARE_ACCENT;
+    ctx.beginPath();
+    ctx.arc(SHARE_PAD + SHARE_DISC, baseline - 8, SHARE_DISC, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   /** The hairline the panels use, at the page's own line colour. */
@@ -351,11 +625,16 @@ export const SCRIPT_SHARE_IMAGE = `
     button.textContent = SHARE_IMAGE_LABEL;
     button.onclick = (function (filing) {
       return function () {
-        // The mark is decoded from a 'data:' URI at load and there is nothing
-        // for it to be waiting on, so this is a state that should not occur —
-        // which is why it is reported rather than drawn around. A picture that
-        // silently arrived without the logo would look like a design choice.
-        if (!shareMarkReady) { shareSaid(button, 'not ready'); return; }
+        // NEITHER MARK, WHICH IS A STATE THAT SHOULD NOT OCCUR. The favicon is
+        // decoded from a 'data:' URI at load with nothing to wait on, and the
+        // raster is a request to this same origin; a card can be drawn as soon
+        // as EITHER has arrived, so this refuses only when both are missing.
+        // A picture that silently arrived without a logo would look like a
+        // design choice rather than a failure.
+        if (!shareMarkReady && shareLogo === null) {
+          shareSaid(button, 'not ready');
+          return;
+        }
         shareDeliver(shareCard(filing), filing.symbol, button);
       };
     })(f);

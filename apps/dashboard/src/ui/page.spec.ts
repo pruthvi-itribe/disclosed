@@ -1968,8 +1968,8 @@ describe('the focus card', () => {
  * The format itself is `script-share.spec.ts`, which runs the function out of
  * this same document. What is here is the part that is about the page: that
  * both Copy buttons hand it the filing, that the second control exists on the
- * one foot with room for it, and that a picture drawn from a canvas did not
- * quietly become the page's first external request.
+ * one foot with room for it, how the picture sets a claim, and that the one
+ * request it makes is to this application and not to a host.
  */
 describe('renderDashboardPage — the share', () => {
   it('gives the card and the dialog one format, from one function', () => {
@@ -1995,20 +1995,76 @@ describe('renderDashboardPage — the share', () => {
     expect(SCRIPT_SHARE_IMAGE).toContain("button.className = 'copy'");
   });
 
-  it('draws the picture without asking the network for anything', () => {
-    // THE DOCUMENT-WIDE ASSERTION ALREADY COVERS THIS — the suite's first test
-    // is that the page matches no `https?://` at all — but a canvas is where an
-    // external font or a logo PNG would be reached for next, so it is said
-    // here too, against the fragment.
+  it('asks no host but this one, and asks it for exactly one thing', () => {
+    // THE PICTURE NOW MAKES A REQUEST, and this is the assertion that bounds
+    // it. The invariant is the ORIGIN, not the count: no CDN, no font, no
+    // analytics, nothing a reader did not already trust by signing in. The one
+    // URL in this fragment is a relative path on this application, behind the
+    // same session guard as every read — see `filings/dashboard.controller.ts`.
     expect(SCRIPT_SHARE_IMAGE).not.toMatch(/https?:\/\//);
-    expect(SCRIPT_SHARE_IMAGE).not.toContain('fetch(');
     expect(SCRIPT_SHARE_IMAGE).not.toContain('@font-face');
-    // The type is the stack `:root` already declares, and the mark is the
-    // favicon this document is already carrying as an inlined `data:` SVG.
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      "var SHARE_LOGO_URL = '/brand/logo.png';",
+    );
+    expect([...SCRIPT_SHARE_IMAGE.matchAll(/img\.src = /g)]).toHaveLength(2);
+    // AND THE DOCUMENT IS UNCHANGED. Nothing was added to the head: no second
+    // link element, no preload, no absolute URL anywhere in the page — the
+    // suite's first two tests still hold, and the request is made by a script
+    // at load rather than by markup.
+    expect(html).not.toMatch(/https?:\/\//);
+    expect(html.slice(0, html.indexOf('<script>'))).not.toContain(
+      '/brand/logo.png',
+    );
+    // The type is still the stack `:root` declares, and the favicon is still
+    // read out of this document as the mark that draws when the raster has not
+    // arrived.
     expect(SCRIPT_SHARE_IMAGE).toContain(
       'var link = document.querySelector(\'link[rel="icon"]\');',
     );
     expect(PAGE_STYLE).toContain('system-ui, -apple-system');
+  });
+
+  it('gives the claims a bullet with the wrapped lines hanging off it', () => {
+    // A wrapped claim used to begin under its own dash, so the second line of a
+    // two-line claim read as a third claim that had lost its mark.
+    expect(SCRIPT_SHARE_IMAGE).toContain('var SHARE_HANG = 30;');
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      'if (b.bullet && line === 0) shareDisc(ctx, y);',
+    );
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      'shareLine(ctx, b, b.lines[line], SHARE_PAD + b.indent, y);',
+    );
+    // A drawn disc rather than a glyph: '•' lands at a different size and
+    // height in each family the sans stack falls through.
+    expect(SCRIPT_SHARE_IMAGE).not.toContain('•');
+    // And the hyphen it replaced is gone rather than left in front of it.
+    expect(SCRIPT_SHARE_IMAGE).not.toContain("'— ' + claims");
+  });
+
+  it('lights the figures inside a claim, in the served pattern', () => {
+    // THE SERVED REGEX IS WHAT MATTERS, not the source: the fragment is a
+    // template literal and its backslashes are doubled there, so a pattern that
+    // reads correctly in the editor can reach the browser as `d{1,2}`. This
+    // cuts the real one out of the document and runs it.
+    const pattern = /var SHARE_FIGURES = (\/.+\/gi);\n/.exec(SCRIPT);
+    expect(pattern).not.toBeNull();
+    const figures = new Function(`return ${pattern?.[1]};`)() as RegExp;
+
+    const lit = (line: string): string[] => line.match(figures) ?? [];
+
+    expect(lit('Revenue from operations was 1,204.35 crore')).toEqual([
+      '1,204.35 crore',
+    ]);
+    expect(lit('The board declared a dividend of Rs 2 per share')).toEqual([
+      'Rs 2',
+    ]);
+    expect(lit('Margin was 14.2% for the quarter ended 30 June 2026')).toEqual([
+      '14.2%',
+      '30 June 2026',
+    ]);
+    expect(lit('Revenue grew in Q1FY27')).toEqual(['Q1FY27']);
+    // A sentence with no figure in it is drawn in one colour, not segmented.
+    expect(lit('The board approved the scheme of arrangement')).toEqual([]);
   });
 
   it('puts nothing into the picture through innerHTML', () => {
