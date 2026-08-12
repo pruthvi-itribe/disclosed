@@ -17,6 +17,7 @@ import { SCRIPT_COMPANY } from './script/script-company';
 import { SCRIPT_FEED } from './script/script-feed';
 import { SCRIPT_FOCUS } from './script/script-focus';
 import { SCRIPT_POLL } from './script/script-poll';
+import { SCRIPT_SHARE } from './script/script-share';
 
 /**
  * A SMOKE suite, deliberately. The markup itself is not asserted line by line —
@@ -1957,6 +1958,35 @@ describe('the focus card', () => {
   it('links the source only through safeHref', () => {
     expect(SCRIPT_FOCUS).toContain('safeHref(f.attachmentUrl)');
     expect(SCRIPT_FOCUS).toContain("rel = 'noopener noreferrer nofollow'");
+  });
+});
+
+/**
+ * WHAT A READER SENDS SOMEBODY, asserted on the served document.
+ *
+ * The format itself is `script-share.spec.ts`, which runs the function out of
+ * this same document. What is here is the part that is about the page: that
+ * both Copy buttons hand it the filing, and that the fragment they take it from
+ * puts nothing into the document any other way.
+ */
+describe('renderDashboardPage — the share', () => {
+  it('gives the card and the dialog one format, from one function', () => {
+    // Not two. The card used to copy "SYMBOL: claim" per line and the dialog
+    // copied its own version of the same thing, so the two could — and did —
+    // differ in what they included.
+    expect(SCRIPT_SHARE).toContain('function shareText(f)');
+    expect(SCRIPT_FEED).toContain('})(shareText(f), copy);');
+    expect(SCRIPT_FOCUS).toContain('})(shareText(f), copy);');
+    // And the thing that made two of them is gone rather than left behind.
+    expect(SCRIPT_FEED).not.toContain('insightText');
+  });
+
+  it('puts nothing into the message through innerHTML', () => {
+    // The fragment builds a string rather than a node, so there is nothing here
+    // for the rule to bend around — which is worth saying, because the next
+    // thing anybody adds to a share surface is a preview of it.
+    expect(SCRIPT_SHARE).not.toContain('innerHTML');
+    expect(SCRIPT_SHARE).not.toContain('document.create');
   });
 });
 

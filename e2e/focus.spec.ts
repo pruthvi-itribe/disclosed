@@ -37,6 +37,25 @@ const aCardSeq = async (page: Page): Promise<string> => {
   return seq as string;
 };
 
+/**
+ * The seqId of a card that has something to send.
+ *
+ * FOUND BY ITS OWN CONTROL rather than by guessing which filing is busy today.
+ * A card draws Copy only when the filing carried a verified claim, which is the
+ * same guard the dialog's foot uses, so a card with the button is a dialog with
+ * both of them.
+ */
+const aSendableCardSeq = async (page: Page): Promise<string> => {
+  await expect(page.locator('#live-text')).not.toHaveText('connecting');
+  const sendable = page.locator('#feed .card[data-seq]', {
+    has: page.locator('[data-ui="card-copy"]'),
+  });
+  await expect(sendable).not.toHaveCount(0);
+  const seq = await sendable.first().getAttribute('data-seq');
+  expect(seq).not.toBeNull();
+  return seq as string;
+};
+
 test.describe('the focus card', () => {
   test('opens from a card, and shows what the card had no room for', async ({
     page,
@@ -316,5 +335,68 @@ test.describe('the focus card', () => {
     // And the panel itself fits the phone it is on.
     const panel = await page.locator('#focus').boundingBox();
     expect(panel?.width ?? 0).toBeLessThanOrEqual(390);
+  });
+});
+
+/**
+ * What a reader actually sends somebody, read back off the real clipboard.
+ *
+ * THE CLIPBOARD IS THE POINT, so it is not stubbed. Chromium grants
+ * `clipboard-read` to a context that asks, which is the only way to assert what
+ * a browser was handed rather than what the page thought it handed over —
+ * `script-share.spec.ts` runs the format function on fixtures and this runs the
+ * whole path, permission prompt included, against a live filing.
+ *
+ * `context.grantPermissions` is a Chromium capability and this suite is
+ * Chromium-only (`playwright.config.ts`). If that ever changes, this is the
+ * test that will need the fallback — asserting the button's announcement rather
+ * than the clipboard's contents.
+ */
+test.describe('sending a filing', () => {
+  test('copies it as a message a chat window can read', async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/');
+    const seq = await aSendableCardSeq(page);
+    await page.locator(`#feed .card[data-seq="${seq}"]`).click();
+    await expect(page.locator('#focus')).toBeVisible();
+
+    // OPENED FIRST, because the question this answers is whether the quotes
+    // travel with the claims. They must not: a filing with eight claims carries
+    // eight sentences lifted out of a PDF, and that is not a message.
+    const toggle = page.locator('[data-ui="focus-span-toggle"]').first();
+    if ((await toggle.count()) > 0) {
+      await toggle.click();
+      await expect(page.locator('[data-ui="focus-spans"]').first()).toBeVisible();
+    }
+
+    const copy = page.locator('[data-ui="focus-copy"]');
+    await copy.click();
+    await expect(copy).toHaveText('Copied');
+
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    const lines = text.split('\n');
+    const symbol = await page.locator('#focus-symbol').textContent();
+
+    // WhatsApp's bold, around the company and the ticker together.
+    expect(lines[0]).toMatch(/^\*.+ \(.+\)\*$/);
+    expect(lines[0]).toContain(`(${symbol})`);
+    // The category, and the server's own IST string with nothing done to it.
+    expect(lines[1]).toMatch(/ · .+ IST$/);
+    // One bullet per claim the dialog is showing, and not one more.
+    const bullets = lines.filter((line) => line.startsWith('- '));
+    expect(bullets.length).toBe(
+      await page.locator('[data-ui="focus-claims"] li').count(),
+    );
+    // The signature, italic, and the name under it.
+    expect(lines[lines.length - 2]).toBe(
+      "_Verified against the company's filing._",
+    );
+    expect(lines[lines.length - 1]).toBe('Disclosed');
+    // Not the evidence, however much of it is open on screen behind this.
+    expect(text).not.toContain('matched in the document');
+    expect(text).not.toContain('"');
   });
 });

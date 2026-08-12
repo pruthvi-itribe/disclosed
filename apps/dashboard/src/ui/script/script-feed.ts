@@ -73,13 +73,6 @@ export const SCRIPT_FEED = `
     return lines;
   }
 
-  /** The lines a card would copy: what the company said, without our layout. */
-  function insightText(lines) {
-    var out = [];
-    for (var i = 0; i < lines.length; i++) out.push(lines[i].text);
-    return out;
-  }
-
   /**
    * A figure inside a claim, matched so it can be set apart typographically.
    *
@@ -329,10 +322,18 @@ export const SCRIPT_FEED = `
     // COPY, because the thing a reader does with a line like this is send it to
     // somebody. Writing the claims rather than the rendered card: what belongs
     // in a message is what the company said, not our layout.
+    //
+    // THE PAYLOAD IS 'shareText' AND NOT THIS CARD'S LINES, which is a change
+    // of what gets sent as well as of how it is set. The card's list skips the
+    // echoes and folds the results line in among the claims; a message is one
+    // filing on its own, where both of those are wrong. See 'script-share.ts'.
+    // The guard stays on the card's lines: a card with nothing verified on it
+    // offers nothing to send.
     if (lines.length > 0) {
       var copy = document.createElement('button');
       copy.type = 'button';
       copy.className = 'copy';
+      copy.setAttribute('data-ui', 'card-copy');
       copy.textContent = 'Copy';
       copy.onclick = (function (text, button) {
         return function (event) {
@@ -345,7 +346,7 @@ export const SCRIPT_FEED = `
             window.setTimeout(function () { button.textContent = 'Copy'; }, 1500);
           }, function () { button.textContent = 'failed'; });
         };
-      })(f.symbol + ': ' + insightText(lines).join('\\n' + f.symbol + ': '), copy);
+      })(shareText(f), copy);
       foot.appendChild(copy);
     }
 

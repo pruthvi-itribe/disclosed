@@ -8,7 +8,9 @@
  *
  * IT RUNS AFTER `script-feed`, which is a dependency rather than a preference:
  * every claim this fragment puts on screen goes through that fragment's
- * `writeInsight`, and no other way.
+ * `writeInsight`, and no other way. It runs after `script-share` for the same
+ * kind of reason: the foot's Copy takes its payload from `shareText`, defined
+ * there.
  *
  * NO BACKTICK AND NO `${` MAY APPEAR BELOW. Both are consumed by the
  * composing template literal before a browser ever sees this, which is the
@@ -229,12 +231,11 @@ export const SCRIPT_FOCUS = `
       copy.className = 'copy';
       copy.setAttribute('data-ui', 'focus-copy');
       copy.textContent = 'Copy';
-      // What belongs in a message is what the company said, not our layout —
-      // and here that is every claim rather than the two the card had room for.
-      var text = [];
-      for (var i = 0; i < lines.length; i++) {
-        text.push(f.symbol + ': ' + lines[i].text);
-      }
+      // The same string the card copies, from the same function. What belongs
+      // in a message is what the company said, not our layout — and not the
+      // quoted spans either, however many of them the reader has opened above:
+      // those are the evidence, they are one tap away here, and eight sentences
+      // lifted out of a PDF is not a message. See 'script-share.ts'.
       copy.onclick = (function (payload, button) {
         return function () {
           if (!navigator.clipboard) { button.textContent = 'no clipboard'; return; }
@@ -243,7 +244,7 @@ export const SCRIPT_FOCUS = `
             window.setTimeout(function () { button.textContent = 'Copy'; }, 1500);
           }, function () { button.textContent = 'failed'; });
         };
-      })(text.join('\\n'), copy);
+      })(shareText(f), copy);
       foot.appendChild(copy);
     }
 
