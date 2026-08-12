@@ -56,7 +56,9 @@ These override any habit of writing more, sooner, or cleverer.
   /api/health` and `GET /api/me` — enumerated in `dashboard.controller.ts` so an
   addition has to argue with the list.
 - **The dashboard is self-contained.** No CDN, no external request, no web
-  font. Inline everything.
+  font. Inline everything. Same-origin is not external: the share card loads
+  `GET /brand/logo.png` (session-guarded, served from our own process) —
+  `page.spec.ts` asserts no absolute URL rather than no request at all.
   - **The one relaxation is the two signed-out surfaces — the landing page and
     `/auth` — in firebase mode only.** Both load the Firebase Web SDK from
     `gstatic.com` at one pinned version (`ui/firebase-sdk.ts`), and nothing else
