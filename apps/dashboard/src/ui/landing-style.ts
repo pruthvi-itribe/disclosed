@@ -260,7 +260,12 @@ a:hover { text-decoration: underline; }
   content: ""; position: absolute; left: 0; top: .62em;
   width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
 }
-.insights .fig { font-variant-numeric: tabular-nums; font-weight: 620; color: #fff; }
+/* BRIGHTER, NEVER BOLDER — 'page-style.ts' carries the sweep behind that: 85.1%
+   of stored claims hold a figure and the pattern lights a fifth of all claim
+   characters, so a heavier weight on them is a second typeface rather than
+   emphasis. These three cards are the app's cards, and a visitor who signs in
+   should not find the type has changed. */
+.insights .fig { font-variant-numeric: tabular-nums; color: #fff; }
 /* NO COLOUR ON THE MARK. The product's rule, restated in the product's own
    words in page-style.ts: red and green are a view about the company, and the
    third card below is a decrease that is good news. */
