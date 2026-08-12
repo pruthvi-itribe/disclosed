@@ -1,0 +1,101 @@
+# The layout-aware PDF reader, on its own node.
+#
+# ================================================================
+# WHY IT GETS A WHOLE NODE, ARGUED WITH NUMBERS
+# ================================================================
+#
+# docling-serve holds 2.3-2.6 GB resident with OCR off and up to 7.4 GB on
+# large OCR jobs (measured, docs/deploy-digitalocean.md §7). The prod node
+# that runs tralkserver has ~2.5 CPU / ~4.4 GB unrequested; on 2026-08-11 a
+# burst of heavy conversions OOM-killed the local container inside a shared
+# 7.65 GB pool — the exact failure a shared node invites at results-season
+# peak, when both products are busiest. So the pool was grown 1 -> 2 nodes
+# (2026-08-12) and this Deployment's REQUESTS are sized to be unschedulable
+# on the tralk node (3 CPU / 5 Gi against its ~2.5 / ~4.4 free): placement
+# on the new node is enforced by arithmetic, not by a selector a node
+# replacement would strand.
+#
+# NOTE the pool is terraform-managed from tralk-infra with count=1 in state;
+# until that var is bumped to 2, a `terraform apply` there would shrink the
+# pool and evict this. (Recorded 2026-08-12; remove this sentence when the
+# var is updated.)
+#
+# ONE conversion at a time (ENG_LOC_NUM_WORKERS=1): concurrency multiplies
+# resident memory here and nowhere else in the pipeline — several workers'
+# simultaneous conversions of 100-page results filings is what the local
+# OOM was made of. Excess requests queue inside the service, bounded by
+# MAX_SYNC_WAIT, which must cover the client's DOCLING_TIMEOUT_MS (300000):
+# the server's own default is 120 s and it answers 504 past that while
+# still finishing the work — a live run lost a 131 s scan exactly this way.
+#
+# Workers reach it as http://docling:5001 (DOCLING_URL in the shared env
+# Secret). In-cluster the Service targets the pod directly, so the
+# 2026-08-11 wrong-tenant-on-the-port failure class (another app answering
+# /health convincingly) cannot recur; /health is honest here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docling
+  namespace: disclosed
+  labels: { app: docling }
+spec:
+  # One replica: one engine worker per pod is the memory design, and one pod
+  # matches the measured need (a handful of layout reads per hour). More
+  # conversion throughput = more replicas, each with its own budget — scale
+  # horizontally, never by raising ENG_LOC_NUM_WORKERS alone.
+  replicas: 1
+  # Recreate, not RollingUpdate: two pods cannot fit the node at these
+  # requests, so a rolling update would wedge Pending forever. A ~40 s gap
+  # during an image bump costs a few visible pdf-parse fallbacks, which the
+  # client's cooldown and parseFallbackReason already handle honestly.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: docling }
+  template:
+    metadata:
+      labels: { app: docling }
+    spec:
+      containers:
+        - name: docling
+          # Pinned, same version the local compose runs. amd64 image on the
+          # cluster; the local arm64 pull proves nothing about this one.
+          image: quay.io/docling-project/docling-serve:v1.30.0
+          ports:
+            - containerPort: 5001
+          env:
+            - name: DOCLING_SERVE_MAX_SYNC_WAIT
+              value: "300"
+            - name: DOCLING_SERVE_ENG_LOC_NUM_WORKERS
+              value: "1"
+          resources:
+            # Requests force new-node placement (see header). Limits leave
+            # ~0.4 CPU / ~1.4 Gi of allocatable for kube-system daemonsets.
+            requests: { cpu: "3", memory: 5Gi }
+            limits: { cpu: "3500m", memory: 6Gi }
+          # The model load takes ~40 s from a cold image; the startupProbe
+          # covers it so the liveness probe never kills a booting pod.
+          startupProbe:
+            httpGet: { path: /health, port: 5001 }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /health, port: 5001 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 5001 }
+            periodSeconds: 30
+            # A conversion saturating the CPU can slow the health answer;
+            # three misses half a minute apart is a hung process, not a busy
+            # one.
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docling
+  namespace: disclosed
+spec:
+  selector: { app: docling }
+  ports:
+    - port: 5001
+      targetPort: 5001
