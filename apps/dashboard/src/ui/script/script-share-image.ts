@@ -5,7 +5,8 @@
  * A FRAGMENT, NOT A MODULE — client-side ES5 held as a string and joined into
  * one IIFE by `page-script.ts`. It runs after `script-share`, whose `shareText`
  * it does not call but whose claims-selection rule it repeats deliberately (see
- * `shareBlocks`), and before `script-focus`, which mounts the button.
+ * `sharePlan`), and before `script-feed` and `script-focus`, which both mount
+ * the button.
  *
  * NO BACKTICK AND NO `${` MAY APPEAR BELOW — `script-fragments.spec.ts` asserts
  * it.
@@ -98,15 +99,24 @@ export const SCRIPT_SHARE_IMAGE = `
   // p90 103, p99 118, longest 120, so at the 29px this sets them a median claim
   // is one line of the 952px column and the longest is two.
   //
-  // WHAT THAT COSTS IN PIXELS, measured by running the two functions below over
-  // 110 live filings in a browser rather than by estimating from the type. At
-  // this cap the canvas comes out 1080 x 560 at its shortest, 850 at the
-  // median, 1176 at p90 and 1344 at its tallest — every one of them portrait,
-  // and the tallest 1:1.24. Uncapped, the same 110 filings give the same median
-  // and a tallest of 1558: the cap changes nothing for the 85.5% and takes 214
-  // pixels off the tail, which is the shape of a good bound. Twelve is not
-  // worth its own case, and a picture that ran to twelve claims would be a
-  // thumbnail in the chat it was sent to.
+  // WHAT THAT COSTS IN PIXELS, measured by running the functions below over
+  // live filings in a browser rather than by estimating from the type. Over 200
+  // of them, swept 2026-08-12: the canvas comes out 1080 x 434 at its shortest,
+  // 662 at the median, 1036 at p90 and 1218 at its tallest.
+  //
+  // THOSE NUMBERS ARE 158px SMALLER THAN THEY WERE, AND ONLY THE HEADER MOVED.
+  // The same 200 filings measured 592 / 820 / 1194 / 1376 before the mark
+  // became a watermark; the saving is exactly 158 on every one of them, which
+  // is also the answer to what the narrower header column costs — not one of
+  // the 200 company names wrapped a line it had not wrapped before. What did
+  // change is the shape: 48 of the 200 were taller than they are wide and 12
+  // are now.
+  //
+  // Uncapped, an earlier sweep of 110 filings gave the same median and a
+  // tallest of 1558 against 1344 capped: the cap changes nothing for the 85.5%
+  // and takes 214 pixels off the tail, which is the shape of a good bound.
+  // Twelve claims is not worth its own case, and a picture that ran to twelve
+  // would be a thumbnail in the chat it was sent to.
   //
   // THE REMAINDER IS STATED, NOT SWALLOWED, which is what makes a cap
   // acceptable at all: the picture prints how many claims it did not draw.
@@ -172,9 +182,9 @@ export const SCRIPT_SHARE_IMAGE = `
   // AND THE FAVICON IS KEPT AS THE FALLBACK. If the raster has not arrived —
   // a slow first paint, a 401 on a session that expired between load and click
   // — the card draws the mark this document is already carrying rather than a
-  // hole where a logo goes. The two mastheads are not the same picture and are
-  // not pretending to be: the raster is the full lockup and carries the name
-  // inside it, so the fallback draws the wordmark beside the tile instead.
+  // hole where a logo goes. The two marks are not the same picture and are not
+  // pretending to be: the raster is the full lockup and carries the name inside
+  // it, so the fallback draws the wordmark beside the tile instead.
   var shareMark = null;
   var shareMarkReady = false;
   (function () {
@@ -284,10 +294,10 @@ export const SCRIPT_SHARE_IMAGE = `
    * One measured block: its text wrapped to the column it will be drawn in.
    *
    * A SPEC OBJECT RATHER THAN EIGHT POSITIONAL ARGUMENTS. Blocks differ in
-   * seven ways now — font, fill, line height, the gap above them, the indent,
-   * whether they carry a bullet and whether their figures are lit — and
-   * 'block(font, fill, text, 42, 20, 30, true, true)' is a line nobody can read
-   * back.
+   * eight ways now — font, fill, line height, the gap above them, the indent,
+   * the column they wrap to, whether they carry a bullet and whether their
+   * figures are lit — and 'block(font, fill, text, 42, 20, 30, true, true)' is
+   * a line nobody can read back.
    */
   function shareBlock(ctx, spec) {
     ctx.font = spec.font;
@@ -300,26 +310,40 @@ export const SCRIPT_SHARE_IMAGE = `
       indent: indent,
       bullet: spec.bullet === true,
       figures: spec.figures === true,
-      lines: shareWrap(ctx, spec.text, SHARE_W - SHARE_PAD * 2 - indent)
+      lines: shareWrap(ctx, spec.text, spec.width || SHARE_W - SHARE_PAD * 2 - indent)
     };
   }
 
-  /** Who filed, and when: the ticker, the company and the line under them. */
+  /**
+   * Who filed, and when: the ticker, the company and the line under them.
+   *
+   * THEY WRAP TO A NARROWER COLUMN THAN THE CLAIMS DO, and that is what keeps a
+   * long company name off the mark in the corner beside them. The band reserved
+   * on the right is the tile plus its gutter, and it is taken off ALL THREE
+   * lines rather than only the ones level with the tile: a column whose lines
+   * have two different measures is not a column, and the mark is 64px, so what
+   * that costs is 96px of measure on a 1,080px canvas.
+   */
   function shareHeadBlocks(ctx, f) {
+    var column = SHARE_W - SHARE_PAD * 2 - SHARE_TILE - SHARE_GUTTER;
     return [
       shareBlock(ctx, {
         font: '600 26px ' + SHARE_SANS,
         fill: SHARE_ACCENT,
         text: f.symbol,
         lineHeight: 34,
-        gap: 40
+        // Nothing above it. The ticker is the first thing on the card now, and
+        // 'SHARE_TOP' is the whole of the space over it.
+        gap: 0,
+        width: column
       }),
       shareBlock(ctx, {
         font: '700 44px ' + SHARE_SANS,
         fill: SHARE_INK,
         text: f.companyName,
         lineHeight: 54,
-        gap: 16
+        gap: 16,
+        width: column
       }),
       // THE SERVER'S HUMAN SPELLING OF THE INSTANT — '12 Aug 2026, 8:48 am'.
       // The fixed-width sibling is a machine's string and reads as one on a
@@ -331,7 +355,8 @@ export const SCRIPT_SHARE_IMAGE = `
         fill: SHARE_MUTED,
         text: f.category + ' · ' + f.disseminatedAtIstHuman + ' IST',
         lineHeight: 32,
-        gap: 16
+        gap: 16,
+        width: column
       })
     ];
   }
@@ -382,63 +407,84 @@ export const SCRIPT_SHARE_IMAGE = `
   }
 
   /**
-   * The picture as a list of measured blocks. NOTHING IS DRAWN HERE.
+   * The picture as two lists of measured blocks. NOTHING IS DRAWN HERE.
    *
    * Planning and painting are separate because the canvas has to be sized
    * before anything can be put on it and the size is not knowable until every
    * claim has been wrapped — which needs a context to measure with. So this
    * measures on a throwaway context, and 'sharePaint' walks the result.
    *
+   * TWO LISTS RATHER THAN ONE, because the rule between them is no longer at a
+   * fixed height: the identity is drawn ABOVE it now, so where it falls depends
+   * on how many lines the company name took.
+   *
    * THE CLAIMS ARE READ THE WAY 'shareText' READS THEM: straight off the
    * enrichment, echoes included, results line separate. A picture and a message
    * of the same filing that disagreed about what the filing said would be worse
    * than either of them being wrong on its own.
    */
-  function shareBlocks(ctx, f) {
+  function sharePlan(ctx, f) {
     var e = f.enrichment || {};
     var claims = e.claims || [];
-    return shareHeadBlocks(ctx, f).concat(
-      shareBodyBlocks(ctx, claims, e.resultsLine)
-    );
+    return {
+      head: shareHeadBlocks(ctx, f),
+      body: shareBodyBlocks(ctx, claims, e.resultsLine)
+    };
   }
 
-  // The header above the blocks: top padding, the mark, and the rule under it.
-  // And the footer below them: rule, one line, bottom padding. Both are fixed
-  // whatever the filing says, so they are two numbers rather than two more
-  // blocks with nothing in them.
+  // ================================================================
+  // THE HEADER, AND WHY THE MARK IS NO LONGER A BAND
+  // ================================================================
   //
-  // 188 rather than the 156 it was, which is the artwork's doing: the raster is
-  // the full lockup and is drawn at 132 where the redrawn favicon was drawn at
-  // 60. Both mastheads are centred in the same band, so the rest of the card is
-  // unmoved whichever one draws.
-  var SHARE_HEAD = 188;
+  // WHAT IT WAS. A 132px lockup centred in a 188px band of its own, with the
+  // ticker, the company and the date set BELOW the rule under it. On a filing
+  // with one claim that band was 188 of 592 pixels — 32% of the picture, and
+  // about 15% of a median one — spent before the reader reached a word the
+  // company filed. The content is the hero and the mark is branding.
+  //
+  // WHAT IT IS. The identity starts at the top-left margin and the mark is a
+  // 64px tile in the opposite corner, top-aligned with the ticker beside it. It
+  // adds NO height: the header is as tall as its own three lines and the rule
+  // falls under them. Measured on a one-claim filing with a one-line name, the
+  // picture goes from 592px to 434px — 158px, and every one of them was empty.
+  //
+  // THE TILE CANNOT SET THE HEIGHT, so there is no maximum of the two to take.
+  // The header is always three blocks, its shortest possible bottom is
+  // 36 + 34 + (16 + 54) + (16 + 32) = 188, and the tile ends at 51 + 64 = 115.
+  //
+  // The footer below the claims is unchanged: rule, one line, bottom padding.
+  var SHARE_TOP = 36;
+  var SHARE_TILE = 64;
+  // The gap between the text column and the tile. It is the reserved band's
+  // other half — see 'shareHeadBlocks'.
+  var SHARE_GUTTER = 32;
+  // Where the tile's top edge sits: on the ticker's cap. The first baseline is
+  // SHARE_TOP + 34 and the cap height of 600 26px system sans is about 19.
+  var SHARE_TILE_Y = 51;
+  // Between the last line of the header and the rule under it.
+  var SHARE_HEAD_TAIL = 34;
   var SHARE_FOOT = 126;
 
-  /** Where the blocks end, so the canvas can be made the height they need. */
-  function shareHeight(blocks) {
-    var y = SHARE_HEAD;
+  /** Where a stack of blocks ends, from the baseline cursor it starts at. */
+  function shareStack(blocks, y) {
     for (var i = 0; i < blocks.length; i++) {
       y += blocks[i].gap + blocks[i].lines.length * blocks[i].lineHeight;
     }
-    return y + SHARE_FOOT;
+    return y;
   }
 
-  /** The blocks onto a canvas of the right size. */
-  function sharePaint(blocks, height) {
-    var canvas = document.createElement('canvas');
-    canvas.width = SHARE_W;
-    canvas.height = height;
-    var ctx = canvas.getContext('2d');
+  /** Where the rule under the identity falls, which the body starts from. */
+  function shareHeadBottom(head) {
+    return shareStack(head, SHARE_TOP) + SHARE_HEAD_TAIL;
+  }
 
-    ctx.fillStyle = SHARE_BG;
-    ctx.fillRect(0, 0, SHARE_W, height);
+  /** Where everything ends, so the canvas can be made the height it needs. */
+  function shareHeight(plan) {
+    return shareStack(plan.body, shareHeadBottom(plan.head)) + SHARE_FOOT;
+  }
 
-    // 'textBaseline' stays alphabetic — the default — so every y below is a
-    // baseline and the blocks stack by adding.
-    shareMasthead(ctx);
-    shareRule(ctx, SHARE_HEAD);
-
-    var y = SHARE_HEAD;
+  /** One stack of blocks, drawn. Returns the baseline it finished on. */
+  function shareDraw(ctx, blocks, y) {
     for (var i = 0; i < blocks.length; i++) {
       var b = blocks[i];
       ctx.font = b.font;
@@ -452,6 +498,26 @@ export const SCRIPT_SHARE_IMAGE = `
         shareLine(ctx, b, b.lines[line], SHARE_PAD + b.indent, y);
       }
     }
+    return y;
+  }
+
+  /** The plan onto a canvas of the right size. */
+  function sharePaint(plan, height) {
+    var canvas = document.createElement('canvas');
+    canvas.width = SHARE_W;
+    canvas.height = height;
+    var ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = SHARE_BG;
+    ctx.fillRect(0, 0, SHARE_W, height);
+
+    // 'textBaseline' stays alphabetic — the default — so every y below is a
+    // baseline and the blocks stack by adding.
+    shareDraw(ctx, plan.head, SHARE_TOP);
+    shareWatermark(ctx);
+    shareRule(ctx, shareHeadBottom(plan.head));
+
+    var y = shareDraw(ctx, plan.body, shareHeadBottom(plan.head));
 
     shareRule(ctx, y + 46);
     ctx.font = '400 22px ' + SHARE_SANS;
@@ -462,47 +528,57 @@ export const SCRIPT_SHARE_IMAGE = `
   }
 
   /**
-   * The mark at the top: the founder's artwork, or the favicon and the word.
+   * The mark in the corner: the founder's artwork, or the favicon and the word.
+   *
+   * A WATERMARK RATHER THAN A MASTHEAD. It is 64px in the top-right corner,
+   * top-aligned with the ticker across the card from it, and it takes no
+   * vertical space of its own — see the header section above for what that
+   * replaced and what it saved. FULL COLOUR AND FULL SIZE WITHIN ITS BOX: it is
+   * small, not faded, and nothing here changes its opacity or its palette.
    *
    * THE TWO ARE NOT THE SAME PICTURE. The raster is the full lockup — tile, D,
    * and the name inside it — so it is drawn alone; the favicon's tile carries no
-   * name, so that branch sets the word beside it as this card always did. Both
-   * fit the same 156px band, which is why the header is one number whichever
-   * one draws.
+   * name, so that branch sets the word beside it as this card always did. At
+   * 64px the name inside the raster is about 10px of artwork and is not
+   * readable as a word; that is accepted rather than fixed by making the tile
+   * bigger, because the mark's job here is recognition and the card's own type
+   * and the footer sentence are what carry the product.
    *
    * 'roundRect' IS PART OF THE TEST, not an afterthought. It is what clips the
    * artwork's white margin off, and without it the raster would land on this
    * card as a white square — so a browser that lacks it gets the favicon
-   * masthead, which is a complete picture rather than a broken one.
+   * branch, which is a complete picture rather than a broken one.
    */
-  function shareMasthead(ctx) {
+  function shareWatermark(ctx) {
+    var x = SHARE_W - SHARE_PAD - SHARE_TILE;
     if (shareLogo !== null && ctx.roundRect) {
-      // 132 rather than the 60 the favicon draws at: the artwork carries the
-      // name INSIDE the tile at about a sixth of its height, which at 60px is
-      // 10px of raster and unreadable. At 132 it is the lockup the founder
-      // exported, and it is still an eighth of this card's width.
-      var size = 132;
-      var inset = size * SHARE_TILE_INSET;
-      var side = size - inset * 2;
+      var inset = SHARE_TILE * SHARE_TILE_INSET;
+      var side = SHARE_TILE - inset * 2;
       ctx.save();
       ctx.beginPath();
-      ctx.roundRect(SHARE_PAD + inset, 30 + inset, side, side, side * SHARE_TILE_RADIUS);
+      ctx.roundRect(x + inset, SHARE_TILE_Y + inset, side, side, side * SHARE_TILE_RADIUS);
       ctx.clip();
-      ctx.drawImage(shareLogo, SHARE_PAD, 30, size, size);
+      ctx.drawImage(shareLogo, x, SHARE_TILE_Y, SHARE_TILE, SHARE_TILE);
       ctx.restore();
       return;
     }
 
-    if (shareMarkReady) ctx.drawImage(shareMark, SHARE_PAD, 72, 72, 72);
+    // THE WORD GOES TO THE TILE'S LEFT, because the tile is against the right
+    // margin now: set the other way it would run off the canvas. Measured and
+    // then placed, so the pair ends where the artwork would have ended.
+    if (shareMarkReady) ctx.drawImage(shareMark, x, SHARE_TILE_Y, SHARE_TILE, SHARE_TILE);
+    ctx.font = '600 28px ' + SHARE_SANS;
+    // Centred on the tile: the baseline sits half a cap height below its middle,
+    // and the cap height of 600 28px system sans is about 20.
+    var baseline = SHARE_TILE_Y + SHARE_TILE / 2 + 10;
+    var word = x - 12 - ctx.measureText(SHARE_BRAND + '.').width;
     ctx.fillStyle = SHARE_INK;
-    ctx.font = '600 34px ' + SHARE_SANS;
-    var word = SHARE_PAD + 92;
-    ctx.fillText(SHARE_BRAND, word, 120);
+    ctx.fillText(SHARE_BRAND, word, baseline);
     // The accent full stop, set after the word rather than derived from it:
     // 'brand.ts' holds where the colour falls, and this measures the word to
     // find the same place.
     ctx.fillStyle = SHARE_ACCENT;
-    ctx.fillText('.', word + ctx.measureText(SHARE_BRAND).width, 120);
+    ctx.fillText('.', word + ctx.measureText(SHARE_BRAND).width, baseline);
   }
 
   /**
@@ -530,8 +606,8 @@ export const SCRIPT_SHARE_IMAGE = `
 
   /** One filing, drawn. Plan, size, paint. */
   function shareCard(f) {
-    var blocks = shareBlocks(document.createElement('canvas').getContext('2d'), f);
-    return sharePaint(blocks, shareHeight(blocks));
+    var plan = sharePlan(document.createElement('canvas').getContext('2d'), f);
+    return sharePaint(plan, shareHeight(plan));
   }
 
   /**

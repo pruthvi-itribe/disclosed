@@ -451,12 +451,14 @@ test.describe('sending a filing', () => {
     expect(size.bytes).toBeGreaterThan(1000);
     // Height follows the content — a filing with one claim is not padded out to
     // fill a frame it did not need — but it is capped so the picture stays
-    // something a chat window shows rather than a thumbnail. The tallest over
-    // 110 live filings measured 1344; the ceiling here is the worst case the
-    // layout can reach with the claim cap, the longest company name and the
-    // longest results line the collection holds.
+    // something a chat window shows rather than a thumbnail. Measured over 200
+    // live filings on 2026-08-12, after the mark became a watermark: 434 at the
+    // shortest, 662 at the median, 1218 at the tallest. The floor is under the
+    // shortest of those and the ceiling is the worst case the layout can reach
+    // — eight two-line claims, a three-line company name and a results line —
+    // which comes to about 1,430.
     expect(size.height).toBeGreaterThan(400);
-    expect(size.height).toBeLessThanOrEqual(1700);
+    expect(size.height).toBeLessThanOrEqual(1600);
 
     // And the control goes back to what it was, so it is usable twice: the
     // picture's drawing returns and the reported line is emptied.
