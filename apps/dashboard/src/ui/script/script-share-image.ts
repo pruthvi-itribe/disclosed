@@ -536,13 +536,12 @@ export const SCRIPT_SHARE_IMAGE = `
    * replaced and what it saved. FULL COLOUR AND FULL SIZE WITHIN ITS BOX: it is
    * small, not faded, and nothing here changes its opacity or its palette.
    *
-   * THE TWO ARE NOT THE SAME PICTURE. The raster is the full lockup — tile, D,
-   * and the name inside it — so it is drawn alone; the favicon's tile carries no
-   * name, so that branch sets the word beside it as this card always did. At
-   * 64px the name inside the raster is about 10px of artwork and is not
-   * readable as a word; that is accepted rather than fixed by making the tile
-   * bigger, because the mark's job here is recognition and the card's own type
-   * and the footer sentence are what carry the product.
+   * THE WORD IS ALWAYS CANVAS TEXT, in both branches. The first cut drew the
+   * raster lockup alone and accepted that its internal name is ~10px of
+   * artwork at 64px — the user read that as "unreadable", which it was. Text
+   * drawn by the canvas is crisp at any size, so the name sits beside the
+   * tile whichever mark is available, and the tiny name inside the artwork
+   * reads as texture rather than as the label.
    *
    * 'roundRect' IS PART OF THE TEST, not an afterthought. It is what clips the
    * artwork's white margin off, and without it the raster would land on this
@@ -551,22 +550,13 @@ export const SCRIPT_SHARE_IMAGE = `
    */
   function shareWatermark(ctx) {
     var x = SHARE_W - SHARE_PAD - SHARE_TILE;
-    if (shareLogo !== null && ctx.roundRect) {
-      var inset = SHARE_TILE * SHARE_TILE_INSET;
-      var side = SHARE_TILE - inset * 2;
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(x + inset, SHARE_TILE_Y + inset, side, side, side * SHARE_TILE_RADIUS);
-      ctx.clip();
-      ctx.drawImage(shareLogo, x, SHARE_TILE_Y, SHARE_TILE, SHARE_TILE);
-      ctx.restore();
-      return;
-    }
 
-    // THE WORD GOES TO THE TILE'S LEFT, because the tile is against the right
-    // margin now: set the other way it would run off the canvas. Measured and
-    // then placed, so the pair ends where the artwork would have ended.
-    if (shareMarkReady) ctx.drawImage(shareMark, x, SHARE_TILE_Y, SHARE_TILE, SHARE_TILE);
+    // THE WORD GOES TO THE TILE'S LEFT in both branches, because no 64px tile
+    // can carry a readable name — the raster's own wordmark is ~10px of
+    // artwork at this size, which the user read as "unreadable". Canvas text
+    // is crisp at any size, so the name is set beside the mark and the tiny
+    // one inside the artwork reads as texture. Measured and then placed, so
+    // the pair ends at the right margin where the tile does.
     ctx.font = '600 28px ' + SHARE_SANS;
     // Centred on the tile: the baseline sits half a cap height below its middle,
     // and the cap height of 600 28px system sans is about 20.
@@ -579,6 +569,27 @@ export const SCRIPT_SHARE_IMAGE = `
     // find the same place.
     ctx.fillStyle = SHARE_ACCENT;
     ctx.fillText('.', word + ctx.measureText(SHARE_BRAND).width, baseline);
+
+    if (shareLogo !== null && ctx.roundRect) {
+      var inset = SHARE_TILE * SHARE_TILE_INSET;
+      var side = SHARE_TILE - inset * 2;
+      ctx.save();
+      // HIGH-QUALITY RESAMPLE, stated because the default is the bug: the
+      // asset is 256px and the box is 64px, and the default bilinear filter at
+      // a 4x reduction is what made the mark arrive blurred. 'high' asks for
+      // the better kernel; a browser without it falls back to the same default
+      // and loses only sharpness, not the picture.
+      ctx.imageSmoothingEnabled = true;
+      if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+      ctx.beginPath();
+      ctx.roundRect(x + inset, SHARE_TILE_Y + inset, side, side, side * SHARE_TILE_RADIUS);
+      ctx.clip();
+      ctx.drawImage(shareLogo, x, SHARE_TILE_Y, SHARE_TILE, SHARE_TILE);
+      ctx.restore();
+      return;
+    }
+
+    if (shareMarkReady) ctx.drawImage(shareMark, x, SHARE_TILE_Y, SHARE_TILE, SHARE_TILE);
   }
 
   /**
