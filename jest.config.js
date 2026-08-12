@@ -7,7 +7,11 @@ module.exports = {
   // reports a broken suite for a suite that is not its own. Kept as an ignore
   // rather than by renaming the files, because `.spec.ts` is what both runners
   // and every editor integration expect.
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/e2e/'],
+  // '.claude/' holds agent worktrees — full checkouts of this repo that appear
+  // and vanish mid-session. Without the ignore, jest runs the WHOLE SUITE
+  // TWICE (5,5xx tests became 11,069) and the copy fails on untracked
+  // fixtures (data/corpus) that exist only in the main tree.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/e2e/', '/.claude/'],
   transform: { '^.+\\.(t|j)s$': 'ts-jest' },
   collectCoverageFrom: ['apps/**/*.(t|j)s', 'libs/**/*.(t|j)s'],
   coverageDirectory: './coverage',
