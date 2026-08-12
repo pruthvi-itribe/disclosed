@@ -86,7 +86,7 @@ test.describe('the focus card', () => {
 
     // A card with more claims than the card can show, found by its own control
     // rather than by guessing which filing is busy today.
-    const more = page.locator('#feed [data-ui="card-more"]').first();
+    const more = page.locator('#feed [data-ui="card-more"]');
     if ((await more.count()) === 0) {
       test.skip(
         true,
@@ -94,7 +94,15 @@ test.describe('the focus card', () => {
       );
     }
 
-    const card = page.locator('#feed .card', { has: more });
+    // THE INNER LOCATOR OF A `has:` IS RELATIVE TO THE OUTER ELEMENT, and it
+    // may not carry a `.first()`. This filter was written with the absolute
+    // `#feed [data-ui="card-more"]` above, which is re-rooted at each card —
+    // where there is no `#feed` — so it matched nothing. Measured against the
+    // live feed: 34 controls on screen, 50 cards, the absolute form matched 0
+    // and this one matched 34. The test only ever passed by taking its skip.
+    const card = page.locator('#feed .card', {
+      has: page.locator('[data-ui="card-more"]'),
+    });
     const seq = await card.first().getAttribute('data-seq');
     const shown = await page
       .locator(`#feed .card[data-seq="${seq}"] [data-ui="card-claims"] li`)
