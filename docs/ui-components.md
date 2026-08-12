@@ -145,6 +145,7 @@ across the four-second repaint.
 | `card-foot` | tier badge, category, Copy, Source — always one line |
 | `card-tier` | the Verified / Exchange-stated badge |
 | `card-category` | NSE's category. The only part allowed to truncate |
+| `card-copy` | Copy. Present only when the filing carried a verified claim |
 
 ## The company page
 
