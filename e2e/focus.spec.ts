@@ -390,9 +390,11 @@ test.describe('sending a filing', () => {
     expect(bullets.length).toBe(
       await page.locator('[data-ui="focus-claims"] li').count(),
     );
-    // The signature, italic, and the name under it.
+    // The signature, italic, and the name under it. It names the model as the
+    // extractor and never as the verifier: the pipeline is what matches each
+    // sentence against a span of the document.
     expect(lines[lines.length - 2]).toBe(
-      "_Verified against the company's filing._",
+      "_AI-extracted. Every line verified against the company's filing._",
     );
     expect(lines[lines.length - 1]).toBe('Disclosed');
     // Not the evidence, however much of it is open on screen behind this.

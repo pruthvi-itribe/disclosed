@@ -33,14 +33,14 @@ export const SCRIPT_SHARE = `
   // '- '. The shape:
   //
   //   *Skipper Limited (SKIPPER)*
-  //   Financial Results · 2026-08-09 09:15:00 IST
+  //   Financial Results · 9 Aug 2026, 9:15 am IST
   //
   //   - Revenue was 1,204 crore
   //   - Profit after tax was 61 crore
   //
   //   Revenue 1,204 cr · PAT 61 cr
   //
-  //   _Verified against the company's filing._
+  //   _AI-extracted. Every line verified against the company's filing._
   //   Disclosed
   //
   // WHAT IT REFUSES TO ADD, and this is the whole of it: nothing. Every claim
@@ -54,9 +54,11 @@ export const SCRIPT_SHARE = `
   // a filing with eight claims carries eight quoted sentences from a PDF and
   // that is a wall of text in a chat window, not a message.
   //
-  // THE TIMESTAMP IS THE SERVER'S OWN STRING. 'disseminatedAtIst' arrives
-  // formatted, and this fragment appends the three letters 'IST' to it and does
-  // no arithmetic whatsoever — the same rule the card's tooltip follows. A
+  // THE TIMESTAMP IS THE SERVER'S OWN STRING, AND IT IS THE READABLE ONE.
+  // 'disseminatedAtIstHuman' arrives spelled '9 Aug 2026, 9:15 am', which is
+  // what a person reads in a chat window; the fixed-width sibling stays where
+  // it belongs, on the card's tooltip and in a diagnostic. This fragment
+  // appends the three letters 'IST' and does no arithmetic whatsoever — a
   // browser on any other zone would be wrong by five and a half hours and look
   // completely normal doing it.
 
@@ -73,7 +75,14 @@ export const SCRIPT_SHARE = `
 
   // The line above the name. Italic in the message, which is why it carries no
   // underscore of its own.
-  var SHARE_TAIL = "Verified against the company's filing.";
+  //
+  // WHO DID WHICH HALF, AND THE ORDER MATTERS. A model reads the document and
+  // proposes the sentences; the pipeline then matches each one character for
+  // character against a span of that document and drops what does not match.
+  // So the model is named as the EXTRACTOR and never as the verifier — 'AI
+  // verified' would be a claim about the machine that made the claim, which is
+  // the one sentence this product cannot afford to print.
+  var SHARE_TAIL = "AI-extracted. Every line verified against the company's filing.";
 
   /**
    * One filing as a message, from the payload and nothing else.
@@ -99,7 +108,7 @@ export const SCRIPT_SHARE = `
     // with a bare ticker is a message the reader has to decode before they can
     // decide whether they care.
     out.push('*' + f.companyName + ' (' + f.symbol + ')*');
-    out.push(f.category + ' · ' + f.disseminatedAtIst + ' IST');
+    out.push(f.category + ' · ' + f.disseminatedAtIstHuman + ' IST');
 
     out.push('');
     for (var i = 0; i < claims.length; i++) {

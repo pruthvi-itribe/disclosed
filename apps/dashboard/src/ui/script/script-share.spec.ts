@@ -75,6 +75,7 @@ const filing = (over: Filing = {}): Filing => ({
   companyName: 'Skipper Limited',
   category: 'Financial Results',
   disseminatedAtIst: '2026-08-09 09:15:00',
+  disseminatedAtIstHuman: '9 Aug 2026, 9:15 am',
   enrichment: {
     state: 'done',
     resultsLine: null,
@@ -103,7 +104,18 @@ describe('shareText — one filing as a message', () => {
     const [name, meta] = shareText(filing()).split('\n');
 
     expect(name).toBe('*Skipper Limited (SKIPPER)*');
-    expect(meta).toBe('Financial Results · 2026-08-09 09:15:00 IST');
+    expect(meta).toBe('Financial Results · 9 Aug 2026, 9:15 am IST');
+  });
+
+  it('reads the human spelling of the instant, not the fixed-width one', () => {
+    // BOTH ARRIVE ON THE PAYLOAD and this picks the one a person reads aloud.
+    // The other is the tooltip's and the diagnostic's; a chat message that
+    // said `2026-08-09 09:15:00` would be a log line again, which is the thing
+    // this format replaced.
+    const message = shareText(filing());
+
+    expect(message).toContain('9 Aug 2026, 9:15 am IST');
+    expect(message).not.toContain('2026-08-09 09:15:00');
   });
 
   it('bullets each claim, verbatim, one to a line', () => {
@@ -115,10 +127,15 @@ describe('shareText — one filing as a message', () => {
   });
 
   it('signs itself, in the words the tail and the brand hold', () => {
+    // WHO DID WHICH HALF. A model proposes the sentences and the pipeline
+    // matches each against a span of the document; naming the model as the
+    // extractor and the filing as the thing verified against is the whole of
+    // the sentence, and 'AI verified' would be a claim about the machine that
+    // made the claim.
     const lines = shareText(filing()).split('\n');
 
     expect(lines[lines.length - 2]).toBe(
-      "_Verified against the company's filing._",
+      "_AI-extracted. Every line verified against the company's filing._",
     );
     expect(lines[lines.length - 1]).toBe(BRAND);
   });
@@ -165,11 +182,11 @@ describe('shareText — one filing as a message', () => {
     expect(shareText(one)).toBe(
       [
         '*Skipper Limited (SKIPPER)*',
-        'Financial Results · 2026-08-09 09:15:00 IST',
+        'Financial Results · 9 Aug 2026, 9:15 am IST',
         '',
         '- The board declared an interim dividend of 2 per share',
         '',
-        "_Verified against the company's filing._",
+        "_AI-extracted. Every line verified against the company's filing._",
         'Disclosed',
       ].join('\n'),
     );
