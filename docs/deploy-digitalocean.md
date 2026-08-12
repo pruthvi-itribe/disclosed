@@ -510,22 +510,30 @@ Found while building this and **not fixed here**, because each one is a change
 to shipped behaviour that wants a decision rather than a commit inside a
 deployment task.
 
-1. **`trust proxy` is never set, and two things depend on it.**
-   `apps/dashboard/src/main.ts` never calls `app.set('trust proxy', ...)`, so
-   express reports `req.secure === false` behind Caddy. Consequences:
-   - **The session cookie ships without `Secure`.** It still works over https,
-     but nothing stops a browser sending it over plain http to the same host.
-     HSTS in the `Caddyfile` closes most of that window; the attribute would
-     close all of it.
-   - **The rate limiter keys every request to the proxy's IP.** The auth limits
-     are 10/minute and 60/hour (`dashboard.module.ts`), and behind a reverse
-     proxy — doubly so behind Cloudflare — that becomes a *global* limit rather
-     than a per-IP one. One person fumbling their password locks out everyone.
+1. **`TRUST_PROXY` exists now, and this deployment has to opt in.**
+   `apps/dashboard/src/main.ts` calls `app.set('trust proxy', ...)` with
+   whatever `TRUST_PROXY` carries, and **unset is still off** — so on this
+   droplet, until the variable is added, both consequences below are unchanged.
 
-   The fix is one line plus a decision about which hop to trust (`1` for Caddy
-   alone; Cloudflare's published ranges if the orange cloud is on). `isSecure`
-   in `session.service.ts` already reads `req.secure` and its comment
-   anticipates this exactly.
+   **`TRUST_PROXY=1` is the value for this arrangement**: one hop, because Caddy
+   is the only thing in front of the app and it terminates TLS itself, so the
+   `X-Forwarded-Proto` it writes is the scheme the browser actually used. Set
+   it and:
+   - **The session cookie gains `Secure`.** Today it works over https but
+     nothing stops a browser sending it over plain http to the same host; HSTS
+     in the `Caddyfile` closes most of that window and the attribute closes all
+     of it.
+   - **The rate limiter stops keying every request to Caddy's address.** The
+     auth limits are 10/minute and 60/hour (`dashboard.module.ts`), and without
+     this they are a *global* limit — one person fumbling their password locks
+     out everyone.
+
+   **With Cloudflare's orange cloud on, the second half is only partly fixed
+   here**, and not by a bigger hop count: what connects to Caddy is then a
+   Cloudflare edge address, so the resolved client is an edge and not a reader.
+   `apps/dashboard/src/auth/client-key.ts` is what reaches the reader —
+   `CF-Connecting-IP`, read only through a trusted chain — and its header
+   explains what that does and does not close.
 
 2. **No log aggregation and no uptime check.** Logs are `json-file`, capped at
    5 × 10 MB per container, and are lost with the droplet. `/api/health` is one
