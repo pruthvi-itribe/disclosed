@@ -1,424 +1,205 @@
-# Disclosed — NSE filings ingest
+# Disclosed
 
-Low-latency ingest of NSE corporate announcements with a no-loss guarantee,
-feeding a Telegram alert lane.
+**Real-time NSE/BSE corporate filings, where every published claim is verified
+character-for-character against the source document.**
+
+[![CI](https://github.com/pruthvi-itribe/disclosed/actions/workflows/ci.yaml/badge.svg)](https://github.com/pruthvi-itribe/disclosed/actions/workflows/ci.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-a78bfa.svg)](LICENSE)
+
+A listed company files hundreds of documents a day across India's exchanges —
+board outcomes, quarterly results, orders won, auditors' warnings — most of it
+buried in PDFs nobody has time to read. Disclosed reads them in real time,
+extracts what the company actually said, and shows each claim **with the exact
+sentence it came from**.
+
+![The feed](docs/images/feed.png)
+
+## The one rule
+
+AI proposes; the machine verifies; nothing unverifiable ships.
+
+A language model reads each document and proposes claims. Every claim is then
+**string-matched against the document's own text** — no match, no claim. No
+derived arithmetic (no computed margins or growth rates the filing didn't
+print), no sentiment scores, no ratings. Where a filing printed a direction
+word beside a figure, the card shows a neutral mark that follows the figure —
+the product has no view on any company or its shares, and says so.
+
+The measured reality that makes this rule load-bearing: on live filings the
+gate routinely discards model-proposed claims whose numbers or periods are not
+in the quoted span — plausible-sounding hallucinations that would otherwise
+ship as facts about named listed companies.
+
+## What a reader gets
+
+- **Filing in the feed ~30 seconds** after the exchange disseminates it;
+  verified insights follow at a median of ~2 minutes.
+- **The Brief** — the day as a swipeable deck, one company per card,
+  stories-style on a phone.
+- **The Feed** — every filing, searchable, filtered by topic, each insight
+  expandable to its verbatim source quote.
+- **Watchlists** — follow companies; a "Watching" view of only their filings.
+- **Company pages** — one filer's history, categories, and what it said it
+  plans.
+- **Shareable posts** — one tap copies a WhatsApp-ready text or a branded
+  image card; both carry the line *"AI-extracted. Every line verified against
+  the company's filing."*
+
+<p align="center">
+  <img src="docs/images/share-card.png" width="640"
+       alt="A share card: claims with their figures highlighted, verified against the filing">
+</p>
+
+## How it works
+
+```mermaid
+flowchart TD
+    NSE[NSE announcements] --> ING
+    BSE[BSE announcements] --> ING
+    ING["apps/ingest — 2s poll, store-first,\nno-loss guarantee"] --> DB[("MongoDB\n(database and work queue)")]
+    DB <--> W["enrichment workers × N\nclaim → fetch → parse → gates → extract → verify"]
+    W --> DOC["docling-serve\nlayout-aware PDF + OCR"]
+    W --> LLM["LLM via OpenRouter\n(proposes claims; never trusted as-is)"]
+    DB --> DASH["apps/dashboard\nserver-rendered shell + JSON API"]
+    DASH --> R([reader, behind Google sign-in])
+```
+
+Three NestJS apps over one MongoDB, no message broker — the filing document
+carries its own work state and workers claim jobs with a single atomic update:
+
+| App | Role |
+| --- | --- |
+| `apps/ingest` | Polls NSE every 2 s when the market is active. Stores first, alerts second; slow work never blocks the next filing. Carries a measured no-loss guarantee ([details](docs/internals.md#the-no-loss-guarantee)). Hosts enrichment worker #1. |
+| `apps/ingest` (worker entry) | `dist/apps/ingest/src/enrichment.main` — additional workers, scaled horizontally. Each document: fetch → parse (routing between a fast text parser and [Docling](https://github.com/docling-project/docling-serve) for tables/scans) → eligibility gates → two model lanes in parallel → the verbatim gate. |
+| `apps/dashboard` | The product. Serves a self-contained page (no CDN, no external fonts, no analytics — the signed-in app makes zero foreign-origin requests) and the JSON API behind a session guard. |
+
+Documents that can't earn their model call don't get one: covering letters,
+legal papers, shared multi-company pages, newspaper reprints and meeting
+intimations are refused **with the reason recorded** — "nothing was looked
+for" and "nothing was found" are different facts and never render the same.
 
 ## Quick start
 
-    docker compose up -d
-    cp .env.example .env      # set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
-    npm install --legacy-peer-deps
-    npm run start:dev
+Requires Node 20+, Docker, and ~15 GB of disk (the Docling image is large).
 
-Without Telegram credentials the pipeline still boots, polls and persists —
-alerts are written to the log instead. That is deliberate: a missing
-notification channel must never become a total outage.
+```bash
+git clone https://github.com/pruthvi-itribe/disclosed && cd disclosed
+docker compose up -d          # MongoDB :27117, Redis, docling-serve :5501
+cp .env.example .env          # defaults work; see Configuration below
+npm install --legacy-peer-deps
 
-## Watching it work
+npm run start:dev             # the ingest + worker #1 (starts polling NSE)
+npm run start:dashboard       # the app on http://127.0.0.1:7717
+```
 
-    npm run start:dashboard    # then open http://127.0.0.1:7717
+Without any keys the pipeline boots, polls and persists, and the dashboard
+runs with local email/password auth — register any account and read. Two
+optional integrations:
 
-A separate, **read-only** Nest application (`apps/dashboard`) that serves one
-self-contained HTML page and four JSON routes. It polls itself every four
-seconds, so filings appear as they land.
+- **Claim extraction** — set `CLAIM_PROVIDER=openrouter` and an OpenRouter
+  key; without it, filings are stored and shown without model-extracted
+  claims.
+- **Google sign-in** — create a Firebase project and set
+  `FIREBASE_PROJECT_ID` + `FIREBASE_WEB_API_KEY`; the sign-in page switches to
+  Google-only. No service-account key is needed (token verification is a
+  signature check against Google's public certificates). Until the keys exist,
+  the local email+password path serves.
 
-| Route             | Returns                                                                    |
-| ----------------- | -------------------------------------------------------------------------- |
-| `/`               | The page. Inline CSS and JS, no CDN, no external font, no build step.      |
-| `/api/summary`    | Total, count for the current IST day, newest `disseminatedAt`, max `seqId`, feed lag. |
-| `/api/filings`    | Newest-first page. `?limit=&offset=&symbol=&category=`                     |
-| `/api/categories` | Category breakdown with counts, largest first. `?limit=`                   |
-| `/api/daily`      | Filings per IST day, zero-filled, oldest first. `?days=`                   |
+More workers, when the queue grows:
 
-Every JSON route answers with `{ success, data, error, meta }`. A malformed
-query is a `400` naming the key, never a silently applied default.
-
-**It is a separate application on purpose, and must stay one.** `apps/ingest`
-has no HTTP server: it runs `NestFactory.createApplicationContext`, and
-`@nestjs/platform-express` is deliberately absent from it because it pulls in
-`multer`, whose advisory history is a run of high-severity denial-of-service
-reports, for a process that serves nothing. The dashboard is where that
-dependency lives. It registers no multipart route, runs with `bodyParser: false`
-so no request body is read at all, and `package.json` carries `overrides`
-pinning `multer`, `express`, `body-parser` and `qs` past the advisories that
-`@nestjs/platform-express@10` would otherwise pin in — `npm audit --omit=dev`
-reports the same findings with the dashboard as without it. The reasoning is
-written out at the top of `apps/dashboard/src/dashboard.module.ts`.
-
-**It never writes.** The query service is handed a `FilingReadModel` — the
-mongoose model narrowed to `find`, `findOne`, `countDocuments` and `aggregate` —
-so a write is a compile error, not a review comment. It also connects with
-`autoIndex: false`, so it cannot even create an index behind the poller. That
-matters because it shares a live collection: a stray write would corrupt the
-cursor the poller resumes from.
-
-**All times shown are IST**, rendered server-side from
-`libs/common/src/ist.ts` — the one definition of the offset in the codebase. The
-browser is never asked to format a stored instant, because a browser left on UTC
-would render every filing five and a half hours early and look entirely normal
-doing it.
-
-## Phase 1 measurement
-
-    npm run corpus:fetch -- --days 31
-    npm run corpus:analyse
-
-Reports the deterministic funnel and the per-day newsjack candidate count.
-
-## How the no-loss guarantee works
-
-Three mechanisms, and they are independent on purpose.
-
-**The database decides what is new.** A 2s hot poll reads NSE's 20-record live
-page and offers the WHOLE page to `insertNew` every time; the unique index on
-`seqId` rejects what we already hold. The cursor is not a newness filter.
-`seq_id` is not the total order the design assumed — measured over a recorded
-32-day corpus, 414 of 17,442 filings (2.37%, ~13/day, on 23 of 32 IST days) are
-disseminated with an id BELOW the stream position, including adjacent-id
-reversals two seconds apart and block excursions of 84,000 ids followed by a
-descending run. Filtering on `id > cursor` discards every one of them silently.
-
-**Rollover detection.** If the OLDEST seq_id on the page is still newer than the
-cursor, the page turned over between polls and continuity cannot be proved, so
-the day is re-pulled from the uncapped date-range endpoint and reconciled. Gaps
-in `seq_id` are normal — it is a global counter across NSE streams — and are
-never used as a loss signal.
-
-**Scheduled reconciliation.** Rollover alone is not enough, and the corpus says
-why: no 2-second window holds more than 6 filings and no 30-second window more
-than 9, against a 20-record page, so the page cannot roll at the poll cadence.
-Replaying all 32 days fires rollover ONCE. So the day is also re-pulled every
-`NSE_DRAIN_INTERVAL_MS` regardless, and once more at 23:30 IST to close the day.
-Each drain runs from the IST day of the newest record already stored through
-now, bounded to 7 days — a drain of today alone cannot close a hole that spans
-IST midnight, because the day rolls at 18:30 UTC.
-
-The cursor still only moves on proof, and only forward. It does not move from an
-empty page, past a rollover drain that failed, past a write that threw, or
-backwards — a backwards step would report a hole on every subsequent poll and
-re-drain the day forever.
-
-## What stops a restart re-alerting the whole day
-
-Two independent gates, because either alone is a single point of failure:
-
-- **The unique index on `seqId`.** `insertNew` does not decide for itself
-  whether a filing is new; it asks the database to reject the ones it already
-  holds, and alerts only on what comes back. `assertIndexes()` runs at startup
-  and stops the process if that index is missing, because without it every
-  re-seen filing reads as new and the alert gate inverts.
-- **The alert window.** A cold start drains a day of filings that are all new to
-  an empty database. Anything disseminated more than `ALERT_WINDOW_MS` ago is
-  stored silently and logged, never sent.
-
-## When it goes quiet
-
-A silent pipeline and a quiet market look identical from outside, so each way of
-going silent has its own operator alert, sent once per episode rather than once
-per poll:
-
-| Alert                 | Means                                                               |
-| --------------------- | ------------------------------------------------------------------- |
-| `INGEST DEGRADED`     | N consecutive poll failures — usually Akamai blocking the requests.  |
-| `INGEST BLIND`        | NSE returned records and every one failed to map (format change).    |
-| `INGEST RECORDS SKIPPED` | Some records failed to map and the rest were ingested.           |
-| `INGEST DRAIN FAILED` | A day re-pull failed, so a gap it would have closed is still open.   |
-| `INGEST WRITE FAILED` | The database refused a batch; rows may be stored but never alerted.  |
-
-Polling continues through all five. The circuit breaker decides when to speak
-up, never whether to send the next request — a retry is the only thing that can
-recover.
-
-`INGEST RECORDS SKIPPED` is the quietest of the five and the reason it exists:
-a page where nineteen of twenty records map looks identical to a healthy poll in
-every other signal — the fetch succeeded, filings arrived, the breaker is clean,
-the cursor moved. The scheduled drain re-offers the whole day indefinitely, so
-fixing the mapper recovers those records without a backfill.
-
-It is also the only one of the five that watches **two** fetch surfaces, so it
-carries two independent latches — one for the live page, one for the drained IST
-day — and each is re-armed only by its own surface coming back clean. A single
-shared latch does not hold: a skip on the drained day is visible on drain polls
-alone, the sweeps are 5 minutes apart, and the ~150 clean hot polls in between
-re-armed it every time. One persistently unmappable record produced 7 alerts
-across 30 simulated minutes that way, or roughly 288 a day at the shipped
-interval — the same flood that mutes the channel every alert above shares. So a
-poll in which BOTH surfaces are dropping records sends two messages, one per
-surface, and a persistent skip on either sends exactly one until it clears.
-
-`INGEST DRAIN FAILED` is the one worth waking up for. The other three are loud
-in their consequences; this one is not. The hot fetch still succeeds so the
-breaker stays healthy, the cursor is held so no filing is skipped, and nothing
-downstream misbehaves — the records inside the gap are simply never fetched. It
-is the only alert that says the no-loss guarantee is currently not being met.
+```bash
+npm run build
+node dist/apps/ingest/src/enrichment.main   # one per additional worker
+```
 
 ## Configuration
 
-Every ingest setting is read in `apps/ingest/src/config/configuration.ts` and
-nowhere else; the dashboard's own port is read in
-`apps/dashboard/src/config/configuration.ts` and nowhere else. Numeric settings
-must be whole numbers `>= 1`; anything else stops the process at startup naming
-the key. A blank assignment (`KEY=`) is read as unset and falls back to the
-default.
+Everything is environment variables, read in exactly one place per app and
+validated at startup — a bad value stops the process naming the key. The
+complete annotated list lives in [`.env.example`](.env.example); the ones that
+matter first:
 
-| Variable               | Default                              | Purpose                                       |
-| ---------------------- | ------------------------------------ | --------------------------------------------- |
-| `MONGO_URI`            | `mongodb://localhost:27117/turret`   | Storage. Read by both apps.                   |
-| `DASHBOARD_PORT`       | `7717`                               | Dashboard listen port, 1024–65535. Always bound to `127.0.0.1`; the interface is not configurable. |
-| `PUBLIC_ORIGIN`        | `http://127.0.0.1:<port>`            | The one origin allowed to POST. Behind a proxy this must be the public https origin, or every mutation from the real page is refused. |
-| `SESSION_TTL_DAYS`     | `30`                                 | How long a session lives unused, 1–365. Slides forward on use, at most hourly. |
-| `ADMIN_ENABLED`        | _(follows the host)_                 | `true` or `false`. Unset ⇒ on when `NODE_ENV` is not `production` **and** `PUBLIC_ORIGIN` is loopback. Decides whether the Admin view and its three routes are built at all — see below. |
-| `AUTH_MODE`            | _(follows the keys)_                 | `firebase` or `local`. Unset ⇒ `firebase` when the two Firebase keys are set, `local` otherwise. |
-| `FIREBASE_PROJECT_ID`  | _(empty)_                            | The Firebase project. The server verifies ID tokens against it. |
-| `FIREBASE_WEB_API_KEY` | _(empty)_                            | The project's Web API key. Printed into `/auth`; not a secret — see below. |
-| `FIREBASE_AUTH_DOMAIN` | `<project>.firebaseapp.com`          | Only needed if the project is served from a custom domain. |
-| `TELEGRAM_BOT_TOKEN`   | _(empty)_                            | Unset ⇒ alerts are logged, not sent.          |
-| `TELEGRAM_CHAT_ID`     | _(empty)_                            | Unset ⇒ alerts are logged, not sent.          |
-| `NSE_HOT_INTERVAL_MS`  | `2000`                               | Poll interval inside 07:00–23:00 IST.         |
-| `NSE_IDLE_INTERVAL_MS` | `30000`                              | Poll interval outside it.                     |
-| `NSE_DRAIN_INTERVAL_MS` | `300000`                            | How often the whole IST day is reconciled.    |
-| `TELEGRAM_MIN_SEND_INTERVAL_MS` | `1000`                      | Minimum gap between two Telegram sends.       |
-| `ALERT_WINDOW_MS`      | `600000`                             | Older filings are stored silently.            |
-| `BURST_THRESHOLD`      | `8`                                  | New records at which the next poll is immediate. |
-| `FAILURE_THRESHOLD`    | `3`                                  | Consecutive failures before `INGEST DEGRADED`.   |
-| `WATCHLIST`            | _(empty)_                            | Comma-separated symbols; empty ⇒ alert on all.   |
-| `DOCLING_URL`          | _(empty)_                            | Optional hybrid parser. Empty ⇒ `pdf-parse` reads everything. |
-| `DOCLING_TIMEOUT_MS`   | `300000`                             | One conversion's ceiling. Docling costs 2.5–4 s a page. |
-| `DOCLING_COOLDOWN_MS`  | `300000`                             | How long an unreachable service is skipped without a request. |
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MONGO_URI` | `mongodb://localhost:27117/turret` | Storage and work queue. |
+| `DASHBOARD_PORT` | `7717` | Always bound to `127.0.0.1`; put a proxy in front for the internet. |
+| `PUBLIC_ORIGIN` | loopback | The one origin allowed to POST. Must be the public https origin behind a proxy. |
+| `TRUST_PROXY` | off | Hop count of trusted proxies. Off = today's behavior; see [deploy docs](docs/deploy-kubernetes.md) before exposing publicly. |
+| `AUTH_MODE` | follows keys | `firebase` when the two Firebase keys are set, else `local`. |
+| `CLAIM_PROVIDER` / `CLAIM_MODEL` | unset | The extraction model. The pipeline runs without it. |
+| `DOCLING_URL` | unset | The layout parser. Compose serves it at `http://127.0.0.1:5501`. Unset ⇒ the fast parser reads everything and each filing records that it did. |
+| `ADMIN_ENABLED` | follows host | The operator panel. Built only on a local, non-production host unless forced — [why](docs/internals.md#the-admin-view-is-local-only). |
+| `OPERATOR_WATCHLIST` | empty | Symbols for the Telegram alert lane. Empty means firehose (~388 messages/day measured) — the boot log warns. |
 
-### The Admin view is local-only
+## The rules the code lives by
 
-The Admin tab is the instrument panel: the filings table, the enrichment and
-refusal breakdowns, the parse routes, the confidence tiers and the daily bars.
-Every one of those describes **this pipeline** rather than a company — how much
-it refused, how much it could not read, how far behind it is. That is useful on
-a laptop and is nobody else's business.
+These are enforced by tests, not aspiration ([CLAUDE.md](CLAUDE.md) is the
+authoritative list):
 
-So it is not hidden behind a role. It is **not shipped**:
-
-- no Admin tab and no Admin section in the served HTML — absent, not `hidden`;
-- no Admin fragment in the inlined script, so none of its renderers exist;
-- `GET /api/enrichment`, `/api/categories` and `/api/daily` answer **404**.
-
-404 rather than 403, because 403 says "this exists and you may not have it" —
-which is a fact about our machinery given to whoever asked. 404 says what is
-true on that host. The session guard stays on all three: this is a second
-condition, never a replacement for one.
-
-**The rule.** `ADMIN_ENABLED=true|false` is explicit and wins in both
-directions. Unset, the panel is built when `NODE_ENV` is not `production`
-**and** `PUBLIC_ORIGIN` names this machine (`127.0.0.1`, `localhost`, `[::1]`).
-
-Two signals, both required, because either alone is one line an operator can
-forget. `NODE_ENV` is a convention nothing enforces — a server started without
-it looks exactly like a laptop. And the loopback *bind* cannot discriminate:
-`DASHBOARD_HOST` is hard-coded to `127.0.0.1` and deliberately not
-configurable, so every deployment binds loopback, including the one behind the
-public reverse proxy. What separates them is `PUBLIC_ORIGIN`, which is not
-optional there — leave it at the loopback default and every mutation from the
-real page is refused by the origin guard. A host serving the internet has
-therefore necessarily set it. An origin that cannot be parsed is not loopback,
-so the gate fails closed.
-
-The startup line says which way it went: `admin=on` or `admin=off`.
-
-The six filter selects (`category`, `group`, `state`, `amount`, `tier`,
-`limit`) live inside the Admin section, so on a host without it they are simply
-absent. The feed reads a missing control as **its default**, never as empty —
-`state` is the one description of what is being asked for and a control is one
-way to write it, never the record of it. `e2e/admin.spec.ts` reads the mode off
-the served page and holds that host to the whole of its own contract, so the
-same suite proves either configuration.
-
-### Signing in
-
-**Nobody reads a filing without an account.** Every page and every `/api/*` read
-is behind the session guard; a signed-out visitor gets the landing page and
-nothing else. The exceptions are `GET /`, `GET /auth`, `GET /api/health` and
-`GET /api/me`, enumerated in `dashboard.controller.ts`.
-
-**Two providers, one session.** Firebase answers *who this person is*, once, at
-sign-in; what the browser then carries is the same opaque, revocable,
-Mongo-backed cookie the in-house path has always minted. Nothing downstream can
-tell which provider a session came from, which is what keeps "log me out
-everywhere" working.
-
-**To turn Firebase on**, create a project in the Firebase console, enable the
-Google and Email/Password providers, add this deployment's domain to the
-authorised-domain list, and set two variables:
-
-    FIREBASE_PROJECT_ID=your-project-id
-    FIREBASE_WEB_API_KEY=AIza...
-
-in `.env` beside `MONGO_URI`. That is the whole configuration. `AUTH_MODE` then
-resolves to `firebase` on its own. **No service-account key file is needed:**
-verifying an ID token is a signature check against Google's public certificates
-plus a project-id comparison, so there is no private key on this host to leak.
-
-`FIREBASE_WEB_API_KEY` is printed into the `/auth` page, and that is how Firebase
-is designed — a web API key identifies a project to Google's endpoints and
-authorises nothing on its own. What guards the project is the authorised-domain
-list.
-
-**Before the keys arrive**, or with `AUTH_MODE=local`, the in-house
-email + password path runs instead: argon2id, per-account backoff, and one
-identical failure message for a wrong password and an unknown address. It is
-dormant rather than deleted — on a Firebase host `register` and `login` answer
-`409 LOCAL_AUTH_DISABLED`.
-
-**If `AUTH_MODE=firebase` is set and the keys are not**, the process still
-boots. The startup line says
-`auth=firebase UNCONFIGURED(missing FIREBASE_PROJECT_ID,...)`, `/auth` names the
-variables that are unset, and the token-exchange route answers `503`.
-
-**A Firebase account must confirm its email address.** Firebase's own
-email+password sign-up does not verify it, so anyone could hold a valid token
-claiming somebody else's; requiring it only when linking to an existing account
-would turn the refusal into a registered-address oracle. Firebase sends the
-confirmation mail — which is a lane this product did not previously have at all.
-
-### The shipped watchlist is a firehose
-
-`WATCHLIST=` means alert on every non-routine filing, and that is the value
-`.env.example` ships. Measured over the recorded 32-day corpus, 12,415 of 17,442
-filings (71.2%) clear the routine-category gate — about **388 Telegram messages
-a day, peaking at 106 in one hour.**
-
-A channel at that volume gets muted within a day, and every operator alert in
-the table above is muted with it, so the pipeline goes dark exactly when it most
-needs to be heard. The semantics are deliberately unchanged — an operator who
-wants the whole feed should get it — but the poller logs a startup WARNING
-naming these numbers whenever the watchlist is empty. Set one before pointing
-this at a chat you rely on.
-
-## The optional Docling parser
-
-`pdf-parse` reads every document by default and that is the shipped
-configuration. It is fast — 0.19 s for a typical filing against Docling's 59 s —
-and for the ~90% of filings that are neither raster scans nor results tables its
-output is entirely adequate.
-
-It has two measured failures, and `DOCLING_URL` is what fixes them:
-
-- **Raster scans yield nothing.** Every one of the 21 scanned PDFs in the live
-  collection returns between 2 and 97 characters of page furniture, median 8.
-  Docling with OCR recovered 20 of 20 in the parsing spike, with 25 of 25
-  ground-truth digits verbatim.
-- **Results tables come out in the wrong reading order.** In Apollo Tyres'
-  Q1 FY27 filing `pdf-parse` places the standalone statement's rows 2,977
-  characters *before* its own title, so the nearest preceding statement heading
-  is the consolidated one — a well-formed, correctly quoted, wrong number about
-  a named listed company. Docling emits the heading first, keeps table columns
-  as addressable cells, and produces 0.00% malformed numbers on results filings
-  against `pdf-parse`'s 3.98%.
-
-Under 10% of filings reach it: scanned documents and results-bearing ones only.
-Everything else stays on the cheap parser, and large documents never go to
-Docling at all — the 640-page NHPC annual report extrapolates to about forty
-minutes.
-
-### Installing and running it
-
-It is a **Python** service and is deliberately **not** in `package.json`. The
-Node pipeline never imports it and never shells out to it; it speaks HTTP to a
-long-running local service, which is the only shape that works — the spike
-measured 28 seconds of one-time model warmup, which a subprocess per document
-would pay on every single filing.
-
-Needs Python 3.10+. With [`uv`](https://github.com/astral-sh/uv):
-
-```bash
-uv venv --python 3.13 .venv-docling
-uv pip install --python .venv-docling/bin/python docling-serve
-
-# Models (~1 GB) download on the first conversion, not at startup.
-DOCLING_SERVE_MAX_SYNC_WAIT=1800 \
-  .venv-docling/bin/docling-serve run --host 127.0.0.1 --port 5001
-```
-
-Then set `DOCLING_URL=http://127.0.0.1:5001` and restart the enrichment lane.
-
-`DOCLING_SERVE_MAX_SYNC_WAIT` is not optional in practice. It defaults to **120
-seconds**, and past it the service answers **504 while still completing the
-conversion** — a live run lost a 15-page scan that finished in 131 seconds
-exactly that way. Set it above `DOCLING_TIMEOUT_MS`.
-
-Bind it to `127.0.0.1`. `docling-serve run` defaults to `0.0.0.0`, and this is
-an unauthenticated service that converts arbitrary uploaded files.
-
-**Startup is slow.** The port takes ~40 seconds to accept connections, and the
-first conversion after that downloads the models. Until it answers, the
-pipeline simply uses `pdf-parse` and records that it did.
-
-### What happens when it is not there
-
-Nothing fails. Every failure resolves to "keep what `pdf-parse` already gave us
-and write down that we did":
-
-- `enrichment.parseRoute` records which parser actually read the document.
-- `enrichment.parseFallbackReason` records why an expensive parser was wanted
-  and did not run. A results filing read by `pdf-parse` because a Python service
-  has been down since Tuesday must not look identical to one `pdf-parse` was the
-  right answer for, and this is the field that tells them apart. The dashboard
-  counts it.
-
-A failure to *reach* the service opens an availability latch for
-`DOCLING_COOLDOWN_MS`, so a service that is down but reachable does not cost the
-full timeout on every filing. The latch opens only when **no response arrived at
-all** — an HTTP status is proof the service is alive, and treating a 504 on one
-oversized document as an outage skipped 19 convertible filings behind it in a
-live run.
-
-### Re-reading filings already marked unreadable
-
-`unparseable` is terminal by design. After starting Docling for the first time,
-the raster scans already recorded as `no-text-layer` need an explicit sweep:
-
-```bash
-npm run enrich:requeue -- --reason no-text-layer            # dry run
-npm run enrich:requeue -- --reason no-text-layer --write
-```
-
-The sweep reads `DOCLING_URL` itself and refuses these filings when it is unset,
-because on a machine with no OCR parser it would spend archive requests to
-re-measure the same zero characters.
-
+- **The verbatim gate** — nothing reaches a reader that wasn't string-matched
+  against the source document.
+- **Attribution before publication** — a span being *in* a document doesn't
+  make it *about* the filer; multi-company documents are refused, not guessed
+  at.
+- **Fail loudly** — no silent fallbacks. Every skip, refusal, parse downgrade
+  and outage is recorded on the filing and visible in the operator panel.
+- **IST is server-owned** — the browser never formats a timestamp.
+- **Exchange text is untrusted** — no `innerHTML` anywhere; every DOM node is
+  built safely; links only through an allow-listed scheme check.
+- **Self-contained pages** — the signed-in app requests nothing from any
+  foreign origin. The two signed-out pages make exactly one exception:
+  Google's pinned sign-in SDK.
+- **Measured constants** — every threshold in the code cites the sweep of
+  real data that placed it, in a comment beside the constant, so the next
+  editor re-measures instead of re-guessing.
 
 ## Tests
 
-    npm test                 # unit and integration suites
-    npm run test:cov         # coverage, with the threshold enforced
-    npm run lint
-    npm run build
+```bash
+npm test              # ~5,600 Jest tests, no network, ~13s
+npm run lint
+npx tsc --noEmit -p tsconfig.json
+npx playwright test   # ~125 browser tests; needs the dashboard running with AUTH_MODE=local
+```
 
-`jest.config.js` carries a `coverageThreshold`, so the bar is enforced rather
-than aspirational. `main.ts` and `ingest.module.ts` stay in the report at 0%
-rather than being excluded to flatter the number: they are composition, verified
-by running the process, and hiding them would also hide `main.ts`'s shutdown
-re-entrancy latch, which no test covers.
+Coverage thresholds are enforced in `jest.config.js`. Components with silent
+failure modes additionally carry mutation harnesses under `tools/mutation/` —
+each breaks the implementation one way at a time and asserts the tests catch
+it ([details](docs/internals.md#mutation-harnesses)).
 
-The dashboard's equivalent latch is the exception: it lives in
-`apps/dashboard/src/lifecycle/shutdown.ts` rather than inline in `main.ts`
-precisely so it can be tested, including the race where a second signal arrives
-while the first close is still in flight. `apps/dashboard/src/dashboard.e2e.spec.ts`
-boots the real module against an in-memory mongod on a loopback port and drives
-the routes over HTTP, so the module wiring is covered too.
+There is deliberately no test bypass in the server: the browser suite
+registers a throwaway account through the real register route and deletes it
+afterwards.
 
-Beyond the suites, each component that carries a silent failure mode has a
-committed mutation harness under `tools/mutation/`. Each breaks the
-implementation one way at a time, re-runs the tests, and asserts the break is
-caught:
+## Deployment
 
-    bash tools/mutation/poller-mutations.sh
+- **Docker / single host:** [`docs/deploy-digitalocean.md`](docs/deploy-digitalocean.md)
+  — Dockerfile, compose, Caddy, backups.
+- **Kubernetes:** [`docs/deploy-kubernetes.md`](docs/deploy-kubernetes.md) and
+  the manifests in [`k8s/`](k8s/) — ingest (single replica, Recreate),
+  workers (scaled to the measured results-season peak), dashboard behind a
+  Caddy sidecar, Docling on its own node with the memory lessons of a real
+  OOM baked in as config. CI builds and deploys via the workflows in
+  [`.github/workflows/`](.github/workflows/).
 
-A harness distinguishes CAUGHT, SURVIVED (a real test gap), NO-OP (the pattern
-matched nothing, so the harness is stale after a refactor), COMPILE (the mutant
-did not type-check, so no assertion ran) and HARNESS ERROR (jest never reached a
-suite). Only CAUGHT is a pass; every other verdict fails the exit code except
-CRASHED, which requires positive evidence that jest reached a suite before it
-may be scored as a kill.
+## Going deeper
 
-## Design docs
+- [`docs/internals.md`](docs/internals.md) — the no-loss guarantee's three
+  mechanisms and the measured NSE behavior that shaped them; the operator
+  alert taxonomy; why the dashboard is a separate application; the admin
+  gate's two-signal rule; running Docling outside compose.
+- [`docs/ui-components.md`](docs/ui-components.md) — every UI component's
+  name, for precise conversations about the interface.
+- [`docs/measurements/`](docs/measurements/) — the audits and sweeps behind
+  the constants (processing audit, enrichment speed sweep, header-tier and
+  date-spelling investigations).
+- [`docs/superpowers/specs/`](docs/superpowers/specs/) — the original design
+  documents.
 
-- Spec: `docs/superpowers/specs/2026-08-05-filings-pipeline-design.md`
-- Plan: `docs/superpowers/plans/2026-08-05-ingest-core.md`
+## License
+
+[MIT](LICENSE) © 2026 Pruthvi Raj Eranti
+
+Disclosed reports what companies file and shows where they said it. It has no
+view on any company or security, publishes no recommendations, and is not
+investment advice.
