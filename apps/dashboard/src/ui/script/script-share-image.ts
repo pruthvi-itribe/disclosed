@@ -504,9 +504,17 @@ export const SCRIPT_SHARE_IMAGE = `
   /** The plan onto a canvas of the right size. */
   function sharePaint(plan, height) {
     var canvas = document.createElement('canvas');
-    canvas.width = SHARE_W;
-    canvas.height = height;
+    // DRAWN AT 2X. Every measurement in the plan is in 1080-wide units, but
+    // the pixels are doubled and the context scaled to match: a phone screen
+    // shows shared images at 2-3 device pixels per CSS pixel, so a 1080px
+    // render arrives soft everywhere and softest on the 64px logo tile - the
+    // user's complaint. At 2x the tile is 128 physical pixels from a 256px
+    // source (a clean 2:1) and every glyph doubles its pixels. The PNG grows
+    // (~4x the area) but stays well under chat-app recompression thresholds.
+    canvas.width = SHARE_W * 2;
+    canvas.height = height * 2;
     var ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
 
     ctx.fillStyle = SHARE_BG;
     ctx.fillRect(0, 0, SHARE_W, height);
