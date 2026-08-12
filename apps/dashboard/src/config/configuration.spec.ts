@@ -8,6 +8,7 @@ import {
   readAdminEnabled,
   readPort,
   readString,
+  readTrustProxy,
 } from './configuration';
 
 /** A clean environment, so nothing here depends on the developer's shell. */
@@ -122,6 +123,9 @@ describe('loadDashboardConfig', () => {
       auth: { mode: 'local', firebase: null, missing: [] },
       // A laptop: no NODE_ENV and a loopback origin. See `readAdminEnabled`.
       adminEnabled: true,
+      // Nothing is in front of this process, so a forwarded header is a claim
+      // rather than a fact. Express's own default, restated.
+      trustProxy: false,
     });
   });
 
@@ -150,6 +154,7 @@ describe('loadDashboardConfig', () => {
       publicOrigin: 'http://127.0.0.1:9001',
       auth: { mode: 'local', firebase: null, missing: [] },
       adminEnabled: true,
+      trustProxy: false,
     });
   });
 
@@ -210,7 +215,91 @@ describe('loadDashboardConfig: the public origin', () => {
   });
 });
 
+describe('readTrustProxy', () => {
+  it('is off when the key is absent, which is express’s own default', () => {
+    // The shipped loopback deployment reads no forwarded header at all: with
+    // nothing between the browser and this process, `X-Forwarded-Proto: https`
+    // is a sentence the caller wrote rather than a fact a proxy established.
+    expect(readTrustProxy(env())).toBe(false);
+  });
+
+  it.each([[''], ['   '], ['\t']])(
+    'treats a blank assignment (%p) as not set',
+    (raw) => {
+      expect(readTrustProxy(env({ TRUST_PROXY: raw }))).toBe(false);
+    },
+  );
+
+  it('reads a hop count as a number, not as an address', () => {
+    // Express parses a STRING as a list of addresses, so '2' passed through
+    // verbatim throws `invalid IP address: 2` from inside `app.set`.
+    expect(readTrustProxy(env({ TRUST_PROXY: '2' }))).toBe(2);
+  });
+
+  it.each([
+    ['0', 0],
+    ['1', 1],
+    ['10', 10],
+  ])('reads hop count %p', (raw, expected) => {
+    expect(readTrustProxy(env({ TRUST_PROXY: raw }))).toBe(expected);
+  });
+
+  it('passes an address list through for express to parse', () => {
+    // Express owns the syntax of this form — presets, subnets and bare
+    // addresses — and throws at boot on anything it cannot read.
+    expect(readTrustProxy(env({ TRUST_PROXY: 'loopback,10.0.0.0/8' }))).toBe(
+      'loopback,10.0.0.0/8',
+    );
+  });
+
+  it('trims the surrounding whitespace of either form', () => {
+    expect(readTrustProxy(env({ TRUST_PROXY: '  2  ' }))).toBe(2);
+    expect(readTrustProxy(env({ TRUST_PROXY: ' loopback ' }))).toBe('loopback');
+  });
+
+  it('accepts an explicit false, so a host can say off out loud', () => {
+    expect(readTrustProxy(env({ TRUST_PROXY: 'false' }))).toBe(false);
+    expect(readTrustProxy(env({ TRUST_PROXY: 'FALSE' }))).toBe(false);
+  });
+
+  it.each([['true'], ['TRUE'], ['True']])(
+    'refuses %p, the one value that hands the identity to the client',
+    (raw) => {
+      // `trust proxy: true` walks X-Forwarded-For to its LEFTMOST entry, which
+      // is the one the client wrote. The rate limiter would then count an
+      // address the attacker picks, and the `Secure` decision would be made by
+      // whoever asked for it.
+      expect(() => readTrustProxy(env({ TRUST_PROXY: raw }))).toThrow(
+        /TRUST_PROXY must not be "true"/,
+      );
+    },
+  );
+
+  it('names the working forms in the refusal', () => {
+    expect(() => readTrustProxy(env({ TRUST_PROXY: 'true' }))).toThrow(
+      /TRUST_PROXY=2/,
+    );
+  });
+
+  it('is carried onto the config the process boots with', () => {
+    expect(loadDashboardConfig(env()).trustProxy).toBe(false);
+    expect(loadDashboardConfig(env({ TRUST_PROXY: '2' })).trustProxy).toBe(2);
+  });
+});
+
 describe('describeDashboardConfig', () => {
+  it('says what the forwarded headers are worth', () => {
+    // Both things that key off it — which address the rate limiter counts, and
+    // whether the cookie carries `Secure` — are invisible until somebody is
+    // already locked out or already signed out.
+    expect(describeDashboardConfig(loadDashboardConfig(env()))).toContain(
+      'proxy=off',
+    );
+    expect(
+      describeDashboardConfig(loadDashboardConfig(env({ TRUST_PROXY: '2' }))),
+    ).toContain('proxy=2');
+  });
+
   it('names the bind address and what this process may write', () => {
     const line = describeDashboardConfig(loadDashboardConfig(env()));
 
