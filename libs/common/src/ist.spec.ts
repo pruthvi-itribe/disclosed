@@ -4,6 +4,7 @@ import {
   istClock,
   istDayKey,
   istDayKeysEndingAt,
+  istHumanTimestamp,
   istTimestamp,
   pad2,
   startOfIstDay,
@@ -101,6 +102,56 @@ describe('istTimestamp', () => {
   it('joins the IST day and the IST clock', () => {
     expect(istTimestamp(new Date('2026-08-05T18:30:00.000Z'))).toBe(
       '2026-08-06 00:00:00',
+    );
+  });
+});
+
+describe('istHumanTimestamp', () => {
+  it('renders the IST wall clock the way a person reads it aloud', () => {
+    expect(istHumanTimestamp(new Date('2026-08-12T03:18:10.000Z'))).toBe(
+      '12 Aug 2026, 8:48 am',
+    );
+  });
+
+  it('crosses noon and midnight on a twelve-hour clock', () => {
+    // The two hours a twelve-hour clock gets wrong when it is written by hand:
+    // 12:xx pm modulo twelve is 0, and midnight is `12 am` of the NEXT day.
+    expect(istHumanTimestamp(new Date('2026-08-12T06:35:00.000Z'))).toBe(
+      '12 Aug 2026, 12:05 pm',
+    );
+    expect(istHumanTimestamp(new Date('2026-08-11T18:30:00.000Z'))).toBe(
+      '12 Aug 2026, 12:00 am',
+    );
+  });
+
+  it('pads the minute and does not pad the day', () => {
+    // Nothing parses this string, so the fixed width `pad2` buys elsewhere buys
+    // nothing here — but `8:5 am` is not a time.
+    expect(istHumanTimestamp(new Date('2026-08-05T03:35:00.000Z'))).toBe(
+      '5 Aug 2026, 9:05 am',
+    );
+  });
+
+  it('reads the IST day, not the UTC one', () => {
+    // 19:00 UTC is already tomorrow in IST, and this is the one field on the
+    // share card a reader would check a date against.
+    expect(istHumanTimestamp(new Date('2026-12-31T19:00:00.000Z'))).toBe(
+      '1 Jan 2027, 12:30 am',
+    );
+  });
+
+  it('says the same instant as the machine-readable string', () => {
+    // The two are siblings and must never disagree: one is the tooltip and the
+    // log line, the other is the picture somebody sends.
+    const instant = new Date('2026-08-12T03:18:10.000Z');
+
+    expect(istTimestamp(instant)).toBe('2026-08-12 08:48:10');
+    expect(istHumanTimestamp(instant)).toBe('12 Aug 2026, 8:48 am');
+  });
+
+  it('throws rather than rendering NaN for an unusable timestamp', () => {
+    expect(() => istHumanTimestamp(new Date('not a date'))).toThrow(
+      /Not a usable timestamp/,
     );
   });
 });

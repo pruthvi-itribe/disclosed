@@ -564,6 +564,21 @@ describe('FilingQueryService — the filing view', () => {
     expect(view.ingestedAtIst).toBe('2026-08-05 10:28:24');
   });
 
+  it('spells the dissemination instant a second way, for the share surfaces', async () => {
+    // A SIBLING, NOT A REPLACEMENT: the fixed-width string is what a tooltip
+    // and a diagnostic show, and this is what a person reads on a picture sent
+    // to a friend. Both come off the server, because the browser is not
+    // necessarily on IST and must never format one of these itself.
+    await seed([
+      makeFiling(7, { disseminatedAt: new Date('2026-08-05T04:58:18.000Z') }),
+    ]);
+
+    const [view] = (await service.getRecent({ limit: 1, offset: 0 })).items;
+
+    expect(view.disseminatedAtIstHuman).toBe('5 Aug 2026, 10:28 am');
+    expect(view.disseminatedAtIst).toBe('2026-08-05 10:28:18');
+  });
+
   it('reports pipeline lag as ingestion minus dissemination', async () => {
     await seed([
       makeFiling(7, {

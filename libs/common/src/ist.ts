@@ -97,6 +97,59 @@ export const istTimestamp = (value: Date): string =>
   `${istDayKey(value)} ${istClock(value)}`;
 
 /**
+ * The months, spelled the way a person writes a date rather than sorts one.
+ *
+ * Three letters, English, indexed by `getUTCMonth()` on the shifted clock. A
+ * lookup rather than `toLocaleString`: the process's locale is not a property
+ * anybody sets deliberately, and a server that renamed August because a
+ * container image shipped a different ICU build would be an unreadable bug.
+ */
+const IST_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/**
+ * The IST wall clock as a person reads it aloud: `12 Aug 2026, 8:48 am`.
+ *
+ * A SIBLING OF `istTimestamp`, NOT A REPLACEMENT. `2026-08-12 08:48:10` is the
+ * right string in a table, a tooltip and a log line — fixed width, sortable,
+ * unambiguous — and it is the wrong string on a picture somebody sends to a
+ * friend, where it reads as a machine's output. Both are composed HERE, on the
+ * server, because the browser may not be on IST and the invariant is that it
+ * never formats a timestamp.
+ *
+ * THREE DELIBERATE CHOICES, so the next editor does not have to re-derive them:
+ *
+ *   - NO SECONDS. `08:48:10` is dissemination precision and this string is
+ *     prose; the second is still one field away in `istTimestamp` for anyone
+ *     who needs it.
+ *   - THE DAY IS NOT PADDED. `5 Aug 2026`, not `05 Aug 2026` — nothing parses
+ *     this string, so the fixed width `pad2` exists for buys nothing, and the
+ *     unpadded day is what a person writes. The MINUTE is still padded, because
+ *     `8:5 am` is not a time.
+ *   - LOWER-CASE `am`/`pm`, and midnight is `12 am` rather than `0 am`.
+ */
+export const istHumanTimestamp = (value: Date): string => {
+  const ist = istWallClock(value);
+  const hours = ist.getUTCHours();
+  const clock = `${hours % 12 === 0 ? 12 : hours % 12}:${pad2(
+    ist.getUTCMinutes(),
+  )} ${hours < 12 ? 'am' : 'pm'}`;
+  return `${ist.getUTCDate()} ${IST_MONTHS[ist.getUTCMonth()]} ${ist.getUTCFullYear()}, ${clock}`;
+};
+
+/**
  * The instant at which the IST day containing `value` began.
  *
  * That is 18:30 UTC the previous day. `Math.floor` rather than a truncating

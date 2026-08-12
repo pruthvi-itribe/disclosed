@@ -314,6 +314,22 @@ export interface FilingView {
   readonly disseminatedAt: string;
   readonly disseminatedAtIst: string;
   /**
+   * The same instant, spelled the way a person reads it: `12 Aug 2026, 8:48 am`.
+   *
+   * A SECOND FIELD RATHER THAN A REFORMATTING OF THE FIRST. `disseminatedAtIst`
+   * is what a tooltip, a table cell and a diagnostic show — fixed width and
+   * sortable — and it is the wrong string on the picture a reader sends to a
+   * friend, where it reads as a machine's output. Both are composed by
+   * `libs/common/ist.ts`, and the browser formats neither: it is not necessarily
+   * on IST, and a page that spelled this itself would be five and a half hours
+   * wrong while looking entirely normal.
+   *
+   * Carried on every filing rather than only where it is drawn, because the
+   * share surfaces read the payload the API already sends and a second route
+   * for one string is a second thing to keep in step.
+   */
+  readonly disseminatedAtIstHuman: string;
+  /**
    * The IST calendar day this filing was disseminated on, as `YYYY-MM-DD`.
    *
    * Carried separately from `disseminatedAtIst` so the company page's filing

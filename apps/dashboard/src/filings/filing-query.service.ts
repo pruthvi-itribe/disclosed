@@ -4,6 +4,7 @@ import {
   instantMs,
   istDayKey,
   istDayKeysEndingAt,
+  istHumanTimestamp,
   istTimestamp,
   startOfIstDay,
 } from '@app/common';
@@ -1150,6 +1151,10 @@ export class FilingQueryService {
       announcedAtIst: istTimestamp(doc.announcedAt),
       disseminatedAt: disseminatedAt.toISOString(),
       disseminatedAtIst: istTimestamp(disseminatedAt),
+      // THE SAME INSTANT IN PROSE, for the picture a reader sends. Composed
+      // here for the reason the line above it is: the browser is not
+      // necessarily on IST and never formats a timestamp.
+      disseminatedAtIstHuman: istHumanTimestamp(disseminatedAt),
       // THE IST DAY, COMPUTED HERE AND NOT IN THE BROWSER. The company page's
       // filing strip buckets by IST calendar day, and the rule at the top of
       // `page-script.ts` is that the server owns every IST decision — a browser
