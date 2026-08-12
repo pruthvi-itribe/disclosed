@@ -9,6 +9,7 @@ import { SCRIPT_FEED } from './script-feed';
 import { SCRIPT_FOCUS } from './script-focus';
 import { SCRIPT_POLL } from './script-poll';
 import { SCRIPT_SHARE } from './script-share';
+import { SCRIPT_SHARE_IMAGE } from './script-share-image';
 import { SCRIPT_SUGGEST } from './script-suggest';
 import { SCRIPT_VIEWS } from './script-views';
 
@@ -25,9 +26,10 @@ import { SCRIPT_VIEWS } from './script-views';
 const FRAGMENTS: ReadonlyArray<readonly [string, string]> = [
   ['script-base', SCRIPT_BASE],
   ['script-cells', SCRIPT_CELLS],
-  // Before every fragment that draws a Copy button: `shareText` is what those
-  // buttons hand the clipboard.
+  // Before every fragment that draws a Copy button: `shareText` and
+  // `shareImageButton` are what those buttons hand the clipboard.
   ['script-share', SCRIPT_SHARE],
+  ['script-share-image', SCRIPT_SHARE_IMAGE],
   ['script-feed', SCRIPT_FEED],
   // After `script-feed`: it calls that fragment's `writeInsight`, and
   // `feedCard` calls this one's `openFocus`.

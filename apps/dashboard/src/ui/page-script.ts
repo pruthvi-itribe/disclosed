@@ -33,6 +33,7 @@ import { SCRIPT_FEED } from './script/script-feed';
 import { SCRIPT_FOCUS } from './script/script-focus';
 import { SCRIPT_POLL } from './script/script-poll';
 import { SCRIPT_SHARE } from './script/script-share';
+import { SCRIPT_SHARE_IMAGE } from './script/script-share-image';
 import { SCRIPT_SUGGEST } from './script/script-suggest';
 import { SCRIPT_VIEWS } from './script/script-views';
 
@@ -80,10 +81,11 @@ const adminFlag = (enabled: boolean): string =>
 const fragments = (admin: boolean): readonly string[] => [
   SCRIPT_BASE,
   SCRIPT_CELLS,
-  // Before every fragment that draws a Copy button, which is what it is for:
-  // one definition of what a filing looks like when somebody sends it to
-  // somebody else.
+  // Before every fragment that draws a Copy button, which is what these two
+  // are for: one definition of what a filing looks like when somebody sends it
+  // to somebody else, as text and as a picture.
   SCRIPT_SHARE,
+  SCRIPT_SHARE_IMAGE,
   SCRIPT_FEED,
   // After `script-feed`, and that is a dependency rather than a preference:
   // every claim the dialog puts on screen goes through that fragment's

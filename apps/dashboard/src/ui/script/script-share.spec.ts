@@ -1,5 +1,8 @@
 import { BRAND } from '../brand';
 import { renderDashboardPage } from '../page';
+import { PAGE_STYLE } from '../page-style';
+import { SCRIPT_SHARE } from './script-share';
+import { SCRIPT_SHARE_IMAGE } from './script-share-image';
 
 /**
  * `shareText`, run as the browser runs it.
@@ -10,10 +13,12 @@ import { renderDashboardPage } from '../page';
  * not a fragment that shipped. What is asserted here is the function the page
  * actually hands a browser.
  *
- * IT IS THE ONE FUNCTION IN THE FRAGMENT WORTH RUNNING IN JEST. It is pure, it
+ * IT IS THE ONE FUNCTION IN THE PAIR WORTH RUNNING IN JEST. It is pure, it
  * touches no DOM, and it is the whole of a rule that has no other enforcement:
- * what leaves this product in somebody's chat window. Everything else the
- * fragment does is build a button, which is the e2e suite's job.
+ * what leaves this product in somebody's chat window. The image's blocks need a
+ * canvas to measure with and its delivery needs a clipboard, so both are the
+ * e2e suite's job; what the two share — which claims go in and which do not —
+ * is asserted on the source below.
  */
 
 const html = renderDashboardPage(true);
@@ -231,10 +236,62 @@ describe('shareText — one filing as a message', () => {
   });
 });
 
-describe('the share fragment carries no copy that can drift silently', () => {
+describe('the share fragments carry no copy that can drift silently', () => {
   it('signs the message with the one spelling of the name', () => {
     // A fragment is a string and cannot import; `brand.ts` holds the name and
     // this is what stops the copy of it here from becoming a second one.
     expect(cutString('SHARE_BRAND')).toBe(BRAND);
+  });
+
+  it("draws the picture in the stylesheet's own palette", () => {
+    // An image is rendered outside the document, where `var(--bg)` resolves to
+    // nothing, so these are literals for the same reason the favicon's are —
+    // and a hex that has to be copied is a hex that will drift unless something
+    // checks. See `logo.spec.ts`, which does this for the icon.
+    expect(PAGE_STYLE).toContain(`--bg: ${cutString('SHARE_BG')};`);
+    expect(PAGE_STYLE).toContain(`--line: ${cutString('SHARE_LINE')};`);
+    expect(PAGE_STYLE).toContain(`--text: ${cutString('SHARE_INK')};`);
+    expect(PAGE_STYLE).toContain(`--muted: ${cutString('SHARE_MUTED')};`);
+    expect(PAGE_STYLE).toContain(`--accent: ${cutString('SHARE_ACCENT')};`);
+  });
+
+  it('takes the mark from the document rather than redrawing it', () => {
+    // `logo.ts` holds the geometry once, and the favicon is the copy of it that
+    // is written in hex rather than in custom properties — precisely because it
+    // has to survive being rendered outside a document, which is this canvas's
+    // situation exactly. Re-plotting the D's arcs here would be a second
+    // drawing, and the two would differ the first time either changed.
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      'document.querySelector(\'link[rel="icon"]\')',
+    );
+    expect(SCRIPT_SHARE_IMAGE).not.toContain('arcTo');
+    expect(SCRIPT_SHARE_IMAGE).not.toContain('bezierCurveTo');
+  });
+
+  it('reads the claims the way the message reads them', () => {
+    // A picture and a message of the same filing that disagreed about what the
+    // filing said would be worse than either being wrong on its own.
+    for (const fragment of [SCRIPT_SHARE, SCRIPT_SHARE_IMAGE]) {
+      expect(fragment).toContain('var claims = e.claims || [];');
+    }
+    expect(SCRIPT_SHARE_IMAGE).toContain('var SHARE_CLAIM_CAP = 8;');
+    expect(SCRIPT_SHARE_IMAGE).toContain("' more in the app'");
+  });
+
+  it('puts exchange text into a file name through a whitelist', () => {
+    // The download attribute is the one place on this page where a symbol
+    // reaches something other than `textContent`, and a browser turns it into
+    // a path.
+    expect(SCRIPT_SHARE_IMAGE).toContain("replace(/[^A-Za-z0-9._-]/g, '')");
+  });
+
+  it('reports which of the two deliveries happened', () => {
+    // A control that reports success for two different outcomes has taught the
+    // reader to look in the wrong place.
+    expect(SCRIPT_SHARE_IMAGE).toContain("shareSaid(button, 'Image copied')");
+    expect(SCRIPT_SHARE_IMAGE).toContain("shareSaid(button, 'Downloaded')");
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      "button.setAttribute('aria-live', 'polite')",
+    );
   });
 });

@@ -348,9 +348,9 @@ test.describe('the focus card', () => {
  * whole path, permission prompt included, against a live filing.
  *
  * `context.grantPermissions` is a Chromium capability and this suite is
- * Chromium-only (`playwright.config.ts`). If that ever changes, this is the
- * test that will need the fallback — asserting the button's announcement rather
- * than the clipboard's contents.
+ * Chromium-only (`playwright.config.ts`). If that ever changes, these two are
+ * the tests that will need the fallback — asserting the button's announcement
+ * rather than the clipboard's contents.
  */
 test.describe('sending a filing', () => {
   test('copies it as a message a chat window can read', async ({
@@ -398,5 +398,51 @@ test.describe('sending a filing', () => {
     // Not the evidence, however much of it is open on screen behind this.
     expect(text).not.toContain('matched in the document');
     expect(text).not.toContain('"');
+  });
+
+  test('copies it as a picture, 1080 wide and portrait', async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/');
+    const seq = await aSendableCardSeq(page);
+    await page.locator(`#feed .card[data-seq="${seq}"]`).click();
+    await expect(page.locator('#focus')).toBeVisible();
+
+    const button = page.locator('[data-ui="focus-copy-image"]');
+    // The label says what it will do, and the live region is what makes the
+    // swap after it audible rather than merely visible.
+    await expect(button).toHaveText('Copy as image');
+    await expect(button).toHaveAttribute('aria-live', 'polite');
+
+    await button.click();
+    // WHICH OF THE TWO DELIVERIES HAPPENED, said on the button. Chromium here
+    // has ClipboardItem, so it is the clipboard; a browser without it falls
+    // back to a file and this reads 'Downloaded' instead.
+    await expect(button).toHaveText('Image copied');
+
+    // Read back and decoded, because a clipboard write that produced a 0-byte
+    // or wrongly sized image would pass every assertion above it.
+    const size = await page.evaluate(async () => {
+      const items = await navigator.clipboard.read();
+      const blob = await items[0].getType('image/png');
+      const bitmap = await createImageBitmap(blob);
+      return { width: bitmap.width, height: bitmap.height, bytes: blob.size };
+    });
+
+    expect(size.width).toBe(1080);
+    expect(size.bytes).toBeGreaterThan(1000);
+    // Height follows the content — a filing with one claim is not padded out to
+    // fill a frame it did not need — but it is capped so the picture stays
+    // something a chat window shows rather than a thumbnail. The tallest over
+    // 110 live filings measured 1344; the ceiling here is the worst case the
+    // layout can reach with the claim cap, the longest company name and the
+    // longest results line the collection holds.
+    expect(size.height).toBeGreaterThan(400);
+    expect(size.height).toBeLessThanOrEqual(1700);
+
+    // And the label comes back, so the control is usable twice.
+    await expect(button).toHaveText('Copy as image', { timeout: 5000 });
   });
 });

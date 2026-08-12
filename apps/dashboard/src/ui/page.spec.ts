@@ -18,6 +18,7 @@ import { SCRIPT_FEED } from './script/script-feed';
 import { SCRIPT_FOCUS } from './script/script-focus';
 import { SCRIPT_POLL } from './script/script-poll';
 import { SCRIPT_SHARE } from './script/script-share';
+import { SCRIPT_SHARE_IMAGE } from './script/script-share-image';
 
 /**
  * A SMOKE suite, deliberately. The markup itself is not asserted line by line —
@@ -1966,8 +1967,9 @@ describe('the focus card', () => {
  *
  * The format itself is `script-share.spec.ts`, which runs the function out of
  * this same document. What is here is the part that is about the page: that
- * both Copy buttons hand it the filing, and that the fragment they take it from
- * puts nothing into the document any other way.
+ * both Copy buttons hand it the filing, that the second control exists on the
+ * one foot with room for it, and that a picture drawn from a canvas did not
+ * quietly become the page's first external request.
  */
 describe('renderDashboardPage — the share', () => {
   it('gives the card and the dialog one format, from one function', () => {
@@ -1981,12 +1983,40 @@ describe('renderDashboardPage — the share', () => {
     expect(SCRIPT_FEED).not.toContain('insightText');
   });
 
-  it('puts nothing into the message through innerHTML', () => {
-    // The fragment builds a string rather than a node, so there is nothing here
-    // for the rule to bend around — which is worth saying, because the next
-    // thing anybody adds to a share surface is a preview of it.
+  it('offers the picture beside the text, on the foot that wraps', () => {
+    // The card's footer is one line whose controls are sized never to shrink,
+    // so a third would push the category out of it. This one wraps.
+    expect(SCRIPT_FOCUS).toContain('foot.appendChild(shareImageButton(f));');
+    expect(SCRIPT_FEED).not.toContain('shareImageButton');
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      "button.setAttribute('data-ui', 'focus-copy-image')",
+    );
+    // The same visual weight family as Copy and Source, which is one class.
+    expect(SCRIPT_SHARE_IMAGE).toContain("button.className = 'copy'");
+  });
+
+  it('draws the picture without asking the network for anything', () => {
+    // THE DOCUMENT-WIDE ASSERTION ALREADY COVERS THIS — the suite's first test
+    // is that the page matches no `https?://` at all — but a canvas is where an
+    // external font or a logo PNG would be reached for next, so it is said
+    // here too, against the fragment.
+    expect(SCRIPT_SHARE_IMAGE).not.toMatch(/https?:\/\//);
+    expect(SCRIPT_SHARE_IMAGE).not.toContain('fetch(');
+    expect(SCRIPT_SHARE_IMAGE).not.toContain('@font-face');
+    // The type is the stack `:root` already declares, and the mark is the
+    // favicon this document is already carrying as an inlined `data:` SVG.
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      'var link = document.querySelector(\'link[rel="icon"]\');',
+    );
+    expect(PAGE_STYLE).toContain('system-ui, -apple-system');
+  });
+
+  it('puts nothing into the picture through innerHTML', () => {
+    // A canvas takes strings through `fillText`, which is not a parser — but
+    // the rule on this page is about where exchange text may go, not about
+    // which sink happens to be safe today.
     expect(SCRIPT_SHARE).not.toContain('innerHTML');
-    expect(SCRIPT_SHARE).not.toContain('document.create');
+    expect(SCRIPT_SHARE_IMAGE).not.toContain('innerHTML');
   });
 });
 

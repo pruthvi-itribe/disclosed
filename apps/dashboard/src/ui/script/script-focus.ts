@@ -8,9 +8,9 @@
  *
  * IT RUNS AFTER `script-feed`, which is a dependency rather than a preference:
  * every claim this fragment puts on screen goes through that fragment's
- * `writeInsight`, and no other way. It runs after `script-share` for the same
- * kind of reason: the foot's Copy takes its payload from `shareText`, defined
- * there.
+ * `writeInsight`, and no other way. It runs after `script-share` and
+ * `script-share-image` for the same kind of reason: the foot's two share
+ * controls are `shareText` and `shareImageButton`, defined there.
  *
  * NO BACKTICK AND NO `${` MAY APPEAR BELOW. Both are consumed by the
  * composing template literal before a browser ever sees this, which is the
@@ -225,6 +225,11 @@ export const SCRIPT_FOCUS = `
     var star = watchButton(f.symbol);
     if (star) foot.appendChild(star);
 
+    // THE TWO WAYS ONE FILING LEAVES THIS PAGE, and they are both here rather
+    // than on the card because this foot wraps and the card's does not — that
+    // one is a single line whose two controls are already sized never to shrink
+    // (see 'page-style.ts'), and a third would push the category out of it.
+    // This is also the surface where a reader has decided they care.
     if (lines.length > 0) {
       var copy = document.createElement('button');
       copy.type = 'button';
@@ -246,6 +251,8 @@ export const SCRIPT_FOCUS = `
         };
       })(shareText(f), copy);
       foot.appendChild(copy);
+
+      foot.appendChild(shareImageButton(f));
     }
 
     var href = safeHref(f.attachmentUrl);
