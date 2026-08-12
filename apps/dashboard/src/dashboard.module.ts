@@ -28,6 +28,7 @@ import {
 import { FilingSchema, type FilingDocument } from '@app/filings';
 import { ApiErrorFilter } from './auth/api-error';
 import { AuthController } from './auth/auth.controller';
+import { clientKey, type ClientAddressed } from './auth/client-key';
 import { AuthService } from './auth/auth.service';
 import {
   ADMIN_ENABLED,
@@ -186,11 +187,29 @@ export const FILING_MODEL = 'Filing';
      * with the reverse proxy and the rest of the exposure-gate checklist; on
      * loopback the only client is the page itself.
      */
-    ThrottlerModule.forRoot([
-      { name: 'auth-minute', ttl: 60_000, limit: 10 },
-      { name: 'auth-hour', ttl: 3_600_000, limit: 60 },
-      { name: 'watchlist-minute', ttl: 60_000, limit: 60 },
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { name: 'auth-minute', ttl: 60_000, limit: 10 },
+        { name: 'auth-hour', ttl: 3_600_000, limit: 60 },
+        { name: 'watchlist-minute', ttl: 60_000, limit: 60 },
+      ],
+      /**
+       * WHO IS COUNTED. The default tracker is `req.ip`, which is the right
+       * answer everywhere the forwarded chain arrives intact and the wrong one
+       * in production, where ingress-nginx replaces `X-Forwarded-For` with the
+       * load balancer's address — one constant for the whole internet.
+       * `client-key.ts` carries the measurement and the argument.
+       *
+       * IDENTICAL TO THE DEFAULT WITH `TRUST_PROXY` UNSET: it returns `req.ip`
+       * unless a trusted chain resolved the request.
+       *
+       * The cast is the throttler typing its argument as `Record<string, any>`
+       * rather than as a request. What actually arrives is express's `Request`,
+       * which satisfies `ClientAddressed` structurally — the narrow interface
+       * exists so that claim is checkable rather than implied.
+       */
+      getTracker: (request) => clientKey(request as ClientAddressed),
+    }),
   ],
   controllers: [DashboardController, AuthController, WatchlistController],
   providers: [
