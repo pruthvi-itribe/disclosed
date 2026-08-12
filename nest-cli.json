@@ -24,7 +24,13 @@
       "entryFile": "main",
       "sourceRoot": "apps/dashboard/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/dashboard/tsconfig.app.json"
+        "tsConfigPath": "apps/dashboard/tsconfig.app.json",
+        "assets": [
+          {
+            "include": "ui/assets/*.png",
+            "outDir": "dist/apps/dashboard/src"
+          }
+        ]
       }
     },
     "common": {

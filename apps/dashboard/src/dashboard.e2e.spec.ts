@@ -12,6 +12,7 @@ import {
 } from '@app/accounts';
 import type { Filing, FilingDocument } from '@app/filings';
 import { DashboardModule, FILING_MODEL } from './dashboard.module';
+import { BRAND_RASTER } from './ui/brand-raster';
 import type {
   CategoryCount,
   DailyCount,
@@ -241,6 +242,36 @@ describe('dashboard over HTTP — no access without sign-in', () => {
 
     expect(html).not.toContain('RELIANCE');
     expect(html).not.toContain('Reliance Industries');
+  });
+
+  it('gates the brand mark too, and hands back the bytes on the shelf', async () => {
+    // THE ONE ASSET THIS APPLICATION SERVES, drawn into the share card because
+    // the page's inline SVG is a redrawing of the founder's file rather than the
+    // file. It is not one of the three exceptions: a caller who cannot see a
+    // filing has no card to put a mark on.
+    const refused = await getAnonymously('/brand/logo.png');
+
+    expect(refused.status).toBe(401);
+    expect(refused.body).toMatchObject({
+      success: false,
+      error: { code: 'UNAUTHENTICATED' },
+    });
+
+    const response = await fetch(`${origin}/brand/logo.png`, {
+      headers: signedInHeaders(),
+    });
+    const bytes = Buffer.from(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    // The bytes on disk, not merely 200 and something. The first eight are
+    // PNG's own signature, and the length is the committed file's — a route
+    // that answered with an empty body or with the JSON serialisation of a
+    // Buffer would pass a weaker assertion and draw nothing on the card.
+    expect(bytes.subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+    expect(bytes.length).toBe(BRAND_RASTER.length);
   });
 
   it('leaves health open, because a monitor has no credential', async () => {

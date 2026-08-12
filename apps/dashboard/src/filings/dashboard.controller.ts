@@ -7,6 +7,7 @@ import {
   Query,
   Req,
   Res,
+  StreamableFile,
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
@@ -24,6 +25,7 @@ import {
   readFilter,
   type RawQuery,
 } from '../http/query-params';
+import { BRAND_RASTER } from '../ui/brand-raster';
 import { renderAuthPage } from '../ui/auth-page';
 import { renderLandingPage } from '../ui/landing';
 import { renderDashboardPage } from '../ui/page';
@@ -206,6 +208,32 @@ export class DashboardController {
   @Header('Cache-Control', 'no-store')
   getHealth(): ApiEnvelope<{ status: 'ok' }> {
     return ok({ status: 'ok' as const });
+  }
+
+  /**
+   * The brand mark as artwork, for the share card to draw.
+   *
+   * THE ONE ROUTE HERE THAT IS NOT HTML OR JSON, and the only asset this
+   * application serves. It exists because the share image is a picture that
+   * leaves the product, where the mark is the part a stranger recognises, and
+   * the page's inline SVG is a redrawing of the founder's file rather than the
+   * file — see `ui/brand-raster.ts`.
+   *
+   * GUARDED LIKE EVERY READ. It is not one of the three public exceptions
+   * enumerated above: it is drawn into a card built from filings, by a browser
+   * that has already signed in, and there is no argument for handing the
+   * artwork to a caller who cannot see anything it appears on.
+   *
+   * CACHED, WHICH THE JSON ROUTES ARE NOT. Those carry a view of the data and
+   * a stale one is a wrong dashboard; this is 65 KB of unchanging artwork that
+   * every page load would otherwise re-fetch. `private` because it sits behind
+   * a session and a shared cache has no business holding it.
+   */
+  @Get('brand/logo.png')
+  @Header('Cache-Control', 'private, max-age=86400')
+  @UseGuards(SessionGuard)
+  getBrandLogo(): StreamableFile {
+    return new StreamableFile(BRAND_RASTER, { type: 'image/png' });
   }
 
   /** Headline stats: totals, today's IST count, the cursor, and feed lag. */
