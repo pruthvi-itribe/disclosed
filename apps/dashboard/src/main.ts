@@ -44,6 +44,51 @@ async function bootstrap(): Promise<void> {
   // reachable by every process on the host.
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 
+  /**
+   * WHAT THE FORWARDED HEADERS ARE WORTH, and it is `false` unless an operator
+   * said otherwise — see `readTrustProxy`. Two things read this and nothing
+   * else does: `req.secure`, which decides whether the session cookie carries
+   * `Secure` (`auth/session.service.ts`), and `req.ip`, which is what the auth
+   * rate limiter counts (`auth/client-key.ts`).
+   *
+   * ================================================================
+   * WHY A PRECISE SPECIFICATION IS NOT SPOOFABLE
+   * ================================================================
+   *
+   * Express resolves the client address RIGHT TO LEFT. It starts at the socket
+   * this process actually accepted, walks outwards through `X-Forwarded-For`
+   * while each hop is one the specification names, and stops at the FIRST hop
+   * it does not recognise — that address is `req.ip`. A client can prepend
+   * anything it likes to the header, but what it prepends lands to the LEFT of
+   * where the walk stops, so it is read past and discarded.
+   *
+   * The property that makes this hold is that the count is DERIVED FROM THE
+   * CHAIN rather than raised until something works. Naming more hops than
+   * always write the header would let the walk continue into entries a client
+   * supplied; naming fewer resolves to a proxy, which is merely coarse. So the
+   * failure directions are not symmetric, and the safe mistake is the small
+   * number. `TRUST_PROXY=true` is refused at load for the same reason: it
+   * recognises every hop, so the walk never stops and lands on the leftmost
+   * entry, which is exactly the value the client chose.
+   *
+   * `X-Forwarded-Proto` is a separate question and a stronger position: express
+   * honours it only when the FIRST hop is trusted, and in production nothing a
+   * client sends survives to be read. ingress-nginx sets it unconditionally
+   * from its own `$scheme` (`proxy_set_header X-Forwarded-Proto
+   * $pass_access_scheme`, verified in the controller-v1.11.3 template), so the
+   * client's copy is overwritten one hop before it reaches the sidecar. The
+   * cookie therefore cannot be downgraded by asking, and cannot be upgraded
+   * either — which matters more, because a `Secure` cookie set over plain http
+   * is dropped by the browser without a word and the login presents as
+   * succeeding and immediately forgetting you.
+   *
+   * SET UNCONDITIONALLY, INCLUDING THE `false`. Express's own default is
+   * `false`, so a host with no `TRUST_PROXY` gets a no-op rather than a
+   * different code path — one line that always runs is easier to reason about
+   * than a branch that usually does not.
+   */
+  app.getHttpAdapter().getInstance().set('trust proxy', config.trustProxy);
+
   // Exposed so the URL in the README and the process log agree, and with the
   // credentials in the mongo URI redacted: a password in a log file outlives
   // the process that wrote it.
