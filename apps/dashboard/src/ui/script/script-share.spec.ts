@@ -329,9 +329,15 @@ describe('the share fragments carry no copy that can drift silently', () => {
 
   it('reports which of the two deliveries happened', () => {
     // A control that reports success for two different outcomes has taught the
-    // reader to look in the wrong place.
-    expect(SCRIPT_SHARE_IMAGE).toContain("shareSaid(button, 'Image copied')");
-    expect(SCRIPT_SHARE_IMAGE).toContain("shareSaid(button, 'Downloaded')");
+    // reader to look in the wrong place. The mark travels with the word now
+    // that the button has no label to swap: a check for these two and a cross
+    // for the two failures.
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      "shareSaid(button, ICON_DONE, 'Image copied')",
+    );
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      "shareSaid(button, ICON_DONE, 'Downloaded')",
+    );
     expect(SCRIPT_SHARE_IMAGE).toContain(
       "button.setAttribute('aria-live', 'polite')",
     );

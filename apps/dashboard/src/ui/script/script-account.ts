@@ -35,21 +35,27 @@ export const SCRIPT_ACCOUNT = `
 
   // The words and the ARIA, set together so the two can never disagree.
   //
-  // A clip-path shape is INVISIBLE to a screen reader - there is no glyph and
-  // no image to describe - so the control carries a text label of its own as
-  // well as an aria-label naming the company.
+  // A DRAWING IS INVISIBLE TO A SCREEN READER - there is no glyph and no image
+  // to describe - so the control carries an aria-label naming the company and
+  // the same string as a title, which is what a pointer discovers. It used to
+  // carry a visible word too, and that word is what the drawings replaced: four
+  // spelled-out controls do not fit on a card footer, and four drawn ones do.
+  // The state is in aria-pressed, which a screen reader reads out with the
+  // name, and in the star being filled rather than outlined.
+  //
+  // THE ELEMENT MAY ARRIVE FROM THE MARKUP. The company page's star is in the
+  // document ('co-watch'), so the star is appended only if it is not already
+  // there, and the class is rewritten from scratch on every paint.
   function setWatchLabel(button, symbol) {
     var on = isWatched(symbol);
-    button.className = 'watch' + (on ? ' on' : '');
-    button.setAttribute('aria-label', (on ? 'Stop watching ' : 'Watch ') + symbol);
+    button.className = 'iconbtn watch' + (on ? ' on' : '');
+    var label = (on ? 'Stop watching ' : 'Watch ') + symbol;
+    button.setAttribute('aria-label', label);
     button.setAttribute('aria-pressed', String(on));
-    var text = button.getElementsByClassName('watchtext')[0];
-    if (!text) {
-      text = document.createElement('span');
-      text.className = 'watchtext';
-      button.appendChild(text);
+    button.title = label;
+    if (!button.getElementsByTagName('svg')[0]) {
+      button.appendChild(iconSvg(ICON_STAR));
     }
-    text.textContent = on ? 'Watching' : 'Watch';
   }
 
   // ABSENT, NOT DISABLED, WHEN SIGNED OUT. A control that is permanently

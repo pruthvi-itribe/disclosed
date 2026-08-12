@@ -22,6 +22,7 @@ or `document.getElementById('co-topics')`.
 | `apps/dashboard/src/ui/page-style-brief.ts` | the Brief's CSS, concatenated onto the above by `page.ts` |
 | `apps/dashboard/src/ui/script/script-base.ts` | constants, DOM and format helpers |
 | `apps/dashboard/src/ui/script/script-cells.ts` | the admin table's cells |
+| `apps/dashboard/src/ui/script/script-icon.ts` | **the drawings** every control is made of, and `iconButton` |
 | `apps/dashboard/src/ui/script/script-feed.ts` | **the card** and the time buckets |
 | `apps/dashboard/src/ui/script/script-brief.ts` | **the deck**: candidates, ordering, one card, the rail |
 | `apps/dashboard/src/ui/script/script-company.ts` | the company page's sections |
@@ -142,10 +143,34 @@ across the four-second repaint.
 | `card-head` | ticker, company name, time, group chip — always one line |
 | `card-claims` | the claims list. At most two, then "+ N more" |
 | `card-outcome` | the exchange's own sentence, on a card with no claims |
-| `card-foot` | tier badge, category, Copy, Source — always one line |
+| `card-foot` | tier badge, category, then the four controls — always one line |
 | `card-tier` | the Verified / Exchange-stated badge |
 | `card-category` | NSE's category. The only part allowed to truncate |
-| `card-copy` | Copy. Present only when the filing carried a verified claim |
+| `watch` (`data-ui`) | the star, carrying `data-symbol`. **Absent when signed out** |
+| `card-copy` | copy as text. Present only when the filing carried a verified claim |
+| `card-copy-image` | copy as a picture. Same guard as `card-copy` |
+| `card-source` | the document itself. **Absent when NSE's URL fails the scheme check** |
+
+**The four controls are drawings, and that is what keeps the footer one line.**
+Measured at 390px: the footer is 326px wide, the four words would have taken
+240px of it and left the category nothing, and the four 34px squares take 160px
+including their gaps — less than the two words and the labelled star they
+replaced. 34px because the focus dialog's close button argues that size for a
+thumb. The shapes are in `script-icon.ts`: rectangles, circles, polygons and
+straight-line paths in one stroke weight, built with `createElementNS` — an
+`svg` made with `createElement` is an unknown HTML element that renders nothing.
+
+**A drawing has no accessible name, so each control carries two.** `aria-label`
+is what a screen reader reads and `title` is what a pointer discovers, set from
+one string so they cannot disagree. The two copy buttons are `aria-live`
+regions: on success the drawing becomes a check mark and a clipped `.iconsaid`
+line inside the button says which thing happened — `Copied`, `Image copied`,
+`Downloaded` — from the same call, so the visible report and the audible one
+cannot differ. A failure draws a cross rather than a check.
+
+The same four are on the focus card as `focus-copy`, `focus-copy-image` and
+`focus-source`, beside the same `watch`. That foot used to be the only one with
+room for the picture button, because a third *word* would not fit on a card.
 
 ## The company page
 
@@ -330,11 +355,15 @@ to the rule below; the absolute IST string the server computed
 (`lastFiledAtIst`) is what the row's `title` carries. See `relativeTime` in
 `script-base.ts` for the argument.
 
-The star is **drawn in CSS, not typed**: `page.spec.ts` rejects the emoji range
+The star is **drawn, not typed**: `page.spec.ts` rejects the emoji range
 `U+2600`-`U+27BF`, which holds both star glyphs, and rejects any CSS reference
-to a remote asset. It is a `clip-path` polygon, filled when watching and
-punched out when not, and it carries a text label as well — a clip-path shape
-is invisible to a screen reader.
+to a remote asset. It was a `clip-path` polygon on a pseudo-element and is now
+an SVG polygon in the element itself (`ICON_STAR`), because it is one of four
+controls on a card footer and the other three could not have been
+pseudo-elements. **Filled when watching, outlined when not** — the state is the
+drawing's own `fill`, which is right on any background; the punch-out it
+replaced was drawn in `--panel` and was not. It carries `aria-label`, `title`
+and `aria-pressed` in place of the visible word it used to have.
 
 **The star is absent, not disabled, when signed out.** A control that is
 permanently greyed out and never explains itself reads as a broken page.

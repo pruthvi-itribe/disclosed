@@ -239,11 +239,15 @@ test.describe('the card', () => {
   test('keeps the source document one click away', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('#live-text')).not.toHaveText('connecting');
-    const link = page.locator('#feed .srclink').first();
+    const link = page.locator('#feed [data-ui="card-source"]').first();
     test.skip((await link.count()) === 0, 'no attachment in view');
     await expect(link).toHaveAttribute('href', /^https:\/\//);
     // A filing's PDF is third-party content opened in the reader's browser.
     await expect(link).toHaveAttribute('rel', /noopener/);
+    // It is a drawing rather than the word "Source", so the name it is reached
+    // by has to be in the attributes — both of them.
+    await expect(link).toHaveAttribute('aria-label', 'Open the source document');
+    await expect(link).toHaveAttribute('title', 'Open the source document');
   });
 
   test('marks a printed movement, quotes it, and colours nothing', async ({
@@ -1138,12 +1142,12 @@ test.describe('the feed layout', () => {
   });
 
   test('keeps every card footer on one line', async ({ page }) => {
-    // The badge, the category and the two buttons. This wrapped on the longest
-    // category NSE publishes — "Analysts/Institutional Investor Meet/Con. Call
-    // Updates" is 47 characters and pushed Source onto a row by itself, which
-    // in a stretched grid takes the extra height off every other card in that
-    // row. The category truncates instead; it is the only part a reader can
-    // recover, from the element's own title.
+    // The badge, the category and the four controls. This wrapped on the
+    // longest category NSE publishes — "Analysts/Institutional Investor
+    // Meet/Con. Call Updates" is 47 characters and pushed Source onto a row by
+    // itself, which in a stretched grid takes the extra height off every other
+    // card in that row. The category truncates instead; it is the only part a
+    // reader can recover, from the element's own title.
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     await expect(page.locator('#live-text')).not.toHaveText('connecting');
@@ -1156,18 +1160,55 @@ test.describe('the feed layout', () => {
         ),
       ),
     );
-    // One row of controls plus the footer's own top padding. A wrap doubles it.
+    // One row of 34px controls plus the footer's own top padding. A wrap
+    // doubles it.
     expect(tallest).toBeLessThan(50);
 
-    // Copy and Source keep their full labels at every width.
-    for (const width of [1600, 1280, 900, 620]) {
+    // THE CONTROLS ARE FIXED SQUARES AT EVERY WIDTH, which is what the drawings
+    // bought: four of them hold their size and the category gives instead. A
+    // squeezed control was the failure this test was written for, back when
+    // they were words.
+    for (const width of [1600, 1280, 900, 620, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      const clipped = await page.evaluate(() =>
-        [...document.querySelectorAll('#feed .copy, #feed .srclink')].filter(
-          (control) => control.scrollWidth > control.clientWidth + 1,
+      const squashed = await page.evaluate(() =>
+        [...document.querySelectorAll('#feed .cardfoot .iconbtn')].filter(
+          (control) => control.getBoundingClientRect().width < 33,
         ).length,
       );
-      expect([width, clipped]).toEqual([width, 0]);
+      expect([width, squashed]).toEqual([width, 0]);
+    }
+  });
+
+  test('gives every card the same four controls, each with a name', async ({
+    page,
+  }) => {
+    // WHAT THE READER ASKED FOR: watch, copy, copy as image and the document,
+    // on every card rather than two of them here and four in the dialog. Signed
+    // in, because the star is absent — not disabled — without a session.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await expect(page.locator('#signout')).toBeVisible();
+
+    // PINNED BY data-seq: the feed repaints every four seconds and "the first
+    // card" names a different node afterwards. A card with something to send,
+    // found by its own control rather than by guessing which filing is busy.
+    const sendable = page.locator('#feed .card[data-seq]', {
+      has: page.locator('[data-ui="card-copy"]'),
+    });
+    await expect(sendable).not.toHaveCount(0);
+    const seq = await sendable.first().getAttribute('data-seq');
+    const card = page.locator(`#feed .card[data-seq="${seq}"]`);
+
+    for (const ui of ['watch', 'card-copy', 'card-copy-image', 'card-source']) {
+      const control = card.locator(`[data-ui="${ui}"]`);
+      // `card-source` is absent when NSE's URL fails the scheme check, which is
+      // a fact about that filing rather than about the footer.
+      if (ui === 'card-source' && (await control.count()) === 0) continue;
+      await expect(control).toBeVisible();
+      // The two names a wordless control is read by, and no visible word.
+      await expect(control).not.toHaveAttribute('aria-label', '');
+      await expect(control).not.toHaveAttribute('title', '');
+      await expect(control).toHaveText('');
     }
   });
 

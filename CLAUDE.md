@@ -58,14 +58,19 @@ These override any habit of writing more, sooner, or cleverer.
 - **The dashboard is self-contained.** No CDN, no external request, no web
   font. Inline everything. Same-origin is not external: the share card loads
   `GET /brand/logo.png` (session-guarded, served from our own process) —
-  `page.spec.ts` asserts no absolute URL rather than no request at all.
+  `page.spec.ts` asserts no absolute URL rather than no request at all. The one
+  absolute URL the document carries is the **XML namespace**
+  (`createElementNS`, for the card's icons): a name rather than an address,
+  which no browser fetches. `page.spec.ts` bounds it — one occurrence, as that
+  call's argument — and everything else must still be absent.
   - **The one relaxation is the two signed-out surfaces — the landing page and
     `/auth` — in firebase mode only.** Both load the Firebase Web SDK from
     `gstatic.com` at one pinned version (`ui/firebase-sdk.ts`), and nothing else
     from anywhere: the landing page's sign-in buttons open Google's popup where
     the visitor already is, and `/auth` does the same behind a deep link and a
     blocked-popup fallback. The app is unchanged — `page.spec.ts` asserts the
-    signed-in document contains no `https?://` at all — and `landing.spec.ts`
+    signed-in document contains no `https?://` but the XML namespace above —
+    and `landing.spec.ts`
     and `auth-page.spec.ts` each assert the set of external origins on their
     page is exactly `[gstatic]` in firebase mode and exactly `[]` in the other
     two. The argument is in `ui/auth-page.ts`'s header and holds for both pages

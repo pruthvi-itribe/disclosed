@@ -7,6 +7,7 @@ import { SCRIPT_CELLS } from './script-cells';
 import { SCRIPT_COMPANY } from './script-company';
 import { SCRIPT_FEED } from './script-feed';
 import { SCRIPT_FOCUS } from './script-focus';
+import { SCRIPT_ICON } from './script-icon';
 import { SCRIPT_POLL } from './script-poll';
 import { SCRIPT_SHARE } from './script-share';
 import { SCRIPT_SHARE_IMAGE } from './script-share-image';
@@ -25,6 +26,9 @@ import { SCRIPT_VIEWS } from './script-views';
 
 const FRAGMENTS: ReadonlyArray<readonly [string, string]> = [
   ['script-base', SCRIPT_BASE],
+  // Before every fragment that mounts a control: the card foot, the dialog's
+  // foot and the watch star are drawings, and this is where they are drawn.
+  ['script-icon', SCRIPT_ICON],
   ['script-cells', SCRIPT_CELLS],
   // Before every fragment that draws a Copy button: `shareText` and
   // `shareImageButton` are what those buttons hand the clipboard.

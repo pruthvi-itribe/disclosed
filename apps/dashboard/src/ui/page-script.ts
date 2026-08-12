@@ -31,6 +31,7 @@ import { SCRIPT_CELLS } from './script/script-cells';
 import { SCRIPT_COMPANY } from './script/script-company';
 import { SCRIPT_FEED } from './script/script-feed';
 import { SCRIPT_FOCUS } from './script/script-focus';
+import { SCRIPT_ICON } from './script/script-icon';
 import { SCRIPT_POLL } from './script/script-poll';
 import { SCRIPT_SHARE } from './script/script-share';
 import { SCRIPT_SHARE_IMAGE } from './script/script-share-image';
@@ -80,6 +81,11 @@ const adminFlag = (enabled: boolean): string =>
 /** The fragments, in the order they execute. */
 const fragments = (admin: boolean): readonly string[] => [
   SCRIPT_BASE,
+  // Before every fragment that mounts a control: the card foot, the dialog's
+  // foot and the watch star are all drawings now, and this is where the
+  // drawings are. Filing rather than dependency — these are function
+  // declarations and hoist over the whole IIFE.
+  SCRIPT_ICON,
   SCRIPT_CELLS,
   // Before every fragment that draws a Copy button, which is what these two
   // are for: one definition of what a filing looks like when somebody sends it

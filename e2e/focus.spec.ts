@@ -381,8 +381,12 @@ test.describe('sending a filing', () => {
     }
 
     const copy = page.locator('[data-ui="focus-copy"]');
+    // A drawing rather than the word "Copy", so the name is in the attributes
+    // and the report is in the clipped line the live region reads out.
+    await expect(copy).toHaveAttribute('aria-label', 'Copy as text');
+    await expect(copy).toHaveAttribute('aria-live', 'polite');
     await copy.click();
-    await expect(copy).toHaveText('Copied');
+    await expect(copy.locator('.iconsaid')).toHaveText('Copied');
 
     const text = await page.evaluate(() => navigator.clipboard.readText());
     const lines = text.split('\n');
@@ -421,16 +425,18 @@ test.describe('sending a filing', () => {
     await expect(page.locator('#focus')).toBeVisible();
 
     const button = page.locator('[data-ui="focus-copy-image"]');
-    // The label says what it will do, and the live region is what makes the
-    // swap after it audible rather than merely visible.
-    await expect(button).toHaveText('Copy as image');
+    // The name says what it will do — in the two attributes a wordless control
+    // is read by — and the live region is what makes the report after it
+    // audible rather than merely visible.
+    await expect(button).toHaveAttribute('aria-label', 'Copy as image');
+    await expect(button).toHaveAttribute('title', 'Copy as image');
     await expect(button).toHaveAttribute('aria-live', 'polite');
 
     await button.click();
-    // WHICH OF THE TWO DELIVERIES HAPPENED, said on the button. Chromium here
-    // has ClipboardItem, so it is the clipboard; a browser without it falls
-    // back to a file and this reads 'Downloaded' instead.
-    await expect(button).toHaveText('Image copied');
+    // WHICH OF THE TWO DELIVERIES HAPPENED, said inside the button. Chromium
+    // here has ClipboardItem, so it is the clipboard; a browser without it
+    // falls back to a file and this reads 'Downloaded' instead.
+    await expect(button.locator('.iconsaid')).toHaveText('Image copied');
 
     // Read back and decoded, because a clipboard write that produced a 0-byte
     // or wrongly sized image would pass every assertion above it.
@@ -452,7 +458,9 @@ test.describe('sending a filing', () => {
     expect(size.height).toBeGreaterThan(400);
     expect(size.height).toBeLessThanOrEqual(1700);
 
-    // And the label comes back, so the control is usable twice.
-    await expect(button).toHaveText('Copy as image', { timeout: 5000 });
+    // And the control goes back to what it was, so it is usable twice: the
+    // picture's drawing returns and the reported line is emptied.
+    await expect(button.locator('.iconsaid')).toHaveText('', { timeout: 5000 });
+    await expect(button.locator('svg circle')).toHaveCount(1);
   });
 });

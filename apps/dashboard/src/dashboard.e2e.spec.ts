@@ -178,7 +178,16 @@ describe('dashboard over HTTP — the page', () => {
   });
 
   it('serves a page that references no external host', async () => {
-    expect(await (await getPage()).text()).not.toMatch(/https?:\/\//);
+    // THE XML NAMESPACE IS THE ONE EXEMPTION, and it is a name rather than an
+    // address: `createElementNS` is how the card's four icons are put in the
+    // SVG namespace, and no browser has ever fetched it. `page.spec.ts` holds
+    // the argument and bounds it — one occurrence, as that call's argument.
+    const served = (await (await getPage()).text()).split(
+      'http://www.w3.org/2000/svg',
+    );
+
+    expect(served).toHaveLength(2);
+    expect(served.join('')).not.toMatch(/https?:\/\//);
   });
 });
 

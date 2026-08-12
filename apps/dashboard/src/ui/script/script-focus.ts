@@ -9,8 +9,9 @@
  * IT RUNS AFTER `script-feed`, which is a dependency rather than a preference:
  * every claim this fragment puts on screen goes through that fragment's
  * `writeInsight`, and no other way. It runs after `script-share` and
- * `script-share-image` for the same kind of reason: the foot's two share
- * controls are `shareText` and `shareImageButton`, defined there.
+ * `script-share-image` for the same kind of reason: the foot's three share
+ * controls are `shareCopyButton`, `shareImageButton` and `shareSourceLink`,
+ * defined there.
  *
  * NO BACKTICK AND NO `${` MAY APPEAR BELOW. Both are consumed by the
  * composing template literal before a browser ever sees this, which is the
@@ -225,47 +226,24 @@ export const SCRIPT_FOCUS = `
     var star = watchButton(f.symbol);
     if (star) foot.appendChild(star);
 
-    // THE TWO WAYS ONE FILING LEAVES THIS PAGE, and they are both here rather
-    // than on the card because this foot wraps and the card's does not — that
-    // one is a single line whose two controls are already sized never to shrink
-    // (see 'page-style.ts'), and a third would push the category out of it.
-    // This is also the surface where a reader has decided they care.
+    // THE THREE WAYS ONE FILING LEAVES THIS PAGE, mounted from the two share
+    // fragments so this foot and the card's cannot drift apart. They are the
+    // same controls in the same order on both surfaces now: the card's foot
+    // used to carry two of the three, because three WORDS would not fit on its
+    // one line, and four drawings do.
+    //
+    // The payload is the same string the card copies, from the same function:
+    // what belongs in a message is what the company said, not our layout — and
+    // not the quoted spans either, however many of them the reader has opened
+    // above. Those are the evidence, they are one tap away here, and eight
+    // sentences lifted out of a PDF is not a message. See 'script-share.ts'.
     if (lines.length > 0) {
-      var copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'copy';
-      copy.setAttribute('data-ui', 'focus-copy');
-      copy.textContent = 'Copy';
-      // The same string the card copies, from the same function. What belongs
-      // in a message is what the company said, not our layout — and not the
-      // quoted spans either, however many of them the reader has opened above:
-      // those are the evidence, they are one tap away here, and eight sentences
-      // lifted out of a PDF is not a message. See 'script-share.ts'.
-      copy.onclick = (function (payload, button) {
-        return function () {
-          if (!navigator.clipboard) { button.textContent = 'no clipboard'; return; }
-          navigator.clipboard.writeText(payload).then(function () {
-            button.textContent = 'Copied';
-            window.setTimeout(function () { button.textContent = 'Copy'; }, 1500);
-          }, function () { button.textContent = 'failed'; });
-        };
-      })(shareText(f), copy);
-      foot.appendChild(copy);
-
-      foot.appendChild(shareImageButton(f));
+      foot.appendChild(shareCopyButton(f, 'focus-copy'));
+      foot.appendChild(shareImageButton(f, 'focus-copy-image'));
     }
 
-    var href = safeHref(f.attachmentUrl);
-    if (href) {
-      var link = document.createElement('a');
-      link.href = href;
-      link.rel = 'noopener noreferrer nofollow';
-      link.target = '_blank';
-      link.className = 'srclink';
-      link.setAttribute('data-ui', 'focus-source');
-      link.textContent = 'Source';
-      foot.appendChild(link);
-    }
+    var source = shareSourceLink(f, 'focus-source');
+    if (source) foot.appendChild(source);
   }
 
   function openFocus(f) {

@@ -352,18 +352,61 @@ test.describe('signed in', () => {
   }) => {
     // `page.spec.ts` rejects the emoji range — which holds both star glyphs —
     // and rejects a remote CSS asset. This is the version of that assertion a
-    // browser can make: the control has a clip-path and its own words.
+    // browser can make: the control holds a drawing that came from this
+    // document, and its words are in the two attributes a name is read from.
     await page.goto('/');
     await expect(page.locator('#live-text')).not.toHaveText('connecting');
 
     const star = page.locator('[data-ui="watch"]').first();
     await expect(star).toBeVisible();
-    const clip = await star.evaluate((node) =>
-      window.getComputedStyle(node, '::before').getPropertyValue('clip-path'),
-    );
 
-    expect(clip).toContain('polygon');
-    await expect(star).toContainText(/Watch/);
+    // A polygon in the SVG namespace, laid out with real width — an `svg` built
+    // with `createElement` instead of `createElementNS` is an unknown HTML
+    // element that renders nothing, and would pass a test that only counted
+    // nodes.
+    const drawn = await star.locator('svg > polygon').evaluate((node) => ({
+      namespace: node.namespaceURI,
+      width: node.getBoundingClientRect().width,
+    }));
+
+    expect(drawn.namespace).toBe('http://www.w3.org/2000/svg');
+    expect(drawn.width).toBeGreaterThan(10);
+    // THE WORDS, WHICH ARE THE PRICE OF THE DRAWING. A shape has no accessible
+    // name of its own; these two are where the name now lives.
+    await expect(star).toHaveAttribute('aria-label', /Watch|watching/);
+    await expect(star).toHaveAttribute('title', /Watch|watching/);
+    await expect(star).toHaveText('');
+  });
+
+  test('fills the star when it is watched and outlines it when it is not', async ({
+    page,
+  }) => {
+    // THE STATE IS THE FILL, now that the word is gone. It was a punched-out
+    // pseudo-element in the panel's own colour; it is the drawing's own `fill`,
+    // which is what makes it right on any background.
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    const symbol = await aSymbolOnScreen(page);
+    const star = page
+      .locator(`[data-ui="watch"][data-symbol="${symbol}"]`)
+      .first();
+    await expect(star).toHaveAttribute('aria-pressed', 'false');
+
+    const fill = async (): Promise<string> =>
+      star
+        .locator('svg')
+        .evaluate((node) => window.getComputedStyle(node).fill);
+
+    expect(await fill()).toBe('none');
+
+    await star.click();
+    await expect(star).toHaveAttribute('aria-pressed', 'true');
+    expect(await fill()).not.toBe('none');
+
+    // Put back, so the shared session's watchlist is as this test found it.
+    await star.click();
+    await expect(star).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('lists every watched company, quiet ones included, above the filings', async ({

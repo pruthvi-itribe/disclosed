@@ -311,68 +311,50 @@ export const SCRIPT_FEED = `
     spacer.className = 'grow';
     foot.appendChild(spacer);
 
-    // THE WATCH STAR, beside Copy and Source rather than in the card head: the
-    // head is one line of identity and time and has no room, and this belongs
-    // with the other two things a reader DOES with a card. Null when signed
-    // out - absent rather than disabled, because a control that is permanently
-    // greyed out and never explains itself reads as a broken page.
+    // THE FOUR THINGS A READER DOES WITH A CARD, in the foot rather than in the
+    // head: the head is one line of identity and time and has no room. They are
+    // drawings rather than words, which is what makes four of them fit on a
+    // line that could not hold three — see 'script-icon.ts' for the widths.
+    //
+    // THE STAR IS NULL WHEN SIGNED OUT - absent rather than disabled, because a
+    // control that is permanently greyed out and never explains itself reads as
+    // a broken page.
     var star = watchButton(f.symbol);
     if (star) foot.appendChild(star);
 
-    // COPY, because the thing a reader does with a line like this is send it to
-    // somebody. Writing the claims rather than the rendered card: what belongs
-    // in a message is what the company said, not our layout.
+    // COPY, AS TEXT AND AS A PICTURE, because the thing a reader does with a
+    // line like this is send it to somebody, and the two chat windows they send
+    // it to want different things. Both take the FILING and not this card's
+    // lines: the card's list skips the echoes and folds the results line in
+    // among the claims, and a message is one filing on its own, where both of
+    // those are wrong. See 'script-share.ts'.
     //
-    // THE PAYLOAD IS 'shareText' AND NOT THIS CARD'S LINES, which is a change
-    // of what gets sent as well as of how it is set. The card's list skips the
-    // echoes and folds the results line in among the claims; a message is one
-    // filing on its own, where both of those are wrong. See 'script-share.ts'.
     // The guard stays on the card's lines: a card with nothing verified on it
     // offers nothing to send.
     if (lines.length > 0) {
-      var copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'copy';
-      copy.setAttribute('data-ui', 'card-copy');
-      copy.textContent = 'Copy';
-      copy.onclick = (function (text, button) {
-        return function (event) {
-          event.stopPropagation();
-          // Guarded: the clipboard API is absent on an insecure origin, and a
-          // dashboard served over plain http to a colleague must not throw.
-          if (!navigator.clipboard) { button.textContent = 'no clipboard'; return; }
-          navigator.clipboard.writeText(text).then(function () {
-            button.textContent = 'Copied';
-            window.setTimeout(function () { button.textContent = 'Copy'; }, 1500);
-          }, function () { button.textContent = 'failed'; });
-        };
-      })(shareText(f), copy);
-      foot.appendChild(copy);
+      foot.appendChild(shareCopyButton(f, 'card-copy'));
+      foot.appendChild(shareImageButton(f, 'card-copy-image'));
     }
 
-    var href = safeHref(f.attachmentUrl);
-    if (href) {
-      var link = document.createElement('a');
-      link.href = href;
-      link.rel = 'noopener noreferrer nofollow';
-      link.target = '_blank';
-      link.className = 'srclink';
-      link.textContent = 'Source';
-      foot.appendChild(link);
-    }
+    // The document itself. Null when the URL fails the scheme check.
+    var source = shareSourceLink(f, 'card-source');
+    if (source) foot.appendChild(source);
 
     card.appendChild(foot);
 
     // THE WHOLE CARD OPENS, and the affordance is the cursor rather than a
     // control. A permanent "expand" button on every card would be chrome on the
-    // densest surface in the product, and the card already carries four
+    // densest surface in the product, and the card already carries five
     // controls of its own.
     //
     // A CLICK THAT LANDED ON ONE OF THOSE IS NOT A CLICK ON THE CARD. The
-    // symbol, the star and Copy each stop propagation already; the Source link
-    // does not and must not, because swallowing a click on a link is how a link
-    // stops being one. So the test is on the target rather than on the
-    // bubbling, which also means a control added later needs no ceremony.
+    // symbol, the star and the two copy buttons each stop propagation already;
+    // the Source link does not and must not, because swallowing a click on a
+    // link is how a link stops being one. So the test is on the target rather
+    // than on the bubbling — which also means a control added later needs no
+    // ceremony, and it is what catches a click that landed on the SVG INSIDE a
+    // control rather than on the control: 'closest' is an Element method and an
+    // SVG element is an Element.
     card.className += ' openable';
     // KEYBOARD REACHABLE. A div with a click handler is operable by mouse only,
     // and everything in this dialog is otherwise unreachable without one.

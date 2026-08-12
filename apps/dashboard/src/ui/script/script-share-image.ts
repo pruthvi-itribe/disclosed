@@ -534,10 +534,21 @@ export const SCRIPT_SHARE_IMAGE = `
     return sharePaint(blocks, shareHeight(blocks));
   }
 
-  /** Says what happened on the button itself, then gives the label back. */
-  function shareSaid(button, word) {
-    button.textContent = word;
-    window.setTimeout(function () { button.textContent = SHARE_IMAGE_LABEL; }, 2000);
+  /**
+   * Says what happened on the button itself, then gives the drawing back.
+   *
+   * THE CONTROL HAS NO WORDS ON IT ANY MORE, so the swap that used to be its
+   * label is now a mark and a clipped live line — 'iconSaid' does both from one
+   * call, so the visible report and the audible one cannot disagree. Nothing
+   * about WHAT it reports has changed: the same outcomes, each named.
+   *
+   * THE MARK IS THE CALLER'S because two of the four outcomes are failures, and
+   * a check mark drawn after a clipboard that refused the write reports success
+   * for a failure — which is the thing these outcomes were separated to avoid.
+   */
+  function shareSaid(button, mark, word) {
+    iconSaid(button, mark, word);
+    window.setTimeout(function () { iconSaid(button, ICON_IMAGE, ''); }, 2000);
   }
 
   /**
@@ -576,7 +587,7 @@ export const SCRIPT_SHARE_IMAGE = `
         }, 'image/png');
       });
       navigator.clipboard.write([new window.ClipboardItem({ 'image/png': png })]).then(
-        function () { shareSaid(button, 'Image copied'); },
+        function () { shareSaid(button, ICON_DONE, 'Image copied'); },
         function () { shareDownload(canvas, symbol, button); }
       );
       return;
@@ -587,7 +598,7 @@ export const SCRIPT_SHARE_IMAGE = `
   /** The picture as a file. The only link on this page that is not a document. */
   function shareDownload(canvas, symbol, button) {
     canvas.toBlob(function (blob) {
-      if (!blob) { shareSaid(button, 'image failed'); return; }
+      if (!blob) { shareSaid(button, ICON_FAIL, 'image failed'); return; }
       // NOT THROUGH 'safeHref', AND THIS IS THE ONE EXEMPTION ON THE PAGE.
       // That function exists because 'attachmentUrl' arrives from NSE and a
       // 'javascript:' value in it would become a click-to-execute link; it
@@ -601,30 +612,34 @@ export const SCRIPT_SHARE_IMAGE = `
       link.click();
       // Revoked, or the picture is held in memory for as long as the tab is.
       window.setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
-      shareSaid(button, 'Downloaded');
+      shareSaid(button, ICON_DONE, 'Downloaded');
     }, 'image/png');
   }
 
   /**
    * The second thing a reader can do with a filing, beside the first.
    *
-   * 'aria-live' ON THE BUTTON ITSELF. The text Copy has always reported by
-   * swapping its own label, which a screen reader does not announce for a
-   * control the reader is already on — tolerable there, because 'Copied' and
-   * 'failed' are the only two outcomes and a reader can check the clipboard.
-   * Here there are three, and 'the image is in your downloads' is not something
-   * anybody guesses. The attribute makes the swap that was always happening
-   * audible, and adds no second element to keep in sync.
+   * 'aria-live' ON THE BUTTON ITSELF, and it is the pattern the other two
+   * controls now follow. This one has always reported by swapping its own
+   * label, which a screen reader does not announce for a control the reader is
+   * already on — and 'the image is in your downloads' is not something anybody
+   * guesses. Now that none of the three carries a word, the swap is a drawing,
+   * and 'iconSaid' puts the sentence where the region can read it.
+   *
+   * IT IS ON THE CARD AS WELL AS IN THE DIALOG NOW. It was dialog-only because
+   * the card's foot is one line and a third WORD would have pushed the category
+   * out of it; four drawings take less width than the two words did. The
+   * fragment already loaded on every surface — it is joined into the one script
+   * before 'script-feed' — so this costs a call and no bytes.
    */
-  function shareImageButton(f) {
-    var button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'copy';
-    button.setAttribute('data-ui', 'focus-copy-image');
+  function shareImageButton(f, ui) {
+    var button = iconButton(ICON_IMAGE, SHARE_IMAGE_LABEL, ui);
     button.setAttribute('aria-live', 'polite');
-    button.textContent = SHARE_IMAGE_LABEL;
     button.onclick = (function (filing) {
-      return function () {
+      return function (event) {
+        // The card behind this one opens on a click that was not on a control.
+        // See 'shareCopyButton', which stops it for the same reason.
+        event.stopPropagation();
         // NEITHER MARK, WHICH IS A STATE THAT SHOULD NOT OCCUR. The favicon is
         // decoded from a 'data:' URI at load with nothing to wait on, and the
         // raster is a request to this same origin; a card can be drawn as soon
@@ -632,7 +647,7 @@ export const SCRIPT_SHARE_IMAGE = `
         // A picture that silently arrived without a logo would look like a
         // design choice rather than a failure.
         if (!shareMarkReady && shareLogo === null) {
-          shareSaid(button, 'not ready');
+          shareSaid(button, ICON_FAIL, 'not ready');
           return;
         }
         shareDeliver(shareCard(filing), filing.symbol, button);

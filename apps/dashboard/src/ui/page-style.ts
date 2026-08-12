@@ -737,9 +737,11 @@ td.grp { white-space: nowrap; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .grow { flex: 1 1 auto; min-width: 0; }
-/* Never shrink, never wrap: these are the two controls the card exists to
-   offer, and a half-width "Sourc…" is worse than a shorter category. */
-.tier, .copy, .srclink { flex: 0 0 auto; }
+/* Never shrink, never wrap: these are the controls the card exists to offer,
+   and a half-width "Sourc…" is worse than a shorter category. (The card's own
+   are drawings now — see '.iconbtn' below. The word forms are the Brief
+   deck's, whose foot is a different shape.) */
+.tier, .copy, .srclink, .iconbtn { flex: 0 0 auto; }
 /* The badge carries a 4px top margin so it clears the text above it in a table
    row. In a footer it has no text above it, and the margin only pushes it off
    the line its neighbours sit on. */
@@ -750,6 +752,47 @@ td.grp { white-space: nowrap; }
   padding: 4px 10px; cursor: pointer; text-decoration: none; white-space: nowrap;
 }
 .copy:hover, .srclink:hover { color: var(--text); border-color: var(--muted); text-decoration: none; }
+
+/* THE CARD'S CONTROLS, DRAWN RATHER THAN SPELLED.
+   Four of them — watch, copy as text, copy as image, open the document — and
+   the footer is still one line, which is the whole reason they are drawings.
+   Measured on a 390px phone: the card's footer is 326px wide, the four words
+   would have taken 240px of it and left the category nothing, and these four
+   take 160px including their gaps — less than the two words and the star they
+   replaced. See 'script-icon.ts' for the shapes.
+
+   34px SQUARES, WHICH IS THE FOCUS DIALOG'S CLOSE BUTTON. That control argues
+   the size and the argument is the same here: a card is tapped on a phone as
+   often as it is clicked on a laptop, and a 17px drawing is not a thumb target.
+
+   GREY ON HOVER, NEVER THE ACCENT — the rule at the top of this file, which
+   exists because the accent on hover made every control shout its most
+   saturated colour for the least meaningful event. */
+.iconbtn {
+  position: relative;
+  width: 34px; height: 34px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--muted); cursor: pointer; text-decoration: none;
+}
+.iconbtn:hover { color: var(--text); border-color: var(--muted); text-decoration: none; }
+/* Grey, and for the keyboard only. The accent ring the global button rule
+   draws reads as selection on a control that was merely clicked, and these sit
+   inside a card rather than in the page's own chrome — the same argument
+   '.spantoggle' makes in 'page-style-focus.ts'. The anchor needs the reset too:
+   the button rule above does not reach it. */
+.iconbtn:focus { outline: none; }
+.iconbtn:focus-visible { outline: 2px solid var(--muted); outline-offset: 1px; }
+.iconbtn svg { display: block; }
+/* WHAT A WORDLESS CONTROL SAYS WHEN IT HAS DONE SOMETHING. The check mark is
+   the visible half of the report and this is the half a screen reader hears —
+   the button is an aria-live region and this is the line inside it that
+   changes. Clipped rather than 'display: none', which would take it out of the
+   accessibility tree and make the region silent. */
+.iconsaid {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 
 .feedfoot { display: flex; align-items: center; gap: 14px; margin-top: 22px; }
 .more {
@@ -1088,42 +1131,24 @@ button.sym:hover { color: var(--text); text-decoration: underline; }
    'page.spec.ts' rejects the emoji range U+2600-U+27BF, which contains both
    U+2605 BLACK STAR and U+2606 WHITE STAR, and a second test rejects any CSS
    reference to a remote asset — so the glyph cannot be a character and the
-   icon cannot be a file. A clip-path polygon is neither, and it passes both.
-   (That second test matches on the four letters of the CSS function itself, so
-   this comment cannot spell it either. The rule is enforced by the test, not
-   by the prose.)
+   icon cannot be a file.
 
-   OUTLINED IS A PUNCH-OUT, not a second polygon: '::before' is the filled star
-   in the current colour and '::after' is a smaller one in the card's own
-   background, which reads as an outline. Watched hides the punch-out, and the
-   star fills. */
-.watch {
-  background: transparent; border: 1px solid var(--line); border-radius: 7px;
-  color: var(--muted); font: inherit; font-size: 11px; cursor: pointer;
-  padding: 4px 8px; white-space: nowrap;
-  display: inline-flex; align-items: center; gap: 5px;
-  position: relative;
-}
+   IT WAS A CLIP-PATH POLYGON AND IS NOW AN SVG, which is the same answer moved
+   into the element: the star is one of four controls on the footer and the
+   other three could not be pseudo-elements, so all four are drawn the one way.
+   The shape is the same five-point star, re-cut to a 24-unit box in
+   'script-icon.ts'.
+
+   OUTLINED UNTIL IT IS WATCHED, and the fill is the whole of the state: the
+   drawing inherits 'fill: none' from its root, and this rule is what overrides
+   it. A punch-out pseudo-element in the panel's own colour is what that used to
+   take, and it was wrong on any surface whose background was not '--panel'. */
 .watch:hover { color: var(--text); border-color: var(--muted); }
-.watch::before {
-  content: ""; display: inline-block; width: 12px; height: 12px;
-  background: currentColor;
-  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-}
-.watch::after {
-  content: ""; position: absolute; left: 8px; top: 50%; width: 7.2px; height: 7.2px;
-  margin-top: -3.6px; margin-left: 2.4px;
-  background: var(--panel);
-  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-}
 .watch.on { color: var(--warn); border-color: rgba(210, 153, 34, 0.45); }
-.watch.on::after { display: none; }
-/* In the card footer it joins the group that must never shrink or wrap, beside
-   Copy and Source. */
-.cardfoot .watch { flex: 0 0 auto; }
+.watch.on svg { fill: currentColor; }
 /* On the company page it sits in '.coident' after the industry tag, on the
    baseline the ticker and the name share. */
-.coident .watch { align-self: center; font-size: 12px; padding: 5px 10px; }
+.coident .watch { align-self: center; }
 .watch[hidden] { display: none; }
 
 /* THE SIGN-IN PANEL, in this document rather than as a second page: a separate

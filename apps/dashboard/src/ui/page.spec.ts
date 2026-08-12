@@ -16,6 +16,7 @@ import { SCRIPT_BRIEF } from './script/script-brief';
 import { SCRIPT_COMPANY } from './script/script-company';
 import { SCRIPT_FEED } from './script/script-feed';
 import { SCRIPT_FOCUS } from './script/script-focus';
+import { SCRIPT_ICON } from './script/script-icon';
 import { SCRIPT_POLL } from './script/script-poll';
 import { SCRIPT_SHARE } from './script/script-share';
 import { SCRIPT_SHARE_IMAGE } from './script/script-share-image';
@@ -52,12 +53,46 @@ const SCRIPT = html.slice(
   html.lastIndexOf('</script>'),
 );
 
+/**
+ * THE ONE ABSOLUTE URL THIS DOCUMENT MAY CARRY, and it is a name rather than an
+ * address.
+ *
+ * `document.createElementNS` is how an element is put in the SVG namespace, and
+ * the namespace is spelled as a URL by the XML specification — no browser has
+ * ever fetched it, and an `svg` built with `createElement` instead is an unknown
+ * HTML element that renders nothing. The card's four controls are drawings (see
+ * `script-icon.ts`), so the string is now in the inlined script.
+ *
+ * `logo.ts` has carried the same argument since the favicon was written: its
+ * `xmlns` is the same string, and it slips past the assertion below only because
+ * a `data:` URI is percent-encoded on its way into an attribute. Encoding this
+ * one to match would be hiding a string from a test rather than answering it.
+ *
+ * SO THE RULE IS THE ORIGIN, NOT THE SPELLING — which is exactly the amendment
+ * the `url()` test below already carries for `url(#brandtile)`. The namespace is
+ * removed and everything else must still be absent, and a second test states
+ * where the string is allowed to appear.
+ */
+const XML_NS = 'http://www.w3.org/2000/svg';
+const withoutXmlNamespace = (page: string): string =>
+  page.split(XML_NS).join('');
+
 describe('renderDashboardPage — self-containment', () => {
   it('references no external host at all', () => {
     // The moment this page is most needed is the moment the network is the
     // suspect, and a third-party script here would have read access to a view
     // of an unauthenticated database.
-    expect(html).not.toMatch(/https?:\/\//);
+    expect(withoutXmlNamespace(html)).not.toMatch(/https?:\/\//);
+  });
+
+  it('carries the XML namespace once, and only to make an SVG element', () => {
+    // THE EXEMPTION, BOUNDED. A URL that is a name is fine; a URL that is a
+    // name in one place and an address in another is not, so this says where
+    // the one occurrence is. A second one — a script src, a preconnect, an
+    // image — would land in the count and fail here rather than passing above.
+    expect(html.split(XML_NS)).toHaveLength(2);
+    expect(SCRIPT).toContain(`var ICON_NS = '${XML_NS}';`);
+    expect(SCRIPT).toContain('document.createElementNS(ICON_NS,');
   });
 
   it('loads no external stylesheet, script or font', () => {
@@ -1642,20 +1677,35 @@ describe('renderDashboardPage — the account', () => {
   });
 
   describe('the star', () => {
-    it('is drawn in CSS rather than typed as a character', () => {
+    it('is drawn rather than typed as a character', () => {
       // `page.spec.ts` already rejects U+2600-U+27BF anywhere on the page, and
       // that range holds both star glyphs. This asserts the replacement is a
-      // shape rather than the star simply being absent.
-      expect(html).toContain('clip-path: polygon(');
-      expect(html).toContain('.watch::before');
+      // shape rather than the star simply being absent. It was a `clip-path`
+      // polygon on a pseudo-element and is an SVG polygon now — the same shape,
+      // moved into the element so it can sit in a set with the three controls
+      // beside it, which could not have been pseudo-elements.
+      expect(SCRIPT_ICON).toContain("var ICON_STAR = [\n    ['polygon',");
+      expect(SCRIPT_ACCOUNT).toContain(
+        'button.appendChild(iconSvg(ICON_STAR))',
+      );
+      // Outlined until it is watched, and the fill is the whole of the state.
+      expect(html).toContain('.watch.on svg { fill: currentColor; }');
     });
 
-    it('carries a text label as well as the shape', () => {
-      // A clip-path is invisible to a screen reader: there is no glyph and no
-      // image to describe.
-      expect(SCRIPT_ACCOUNT).toContain("'aria-label'");
+    it('carries the words as well as the shape, in both places a name is read', () => {
+      // A drawing is invisible to a screen reader: there is no glyph and no
+      // image to describe. It used to carry a visible word too — that word is
+      // what the drawings replaced, and this is the price of replacing it.
       expect(SCRIPT_ACCOUNT).toContain(
-        "text.textContent = on ? 'Watching' : 'Watch'",
+        "var label = (on ? 'Stop watching ' : 'Watch ') + symbol;",
+      );
+      expect(SCRIPT_ACCOUNT).toContain(
+        "button.setAttribute('aria-label', label)",
+      );
+      expect(SCRIPT_ACCOUNT).toContain('button.title = label;');
+      // The state is in the ARIA rather than in the word that is gone.
+      expect(SCRIPT_ACCOUNT).toContain(
+        "button.setAttribute('aria-pressed', String(on))",
       );
     });
 
@@ -1957,8 +2007,18 @@ describe('the focus card', () => {
   });
 
   it('links the source only through safeHref', () => {
-    expect(SCRIPT_FOCUS).toContain('safeHref(f.attachmentUrl)');
-    expect(SCRIPT_FOCUS).toContain("rel = 'noopener noreferrer nofollow'");
+    // ASSERTED ON `script-share` NOW, because the link is built there: the card
+    // and the dialog mount the same control rather than each writing an anchor,
+    // and the scheme check is inside it. `attachmentUrl` comes from NSE and a
+    // `javascript:` value in it would otherwise be a click-to-execute link.
+    expect(SCRIPT_FOCUS).toContain("shareSourceLink(f, 'focus-source')");
+    expect(SCRIPT_FEED).toContain("shareSourceLink(f, 'card-source')");
+    expect(SCRIPT_SHARE).toContain('safeHref(f.attachmentUrl)');
+    expect(SCRIPT_SHARE).toContain("rel = 'noopener noreferrer nofollow'");
+    // Drawn only when the URL survives that check — "there is no document" and
+    // "there is a document we would not link to" both render as nothing here,
+    // and the caller is what decides, from a null.
+    expect(SCRIPT_SHARE).toContain('if (!href) return null;');
   });
 });
 
@@ -1972,27 +2032,67 @@ describe('the focus card', () => {
  * request it makes is to this application and not to a host.
  */
 describe('renderDashboardPage — the share', () => {
-  it('gives the card and the dialog one format, from one function', () => {
+  it('gives the card and the dialog one format, from one control', () => {
     // Not two. The card used to copy "SYMBOL: claim" per line and the dialog
     // copied its own version of the same thing, so the two could — and did —
-    // differ in what they included.
+    // differ in what they included. They then each built their own BUTTON
+    // around the one format, and those drifted too: the card's stopped
+    // propagation and the dialog's did not. One definition now, two callers.
     expect(SCRIPT_SHARE).toContain('function shareText(f)');
-    expect(SCRIPT_FEED).toContain('})(shareText(f), copy);');
-    expect(SCRIPT_FOCUS).toContain('})(shareText(f), copy);');
+    expect(SCRIPT_SHARE).toContain('function shareCopyButton(f, ui)');
+    expect(SCRIPT_SHARE).toContain('})(shareText(f));');
+    expect(SCRIPT_FEED).toContain(
+      "foot.appendChild(shareCopyButton(f, 'card-copy'));",
+    );
+    expect(SCRIPT_FOCUS).toContain(
+      "foot.appendChild(shareCopyButton(f, 'focus-copy'));",
+    );
     // And the thing that made two of them is gone rather than left behind.
     expect(SCRIPT_FEED).not.toContain('insightText');
+    expect(SCRIPT_FEED).not.toContain('navigator.clipboard');
+    expect(SCRIPT_FOCUS).not.toContain('navigator.clipboard');
   });
 
-  it('offers the picture beside the text, on the foot that wraps', () => {
-    // The card's footer is one line whose controls are sized never to shrink,
-    // so a third would push the category out of it. This one wraps.
-    expect(SCRIPT_FOCUS).toContain('foot.appendChild(shareImageButton(f));');
-    expect(SCRIPT_FEED).not.toContain('shareImageButton');
-    expect(SCRIPT_SHARE_IMAGE).toContain(
-      "button.setAttribute('data-ui', 'focus-copy-image')",
+  it('offers the picture beside the text, on every foot rather than one', () => {
+    // IT WAS DIALOG-ONLY, and the reason was width: the card's footer is one
+    // line whose controls are sized never to shrink, so a third WORD would have
+    // pushed the category out of it. Four drawings take 160px of that line
+    // where two words and the star took 193px, so the reason is gone.
+    expect(SCRIPT_FEED).toContain(
+      "foot.appendChild(shareImageButton(f, 'card-copy-image'));",
     );
-    // The same visual weight family as Copy and Source, which is one class.
-    expect(SCRIPT_SHARE_IMAGE).toContain("button.className = 'copy'");
+    expect(SCRIPT_FOCUS).toContain(
+      "foot.appendChild(shareImageButton(f, 'focus-copy-image'));",
+    );
+    // The same family as the three controls beside it, which is one class and
+    // one builder — see `script-icon.ts`.
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      'iconButton(ICON_IMAGE, SHARE_IMAGE_LABEL, ui)',
+    );
+  });
+
+  it('names every wordless control twice, and says what it did out loud', () => {
+    // THE PRICE OF DROPPING THE LABELS, PAID. A drawing has no accessible name,
+    // so each control carries an aria-label for a screen reader and the same
+    // string as a title for a pointer; and each of the two copy buttons is an
+    // aria-live region whose clipped line is what the check mark says in words.
+    expect(SCRIPT_ICON).toContain("button.setAttribute('aria-label', label)");
+    expect(SCRIPT_ICON).toContain('button.title = label;');
+    expect(SCRIPT_ICON).toContain("said.className = 'iconsaid'");
+    for (const fragment of [SCRIPT_SHARE, SCRIPT_SHARE_IMAGE]) {
+      expect(fragment).toContain("button.setAttribute('aria-live', 'polite')");
+    }
+    // The drawing itself is hidden from the tree: the words above are the name,
+    // and an unhidden graphic would add a second, empty node beside them.
+    expect(SCRIPT_ICON).toContain("svg.setAttribute('aria-hidden', 'true')");
+    // A check for the two outcomes that worked and a cross for the two that
+    // did not. A control that reports success for a failure has taught the
+    // reader to look in the wrong place.
+    expect(SCRIPT_SHARE).toContain("iconSaid(button, ICON_DONE, 'Copied')");
+    expect(SCRIPT_SHARE).toContain("iconSaid(button, ICON_FAIL, 'failed')");
+    expect(SCRIPT_SHARE_IMAGE).toContain(
+      "shareSaid(button, ICON_FAIL, 'not ready')",
+    );
   });
 
   it('asks no host but this one, and asks it for exactly one thing', () => {
@@ -2008,10 +2108,10 @@ describe('renderDashboardPage — the share', () => {
     );
     expect([...SCRIPT_SHARE_IMAGE.matchAll(/img\.src = /g)]).toHaveLength(2);
     // AND THE DOCUMENT IS UNCHANGED. Nothing was added to the head: no second
-    // link element, no preload, no absolute URL anywhere in the page — the
-    // suite's first two tests still hold, and the request is made by a script
-    // at load rather than by markup.
-    expect(html).not.toMatch(/https?:\/\//);
+    // link element, no preload, no absolute URL anywhere in the page but the
+    // XML namespace the icons are built in — the suite's first two tests still
+    // hold, and the request is made by a script at load rather than by markup.
+    expect(withoutXmlNamespace(html)).not.toMatch(/https?:\/\//);
     expect(html.slice(0, html.indexOf('<script>'))).not.toContain(
       '/brand/logo.png',
     );
@@ -2183,7 +2283,9 @@ describe('renderDashboardPage — without the operator panel', () => {
   });
 
   it('is still one self-contained document that references no external host', () => {
-    expect(off).not.toMatch(/https?:\/\//);
+    // The XML namespace the icons are built in is the one exemption, and it is
+    // a name rather than an address — see `XML_NS` at the top of this file.
+    expect(withoutXmlNamespace(off)).not.toMatch(/https?:\/\//);
     expect((off.match(/<link/g) ?? []).length).toBe(1);
     expect((off.match(/<script/g) ?? []).length).toBe(1);
   });

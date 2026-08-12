@@ -8,7 +8,9 @@
  * card all copy the same thing.
  *
  * IT RUNS BEFORE `script-feed` and `script-focus`, which is a dependency rather
- * than a preference: both of their Copy buttons take their payload from here.
+ * than a preference: both of their feet MOUNT the two controls defined at the
+ * bottom of this file. They used to build a copy of each instead, and the
+ * copies had already drifted — see `shareCopyButton`.
  *
  * NO BACKTICK AND NO `${` MAY APPEAR BELOW. Both are consumed by the composing
  * template literal before a browser ever sees this — `script-fragments.spec.ts`
@@ -128,5 +130,69 @@ export const SCRIPT_SHARE = `
     out.push(SHARE_BRAND);
 
     return out.join('\\n');
+  }
+
+  // What the control is for, now that it has no room to say so on its face.
+  // 'Copy' was enough beside a word; a drawing has to name the alternative it
+  // is not — the picture beside it.
+  var SHARE_COPY_LABEL = 'Copy as text';
+
+  /**
+   * The control that puts the message on the clipboard.
+   *
+   * ONE DEFINITION, THREE FEET. The card, the company page's cards and the
+   * dialog all mount this; they used to hold a copy of it each, and the copies
+   * had already drifted once — the card's stopped propagation and the dialog's
+   * did not, which is why the argument for that line is here rather than in
+   * either caller. A click on a control inside a card must not also open the
+   * card behind it.
+   *
+   * THE GUARD IS NOT DECORATION. 'navigator.clipboard' is absent on an insecure
+   * origin, and a dashboard served over plain http to a colleague must say so
+   * rather than throw.
+   */
+  function shareCopyButton(f, ui) {
+    var button = iconButton(ICON_COPY, SHARE_COPY_LABEL, ui);
+    // The same reason 'shareImageButton' carries one: a control with no words
+    // on it reports by swapping a drawing, and a drawing is silent.
+    button.setAttribute('aria-live', 'polite');
+    button.onclick = (function (text) {
+      return function (event) {
+        event.stopPropagation();
+        if (!navigator.clipboard) {
+          iconSaid(button, ICON_FAIL, 'no clipboard');
+          return;
+        }
+        navigator.clipboard.writeText(text).then(function () {
+          iconSaid(button, ICON_DONE, 'Copied');
+          window.setTimeout(function () { iconSaid(button, ICON_COPY, ''); }, 1500);
+        }, function () { iconSaid(button, ICON_FAIL, 'failed'); });
+      };
+    })(shareText(f));
+    return button;
+  }
+
+  /**
+   * The document itself, which is the third thing a reader does with a filing.
+   *
+   * NULL WHEN THE URL FAILS THE SCHEME CHECK, and the caller draws nothing.
+   * 'attachmentUrl' arrives from NSE; a 'javascript:' value in it would
+   * otherwise become a click-to-execute link, which is the whole of why
+   * 'safeHref' exists. Rendered as a real anchor and never as a button that
+   * navigates: a link that cannot be middle-clicked or copied is not a link.
+   */
+  function shareSourceLink(f, ui) {
+    var href = safeHref(f.attachmentUrl);
+    if (!href) return null;
+    var link = document.createElement('a');
+    link.href = href;
+    link.rel = 'noopener noreferrer nofollow';
+    link.target = '_blank';
+    link.className = 'iconbtn';
+    link.setAttribute('data-ui', ui);
+    link.setAttribute('aria-label', SOURCE_LABEL);
+    link.title = SOURCE_LABEL;
+    link.appendChild(iconSvg(ICON_SOURCE));
+    return link;
   }
 `;
