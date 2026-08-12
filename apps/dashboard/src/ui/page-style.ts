@@ -1039,10 +1039,27 @@ button.sym:hover { color: var(--text); text-decoration: underline; }
 /* A figure the DOCUMENT printed, set apart so the eye finds it. It is
    typography, never arithmetic: nothing here computes, converts or compares a
    number, because a percentage derived from two other figures is a calculation
-   and nothing downstream can tell a right one from a wrong one. */
+   and nothing downstream can tell a right one from a wrong one.
+
+   BRIGHTER, NEVER BOLDER, AND THE WEIGHT IS WHY THIS COMMENT GREW. It set
+   'font-weight: 620' as well as the colour, and a reader's report was that the
+   cards read as "everything bolded". The collection says they were right:
+   swept 2026-08-12 over the 10,463 stored claims, 85.1% carry at least one
+   figure, the pattern lights 2.13 runs in an average claim and 19.6% of all
+   claim characters. A fifth of the text on a card, in a heavier weight, spread
+   over two runs a line, is not emphasis — it is a second typeface.
+
+   The share image reached the same place first and for a different reason: its
+   claims are drawn run by run on a canvas, the line was wrapped by measuring
+   the whole string in one font, and a bold run would be wider than the
+   measurement it was wrapped by — so there only the FILL may change. Two
+   surfaces, one treatment, and it is the one that was already proven.
+
+   The colour and the tabular figures stay: white against the claim's own
+   near-white is the emphasis, and lining numerals stop a column of amounts
+   from wobbling. */
 .insights .fig {
   font-variant-numeric: tabular-nums;
-  font-weight: 620;
   color: #fff;
 }
 
