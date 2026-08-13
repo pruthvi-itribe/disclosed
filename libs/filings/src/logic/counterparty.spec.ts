@@ -184,6 +184,67 @@ describe('extractCounterparty — the guards', () => {
   });
 });
 
+describe('extractCounterparty — a row answered with a phrase, not a name', () => {
+  it('refuses the production value that opens with a verb', () => {
+    // SAATVIKGL, 2026-08-13. It passed every guard here — not indefinite, 45
+    // characters, carries "Limited" — and reached a reader as "SAATVIKGL BAGS
+    // ORDER Rs 476 cr from Received order from Vikran Engineering Limited".
+    const result = extractCounterparty(
+      row('\nReceived order from Vikran Engineering Limited \n2 \n'),
+    );
+    expect(result).toEqual({ outcome: 'refused', reason: 'phrase-not-name' });
+  });
+
+  it('accepts the same name when the row holds only the name', () => {
+    // The contrast is the decision: the name inside the phrase above is NOT
+    // recovered by trimming the clause. Refusing is the whole point — a
+    // trimmed name would be an inference on the field whose wrong answer
+    // invents a commercial relationship between two named companies.
+    const result = extractCounterparty(
+      row('\nVikran Engineering Limited \n2 \n'),
+    );
+    expect(result.outcome).toBe('extracted');
+    if (result.outcome !== 'extracted') return;
+    expect(result.name).toBe('Vikran Engineering Limited');
+  });
+
+  it.each([
+    [
+      "a gerund from NSE's own category name",
+      '\nBagging of orders from Vikran Engineering Limited \n',
+    ],
+    ["the row label's own verb", '\nAwarded by Vikran Engineering Limited \n'],
+    [
+      'a bare preposition continuing the label',
+      '\nFrom Vikran Engineering Limited \n',
+    ],
+    [
+      'the filer narrating in the third person',
+      '\nThe Company has received an order from Vikran Engineering Ltd \n',
+    ],
+    [
+      'the filer narrating in the first person',
+      '\nWe have received an order from Vikran Engineering Limited \n',
+    ],
+  ])('refuses %s', (_label, value) => {
+    const result = extractCounterparty(row(value));
+    expect(result).toEqual({ outcome: 'refused', reason: 'phrase-not-name' });
+  });
+
+  it('still refuses a description as a description when it is also a phrase', () => {
+    // The refusal order is what a reviewer reads. This value is both, and the
+    // anonymisation is the more informative of the two facts: the filer chose
+    // not to say, which no rewording of the row would fix.
+    const result = extractCounterparty(
+      row('\nReceived order from a leading private sector bank \n'),
+    );
+    expect(result).toEqual({
+      outcome: 'refused',
+      reason: 'described-not-named',
+    });
+  });
+});
+
 describe('extractCounterparty — row boundaries', () => {
   it.each([
     [
