@@ -37,7 +37,10 @@ export const PAGE_STYLE_FOCUS = `
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 18px; padding: 20px 22px 18px;
   width: 100%; max-width: 720px;
-  max-height: calc(100vh - 48px);
+  /* dvh, NOT vh — the same lesson page-style-brief.ts records. A mobile
+     browser's vh is the viewport with the URL bar COLLAPSED, so a panel sized
+     in vh is taller than what is actually visible while the bar is showing. */
+  max-height: calc(100dvh - 48px);
   display: flex; flex-direction: column;
   /* MEASURED, NOT DECORATIVE. A flex item's default minimum is its CONTENT
      width, so the monospaced results line inside — set 'nowrap' — made the
@@ -149,7 +152,33 @@ export const PAGE_STYLE_FOCUS = `
   /* Full-bleed sheet on a phone, anchored to the bottom where a thumb is. */
   .focuscard {
     max-width: none; border-radius: 18px 18px 0 0;
-    max-height: 92vh; padding: 18px 16px 14px;
+    /* 92dvh, and the unit is the whole bug. At 92vh on a browser whose URL
+       bar is visible, the sheet is TALLER THAN THE VISIBLE VIEWPORT — and
+       because the backdrop anchors it with align-items: flex-end, the
+       overflow goes off the TOP, where .focusclose lives. A flex container
+       cannot scroll to content overflowing its start edge, so the close
+       button was not merely off-screen, it was unreachable. Reported from a
+       phone on 2026-08-13. */
+    max-height: 92dvh; padding: 18px 16px 14px;
+    /* The sheet is full-bleed here, so its own padding is all that keeps text
+       off a rounded corner or a camera cutout. */
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+
+  /* WRAPS RATHER THAN SCROLLS on a phone. Everywhere else this line is one
+     monospaced row and its own overflow-x keeps the panel from widening — see
+     .focuscard's min-width note. On a 390px screen that row is several times
+     the width of the screen, so a reader gets a figure cut mid-number with no
+     affordance saying there is more. The alignment nowrap buys is vertical,
+     between stacked rows, and there is only ever one row here. */
+  .focusresults {
+    white-space: normal;
+    overflow-x: visible;
+    /* Wrap between words so a figure is never split across two lines. */
+    word-break: normal;
+    overflow-wrap: normal;
   }
   .focusback.open .focuscard { transform: scale(1); }
   .focuscard { transform: translateY(14px) scale(1); }
