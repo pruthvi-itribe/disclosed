@@ -125,13 +125,23 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
    touch-action: pan-x TELLS THE COMPOSITOR WHICH GESTURE THIS IS before the
    first move event, so a vertical drag is not spent hunting for a scroller
    that will not move. THE COST IS THAT A CARD TALLER THAN THE DECK CANNOT BE
-   DRAGGED UPWARDS, so a card has to fit, and that is measured rather than
-   hoped for: at 390x844 over the live deck of fourteen cards on 2026-08-09 the
-   content of a card needs between 195px and 523px against 734px of deck, so
-   the tallest card of the day clears by 211px. The card keeps overflow-y: auto
-   below as a valve for a keyboard, a trackpad and a screen reader; if the
-   measurement ever closes, this line becomes pan-x pan-y and the swipe gets
-   less certain rather than a card getting unreadable.
+   DRAGGED UPWARDS, so a card has to fit. That was measured rather than hoped
+   for: at 390x844 over the live deck of fourteen cards on 2026-08-09 the
+   content of a card needed between 195px and 523px against 734px of deck, so
+   the tallest card of that day cleared by 211px.
+
+   THAT MEASUREMENT'S INPUT MOVED ON 2026-08-13. Every lede in the deck of
+   2026-08-09 was capped at 120 characters, and MAX_CLAIM_CHARS is now 200, so
+   the 523px ceiling and the 211px clearance are figures about ledes shorter
+   than a stored claim may now be. Whether a card still fits has to be read off
+   the rendered page; this comment no longer knows.
+
+   The card keeps overflow-y: auto below as a valve for a keyboard, a trackpad
+   and a screen reader, and the rule the numbers used to settle still stands as
+   a rule: if the clearance ever closes, this line becomes pan-x pan-y and the
+   swipe gets less certain rather than a card getting unreadable. What changed
+   is that "ever closes" is now a question to re-measure rather than one the
+   figures above have already answered.
 
    overscroll-behavior: contain on BOTH axes: a swipe past the last card must
    not become the browser's own navigation, and a flick down must not rubber-
@@ -158,9 +168,18 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 #brief-deck[hidden] { display: none; }
 
 /* EVERY CARD IS EXACTLY ONE VIEWPORT, which is what lets the lede be set at
-   25px without any card in the deck changing height: a 120-character claim —
-   the hard cap claim-verify.ts enforces — wraps to four lines at 390px and
-   occupies about 128px, and the card has room for that at its maximum.
+   25px without any card in the deck changing height.
+
+   THE MEASUREMENT BEHIND THAT WAS TAKEN AT A CAP THAT HAS SINCE MOVED. It
+   read: a 120-character claim — the hard cap claim-verify.ts then enforced —
+   wraps to four lines at 390px and occupies about 128px, and the card has room
+   for that at its maximum. MAX_CLAIM_CHARS became 200 on 2026-08-13, because
+   120 was a wire line's bound refusing claims before the verbatim gate ever
+   saw them, so the four lines, the 128px and the room they fit into are all
+   figures about a claim 120 characters long, while a stored claim may now be
+   200. The rule below is unchanged and its argument no longer follows: what a
+   200-character claim does to a card at 390px has to be read off the rendered
+   page before this paragraph can state a number again.
 
    100% of the deck rather than of the window, because the tab bar is above the
    deck and a card measured against the window would hide its own footer behind
@@ -224,9 +243,17 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 }
 .bname { font-size: 13px; color: var(--muted); min-width: 0; }
 
-/* THE CLAIM IS THE CARD. Set at the size of a headline because it is one, and
-   because MAX_CLAIM_CHARS = 120 guarantees it fits: no other string in this
-   product can be given a whole screen without a truncation rule.
+/* THE CLAIM IS THE CARD. Set at the size of a headline because it is one.
+
+   THE FIT NO LONGER FOLLOWS FROM THE NUMBER. This size was chosen when
+   MAX_CLAIM_CHARS was 120 — short enough that a claim was guaranteed a whole
+   screen without a truncation rule, which no other string in this product
+   gets. That constant was raised to 200 on 2026-08-13, because 120 was a wire
+   line's bound refusing claims before the verbatim gate saw them, and 200
+   is two thirds longer than anything this rule was ever measured against. The
+   size below is unchanged and the guarantee behind it is gone: whether the
+   longest stored claim still fits is now an open question to be answered by
+   looking at the rendered page, not by arithmetic here.
 
    overflow-wrap because claim text is exchange-derived and can carry a very
    long unbroken token, and a card that overflows sideways breaks the one

@@ -7,9 +7,9 @@
 # its logs and for the dashboard's feed-lag number.
 #
 # The image tag below is a placeholder. CI does `kubectl set image` on every
-# deploy, exactly as tralk's does, so the tag in this file is only ever the
+# deploy, exactly as the platform's does, so the tag in this file is only ever the
 # one a first `kubectl apply` starts from — see the `ignore_changes` comment
-# on tralk-infra's `kubernetes_deployment.tralkserver` for the same
+# on the platform's infrastructure repository's equivalent deployment for the same
 # arrangement expressed in Terraform.
 apiVersion: apps/v1
 kind: Deployment
@@ -25,7 +25,7 @@ spec:
   # lease on the poll loop the way there is on enrichment's documents.
   replicas: 1
 
-  # Recreate, NOT the RollingUpdate tralkserver uses. A rolling update with
+  # Recreate, NOT the RollingUpdate the platform service uses. A rolling update with
   # maxSurge=1 starts the new poller before the old one stops, which is the
   # two-pollers state above for the length of a rollout. The cost is a gap of
   # a few seconds in the poll during a deploy, and the drain loop
@@ -72,7 +72,7 @@ spec:
             # IST is server-owned: UTC+05:30, day rolls at 18:30 UTC. The
             # process derives that itself, but a container whose clock says
             # UTC makes every log line an arithmetic problem for whoever is
-            # reading it at 2am. Same value tralkserver carries.
+            # reading it at 2am. Same value the platform service carries.
             - name: TZ
               value: Asia/Kolkata
 

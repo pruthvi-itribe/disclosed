@@ -112,6 +112,22 @@ export const SCRIPT_SHARE = `
     out.push('*' + f.companyName + ' (' + f.symbol + ')*');
     out.push(f.category + ' · ' + f.disseminatedAtIstHuman + ' IST');
 
+    // THE FIGURE LEADS, and it is the one place this differs from the results
+    // line below. That line goes last because a results table is many numbers
+    // secondary to the sentences; a single order value is the event itself, and
+    // the claims are its detail. Measured 2026-08-13: of 1,193 filings holding
+    // at least one claim, 33 had a verified amount and NOT ONE claim containing
+    // a digit — the money was extracted, verified, stored, drawn on the card,
+    // and dropped on the way to the chat window.
+    //
+    // Rendered as stored. Nothing is computed here, and no label is invented to
+    // sit beside it: the category line above already says what kind of event
+    // this is. A paragraph of its own, which is where the picture puts it too.
+    if (e.amountDisplay) {
+      out.push('');
+      out.push(e.amountDisplay);
+    }
+
     out.push('');
     for (var i = 0; i < claims.length; i++) {
       out.push('- ' + claims[i].text);

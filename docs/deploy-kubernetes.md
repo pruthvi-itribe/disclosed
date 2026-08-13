@@ -3,7 +3,7 @@
 The same five moving parts as the droplet — Mongo, the poller, the enrichment
 lane, the dashboard, an edge — rearranged into three Deployments, one Service
 and two Ingresses on the DigitalOcean Kubernetes cluster that already runs
-`tralkserver`. The manifests are in `k8s/`, the workflows in
+The platform service. The manifests are in `k8s/`, the workflows in
 `.github/workflows/`.
 
 **This is the second deployment target, not a replacement for the first.**
@@ -20,7 +20,7 @@ when something was observed, not when it seems likely to work.
 
 ---
 
-## 1. The shape, and the one thing that is not tralk's shape
+## 1. The shape, and the one thing that is not the platform's shape
 
 | Workload | Replicas | Listens on | Reached by |
 |---|---|---|---|
@@ -84,8 +84,8 @@ variables → Actions → New repository secret.
 | `DIGITALOCEAN_ACCESS_TOKEN` | A DigitalOcean PAT with **read/write** scope on Kubernetes | `digitalocean/action-doctl@v2`, to fetch the cluster's kubeconfig |
 | `ARG_INVESTORSTRIBEDEV_ACCESS_TOKEN` | The Docker Hub **access token** for the `investorstribe` account | `docker/login-action@v3`, to push the three images |
 
-Both names are tralk-nest-server's, spelled identically, because **they are the
-same two credentials**. If tralk's are still valid, copying the values across
+Both names are the platform server's, spelled identically, because **they are the
+same two credentials**. If the platform's are still valid, copying the values across
 is the whole of this step. (`ARG_` and `DEV` are archaeology from the argonaut
 pipeline; the name is kept rather than improved so a rotation is one search
 across both repositories instead of two.)
@@ -93,7 +93,7 @@ across both repositories instead of two.)
 **Nothing else is a GitHub secret.** The Anthropic key, the Telegram pair, the
 Firebase pair and the Mongo URI never touch CI — they are Kubernetes Secrets,
 created directly against the cluster in section 4, which is how the DO DNS
-token and the Docker Hub pull secret already reach tralk's clusters.
+token and the Docker Hub pull secret already reach the platform's clusters.
 
 ### The Docker Hub repositories
 
@@ -115,8 +115,8 @@ that assumption.
 
 ## 3. Where the data lives
 
-**Managed Mongo, not a StatefulSet.** This follows what tralk's *prod* does —
-`prod-mongo-v2` in `managed-dbs/`, private-VPC only, firewalled to the
+**Managed Mongo, not a StatefulSet.** This follows what the platform's *prod* does —
+a managed Mongo cluster, private-VPC only, firewalled to the
 cluster — rather than what its *stage* does, which is an in-cluster
 StatefulSet on a `do-block-storage` PVC.
 
@@ -130,8 +130,8 @@ The reasoning, in order of weight:
    the DO control panel. An in-cluster Mongo needs the CronJob, the Spaces
    bucket and the restore rehearsal that section 8 of the droplet doc
    describes, and a backup nobody has restored is a hypothesis.
-3. **It costs nothing new.** `prod-mongo-v2` (db-s-1vcpu-2gb) already hosts
-   `tralkdb`, `notificationsdb`, `instrumentsdb` and `rewardsdb`. Disclosed's
+3. **It costs nothing new.** The shared managed cluster (db-s-1vcpu-2gb) already hosts
+   the platform's own four databases. Disclosed's
    entire live collection is **10.3 MB of documents, 7 MB of storage and 6 MB
    of indexes for 3,947 filings**, growing about 2.6 MB a day — roughly 1 GB a
    year. It is a rounding error on that cluster.
@@ -139,8 +139,8 @@ The reasoning, in order of weight:
    `mongo:7` with no replica set and no transactions; a managed cluster is
    strictly more than that.
 
-**If a StatefulSet is wanted instead**, tralk-infra's `stage/stage-mongo.tf` is
-the working reference — headless Service, `rs0` single-node replica set, the
+**If a StatefulSet is wanted instead**, the platform's infrastructure
+repository has a working staging equivalent — headless Service, `rs0` single-node replica set, the
 keyfile init-container that copies out of the Secret mount because mongod
 refuses to resolve through the symlink chain, and a 10Gi `do-block-storage`
 volumeClaimTemplate. It is not carried here because shipping an unused second
@@ -151,9 +151,9 @@ data path is a second thing to keep correct.
 ## 4. Cluster prerequisites, created out-of-band
 
 Four Secrets, created with `kubectl` and not committed anywhere. This is the
-pattern tralk-infra already uses for `digitalocean-dns` and `dockerhub-pull`
+pattern the platform's infrastructure repository already uses for `digitalocean-dns` and `dockerhub-pull`
 — *"kept out of tf state — installed via kubectl so it never hits disk"* — and
-it is the one place these manifests **must** diverge from tralkserver's prod
+it is the one place these manifests **must** diverge from the platform service's prod
 deployment, which bakes its database credentials into the image via
 `prod.yaml`. This repository cannot do that: `.dockerignore` excludes `.env`
 for exactly this reason (*"a file copied into a layer is in the image for
@@ -166,7 +166,7 @@ doctl kubernetes cluster kubeconfig save prod
 kubectl apply -f k8s/00-namespace.yaml
 ```
 
-**1. The image pull secret** — same name tralk's prod uses, so the manifests
+**1. The image pull secret** — same name the platform's prod uses, so the manifests
 read the same:
 
 ```bash
@@ -176,13 +176,13 @@ kubectl -n disclosed create secret docker-registry dockerhub-pull \
   --docker-password='<the same Docker Hub access token>'
 ```
 
-**2. The database URI**, from the DO control panel's connection string for
-`prod-mongo-v2`, with **the database name changed to `turret`** and the
+**2. The database URI**, from the DO control panel's connection string for the
+managed cluster, with **the database name changed to `turret`** and the
 **private** host used, not the public one:
 
 ```bash
 kubectl -n disclosed create secret generic disclosed-mongo \
-  --from-literal=MONGO_URI='mongodb+srv://<user>:<pass>@private-prod-mongo-v2-....mongo.ondigitalocean.com/turret?tls=true&authSource=admin&replicaSet=<rs>'
+  --from-literal=MONGO_URI='mongodb+srv://<user>:<pass>@private-<cluster>-<id>.mongo.ondigitalocean.com/turret?tls=true&authSource=admin&replicaSet=<rs>'
 ```
 
 **3. The pipeline's keys** — read by `ingest` and `enrichment`, which share one
@@ -226,7 +226,7 @@ and `docling=` for a deployment where nothing is actually different.
 ### What the cluster already has
 
 `ingress-nginx`, `cert-manager` and the `letsencrypt-prod` ClusterIssuer are
-installed in the `platform` namespace by tralk-infra's `prod/platform.tf`.
+installed in the `platform` namespace by the platform's infrastructure repository.
 `k8s/40-ingress.yaml` uses them and installs neither.
 
 **And here is the one thing to settle before applying that file.** The issuer
@@ -244,8 +244,8 @@ for that edge — `CF-Connecting-IP` is the production rate-limit key and only
 exists when Cloudflare is in the path. So this repository ships its own
 `letsencrypt-cloudflare` ClusterIssuer in [`k8s/05-issuer.yaml`](../k8s/05-issuer.yaml),
 solving DNS-01 with a Cloudflare token scoped to `Zone / DNS / Edit` on that
-one zone, and both Ingresses carry that annotation. tralk's `letsencrypt-prod`
-is untouched and still owns tralk's zones. The three options are kept below
+one zone, and both Ingresses carry that annotation. The platform's `letsencrypt-prod`
+is untouched and still owns the platform's zones. The three options are kept below
 because the reasoning is what makes the choice re-checkable.
 
 Three ways out, in the order they cost:
@@ -254,17 +254,17 @@ Three ways out, in the order they cost:
    then works unchanged, and the certificate can be issued *before* the
    hostname resolves at the load balancer — which makes the cutover off the
    droplet a DNS change rather than a downtime window. That pre-issuance is the
-   whole reason DNS-01 was chosen for tralk. **The cost is Cloudflare**: no
+   whole reason DNS-01 was chosen there. **The cost is Cloudflare**: no
    edge WAF, no DDoS absorption, and the load balancer's IP on public DNS.
 2. **Keep Cloudflare and switch this Ingress to HTTP-01**, with its own
-   ClusterIssuer so tralk's is untouched. Then the certificate can only be
+   ClusterIssuer so the platform's is untouched. Then the certificate can only be
    issued *after* the A record points at the load balancer, so the cutover has
    a window in which the site is unreachable — minutes, and it burns Let's
    Encrypt rate limit if it fails. Leave the record **DNS-only (grey cloud)**
    until the certificate is issued, exactly as the droplet doc says for Caddy.
 3. **Keep Cloudflare and add a Cloudflare DNS-01 solver** to a new
    ClusterIssuer, with a Cloudflare API token in a Secret. Best of both, one
-   more credential to hold, and a new cluster-scoped object next to tralk's.
+   more credential to hold, and a new cluster-scoped object next to the platform's.
 
 Whichever is chosen, the `cert-manager.io/cluster-issuer` annotation on both
 Ingresses in `k8s/40-ingress.yaml` is the one line that changes.
@@ -349,19 +349,19 @@ ls -lh ~/turret-$STAMP.archive.gz    # expect well under 100 MB
 ```
 
 The restore is the half nobody tests, and the awkward part is reach:
-`prod-mongo-v2` is **private-VPC only**, firewalled to the DOKS nodes, so a
+That cluster is **private-VPC only**, firewalled to the DOKS nodes, so a
 laptop cannot see it by default. Two ways in, in order of preference.
 
 ### The simple way: borrow a trusted source
 
-DigitalOcean → Databases → `prod-mongo-v2` → Settings → **Trusted Sources** →
+DigitalOcean → Databases → the cluster → Settings → **Trusted Sources** →
 add your current public IP. Then restore from the laptop against the **public**
 hostname, and **remove the entry when you are done** — it is the only thing
 standing between that database and the internet.
 
 ```bash
 # Public host, not the private- one. From the DO connection-details panel.
-MONGO_ADMIN='mongodb+srv://<user>:<pass>@prod-mongo-v2-....mongo.ondigitalocean.com/?tls=true&authSource=admin'
+MONGO_ADMIN='mongodb+srv://<user>:<pass>@<cluster>-<id>.mongo.ondigitalocean.com/?tls=true&authSource=admin'
 
 # INTO A SCRATCH DATABASE FIRST. Not caution theatre: a restore that silently
 # landed half a collection looks exactly like one that worked.
@@ -421,15 +421,15 @@ nobody is reading is how a quiet outage happens.
 ## 7. What stays manual
 
 Everything in this list is manual **on purpose**, and each one matches how
-tralk is operated:
+the platform is operated:
 
 1. **Applying the manifests.** CI only ever runs `kubectl set image`. The token
    it holds can roll out a build of reviewed code and cannot rewrite an Ingress
-   or delete a namespace. tralk splits it the same way — its manifests are
-   Terraform in `tralk-infra`, applied by a human.
+   or delete a namespace. the platform splits it the same way — its manifests are
+   Terraform in the platform's infrastructure repository, applied by a human.
 2. **Creating and rotating the four Secrets.** They never enter git, CI, or a
    Terraform state file.
-3. **Triggering the deploy.** `workflow_dispatch` only, matching what tralk's
+3. **Triggering the deploy.** `workflow_dispatch` only, matching what the platform's
    prod workflow says it wants until a few deploys have gone cleanly. A push
    trigger on `main` is a two-line change to the `on:` block.
 4. **Bumping `disclosed.live/edge-config-revision`** in
@@ -451,10 +451,10 @@ tralk is operated:
 
 The first real deploy. Everything below was observed, not inferred:
 
-- **The pods reach `prod-mongo-v2` over the VPC.** A throwaway pod authenticated,
+- **The pods reach the managed cluster over the VPC.** A throwaway pod authenticated,
   wrote and read. This was open item 1 and is closed.
 - **The database user cannot escape its own database.** `disclosed` holds
-  `readWrite` on `turret` alone; an insert into `tralkdb` returned
+  `readWrite` on `turret` alone; an insert into a sibling database returned
   `Unauthorized`. That closes open question 3 — `doctl databases user create`
   makes DBADMIN-on-admin and has no flag to do otherwise, so the user is
   created through the API with `settings.mongo_user_settings` (the flat
@@ -514,7 +514,7 @@ The first real deploy. Everything below was observed, not inferred:
 
    Left as it is, deliberately. A year still satisfies the preload list's
    floor, and raising it means a cluster-wide ConfigMap **shared with
-   tralkserver** — someone else's security header changed as a side effect of
+   the platform service** — someone else's security header changed as a side effect of
    this project's preference. That is a decision to take on purpose, not a fix
    to apply quietly. The sidecar keeps sending two years so a deployment
    without nginx in front is still correct.
@@ -546,8 +546,8 @@ The first real deploy. Everything below was observed, not inferred:
    bucket. There is no signal left at the app to distinguish that request:
    nginx discarded the forwarded chain, so the Cloudflare edge address never
    arrives either. The fix is a DigitalOcean firewall restricting the LB to
-   Cloudflare's published ranges — a change in `tralk-infra`, shared with
-   tralkserver, and a decision rather than a commit inside this task. What the
+   Cloudflare's published ranges — a change in the platform's infrastructure repository, shared with
+   the platform service, and a decision rather than a commit inside this task. What the
    gap costs is evasion of a per-IP bucket, not entry: the per-account backoff
    is persisted and reads no address at all.
 5. **No log aggregation and no uptime check.** Pod logs are lost with the pod.
@@ -576,15 +576,15 @@ deleted, because the reasoning is what makes an answer re-checkable:
 - **0 (DNS/ACME)** — Namecheap registration, nameservers moved to **Cloudflare**,
   and this repository ships its own `letsencrypt-cloudflare` ClusterIssuer
   (`k8s/05-issuer.yaml`). See the decision note in section 4.
-- **1 (does it belong on tralk's cluster)** — yes, but not on tralk's *node*.
+- **1 (does it belong on the platform's cluster)** — yes, but not on the platform's *node*.
   The pool was grown 1 → 2 for Docling (2026-08-12) and 2 → 3 for the app
-  (2026-08-13). Disclosed's workloads and tralkserver now share a cluster and
+  (2026-08-13). Disclosed's workloads and the platform service now share a cluster and
   a managed database, not a machine. **The pool is still terraform-managed
-  from tralk-infra with a stale count in state; a `terraform apply` there
+  from the platform's infrastructure repository with a stale count in state; a `terraform apply` there
   would shrink it and evict this.** Bump that variable to 3.
 - **2 (images under `investorstribe`)** — yes, three private repositories.
 - **3 (which database, under which user)** — `turret`, and a `disclosed` user
-  scoped `readWrite` to it alone. Proven by a refused write to `tralkdb`.
+  scoped `readWrite` to it alone. Proven by a refused write to a sibling database.
 - **5 (`AUTH_MODE`)** — `firebase`, confirmed in the running boot line.
 
 Still open: **4** (the droplet/dev poller — both are running, against separate
@@ -597,8 +597,8 @@ backs up the managed database on a schedule of ours).
    existing `letsencrypt-prod` issuer only works if the zone's nameservers are
    at DigitalOcean; the droplet doc recommends Cloudflare. Nothing else in this
    document can be tested until it is decided.
-1. **Does Disclosed belong on tralk's `prod` cluster at all?** It is one
-   `s-4vcpu-8gb` node (~$60/mo) already carrying tralkserver (300m/500Mi
+1. **Does Disclosed belong on the platform's `prod` cluster at all?** It is one
+   `s-4vcpu-8gb` node (~$60/mo) already carrying the platform service (300m/500Mi
    requested, 1500m/1500Mi limits), ingress-nginx and cert-manager. Adding
    464Mi/210m of requests fits; the 1152Mi of limits is the number to watch,
    and a node replacement now takes two products down instead of one. The
@@ -607,9 +607,9 @@ backs up the managed database on a schedule of ours).
    token and one habit. It also means a personal project's images sit in the
    company's registry namespace. A separate Docker Hub account is a one-line
    change to `REGISTRY_NAMESPACE` in the workflow plus a second secret.
-3. **Which database on `prod-mongo-v2`, and under which user?** These manifests
+3. **Which database on the shared cluster, and under which user?** These manifests
    assume a `turret` database and a user scoped to it. A shared admin user
-   would give the enrichment worker write access to `tralkdb`.
+   would give the enrichment worker write access to the platform's own data.
 4. **Is the droplet retired or kept?** Both can run — they are separate
    databases — but only one should have a poller, and section 6 says why.
 5. **`AUTH_MODE=firebase` is pinned in the manifest.** If sign-in should be

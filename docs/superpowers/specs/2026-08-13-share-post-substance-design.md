@@ -38,9 +38,23 @@ between storage and the reader threw the substance away.
 ## Defect 1 — a length limit is deciding what a reader sees
 
 `MAX_CLAIM_CHARS = 120` lives in `claim-verify.ts` and DISCARDS a claim that
-exceeds it. The claim is verified first and dropped afterwards, purely on
-length: every one of these was already string-matched against the source
-document.
+exceeds it, purely on length.
+
+**Corrected 2026-08-13, after implementation.** This document originally said
+the claim "is verified first and dropped afterwards", and that every one had
+"already been string-matched against the source document". That is backwards.
+The length check is position two of eleven in `checkOne`, sixty-one lines
+BEFORE `findVerbatimSpan` — which is the header's stated design, "cheap and
+categorical first, evidential last". So these 154 were never matched against
+the document.
+
+Raising the bound therefore does not ADMIT them, it lets them be JUDGED. An
+unknown fraction will now be refused by `number-not-in-span`,
+`period-not-in-context` or `span-not-found` instead — the three largest
+discard classes in the sweep. **154 is a ceiling on what returns, not a
+forecast**, and the "~153 claims recovered" figure below should be read the
+same way. It is a better change than the one first described: a length filter
+was pre-empting the gate this project exists for.
 
 Measured over the 2,763-filing production corpus:
 
@@ -51,8 +65,10 @@ Measured over the 2,763-filing production corpus:
 | ...that left the filing with **zero** claims | **39** |
 | ...that left the filing with exactly one | **36** |
 
-`too-long` is the fifth most common discard reason of ten, and the only one
-that is not about truth.
+`too-long` is the fifth most common of the ten reasons that OCCURRED in this
+corpus — `ClaimDiscardReason` has thirteen members and three never fired — and
+one of only three that drop a claim for something other than what it says, the
+others being `over-limit` (a rank position) and `duplicate` (a repetition).
 
 The discarded claims are not rambling. Their lengths cluster just past the
 line, while accepted claims sit well below it:
@@ -108,9 +124,11 @@ headroom above the observed p90 of 143, NOT because it recovers more than 180,
 and the comment must say so, or the next reader will assume it was fitted to
 the data.
 
-**No verification rule changes.** Every recovered claim was already matched
-character-for-character against its source document. `MIN_CLAIM_CHARS`,
-`MAX_CLAIMS_EXTRACTED` and `MAX_CLAIMS_ON_WIRE` are untouched.
+**No verification rule changes.** `MIN_CLAIM_CHARS`, `MAX_CLAIMS_EXTRACTED`
+and `MAX_CLAIMS_ON_WIRE` are untouched, and no check is removed or reordered —
+the recovered claims are handed to the same evidential chain every other claim
+runs, rather than being excused from it. See the correction above: they had
+NOT been matched before, and that is the point.
 
 ## Defect 2 — the share post ignores the figure
 

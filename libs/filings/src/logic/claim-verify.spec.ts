@@ -426,10 +426,98 @@ describe('verifyClaims — the categorical refusals', () => {
     expect(reasons([claim({ text })])).toEqual(['empty-claim']);
   });
 
-  it('discards a claim longer than a wire line may carry', () => {
+  it('discards a claim longer than storage may carry', () => {
     expect(reasons([claim({ text: 'x'.repeat(MAX_CLAIM_CHARS + 1) })])).toEqual(
       ['too-long'],
     );
+  });
+});
+
+/**
+ * The bound is on STORAGE, and the boundary is where it says it is.
+ *
+ * The BOUNDARY fixture is one repeated letter, quoted out of a document made of
+ * nothing else, so LENGTH is the only variable: it carries no digit for
+ * `number-not-in-span`, no fiscal label for `period-not-in-context`, no
+ * movement word, no advisory phrase, no honorific, and its span is the document
+ * verbatim. The claim at the cap is asserted ACCEPTED rather than merely
+ * not-too-long — "no `too-long` discard" would also be satisfied by a claim
+ * some other rule had refused first.
+ */
+describe('verifyClaims — the storage bound on a claim', () => {
+  const claimOf = (n: number): string => 'A'.repeat(n);
+
+  const atLength = (n: number) => {
+    const text = claimOf(n);
+    const span = `The filer stated: ${text}`;
+    return verifyClaims({
+      documentText: span,
+      proposed: [{ span, text, kind: 'operational' }],
+    });
+  };
+
+  it('accepts a claim of exactly MAX_CLAIM_CHARS', () => {
+    const { claims, discards } = atLength(MAX_CLAIM_CHARS);
+
+    expect(MAX_CLAIM_CHARS).toBe(200);
+    expect(discards).toEqual([]);
+    expect(claims).toHaveLength(1);
+  });
+
+  it('discards one character past it, and records the true length', () => {
+    const { claims, discards } = atLength(MAX_CLAIM_CHARS + 1);
+
+    expect(claims).toEqual([]);
+    expect(discards.map((row) => row.reason)).toEqual<ClaimDiscardReason[]>([
+      'too-long',
+    ]);
+    expect(discards[0].detail).toContain('201 characters');
+    expect(discards[0].detail).toContain('200');
+  });
+
+  it('admits a two-figure claim the old cap deleted, and still checks the figures', () => {
+    // WHAT THE RAISE WAS FOR, and the evidence that it is not a weakening. 92
+    // of the 154 too-long discards carried a digit, and this is one of that
+    // shape: 137 characters, two figures, both printed by the sentence it was
+    // read from. The repeated-letter fixtures above prove the gate MOVED and
+    // say nothing about what it now lets past, which is the claim this change
+    // is actually about.
+    //
+    // The second half is the same claim with one figure altered so the span no
+    // longer prints it. It is refused. The length gate moved; the evidential
+    // gate did not.
+    const span =
+      'The Board has approved capital expenditure of Rs. 1,250 crore towards ' +
+      'the new manufacturing facility at Sanand, which will add 45,000 tonnes ' +
+      'of annual capacity once commissioned.';
+    const text =
+      'approves capital expenditure of Rs. 1,250 crore for a new manufacturing ' +
+      'facility at Sanand that will add 45,000 tonnes of annual capacity';
+
+    // The recovered band, asserted rather than trusted: refused at 120, kept
+    // at 200. A fixture that drifted out of it would still pass below while
+    // testing nothing this change did.
+    expect(text.length).toBeGreaterThan(120);
+    expect(text.length).toBeLessThanOrEqual(MAX_CLAIM_CHARS);
+
+    const kept = verifyClaims({
+      documentText: span,
+      proposed: [{ span, text, kind: 'operational' }],
+    });
+    expect(kept.discards).toEqual([]);
+    expect(kept.claims).toHaveLength(1);
+
+    const altered = verifyClaims({
+      documentText: span,
+      proposed: [
+        { span, text: text.replace('45,000', '55,000'), kind: 'operational' },
+      ],
+    });
+    expect(altered.claims).toEqual([]);
+    expect(altered.discards.map((row) => row.reason)).toEqual<
+      ClaimDiscardReason[]
+    >(['number-not-in-span']);
+    expect(altered.discards[0].detail).toContain('55000');
   });
 });
 

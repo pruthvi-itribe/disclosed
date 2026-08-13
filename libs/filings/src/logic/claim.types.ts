@@ -203,7 +203,7 @@ export type ClaimDiscardReason =
   | 'conditional-language'
   /** Nothing usable was proposed. */
   | 'empty-claim'
-  /** Longer than a wire line may carry. */
+  /** Longer than a stored claim may carry. */
   | 'too-long'
   /** The same claim, already accepted. */
   | 'duplicate'

@@ -89,6 +89,27 @@ These override any habit of writing more, sooner, or cleverer.
     refused; the Google mark is CSS.
 - **Fail open on categories.** Never key a fail-closed gate on a category name
   NSE controls (`claim-eligibility.ts` records why).
+- **The repository is public, and names nothing an attacker could use.** No
+  secret has ever been committed and none may be — but this rule is stricter
+  than that, because **a clue is not a secret and is still worth having.**
+  Refused in tracked files, including docs, comments and commit messages:
+  - **Live infrastructure identifiers.** Database cluster names, hostnames, IP
+    addresses, load-balancer addresses, node names, cluster/zone/project IDs.
+    Write what a thing IS, never what it is CALLED: "the managed Mongo cluster
+    the platform already runs", not its name. `docs/deploy-kubernetes.md` is
+    the pattern — it argues the whole deployment without naming a host.
+  - **Other products' internals.** Their databases, services and repositories
+    are not ours to disclose, and naming them tells a reader what else is
+    reachable from the same credentials.
+  - **Personal data.** Contact emails included. Placeholders in angle brackets
+    (`<acme-contact@example.com>`), filled in at apply time, the same way the
+    connection strings in the deploy doc already are.
+  The functional exception is a value the manifests cannot work without — the
+  container registry path is in the image name because a pull needs it. That
+  is a namespace, not an address, and it grants nothing on its own.
+  **`repo-hygiene.spec.ts` enforces this**, so a hostname added in a comment
+  fails the build rather than waiting for someone to notice it. Reasoning is
+  the thing worth committing; the names are the thing worth leaving out.
 
 ## Sharp edges (each has shipped a real breakage)
 

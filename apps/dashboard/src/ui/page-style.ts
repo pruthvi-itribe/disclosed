@@ -691,8 +691,18 @@ td.grp { white-space: nowrap; }
   font-size: 15.5px; line-height: 1.45; font-weight: 480;
   padding-left: 14px; position: relative;
 }
+/* CENTRED ON THE FIRST LINE BOX, NOT GUESSED IN EM.
+   This was 'top: .62em', a number tuned by eye at the 15.5px this rule sets.
+   It does not travel: 'em' scales with font-size while the dot stays 5px, so
+   the two drift apart wherever the size differs. The focus dialog sets 16px
+   (see page-style-focus.ts) and the dot sat 1.86px below the text's optical
+   centre there against 1.11px here — measured in both, on a dot 5px across,
+   so the worse case is 37% of its own diameter.
+   Half the line box minus half the dot is what centring actually is, and it
+   is correct at any size this rule is inherited at. The 1.45 is the
+   line-height set two lines above; move them together. */
 .insights li::before {
-  content: ""; position: absolute; left: 0; top: .62em;
+  content: ""; position: absolute; left: 0; top: calc((1.45em - 5px) / 2);
   width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
 }
 .andmore {

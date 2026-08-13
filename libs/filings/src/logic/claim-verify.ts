@@ -69,8 +69,75 @@ import { LEGAL_BLOCK_PATTERNS } from './legal-block';
  */
 export const MAX_CLAIMS_EXTRACTED = 12;
 
-/** The longest a single claim may be. */
-export const MAX_CLAIM_CHARS = 120;
+/**
+ * The longest a single claim may be, IN STORAGE.
+ *
+ * RAISED FROM 120 ON 2026-08-13, because 120 was a wire-line constraint being
+ * enforced as a storage gate. `claim-line.ts` sized its own backstop from it
+ * — three claims plus separators plus the longest NSE symbol — and that is a
+ * fact about the Telegram one-liner, which is one of five surfaces. The card
+ * wraps, the picture wraps, the company page wraps.
+ *
+ * The codebase already draws this distinction one level up and says so:
+ * twelve claims stored, `MAX_CLAIMS_ON_WIRE` published. Length had not been
+ * given the same treatment, so a presentation limit was deciding what a
+ * reader saw.
+ *
+ * WHAT RAISING IT DOES, STATED CORRECTLY — an earlier draft of this comment
+ * had it backwards and the error survived four reviews. This check runs at
+ * position two of eleven, SIXTY-ONE LINES BEFORE `findVerbatimSpan`, exactly
+ * as the header above intends ("cheap and categorical first, evidential
+ * last"). So the 154 claims it discarded were never matched against the
+ * document at all. Raising the bound does not ADMIT them; it lets them be
+ * JUDGED — they now run the full evidential chain, and an unknown fraction
+ * will be refused by `number-not-in-span`, `period-not-in-context` or
+ * `span-not-found` instead, which are the three largest discard classes in
+ * the sweep below. 154 is therefore a ceiling on what returns, not a
+ * forecast, and nothing has measured the real figure yet.
+ *
+ * That is a better change than the one the old sentence described, not a
+ * worse one: a length filter was pre-empting the gate, and the gate is what
+ * this project is for. `claim-verify.spec.ts` proves the chain still bites in
+ * the newly admitted band — a 137-character claim carrying two figures is
+ * accepted, and the same claim with one figure altered is refused as
+ * `number-not-in-span`.
+ *
+ * `too-long` fired 154 times in the corpus below,
+ * fifth most common of the TEN REASONS THAT OCCURRED there — the
+ * `ClaimDiscardReason` type has thirteen members, and three of them never
+ * fired at all. That rank is not portable and the corpus has to travel with
+ * it: the same reason is fourth in
+ * `docs/measurements/2026-08-11-processing-audit.md`, over a different one.
+ *
+ * Measured over the 2,763-filing production corpus at 120, with every query
+ * and output in `docs/measurements/2026-08-13-claim-length-sweep.md`:
+ *
+ *   154 too-long discards, 92 of them carrying a digit
+ *    39 left the filing with ZERO claims, 36 with exactly one
+ *   discarded lengths: min 121, p50 128, p90 143, max 203
+ *   accepted lengths:  p50 66, p90 102, p99 118 (max 120, clipped by the cap)
+ *
+ * The median discard was 128 — EIGHT characters over the line — and what it
+ * bought for them was a second figure.
+ *
+ * 200 IS HEADROOM, NOT A FIT. It recovers 153 of the 154, which is exactly
+ * what 180 recovers; the one it misses is 203 characters, and the check below
+ * is `length > MAX_CLAIM_CHARS`, so the bound is an INCLUSIVE maximum and 203
+ * is the smallest one that would admit every claim. The sweep tested 140, 160,
+ * 180, 200 and 240, so 240 is the first of ITS GRID POINTS to report 100% — a
+ * fact about where the sweep sampled and not about the corpus. 200 sits above
+ * the observed p90 of 143 with room for the tail to move. Do not read 200 as
+ * optimised against the data — re-sweep before changing it.
+ *
+ * AND THE DISTRIBUTION ABOVE WILL MOVE, so do not re-sweep too early.
+ * `claim-prompt.ts` interpolates this constant into rule 8, which means the
+ * model that produced those lengths was being instructed to stay under 120 and
+ * is now being instructed to stay under 200. The percentiles are a true record
+ * of what was generated under the old instruction and are not a forecast of
+ * what the new one will generate. A re-sweep only says anything once the
+ * 200-character prompt has been running in production.
+ */
+export const MAX_CLAIM_CHARS = 200;
 
 /** The shortest string that can be a claim rather than a fragment. */
 export const MIN_CLAIM_CHARS = 10;
@@ -144,7 +211,7 @@ function checkOne(
     return discard(
       'too-long',
       text,
-      `${text.length} characters exceeds the ${MAX_CLAIM_CHARS} a wire line may carry`,
+      `${text.length} characters exceeds the ${MAX_CLAIM_CHARS} a stored claim may carry`,
     );
   }
 

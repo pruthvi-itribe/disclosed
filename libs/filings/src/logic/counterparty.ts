@@ -103,6 +103,49 @@ const NON_ANSWERS =
 const INDEFINITE_OPENER = /^(?:an?|one\s+of)\b/i;
 
 /**
+ * Openers that make the row a PHRASE about the order rather than the name of
+ * the entity that awarded it.
+ *
+ * A production filing answered the mandated row with "Received order from
+ * Vikran Engineering Limited". It passed every guard here — it is not
+ * indefinite, it is 46 characters — inside `MAX_NAME_CHARS`, which is why
+ * `isIllegible` passed it — and it carries "Limited". It reached a
+ * reader as "SAATVIKGL BAGS ORDER Rs 476 cr from Received order from Vikran
+ * Engineering Limited", with two "from"s and a clause where a name belongs.
+ *
+ * REFUSED RATHER THAN TRIMMED, and the difference is the whole point.
+ * Stripping the leading clause would recover the correct name here and would
+ * convert a refusal into an inference, on the one field whose wrong answer
+ * attributes a commercial relationship to two named companies that does not
+ * exist. A clause where a name belongs is evidence the row was not parsed as
+ * intended, and this module's answer to that is the one stated above: omission
+ * is always acceptable.
+ *
+ * The finite verbs are the ones this pipeline already reads as an order win:
+ * `claim-topic.ts` recognises the event by `secured|received|won|awarded` plus
+ * `bagged`. The gerunds are NSE's own words for the same event — its categories
+ * are literally "Bagging/Receiving of orders/contracts" and "Awarding of
+ * order(s)/contract(s)" (`action-phrase.ts`), so a filer pasting the category
+ * into the row writes one of those three. The coverage is therefore uneven on
+ * purpose rather than by oversight, and is left that way because the sources
+ * end where they end: `securing` is here only by symmetry with `secured`, and
+ * `won` has no gerund because neither source supplies one. The rest are the
+ * other two ways a row stops being a name: a bare preposition continuing the
+ * label's own sentence, and the filer narrating ("we have received a letter of
+ * intent" is a phrasing the corpus already carries, see `claim-verify.ts`).
+ *
+ * Anchored, so the description "…majorly owned BY Finland based packaging
+ * giant" is untouched and still refused as the anonymisation it is.
+ *
+ * Scale, measured over the 2,763-filing production corpus on 2026-08-13, query
+ * and output in `docs/measurements/2026-08-13-claim-length-sweep.md` §6: nine
+ * counterparties exist in total and this is the one malformed one. Small, and
+ * on a surface readers forward to other people.
+ */
+const PHRASE_OPENER =
+  /^(?:awarded|awarding|bagged|bagging|received|receiving|secured|securing|won|from|by|we|the\s+company)\b/i;
+
+/**
  * Legal-form and public-body words. A candidate must carry at least one.
  *
  * This is the positive half of the test and it is what "International Customer"
@@ -143,6 +186,8 @@ export type CounterpartyRefusalReason =
   | 'empty-row'
   /** The filer described the counterparty instead of naming it. */
   | 'described-not-named'
+  /** The row was answered with a clause rather than the entity's name. */
+  | 'phrase-not-name'
   /** Nothing in the text identifies it as an incorporated or public body. */
   | 'no-entity-form'
   /** The extracted text is not legible as a name. */
@@ -228,6 +273,11 @@ function isDescription(name: string): boolean {
   );
 }
 
+/** True when the candidate answers the row in a clause instead of naming. */
+function isPhrase(name: string): boolean {
+  return PHRASE_OPENER.test(name);
+}
+
 /** True when the candidate is not legible as a name in a one-line message. */
 function isIllegible(name: string): boolean {
   if (name.length < MIN_NAME_CHARS || name.length > MAX_NAME_CHARS) return true;
@@ -262,6 +312,7 @@ export function extractCounterparty(
   const name = renderName(evidence);
   if (name.length === 0) return refuse('empty-row');
   if (isDescription(name)) return refuse('described-not-named');
+  if (isPhrase(name)) return refuse('phrase-not-name');
   if (isIllegible(name)) return refuse('illegible');
   if (!ENTITY_FORM_WORDS.test(name)) return refuse('no-entity-form');
   if (!isTraceableName(documentText, evidence, start, name)) {
