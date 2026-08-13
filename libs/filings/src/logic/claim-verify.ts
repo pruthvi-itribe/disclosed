@@ -100,6 +100,14 @@ export const MAX_CLAIMS_EXTRACTED = 12;
  * needed for all of them. It sits above the observed p90 of 143 with room for
  * the tail to move. Do not read 200 as optimised against the data — re-sweep
  * before changing it.
+ *
+ * AND THE DISTRIBUTION ABOVE WILL MOVE, so do not re-sweep too early.
+ * `claim-prompt.ts` interpolates this constant into rule 8, which means the
+ * model that produced those lengths was being instructed to stay under 120 and
+ * is now being instructed to stay under 200. The percentiles are a true record
+ * of what was generated under the old instruction and are not a forecast of
+ * what the new one will generate. A re-sweep only says anything once the
+ * 200-character prompt has been running in production.
  */
 export const MAX_CLAIM_CHARS = 200;
 

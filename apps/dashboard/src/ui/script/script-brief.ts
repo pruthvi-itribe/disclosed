@@ -10,10 +10,16 @@
  * same ordering problem in a smaller form AND somewhere to print the answer:
  * a cover that states the rule and a last card that states the remainder.
  *
- * WHAT MAKES THE CARD POSSIBLE. `claim-verify.ts` caps a claim at 120
- * characters, so a verified claim is guaranteed to fit on a phone at display
- * type. Nothing else in this product has that property, and the whole design
- * rests on it.
+ * WHAT MADE THE CARD POSSIBLE, AND WHAT NO LONGER GUARANTEES IT. This deck was
+ * designed when claim-verify.ts capped a claim at 120 characters. That cap was
+ * what made "a verified claim fits on a phone at display type" a guarantee
+ * rather than a hope, and nothing else in this product had the property. The
+ * cap was raised to 200 on 2026-08-13, because 120 was the wire line's bound
+ * being enforced as a storage gate and it was deleting claims the verbatim gate
+ * had already accepted. A claim is still short, which is why it can be a card
+ * at all — but 200 is not a length this layout has been measured at, so the
+ * guarantee is now a question about the rendered page rather than a fact
+ * derived from a constant.
  *
  * The measurements are in
  * `docs/superpowers/specs/2026-08-08-genz-visual-consumption-design.md`.
