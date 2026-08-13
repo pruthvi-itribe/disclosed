@@ -46,17 +46,31 @@ export const MAX_CLAIMS_ON_WIRE = 3;
 /**
  * The longest line that may be composed.
  *
- * A BACKSTOP RATHER THAN A WORKING CONSTRAINT, and sized so it stays one. Three
- * claims of 120 characters, two separators and the longest NSE symbol come to
- * 382, so a line assembled from claims `verifyClaims` has already accepted
- * always fits and this bound never fires in production. It exists because the
+ * A BACKSTOP RATHER THAN A WORKING CONSTRAINT, and sized so it stays one.
+ * `MAX_CLAIMS_ON_WIRE` claims of `MAX_CLAIM_CHARS` characters — that gate is
+ * `length > MAX_CLAIM_CHARS`, so a claim of exactly 200 passes it — plus two
+ * separators plus a `SYMBOL: ` head cost `600 + 8 + symbol.length + 2`, which
+ * is `symbol.length + 610`. That is 624 for the 14-character symbol
+ * `claim-line.spec.ts` composes with, and inside 640 for any symbol up to 30
+ * characters; the longest in the 33-day corpus is 12 (`symbol-validate.ts`).
+ * So a line assembled from claims `verifyClaims` has already accepted always
+ * fits and this bound never fires in production. It exists because the
  * composer is also reachable with claims that did not come through that path,
  * and because a message a Telegram client refuses to render is a filing lost.
+ *
+ * RAISED FROM 400 ON 2026-08-13, WITH the storage bound it is derived from. At
+ * `MAX_CLAIM_CHARS` of 120 the same arithmetic gave `symbol.length + 370` —
+ * the 382 this comment used to quote, for a 12-character symbol — and 400
+ * held. Leaving 400 in place while the storage bound moved to 200 would have
+ * made this a WORKING constraint, quietly publishing two claims where three
+ * were verified: the exact failure the paragraph above exists to prevent.
+ * Telegram's own message limit is 4,096, so 640 is not close to anything that
+ * matters.
  *
  * When it does fire it DROPS the tail rather than truncating: half a claim is a
  * different claim.
  */
-export const MAX_CLAIM_LINE_CHARS = 400;
+export const MAX_CLAIM_LINE_CHARS = 640;
 
 /** Collapses to one line and uppercases, in that order. */
 const wireCase = (value: string): string =>

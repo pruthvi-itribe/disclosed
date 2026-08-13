@@ -81,26 +81,39 @@ describe('composeClaimLine', () => {
   });
 
   describe('the length bound', () => {
+    // SIZED FROM THE BOUND, not in absolute characters. These fixtures were 200
+    // and 500 against a bound of 400; at 640 the 200s stopped dropping anything
+    // and the 500 stopped filling the line, which would have left two tests
+    // passing while asserting nothing. A third of the bound leaves two claims
+    // fitting and the third overrunning, and half of it leaves one fitting and
+    // the second overrunning, whatever the bound is.
+    const aThirdOfTheBound = Math.floor(MAX_CLAIM_LINE_CHARS / 3);
+    const halfTheBound = Math.floor(MAX_CLAIM_LINE_CHARS / 2);
+
     it('drops a claim that would push the line past the bound', () => {
       const line = composeClaimLine('SYM', [
-        claim('a'.repeat(200)),
-        claim('b'.repeat(200)),
-        claim('c'.repeat(200)),
+        claim('a'.repeat(aThirdOfTheBound)),
+        claim('b'.repeat(aThirdOfTheBound)),
+        claim('c'.repeat(aThirdOfTheBound)),
       ]);
       expect(line).not.toBeNull();
+      // Two of the three: the head and two separators put the third over.
+      expect((line ?? '').split(CLAIM_SEPARATOR)).toHaveLength(2);
       expect((line ?? '').length).toBeLessThanOrEqual(MAX_CLAIM_LINE_CHARS);
     });
 
     it('drops rather than truncates, because half a claim is a different claim', () => {
       const line = composeClaimLine('SYM', [
-        claim('a'.repeat(200)),
-        claim('b'.repeat(200)),
+        claim('a'.repeat(halfTheBound)),
+        claim('b'.repeat(halfTheBound)),
       ]);
-      expect(line).toBe(`SYM: ${'A'.repeat(200)}`);
+      expect(line).toBe(`SYM: ${'A'.repeat(halfTheBound)}`);
     });
 
     it('keeps the head when the FIRST claim already fills the line', () => {
-      const line = composeClaimLine('SYM', [claim('a'.repeat(500))]);
+      const line = composeClaimLine('SYM', [
+        claim('a'.repeat(MAX_CLAIM_LINE_CHARS)),
+      ]);
       // Nothing fits, so nothing is said — rather than a bare `SYM:`.
       expect(line).toBeNull();
     });
