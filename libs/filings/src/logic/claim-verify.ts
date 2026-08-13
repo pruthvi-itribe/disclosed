@@ -69,8 +69,39 @@ import { LEGAL_BLOCK_PATTERNS } from './legal-block';
  */
 export const MAX_CLAIMS_EXTRACTED = 12;
 
-/** The longest a single claim may be. */
-export const MAX_CLAIM_CHARS = 120;
+/**
+ * The longest a single claim may be, IN STORAGE.
+ *
+ * RAISED FROM 120 ON 2026-08-13, because 120 was a wire-line constraint being
+ * enforced as a storage gate. `claim-line.ts` sized its own backstop from it
+ * — three claims plus separators plus the longest NSE symbol — and that is a
+ * fact about the Telegram one-liner, which is one of five surfaces. The card
+ * wraps, the picture wraps, the company page wraps.
+ *
+ * The codebase already draws this distinction one level up and says so:
+ * twelve claims stored, `MAX_CLAIMS_ON_WIRE` published. Length had not been
+ * given the same treatment, so a presentation limit was deleting verified
+ * data. Every claim it discarded had ALREADY been matched
+ * character-for-character against the source document; `too-long` was the
+ * fifth most common discard reason of ten and the only one not about truth.
+ *
+ * Measured over the 2,763-filing production corpus at 120:
+ *
+ *   154 too-long discards, 92 of them carrying a digit
+ *    39 left the filing with ZERO claims, 36 with exactly one
+ *   discarded lengths: min 121, p50 128, p90 143, max 203
+ *   accepted lengths:  p50 66, p90 102, p99 118 (max 120, clipped by the cap)
+ *
+ * The median discard was 128 — EIGHT characters over the line — and what it
+ * bought for them was a second figure.
+ *
+ * 200 IS HEADROOM, NOT A FIT. It recovers 153 of the 154, which is exactly
+ * what 180 recovers; the one it misses is 203 characters and 240 would be
+ * needed for all of them. It sits above the observed p90 of 143 with room for
+ * the tail to move. Do not read 200 as optimised against the data — re-sweep
+ * before changing it.
+ */
+export const MAX_CLAIM_CHARS = 200;
 
 /** The shortest string that can be a claim rather than a fragment. */
 export const MIN_CLAIM_CHARS = 10;

@@ -433,6 +433,49 @@ describe('verifyClaims — the categorical refusals', () => {
   });
 });
 
+/**
+ * The bound is on STORAGE, and the boundary is where it says it is.
+ *
+ * The fixture is one repeated letter, quoted out of a document made of nothing
+ * else, so LENGTH is the only variable: it carries no digit for
+ * `number-not-in-span`, no fiscal label for `period-not-in-context`, no
+ * movement word, no advisory phrase, no honorific, and its span is the document
+ * verbatim. The claim at the cap is asserted ACCEPTED rather than merely
+ * not-too-long — "no `too-long` discard" would also be satisfied by a claim
+ * some other rule had refused first.
+ */
+describe('verifyClaims — the storage bound on a claim', () => {
+  const claimOf = (n: number): string => 'A'.repeat(n);
+
+  const atLength = (n: number) => {
+    const text = claimOf(n);
+    const span = `The filer stated: ${text}`;
+    return verifyClaims({
+      documentText: span,
+      proposed: [{ span, text, kind: 'operational' }],
+    });
+  };
+
+  it('accepts a claim of exactly MAX_CLAIM_CHARS', () => {
+    const { claims, discards } = atLength(MAX_CLAIM_CHARS);
+
+    expect(MAX_CLAIM_CHARS).toBe(200);
+    expect(discards).toEqual([]);
+    expect(claims).toHaveLength(1);
+  });
+
+  it('discards one character past it, and records the true length', () => {
+    const { claims, discards } = atLength(MAX_CLAIM_CHARS + 1);
+
+    expect(claims).toEqual([]);
+    expect(discards.map((row) => row.reason)).toEqual<ClaimDiscardReason[]>([
+      'too-long',
+    ]);
+    expect(discards[0].detail).toContain('201 characters');
+    expect(discards[0].detail).toContain('200');
+  });
+});
+
 describe('verifyClaims — the bookkeeping', () => {
   it('discards the second copy of the same claim', () => {
     const { claims, discards } = verify([claim(), claim()]);
