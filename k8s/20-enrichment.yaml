@@ -17,19 +17,47 @@ metadata:
   labels:
     app: enrichment
 spec:
-  # One, for now. Unlike the poller this one COULD be scaled: documents are
-  # claimed under a lease (ENRICH_LEASE_MS, ten minutes) precisely so two
-  # workers cannot both write a verdict onto one filing. What stops it is
-  # arithmetic rather than safety — a second worker doubles the Anthropic
-  # spend against a queue that a single worker drains, and the prod node pool
-  # is one node.
-  replicas: 1
+  # FOUR, RAISED FROM ONE ON 2026-08-13 BY THE FIRST REAL ARRIVAL RATE.
+  #
+  # Scaling is safe for the reason it always was: documents are claimed under
+  # a lease (ENRICH_LEASE_MS, ten minutes) precisely so two workers cannot
+  # both write a verdict onto one filing.
+  #
+  # What changed is the arithmetic that used to argue against it, and both
+  # halves of it were wrong:
+  #
+  #   "a second worker doubles the model spend" — it does not. The lease means
+  #   two workers never read the SAME document, so N workers read the same
+  #   population N times faster for the same token bill. Replicas buy latency,
+  #   not tokens.
+  #
+  #   "a queue that a single worker drains" — measured over the 48h to
+  #   2026-08-13, NSE disseminated a mean of 73.8 filings/hour and a PEAK OF
+  #   235 in the 17:00 IST hour (the evening results dump). One worker drains
+  #   20-31/hour — a live prod worker managed 3 documents in 9 minutes, and
+  #   the local six-worker fleet measured 184/hour, so ~31 apiece. At one
+  #   replica the peak hour arrives 8x faster than it leaves and the backlog
+  #   never closes.
+  #
+  # Four rather than six: it covers the 74/hour mean outright and clears the
+  # peak within about two hours of it ending, while this node also carries the
+  # poller and the dashboard. CPU is not the bound and should not be used to
+  # pick this number — a worker measured 11 SECONDS of CPU across 14 minutes
+  # of wall clock (1.3%), because it spends its life waiting on the archive
+  # host and the model API. Raise it if the feed-lag number climbs; the pool
+  # is three nodes now, not the one this comment used to assume.
+  replicas: 4
 
   # Recreate rather than RollingUpdate. The lease makes an overlap safe, so
-  # this is not the correctness bound it is next door — it is that a
-  # single-node pool has nowhere to surge a second pod TO, so maxSurge buys a
-  # pending pod rather than a smoother rollout, and matching the poller means
-  # one rollout story instead of two.
+  # this is not the correctness bound it is next door; it is that matching the
+  # poller means one rollout story instead of two. The whole lane stops for
+  # the ~30s of a rollout and nothing is lost — unclaimed documents wait, and
+  # a document claimed by a killed worker frees up when its lease expires.
+  #
+  # (The original reason — "a single-node pool has nowhere to surge a second
+  # pod TO" — stopped being true on 2026-08-13 when the pool reached three
+  # nodes. Recorded rather than deleted: if a rollout gap ever matters,
+  # RollingUpdate is now available and this is the sentence that says so.)
   strategy:
     type: Recreate
 
