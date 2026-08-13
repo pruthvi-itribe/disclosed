@@ -506,11 +506,18 @@ The first real deploy. Everything below was observed, not inferred:
    Encrypt's rate limit. So the Ingress admission webhook, DNS-01 issuance
    through Cloudflare, and every item below that needs a request arriving from
    outside are still unproven.
-2. **Which HSTS header reaches the browser.** The sidecar sends the
-   repository's two-year commitment; ingress-nginx emits an HSTS header of its
-   own. Check `curl -sSI https://disclosed.live` after the first deploy. If
-   nginx's wins, changing it is a cluster-wide ConfigMap setting **shared with
-   tralkserver**, which is a decision and not a fix.
+2. ~~**Which HSTS header reaches the browser.**~~ Answered 2026-08-13:
+   **nginx's wins.** A request through the real ingress carries
+   `Strict-Transport-Security: max-age=31536000; includeSubDomains` — one
+   year, ingress-nginx's default — not the sidecar's two-year commitment, and
+   there is exactly ONE of the header rather than two.
+
+   Left as it is, deliberately. A year still satisfies the preload list's
+   floor, and raising it means a cluster-wide ConfigMap **shared with
+   tralkserver** — someone else's security header changed as a side effect of
+   this project's preference. That is a decision to take on purpose, not a fix
+   to apply quietly. The sidecar keeps sending two years so a deployment
+   without nginx in front is still correct.
 3. **`TRUST_PROXY=2` is set here and has never run against the cluster.** The
    former open item — `trust proxy` never set, so no `Secure` on the cookie and
    a rate limiter keyed to the proxy — is closed in code and proved by tests
@@ -522,13 +529,16 @@ The first real deploy. Everything below was observed, not inferred:
      ingress-nginx and the Caddy sidecar are the only hops that write
      `X-Forwarded-For`. If a third appears, the count is wrong in the direction
      that matters — see the manifest comment.
-   - **That the sidecar kept nginx's scheme.** Without
-     `trusted_proxies private_ranges` Caddy overwrites `X-Forwarded-Proto` with
-     `http` and the cookie ships without `Secure` while everything looks fine.
-     `curl -sSI https://disclosed.live` on a signed-in request is the check.
-   - **That `CF-Connecting-IP` arrives.** It is the production rate-limit key,
-     because ingress-nginx replaces `X-Forwarded-For` with the load balancer's
-     address at its default `use-forwarded-headers: false`.
+   - ~~**That the sidecar kept nginx's scheme.**~~ **Confirmed 2026-08-13.** A
+     request through the real ingress arrives at the sidecar carrying
+     `X-Forwarded-Proto: https`, so the cookie will carry `Secure`. This was
+     the failure mode that looks like success from every other angle —
+     `trusted_proxies private_ranges` is what prevents Caddy overwriting it
+     with `http`.
+   - **That `CF-Connecting-IP` arrives** — still unproven, and cannot be
+     proven until a record is actually proxied through Cloudflare. The
+     preflight above used `curl --resolve` straight at the load balancer,
+     which bypasses Cloudflare by design, and the header was correctly absent.
 
 4. **The load balancer's public address bypasses Cloudflare, and nothing here
    stops it.** A caller who reaches it directly traverses the same trusted hops
