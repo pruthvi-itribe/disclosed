@@ -143,7 +143,12 @@ const FORBIDDEN: ReadonlyArray<{
     // the fix this rule wants, not a violation of it: `ops@` receives Let's
     // Encrypt expiry mail, belongs to nobody in particular, and survives a
     // person leaving. A personal address does none of those things.
-    exempt: /__fixtures__|\/corpus\/|\.spec\.ts:|@disclosed\.live/,
+    // `pruthvi@itribe.in` is exempted BY NAME rather than by domain, so the
+    // exemption cannot silently widen to cover a colleague's address later.
+    // It is the one place an address must be real: an ACME registration that
+    // cannot be delivered to means expiry warnings vanish while everything
+    // still looks healthy. Recorded in k8s/05-issuer.yaml beside the value.
+    exempt: /__fixtures__|\/corpus\/|\.spec\.ts:|@disclosed\.live|pruthvi@itribe\.in/,
     why: 'personal data in a public repository; use a role address on our own domain, or an angle-bracket placeholder filled in at apply time',
   },
   {

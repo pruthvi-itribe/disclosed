@@ -53,8 +53,17 @@ metadata:
   name: letsencrypt-cloudflare
 spec:
   acme:
-    # Same address the platform's issuer registers, so expiry mail lands in one place.
-    email: ops@disclosed.live
+    # WHERE LET'S ENCRYPT SENDS EXPIRY WARNINGS, and it must be an address
+    # somebody actually reads. A placeholder here is worse than a personal
+    # address: the certificate still issues, so nothing looks wrong, and the
+    # warning that it is about to lapse goes nowhere.
+    #
+    # This is a deliberate exception to the no-personal-data rule in CLAUDE.md
+    # and is exempted by name in tools/repo-hygiene.spec.ts rather than
+    # slipping past it. A role address on this project's own domain
+    # (ops@disclosed.live) is the better end state and needs that mailbox to
+    # exist first.
+    email: pruthvi@itribe.in
     server: https://acme-v02.api.letsencrypt.org/directory
     # Its OWN account key. Sharing `letsencrypt-account` with the platform's issuer
     # would work, and would also mean a rotation there silently re-registers
