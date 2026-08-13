@@ -82,10 +82,18 @@ export const MAX_CLAIMS_EXTRACTED = 12;
  * twelve claims stored, `MAX_CLAIMS_ON_WIRE` published. Length had not been
  * given the same treatment, so a presentation limit was deleting verified
  * data. Every claim it discarded had ALREADY been matched
- * character-for-character against the source document; `too-long` was the
- * fifth most common discard reason of ten and the only one not about truth.
+ * character-for-character against the source document, so nothing about the
+ * document refused them. Three of the thirteen `ClaimDiscardReason` members
+ * drop a claim for something other than what it says — `too-long` for its
+ * length, `over-limit` for its position in the ranking, `duplicate` for being
+ * a second copy — and `too-long` was the only one of the three that fired at
+ * all in the corpus below: 154 times, fifth most common of the TEN REASONS
+ * THAT OCCURRED there. That rank is not portable and the corpus has to travel
+ * with it — the same reason is fourth in
+ * `docs/measurements/2026-08-11-processing-audit.md`, over a different one.
  *
- * Measured over the 2,763-filing production corpus at 120:
+ * Measured over the 2,763-filing production corpus at 120, with every query
+ * and output in `docs/measurements/2026-08-13-claim-length-sweep.md`:
  *
  *   154 too-long discards, 92 of them carrying a digit
  *    39 left the filing with ZERO claims, 36 with exactly one
@@ -96,10 +104,12 @@ export const MAX_CLAIMS_EXTRACTED = 12;
  * bought for them was a second figure.
  *
  * 200 IS HEADROOM, NOT A FIT. It recovers 153 of the 154, which is exactly
- * what 180 recovers; the one it misses is 203 characters and 240 would be
- * needed for all of them. It sits above the observed p90 of 143 with room for
- * the tail to move. Do not read 200 as optimised against the data — re-sweep
- * before changing it.
+ * what 180 recovers; the one it misses is 203 characters, so 204 is the
+ * smallest bound that would admit every one. The sweep tested 140, 160, 180,
+ * 200 and 240, so 240 is the first of ITS GRID POINTS to report 100% — a fact
+ * about where the sweep sampled and not about the corpus. 200 sits above the
+ * observed p90 of 143 with room for the tail to move. Do not read 200 as
+ * optimised against the data — re-sweep before changing it.
  *
  * AND THE DISTRIBUTION ABOVE WILL MOVE, so do not re-sweep too early.
  * `claim-prompt.ts` interpolates this constant into rule 8, which means the
