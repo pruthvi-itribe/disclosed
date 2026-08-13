@@ -848,12 +848,19 @@ or the two would double-space."
 
 Not code, and not to be run without asking:
 
-**The backfill.** None of the 154 discarded claims return on their own —
-`claimDiscards` records that something was thrown away, not enough to rebuild
-it. The spec's decision is to requeue **only the 39 filings the cap left with
-zero claims**, using the existing `npm run enrich:requeue`, because those are
-the ones showing a reader nothing at all. Confirm with the founder before
-running it: it spends model calls.
+**The backfill — DECIDED 2026-08-13: NOT HAPPENING.** None of the 154
+discarded claims return on their own; `claimDiscards` records that something
+was thrown away, not enough to rebuild it, so they come back only by re-running
+those filings through extraction. The founder's call is to spend nothing on
+history and let the fix apply to everything arriving from now on.
+
+What that leaves behind, stated rather than glossed: **39 filings stay visible
+with zero claims and 36 with one**, and no marker distinguishes them from a
+filing the pipeline genuinely found nothing in. That is the cost of the
+decision, not a defect introduced by it — those records are exactly as they
+were before this change. If they ever want revisiting, the query is
+`{"enrichment.claimDiscards.reason": "too-long"}` and the tool is
+`npm run enrich:requeue`.
 
 **The full gate before merge**, including the browser suite CI does not run:
 
