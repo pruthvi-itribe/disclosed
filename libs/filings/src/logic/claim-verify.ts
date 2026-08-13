@@ -80,10 +80,29 @@ export const MAX_CLAIMS_EXTRACTED = 12;
  *
  * The codebase already draws this distinction one level up and says so:
  * twelve claims stored, `MAX_CLAIMS_ON_WIRE` published. Length had not been
- * given the same treatment, so a presentation limit was deleting verified
- * data. Every claim it discarded had ALREADY been matched
- * character-for-character against the source document, so nothing about the
- * document refused them. `too-long` fired 154 times in the corpus below,
+ * given the same treatment, so a presentation limit was deciding what a
+ * reader saw.
+ *
+ * WHAT RAISING IT DOES, STATED CORRECTLY — an earlier draft of this comment
+ * had it backwards and the error survived four reviews. This check runs at
+ * position two of eleven, SIXTY-ONE LINES BEFORE `findVerbatimSpan`, exactly
+ * as the header above intends ("cheap and categorical first, evidential
+ * last"). So the 154 claims it discarded were never matched against the
+ * document at all. Raising the bound does not ADMIT them; it lets them be
+ * JUDGED — they now run the full evidential chain, and an unknown fraction
+ * will be refused by `number-not-in-span`, `period-not-in-context` or
+ * `span-not-found` instead, which are the three largest discard classes in
+ * the sweep below. 154 is therefore a ceiling on what returns, not a
+ * forecast, and nothing has measured the real figure yet.
+ *
+ * That is a better change than the one the old sentence described, not a
+ * worse one: a length filter was pre-empting the gate, and the gate is what
+ * this project is for. `claim-verify.spec.ts` proves the chain still bites in
+ * the newly admitted band — a 137-character claim carrying two figures is
+ * accepted, and the same claim with one figure altered is refused as
+ * `number-not-in-span`.
+ *
+ * `too-long` fired 154 times in the corpus below,
  * fifth most common of the TEN REASONS THAT OCCURRED there — the
  * `ClaimDiscardReason` type has thirteen members, and three of them never
  * fired at all. That rank is not portable and the corpus has to travel with

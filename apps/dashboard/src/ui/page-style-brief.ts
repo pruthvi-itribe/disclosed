@@ -174,8 +174,8 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
    read: a 120-character claim — the hard cap claim-verify.ts then enforced —
    wraps to four lines at 390px and occupies about 128px, and the card has room
    for that at its maximum. MAX_CLAIM_CHARS became 200 on 2026-08-13, because
-   120 was a wire line's bound deleting claims the verbatim gate had already
-   accepted, so the four lines, the 128px and the room they fit into are all
+   120 was a wire line's bound refusing claims before the verbatim gate ever
+   saw them, so the four lines, the 128px and the room they fit into are all
    figures about a claim 120 characters long, while a stored claim may now be
    200. The rule below is unchanged and its argument no longer follows: what a
    200-character claim does to a card at 390px has to be read off the rendered
@@ -249,7 +249,7 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
    MAX_CLAIM_CHARS was 120 — short enough that a claim was guaranteed a whole
    screen without a truncation rule, which no other string in this product
    gets. That constant was raised to 200 on 2026-08-13, because 120 was a wire
-   line's bound deleting claims the verbatim gate had already accepted, and 200
+   line's bound refusing claims before the verbatim gate saw them, and 200
    is two thirds longer than anything this rule was ever measured against. The
    size below is unchanged and the guarantee behind it is gone: whether the
    longest stored claim still fits is now an open question to be answered by

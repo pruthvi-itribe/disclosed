@@ -97,7 +97,7 @@ const FORBIDDEN: ReadonlyArray<{
   },
   {
     what: "another product's database or service name",
-    canary: 'tralk-infra',
+    canary: 'TRALK-INFRA',
     pattern:
       '(tralkdb|notificationsdb|instrumentsdb|rewardsdb|tralkserver|tralk-infra)',
     refine:
@@ -170,7 +170,12 @@ function grepTracked(pattern: string, scope?: readonly string[]): string[] {
   try {
     const out = execFileSync(
       'git',
-      ['grep', '-I', '-n', '-E', '--cached', pattern, '--', ...paths],
+      // -i, AND IT IS LOAD-BEARING. The first version of this suite omitted it
+      // while every pattern was lower-case, so `SHARED WITH TRALKSERVER` in
+      // apps/dashboard/src/auth/client-key.ts sat green through the very
+      // commit that added the suite — the same false green the `\b` bug
+      // produced, found the same way, one review later.
+      ['grep', '-I', '-n', '-i', '-E', '--cached', pattern, '--', ...paths],
       { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 },
     );
     return out.split('\n').filter((line) => line.trim().length > 0);
@@ -254,6 +259,10 @@ describe('the repository names nothing an attacker could use', () => {
             'grep',
             '-I',
             '-c',
+            // -i, MIRRORING grepTracked EXACTLY. A canary proved through
+            // different flags than the real search proves nothing about the
+            // real search — which is the whole reason this test exists.
+            '-i',
             '-E',
             '--no-index',
             pattern,

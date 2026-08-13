@@ -1,6 +1,6 @@
 # The public entrance: disclosed.live to the dashboard Service.
 #
-# Shaped exactly like the platform's infrastructure repository's `kubernetes_ingress_v1.the platform service` —
+# Shaped exactly like the platform's infrastructure repository's `the platform's own ingress resource` —
 # ingressClassName `nginx`, a ClusterIssuer annotation, a `tls` block whose
 # secretName cert-manager fills in. ingress-nginx and cert-manager already
 # exist on this cluster in the `platform` namespace (installed by

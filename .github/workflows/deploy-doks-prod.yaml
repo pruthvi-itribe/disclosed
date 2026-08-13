@@ -10,7 +10,7 @@ name: Deploy Disclosed to DOKS prod
 # WHAT IS DIFFERENT, AND WHY
 # ================================================================
 #
-# ONE WORKFLOW, THREE IMAGES, AS A MATRIX. the platform has a file per service
+# ONE WORKFLOW, THREE IMAGES, AS A MATRIX. The platform has a file per service
 # because each service has its own Dockerfile. Here the three processes come
 # out of ONE Dockerfile as three `--target`s, over one `npm ci` and one
 # `nest build`, and that file argues its own case: "Three Dockerfiles would be
@@ -52,7 +52,7 @@ env:
   KUBE_NAMESPACE: disclosed
 
 jobs:
-  # The short SHA, computed once. the platform computes it inline in each job, which
+  # The short SHA, computed once. The platform computes it inline in each job, which
   # works when there is one build job and one deploy job; with a build matrix
   # a matrix job cannot hand a single value to the deploy job, so it is a job
   # of its own and both consume it. One value, no chance of two jobs

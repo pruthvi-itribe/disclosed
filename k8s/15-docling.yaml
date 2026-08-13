@@ -11,7 +11,7 @@
 # 7.65 GB pool — the exact failure a shared node invites at results-season
 # peak, when both products are busiest. So the pool was grown 1 -> 2 nodes
 # (2026-08-12) and this Deployment's REQUESTS are sized to be unschedulable
-# on the the platform node (3 CPU / 5 Gi against its ~2.5 / ~4.4 free): placement
+# on the platform's node (3 CPU / 5 Gi against its ~2.5 / ~4.4 free): placement
 # on the new node is enforced by arithmetic, not by a selector a node
 # replacement would strand.
 #
