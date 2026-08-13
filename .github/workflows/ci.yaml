@@ -30,35 +30,32 @@ name: Build and Lint Checks
 # Jest's `script-fragments.spec.ts` still catches the backtick/`${` class of
 # breakage at unit level, which is the one that has actually shipped.
 
+# ================================================================
+# WHY THERE IS NO `paths:` FILTER
+# ================================================================
+#
+# There was one, listing apps/, libs/, tools/ and the build config, on the
+# reasoning that a docs-only change cannot break a build. That reasoning is
+# sound and it is incompatible with this job being a REQUIRED status check,
+# which is what protects main.
+#
+# A required check that never starts is not skipped, it is PENDING. So a PR
+# touching only docs/, k8s/, Caddyfile, CLAUDE.md or .gitignore would match no
+# path, never trigger this workflow, and wait forever for a check that cannot
+# arrive — unmergeable, with nothing in the UI saying why. GitHub's own
+# guidance is to drop path filters from required workflows rather than to work
+# around this.
+#
+# The cost is roughly two and a half minutes of runner time on a documentation
+# PR. The benefit is that "every commit on main passed the four gates" is a
+# statement with no exceptions, which is the only version of it worth having.
 on:
   push:
     branches:
       - main
-    paths:
-      - apps/**
-      - libs/**
-      - tools/**
-      - package.json
-      - package-lock.json
-      - tsconfig.json
-      - nest-cli.json
-      - jest.config.js
-      - .eslintrc.js
-      - .github/workflows/ci.yaml
   pull_request:
     branches:
       - main
-    paths:
-      - apps/**
-      - libs/**
-      - tools/**
-      - package.json
-      - package-lock.json
-      - tsconfig.json
-      - nest-cli.json
-      - jest.config.js
-      - .eslintrc.js
-      - .github/workflows/ci.yaml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
