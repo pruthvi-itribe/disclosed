@@ -7,7 +7,17 @@ coverage/
 # is in docs/deploy-digitalocean.md and only the layout belongs in git.
 .env.deploy
 *.log
-data/corpus/
+# Corpus dumps are local measurement scratch — the full 32-day pull is 9.8 MB
+# across eleven fields and the ambiguity-scope cache beside it is 1,259 files.
+# ONE exception is tracked, and it has to be: `filing-outcome.spec.ts` and
+# `category-group.spec.ts` assert against all 17,442 rows, so with the corpus
+# ignored those eleven tests could only ever pass on the machine holding the
+# dump — they failed in CI from the day CI existed. The tracked slice carries
+# the three fields those specs read and nothing else: 3.6 MB, ~600 KB packed.
+# Ignore the CONTENTS rather than the directory; git does not descend into an
+# ignored directory, so `!data/corpus/x` under `data/corpus/` would not work.
+data/corpus/*
+!data/corpus/05-07-2026_05-08-2026.summaries.jsonl
 .superpowers/
 .idea/
 .vscode/

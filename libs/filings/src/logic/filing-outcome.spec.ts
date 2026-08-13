@@ -17,9 +17,14 @@ import {
  * checks both the share and the fixtures' own provenance.
  */
 
+// The TRACKED slice, not the local dump beside it. The full pull carries
+// eleven fields and is git-ignored scratch, so this suite could only ever run
+// on a machine that had it — the seven tests below failed in CI from the day
+// CI existed. The slice holds the three fields the specs read, same 17,442
+// rows in the same order.
 const CORPUS_PATH = join(
   __dirname,
-  '../../../../data/corpus/05-07-2026_05-08-2026.jsonl',
+  '../../../../data/corpus/05-07-2026_05-08-2026.summaries.jsonl',
 );
 
 interface CorpusRow {
@@ -30,7 +35,7 @@ interface CorpusRow {
 
 let cached: readonly CorpusRow[] | null = null;
 
-/** The corpus, parsed once on first use — 9.8 MB, so not per test. */
+/** The corpus, parsed once on first use — 3.6 MB, so not per test. */
 const corpus = (): readonly CorpusRow[] => {
   if (cached === null) {
     cached = readFileSync(CORPUS_PATH, 'utf8')
