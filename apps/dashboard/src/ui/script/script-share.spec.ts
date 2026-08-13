@@ -140,6 +140,64 @@ describe('shareText — one filing as a message', () => {
     expect(lines[lines.length - 1]).toBe(BRAND);
   });
 
+  it('leads with the figure when the filing printed one', () => {
+    // THE FIGURE IS THE EVENT, and it was the one thing this message dropped.
+    // Measured 2026-08-13: of 1,193 filings holding at least one claim, 33 had
+    // a verified amount and NOT ONE claim containing a digit — a ₹476 cr order
+    // win left for WhatsApp reading 'Order to be executed by March 2027.' and
+    // nothing else, while the card beside it showed the money all along.
+    const order = filing({
+      companyName: 'Saatvik Green Energy Limited',
+      symbol: 'SAATVIKGL',
+      category: 'Bagging/Receiving of orders/contracts',
+      disseminatedAtIstHuman: '13 Aug 2026, 12:21 pm',
+      enrichment: {
+        state: 'done',
+        resultsLine: null,
+        amountDisplay: '₹476 cr',
+        claims: [{ text: 'Order to be executed by March 2027.' }],
+      },
+    });
+    const lines = shareText(order).split('\n');
+
+    // A PARAGRAPH OF ITS OWN, between the header block and the first claim.
+    // That is the placement rule, and the picture matches it.
+    const figureAt = lines.indexOf('₹476 cr');
+    expect(figureAt).toBeGreaterThan(-1);
+    expect(lines[figureAt - 1]).toBe('');
+    expect(lines[figureAt + 1]).toBe('');
+    expect(
+      lines.indexOf('- Order to be executed by March 2027.'),
+    ).toBeGreaterThan(figureAt);
+    // As stored, with no label invented to sit beside it: the category line
+    // above already says what kind of event this is.
+    expect(lines[figureAt]).toBe('₹476 cr');
+  });
+
+  it('is unchanged for a filing with no amount', () => {
+    // TWO BLANK LINES, NOT THREE. The paragraph the figure would have opened
+    // is absent rather than empty — "nothing was found" and "nothing was
+    // looked for" must not render the same, and neither renders at all here.
+    const quiet = filing({
+      companyName: 'Example Limited',
+      symbol: 'EXAMPLE',
+      category: 'Board Meeting',
+      disseminatedAtIstHuman: '13 Aug 2026, 12:21 pm',
+      enrichment: {
+        state: 'done',
+        resultsLine: null,
+        amountDisplay: null,
+        claims: [{ text: 'The board met on Wednesday and approved nothing.' }],
+      },
+    });
+    const text = shareText(quiet);
+
+    expect(text).toContain(
+      '- The board met on Wednesday and approved nothing.',
+    );
+    expect(text.split('\n').filter((line) => line === '')).toHaveLength(2);
+  });
+
   it('puts the results line after the claims, when the filing printed one', () => {
     const withResults = filing({
       enrichment: {
