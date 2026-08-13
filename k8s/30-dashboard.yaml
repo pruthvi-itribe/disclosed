@@ -106,7 +106,7 @@ data:
     		# Firebase Web SDK from gstatic.com at a pinned version and
     		# nothing else from anywhere. Running AUTH_MODE=local instead?
     		# Delete those three origins and the policy gets shorter.
-    		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src 'self' https://*.firebaseapp.com https://accounts.google.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     		# Two years, and it is a commitment: once a browser has seen this
     		# it will refuse plain http for disclosed.live until it expires.
     		# ingress-nginx emits an HSTS header of its own — which one
@@ -209,7 +209,7 @@ spec:
         # THE VALUE IS UPDATED BY HAND when the ConfigMap above changes —
         # `kubectl apply` does not compute it. docs/deploy-kubernetes.md says
         # so under "What stays manual".
-        disclosed.live/edge-config-revision: '2'
+        disclosed.live/edge-config-revision: '3'
     spec:
       imagePullSecrets:
         - name: dockerhub-pull

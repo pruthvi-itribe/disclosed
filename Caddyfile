@@ -50,13 +50,34 @@ disclosed.live {
 		# stylesheet and the whole client script are inlined into the document
 		# on purpose (see CLAUDE.md, "The dashboard is self-contained").
 		#
-		# THE ONE EXCEPTION IS /auth IN FIREBASE MODE, which loads the Firebase
-		# Web SDK from gstatic.com at a pinned version and nothing else from
-		# anywhere. That is why gstatic is in script-src and connect-src
-		# reaches Google's identity endpoints; if this deployment runs
-		# AUTH_MODE=local, delete those three origins and the policy gets
-		# shorter.
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		# THE EXCEPTIONS ARE THE TWO SIGNED-OUT SURFACES IN FIREBASE MODE — the
+		# landing page and /auth — which run Google's sign-in popup. Four
+		# origins, and each is here because a browser blocked something
+		# without it:
+		#
+		#   www.gstatic.com      the Firebase Web SDK itself, pinned version.
+		#   apis.google.com      `js/api.js`. The SDK loads it to run the
+		#                        popup's iframe transport. MEASURED, NOT
+		#                        GUESSED: the first production sign-in failed
+		#                        with this request blocked, and the page said
+		#                        only "That sign-in did not work" because the
+		#                        popup never reached Google at all.
+		#   *.firebaseapp.com    frame-src, for `<project>.firebaseapp.com/__/
+		#                        auth/iframe`. A wildcard rather than the
+		#                        project name because `authDomain` is DERIVED
+		#                        from FIREBASE_PROJECT_ID at runtime, and this
+		#                        file is static — see `config/auth-config.ts`.
+		#   accounts.google.com  frame-src, for the redirect variant of the
+		#                        same flow.
+		#
+		# `frame-src` has to be named explicitly: without it frames fall back
+		# to `default-src 'self'` and the auth iframe is refused.
+		#
+		# Nothing here is loaded by the signed-in app, which still requests no
+		# foreign origin at all — `page.spec.ts` asserts that against the
+		# document. If this deployment runs AUTH_MODE=local, delete all five
+		# origins and the policy gets shorter.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src 'self' https://*.firebaseapp.com https://accounts.google.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 		# Two years, and it is a commitment: once a browser has seen this it
 		# will refuse plain http for disclosed.live until it expires. Do not
 		# add `preload` until the domain is settled.

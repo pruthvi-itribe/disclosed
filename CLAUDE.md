@@ -65,15 +65,24 @@ These override any habit of writing more, sooner, or cleverer.
   call's argument — and everything else must still be absent.
   - **The one relaxation is the two signed-out surfaces — the landing page and
     `/auth` — in firebase mode only.** Both load the Firebase Web SDK from
-    `gstatic.com` at one pinned version (`ui/firebase-sdk.ts`), and nothing else
-    from anywhere: the landing page's sign-in buttons open Google's popup where
-    the visitor already is, and `/auth` does the same behind a deep link and a
-    blocked-popup fallback. The app is unchanged — `page.spec.ts` asserts the
-    signed-in document contains no `https?://` but the XML namespace above —
-    and `landing.spec.ts`
-    and `auth-page.spec.ts` each assert the set of external origins on their
-    page is exactly `[gstatic]` in firebase mode and exactly `[]` in the other
-    two. The argument is in `ui/auth-page.ts`'s header and holds for both pages
+    `gstatic.com` at one pinned version (`ui/firebase-sdk.ts`): the landing
+    page's sign-in buttons open Google's popup where the visitor already is,
+    and `/auth` does the same behind a deep link and a blocked-popup fallback.
+    The app is unchanged — `page.spec.ts` asserts the signed-in document
+    contains no `https?://` but the XML namespace above — and
+    `landing.spec.ts` and `auth-page.spec.ts` each assert the set of external
+    origins **in the document** is exactly `[gstatic]` in firebase mode and
+    exactly `[]` in the other two.
+    - **The document is not the whole story, and saying it was cost a
+      production outage.** Once running, the SDK fetches
+      `apis.google.com/js/api.js` for the popup's iframe transport and frames
+      `<project>.firebaseapp.com/__/auth/iframe`. Neither appears in the HTML,
+      so the specs above stayed green while the **CSP** — which lives in
+      `Caddyfile`, not the app — blocked both, and the first production
+      sign-in failed saying only "That sign-in did not work". The policy now
+      names four Google origins and each is listed there with the thing it
+      unblocks. So: what a spec asserts about the *document* bounds what we
+      wrote; it does not bound what a third-party script fetches at runtime. The argument is in `ui/auth-page.ts`'s header and holds for both pages
     for the same reason: neither renders a filing, calls a read route or has
     database access, and the alternative is hand-writing Google's OAuth dance.
     A font, a stylesheet, an image or an analytics tag on either is still
