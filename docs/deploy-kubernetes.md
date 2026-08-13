@@ -11,9 +11,12 @@ and two Ingresses on the DigitalOcean Kubernetes cluster that already runs
 measurement in this document comes from it. Read its section 1 before arguing
 with a resource limit here.
 
-**Nothing here has been run against a real cluster.** What HAS been proved is
-listed in [What was actually verified](#what-was-actually-verified). Read
-[What is not verified](#what-is-not-verified) before the first deploy.
+**This was deployed for real on 2026-08-13** and is running. What that run
+proved, and the four things it did NOT, are in
+[What was actually verified](#what-was-actually-verified) and
+[What is not verified](#what-is-not-verified). Both sections are kept
+truthful rather than triumphant: an item moves out of the second list only
+when something was observed, not when it seems likely to work.
 
 ---
 
@@ -444,7 +447,36 @@ tralk is operated:
 
 ## What was actually verified
 
-On a developer machine, no cluster involved:
+### On the cluster, 2026-08-13
+
+The first real deploy. Everything below was observed, not inferred:
+
+- **The pods reach `prod-mongo-v2` over the VPC.** A throwaway pod authenticated,
+  wrote and read. This was open item 1 and is closed.
+- **The database user cannot escape its own database.** `disclosed` holds
+  `readWrite` on `turret` alone; an insert into `tralkdb` returned
+  `Unauthorized`. That closes open question 3 — `doctl databases user create`
+  makes DBADMIN-on-admin and has no flag to do otherwise, so the user is
+  created through the API with `settings.mongo_user_settings` (the flat
+  `mongo_user_settings` form is rejected 422).
+- **The sidecar arrangement works in-cluster.** `dashboard:8080/api/health`
+  answered 200 with exactly one `Cache-Control: private, no-store, max-age=0`,
+  the full CSP, HSTS, `X-Frame-Options: DENY` and **no `Server` header**.
+- **The images run on `linux/amd64`.** Built, pushed and pulled; open item 6
+  is closed.
+- **The three boot lines say what they should**: `enrichWhere=separate-process`,
+  `claims=openrouter/…`, `docling=http://docling:5001`, and on the dashboard
+  `filings=read-only admin=off proxy=2 auth=firebase`. `admin=off` is the
+  two-signal gate deciding correctly on a real production host.
+- **Cold-start protection fired.** The poller drained the day and reported
+  `Stored 58 filings outside the alert window` rather than alerting them.
+- **Docling serves from its own node.** Of 2,740 filings, 549 were read by
+  `docling-layout` and 37 by `docling-ocr` — so the ClusterIP path is real
+  work, not a silent fallback to `pdf-parse`.
+- **End-to-end latency, in production**: median 93 seconds from dissemination
+  to the document being read, against the product's stated ~2 minute target.
+
+### On a developer machine, no cluster involved
 
 - **All eight objects pass `kubectl apply --dry-run=client -f k8s/`** (kubectl
   v1.34.1, the same minor as the cluster's 1.34.5-do.3).
@@ -467,10 +499,13 @@ On a developer machine, no cluster involved:
 
 ## What is not verified
 
-1. **No cluster has seen any of this.** The Ingress admission webhook, the
-   cert-manager DNS-01 issuance for `disclosed.live`, whether the pod actually
-   reaches `prod-mongo-v2` over the VPC, and whether the `deploy-verify` pod
-   can resolve `dashboard:8080` are all unproven against the real thing.
+1. **Nothing has been served to the public internet yet.** The workloads run
+   and the database path is proven, but `k8s/40-ingress.yaml` is deliberately
+   NOT applied: applying it before the `cloudflare-dns` Secret exists starts
+   an ACME challenge that can only fail, repeatedly and against Let's
+   Encrypt's rate limit. So the Ingress admission webhook, DNS-01 issuance
+   through Cloudflare, and every item below that needs a request arriving from
+   outside are still unproven.
 2. **Which HSTS header reaches the browser.** The sidecar sends the
    repository's two-year commitment; ingress-nginx emits an HSTS header of its
    own. Check `curl -sSI https://disclosed.live` after the first deploy. If
@@ -508,13 +543,43 @@ On a developer machine, no cluster involved:
 5. **No log aggregation and no uptime check.** Pod logs are lost with the pod.
    `/api/health` is outside the session guard precisely so a monitor can use it
    without a credential — point something at it.
-6. **The images have never been built for `linux/amd64`.** The droplet doc
-   verified them on `linux/arm64`. The workflow builds amd64, which is right
-   for the node pool, and that build has not run.
+
+   The first deploy made this worse than it reads. An enrichment worker emitted
+   **43,628 log lines in roughly ten minutes**, almost all of them pdf.js
+   repeating `Warning: Ran out of space in font private use area.` — so the
+   Nest lines that actually say what the pipeline decided were buried, and
+   `kubectl logs --tail` returned nothing but font warnings. Pod logs are
+   currently the ONLY observability this deployment has, and they are already
+   unreadable. Silencing pdf.js' warnings is the cheap half; the real fix is
+   shipping logs somewhere they outlive the pod.
+
+6. ~~**The images have never been built for `linux/amd64`.**~~ Closed
+   2026-08-13: built by the workflow, pulled by the nodes, running.
 
 ---
 
 ## Open questions for the founder
+
+**Answered by the 2026-08-13 deploy.** The questions are kept below rather than
+deleted, because the reasoning is what makes an answer re-checkable:
+
+- **0 (DNS/ACME)** — Namecheap registration, nameservers moved to **Cloudflare**,
+  and this repository ships its own `letsencrypt-cloudflare` ClusterIssuer
+  (`k8s/05-issuer.yaml`). See the decision note in section 4.
+- **1 (does it belong on tralk's cluster)** — yes, but not on tralk's *node*.
+  The pool was grown 1 → 2 for Docling (2026-08-12) and 2 → 3 for the app
+  (2026-08-13). Disclosed's workloads and tralkserver now share a cluster and
+  a managed database, not a machine. **The pool is still terraform-managed
+  from tralk-infra with a stale count in state; a `terraform apply` there
+  would shrink it and evict this.** Bump that variable to 3.
+- **2 (images under `investorstribe`)** — yes, three private repositories.
+- **3 (which database, under which user)** — `turret`, and a `disclosed` user
+  scoped `readWrite` to it alone. Proven by a refused write to `tralkdb`.
+- **5 (`AUTH_MODE`)** — `firebase`, confirmed in the running boot line.
+
+Still open: **4** (the droplet/dev poller — both are running, against separate
+databases, and only one should be the one anybody trusts) and **6** (nothing
+backs up the managed database on a schedule of ours).
 
 0. **Where does `disclosed.live`'s DNS live, and therefore which ACME challenge
    can succeed?** This is the blocker, not a preference — section 4's "What the
