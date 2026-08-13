@@ -108,7 +108,8 @@ const INDEFINITE_OPENER = /^(?:an?|one\s+of)\b/i;
  *
  * A production filing answered the mandated row with "Received order from
  * Vikran Engineering Limited". It passed every guard here — it is not
- * indefinite, it is 45 characters, and it carries "Limited" — and reached a
+ * indefinite, it is 46 characters — inside `MAX_NAME_CHARS`, which is why
+ * `isIllegible` passed it — and it carries "Limited". It reached a
  * reader as "SAATVIKGL BAGS ORDER Rs 476 cr from Received order from Vikran
  * Engineering Limited", with two "from"s and a clause where a name belongs.
  *
@@ -120,22 +121,26 @@ const INDEFINITE_OPENER = /^(?:an?|one\s+of)\b/i;
  * intended, and this module's answer to that is the one stated above: omission
  * is always acceptable.
  *
- * The verbs are the ones this pipeline already reads as an order win —
- * `claim-topic.ts` recognises the event by `secured|received|won|awarded` and
- * `bagged` — in both the finite and the gerund form, because the gerunds are
- * NSE's own words for it: the categories are literally "Bagging/Receiving of
- * orders/contracts" and "Awarding of order(s)/contract(s)" (`action-phrase.ts`).
- * The rest are the other two ways a row stops being a name: a bare preposition
- * continuing the label's own sentence, and the filer narrating ("we have
- * received a letter of intent" is a phrasing the corpus already carries, see
- * `claim-verify.ts`).
+ * The finite verbs are the ones this pipeline already reads as an order win:
+ * `claim-topic.ts` recognises the event by `secured|received|won|awarded` plus
+ * `bagged`. The gerunds are NSE's own words for the same event — its categories
+ * are literally "Bagging/Receiving of orders/contracts" and "Awarding of
+ * order(s)/contract(s)" (`action-phrase.ts`), so a filer pasting the category
+ * into the row writes one of those three. The coverage is therefore uneven on
+ * purpose rather than by oversight, and is left that way because the sources
+ * end where they end: `securing` is here only by symmetry with `secured`, and
+ * `won` has no gerund because neither source supplies one. The rest are the
+ * other two ways a row stops being a name: a bare preposition continuing the
+ * label's own sentence, and the filer narrating ("we have received a letter of
+ * intent" is a phrasing the corpus already carries, see `claim-verify.ts`).
  *
  * Anchored, so the description "…majorly owned BY Finland based packaging
  * giant" is untouched and still refused as the anonymisation it is.
  *
- * Scale, measured over the production corpus on 2026-08-13: nine counterparties
- * exist in total and this is the one malformed one. Small, and on a surface
- * readers forward to other people.
+ * Scale, measured over the 2,763-filing production corpus on 2026-08-13, query
+ * and output in `docs/measurements/2026-08-13-claim-length-sweep.md` §6: nine
+ * counterparties exist in total and this is the one malformed one. Small, and
+ * on a surface readers forward to other people.
  */
 const PHRASE_OPENER =
   /^(?:awarded|awarding|bagged|bagging|received|receiving|secured|securing|won|from|by|we|the\s+company)\b/i;

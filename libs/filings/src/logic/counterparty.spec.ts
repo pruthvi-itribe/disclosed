@@ -186,9 +186,10 @@ describe('extractCounterparty — the guards', () => {
 
 describe('extractCounterparty — a row answered with a phrase, not a name', () => {
   it('refuses the production value that opens with a verb', () => {
-    // SAATVIKGL, 2026-08-13. It passed every guard here — not indefinite, 45
-    // characters, carries "Limited" — and reached a reader as "SAATVIKGL BAGS
-    // ORDER Rs 476 cr from Received order from Vikran Engineering Limited".
+    // SAATVIKGL, 2026-08-13. It passed every guard here — not indefinite, 46
+    // characters so inside MAX_NAME_CHARS, carries "Limited" — and reached a
+    // reader as "SAATVIKGL BAGS ORDER Rs 476 cr from Received order from
+    // Vikran Engineering Limited".
     const result = extractCounterparty(
       row('\nReceived order from Vikran Engineering Limited \n2 \n'),
     );
@@ -228,6 +229,22 @@ describe('extractCounterparty — a row answered with a phrase, not a name', () 
     ],
   ])('refuses %s', (_label, value) => {
     const result = extractCounterparty(row(value));
+    expect(result).toEqual({ outcome: 'refused', reason: 'phrase-not-name' });
+  });
+
+  it('refuses a phrase as a phrase when it is also too long to be legible', () => {
+    // The OTHER half of the placement. The test above pins the phrase check
+    // below `isDescription`; this one pins it above `isIllegible`, and without
+    // it the check could be moved to the bottom of the chain with the whole
+    // suite still green. The value carries no anonymising word, no indefinite
+    // opener and no non-answer, and its longest token is 12 characters, so the
+    // length bound is the only other thing that can fire on it — which makes
+    // the reason returned a statement about the order and nothing else.
+    const value =
+      'Received order from Vikran Engineering Limited and its subsidiaries across the western region';
+    expect(value.length).toBeGreaterThan(MAX_NAME_CHARS);
+
+    const result = extractCounterparty(row(`\n${value} \n`));
     expect(result).toEqual({ outcome: 'refused', reason: 'phrase-not-name' });
   });
 
