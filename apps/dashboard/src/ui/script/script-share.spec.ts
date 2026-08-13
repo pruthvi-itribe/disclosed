@@ -15,10 +15,16 @@ import { SCRIPT_SHARE_IMAGE } from './script-share-image';
  *
  * IT IS THE ONE FUNCTION IN THE PAIR WORTH RUNNING IN JEST. It is pure, it
  * touches no DOM, and it is the whole of a rule that has no other enforcement:
- * what leaves this product in somebody's chat window. The image's blocks need a
- * canvas to measure with and its delivery needs a clipboard, so both are the
- * e2e suite's job; what the two share — which claims go in and which do not —
- * is asserted on the source below.
+ * what leaves this product in somebody's chat window. The image's delivery
+ * needs a clipboard, so that stays the e2e suite's job; what the two share —
+ * which claims go in, and in what order — is asserted on the source below.
+ *
+ * `shareBodyBlocks` IS RUN HERE TOO, WHICH IT WAS NOT BEFORE. It needs a
+ * context only to MEASURE with, and what the assertions below ask of it — which
+ * blocks exist and in what order — does not depend on the measurement, so a
+ * stub that returns a width is enough. Wrapping is a different question and is
+ * not asked here: whether a 200-character claim takes two lines or three is a
+ * fact about a real font in a real browser, and task #58 owns it.
  */
 
 const html = renderDashboardPage(true);
@@ -58,6 +64,21 @@ const cutString = (name: string): string => {
   return line[1] ?? line[2];
 };
 
+/**
+ * One `var NAME = ...;` from the served script, as SOURCE rather than as a
+ * value.
+ *
+ * The sibling above returns what a constant is, for comparing against the
+ * stylesheet; this returns how it is written, so it can be declared again
+ * inside the harness. A number and a font stack are both wanted, and neither
+ * survives being unquoted.
+ */
+const cutVar = (name: string): string => {
+  const line = new RegExp(`var ${name} = ([^;\n]*);`).exec(SCRIPT);
+  if (line === null) throw new Error(`"${name}" is not in the served script.`);
+  return line[1];
+};
+
 type Filing = Record<string, unknown>;
 type ShareText = (f: Filing) => string;
 
@@ -67,6 +88,52 @@ var SHARE_TAIL = ${JSON.stringify(cutString('SHARE_TAIL'))};
 ${cutFunction(SCRIPT, 'function shareText(')}
 return shareText;`,
 )() as ShareText;
+
+/**
+ * Enough of a 2d context to wrap a line with, and no more.
+ *
+ * A FIXED WIDTH PER CHARACTER IS NOT A FONT METRIC and is not pretending to be
+ * one. `shareWrap` asks only that the number grow with the string, and every
+ * string these tests hand it is short enough to stay on one line at any
+ * plausible width — so the wrapping is not what is being asserted, the order of
+ * the blocks is, and that does not depend on the measurement at all.
+ */
+const measuringContext = (): unknown => ({
+  font: '',
+  measureText: (text: string) => ({ width: text.length * 14 }),
+});
+
+type ShareBlock = {
+  readonly lines: readonly string[];
+  readonly fill: string;
+  readonly bullet: boolean;
+};
+type ShareBodyBlocks = (
+  ctx: unknown,
+  claims: readonly { readonly text: string }[],
+  resultsLine: string | null,
+  amountDisplay: string | null,
+) => readonly ShareBlock[];
+
+const shareBodyBlocks = new Function(
+  `${[
+    'SHARE_W',
+    'SHARE_PAD',
+    'SHARE_HANG',
+    'SHARE_CLAIM_CAP',
+    'SHARE_SANS',
+    'SHARE_MONO',
+    'SHARE_INK',
+    'SHARE_MUTED',
+    'SHARE_WHITE',
+  ]
+    .map((name) => `var ${name} = ${cutVar(name)};`)
+    .join('\n')}
+${cutFunction(SCRIPT, 'function shareWrap(')}
+${cutFunction(SCRIPT, 'function shareBlock(')}
+${cutFunction(SCRIPT, 'function shareBodyBlocks(')}
+return shareBodyBlocks;`,
+)() as ShareBodyBlocks;
 
 /** One filing as `api/filings` sends it, with only what a message draws on. */
 const filing = (over: Filing = {}): Filing => ({
@@ -308,6 +375,63 @@ describe('shareText — one filing as a message', () => {
     expect(source).not.toContain('Date');
     expect(source).not.toContain('toLocale');
     expect(source).toContain("' IST'");
+  });
+});
+
+describe('shareBodyBlocks — the same filing as a picture', () => {
+  it('draws the figure in the picture too, ahead of the claims', () => {
+    // THE OTHER HALF OF THE SAME GAP. The message leads with the amount and the
+    // picture did not, so the two surfaces of one filing said different things:
+    // measured 2026-08-13, 33 of the 1,193 filings holding a claim had a
+    // verified amount and no claim carrying a digit, and their pictures showed
+    // a deadline and no money.
+    const blocks = shareBodyBlocks(
+      measuringContext(),
+      [{ text: 'Order to be executed by March 2027.' }],
+      'Revenue 1,204.35 cr · PAT 61.2 cr',
+      '₹476 cr',
+    );
+
+    // A BLOCK OF ITS OWN, between the header and the first claim — the
+    // placement the message uses, kept in step by hand.
+    expect(blocks[0].lines).toEqual(['₹476 cr']);
+    expect(blocks[1].lines).toEqual(['Order to be executed by March 2027.']);
+    // The results line keeps its place last, where a table of numbers belongs.
+    expect(blocks[2].lines).toEqual(['Revenue 1,204.35 cr · PAT 61.2 cr']);
+    // NOT ONE OF THE SENTENCES: no bullet, and the figures' own white rather
+    // than the accent the ticker and the discs have.
+    expect(blocks[0].bullet).toBe(false);
+    expect(blocks[0].fill).toBe(cutString('SHARE_WHITE'));
+  });
+
+  it('draws no figure block when the filing printed no amount', () => {
+    // "Nothing was found" and "nothing was looked for" must not render the
+    // same, and here neither renders: no block, no gap, no placeholder.
+    const blocks = shareBodyBlocks(
+      measuringContext(),
+      [{ text: 'The board met on Wednesday and approved nothing.' }],
+      null,
+      null,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].lines).toEqual([
+      'The board met on Wednesday and approved nothing.',
+    ]);
+  });
+
+  it('draws the amount as stored, with no label beside it', () => {
+    // As the message does, and for the same reason: the category line in the
+    // header already says what kind of event this is, and a word we invented
+    // sitting against a verified figure is a word the filing did not print.
+    const [figure] = shareBodyBlocks(
+      measuringContext(),
+      [{ text: 'Order to be executed by March 2027.' }],
+      null,
+      '₹18.54 cr',
+    );
+
+    expect(figure.lines.join(' ')).toBe('₹18.54 cr');
   });
 });
 

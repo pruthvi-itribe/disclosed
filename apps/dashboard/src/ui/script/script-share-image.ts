@@ -97,7 +97,19 @@ export const SCRIPT_SHARE_IMAGE = `
   // carry one, 62.5% three or fewer, 77.5% six or fewer, 85.5% EIGHT OR FEWER,
   // and the longest carries twelve. Claim text — mean 67.3 characters, p50 65,
   // p90 103, p99 118, longest 120, so at the 29px this sets them a median claim
-  // is one line of the 952px column and the longest is two.
+  // was one line of the 952px column and the longest was two.
+  //
+  // THAT LAST CLAUSE EXPIRED ON 2026-08-13, AND THE PERCENTILES DID NOT.
+  // 'longest 120' was the CAP clipping the distribution rather than the
+  // distribution ending, and MAX_CLAIM_CHARS moved from 120 to 200 that day —
+  // 'docs/measurements/2026-08-13-claim-length-sweep.md' is the sweep it was
+  // set from, section 4. A stored claim may now run to 200 characters, so 'the
+  // longest is two lines' no longer follows from the bound; how many lines 200
+  // takes at 29px in this 952px column is a question for a rendered picture,
+  // and task #58 owns it. No type size or canvas dimension here moves until it
+  // has run. The numbers above stay as the dated record of what 2026-08-12
+  // measured — including the claims-per-filing half the cap below is set from,
+  // which has not been re-swept either (task #59).
   //
   // WHAT THAT COSTS IN PIXELS, measured by running the functions below over
   // live filings in a browser rather than by estimating from the type. Over 200
@@ -361,9 +373,39 @@ export const SCRIPT_SHARE_IMAGE = `
     ];
   }
 
-  /** What the filing said: the claims, what was left out, and the figures. */
-  function shareBodyBlocks(ctx, claims, resultsLine) {
+  /** What the filing said: the figure, the claims, what was left out, results. */
+  function shareBodyBlocks(ctx, claims, resultsLine, amountDisplay) {
     var blocks = [];
+
+    // THE FIGURE LEADS, IN THE PLACE THE MESSAGE PUTS IT. Measured 2026-08-13,
+    // section 5 of 'docs/measurements/2026-08-13-claim-length-sweep.md': of the
+    // 1,193 filings holding at least one claim, 33 had a verified amount and
+    // NOT ONE claim carrying a digit. Their pictures showed a deadline and no
+    // money while the card beside them had been showing the amount all along.
+    //
+    // A BLOCK OF ITS OWN, which is the blank line 'shareText' puts either side
+    // of the same string. The gaps here are LEADING, so nothing doubles: 44
+    // under the rule to the figure, and the first claim's own 44 from the
+    // figure to the claims. It costs 92px on a filing that has an amount and
+    // nothing on one that does not — the pixel sweep at SHARE_CLAIM_CAP
+    // predates this block. The two surfaces are kept in step BY HAND, and
+    // 'script-share.spec.ts' is where that is asserted.
+    //
+    // SHARE_WHITE AND NOT THE ACCENT: the palette block above says white is
+    // the figures and the accent is the two things that are not sentences, the
+    // ticker and the discs. No bullet and no label we invented — the category
+    // line in the header already says what kind of event this is — and drawn
+    // as stored, like everything else here.
+    if (amountDisplay) {
+      blocks.push(shareBlock(ctx, {
+        font: '600 36px ' + SHARE_SANS,
+        fill: SHARE_WHITE,
+        text: amountDisplay,
+        lineHeight: 48,
+        gap: 44
+      }));
+    }
+
     var shown = claims.length < SHARE_CLAIM_CAP ? claims.length : SHARE_CLAIM_CAP;
     for (var i = 0; i < shown; i++) {
       blocks.push(shareBlock(ctx, {
@@ -428,7 +470,7 @@ export const SCRIPT_SHARE_IMAGE = `
     var claims = e.claims || [];
     return {
       head: shareHeadBlocks(ctx, f),
-      body: shareBodyBlocks(ctx, claims, e.resultsLine)
+      body: shareBodyBlocks(ctx, claims, e.resultsLine, e.amountDisplay)
     };
   }
 
