@@ -4,8 +4,8 @@
 # WHY NOT THE `letsencrypt-prod` ISSUER ALREADY ON THIS CLUSTER
 # ================================================================
 #
-# tralk-infra's `prod/platform.tf` installs a `letsencrypt-prod` ClusterIssuer
-# that solves DNS-01 through the DigitalOcean DNS API. That works for tralk's
+# The platform's infrastructure repository installs a `letsencrypt-prod` ClusterIssuer
+# that solves DNS-01 through the DigitalOcean DNS API. That works for the platform's
 # zones because their nameservers are AT DigitalOcean. disclosed.live's are
 # not: the zone sits at Cloudflare so the app gets an edge, and the app is
 # built for that — `CF-Connecting-IP` is the production rate-limit key, and it
@@ -16,7 +16,7 @@
 # `_acme-challenge` TXT record into a DigitalOcean zone nobody resolves. The
 # challenge never propagates, the Ingress sits without a certificate, and
 # nothing says why. So this zone gets its own issuer, solved where its records
-# actually live. `letsencrypt-prod` is untouched and still owns tralk's zones.
+# actually live. `letsencrypt-prod` is untouched and still owns the platform's zones.
 #
 # DNS-01 rather than HTTP-01, for the reason the original file gives: the
 # certificate is issued BEFORE disclosed.live resolves at the load balancer,
@@ -53,10 +53,10 @@ metadata:
   name: letsencrypt-cloudflare
 spec:
   acme:
-    # Same address tralk's issuer registers, so expiry mail lands in one place.
-    email: pr@itribe.in
+    # Same address the platform's issuer registers, so expiry mail lands in one place.
+    email: ops@disclosed.live
     server: https://acme-v02.api.letsencrypt.org/directory
-    # Its OWN account key. Sharing `letsencrypt-account` with tralk's issuer
+    # Its OWN account key. Sharing `letsencrypt-account` with the platform's issuer
     # would work, and would also mean a rotation there silently re-registers
     # this one.
     privateKeySecretRef:

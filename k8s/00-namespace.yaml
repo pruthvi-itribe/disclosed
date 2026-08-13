@@ -4,8 +4,8 @@
 # WHY `disclosed` AND NOT `prod`
 # ================================================================
 #
-# tralk-infra names its namespaces after the environment — `prod` holds
-# tralkserver, `stage` holds the staging copy — because that cluster runs one
+# The platform's infrastructure repository names its namespaces after the environment — `prod` holds
+# The platform service, `stage` holds the staging copy — because that cluster runs one
 # product. The DOKS `prod` cluster this deploys to is the same one, so a
 # second product landing in `prod` would put two unrelated things in one
 # ServiceAccount's default blast radius and one `kubectl -n prod delete` away
@@ -24,7 +24,7 @@ metadata:
   name: disclosed
   labels:
     # `managed-by: kubectl` and not `tofu`, and the difference is the point:
-    # tralk's manifests are Terraform resources in tralk-infra, these are
+    # the platform's manifests are Terraform resources in the platform's infrastructure repository, these are
     # files in the application repository applied by hand. See
     # docs/deploy-kubernetes.md, "What stays manual".
     app.kubernetes.io/managed-by: kubectl

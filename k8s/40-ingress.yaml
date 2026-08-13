@@ -1,14 +1,14 @@
 # The public entrance: disclosed.live to the dashboard Service.
 #
-# Shaped exactly like tralk-infra's `kubernetes_ingress_v1.tralkserver` —
+# Shaped exactly like the platform's infrastructure repository's `kubernetes_ingress_v1.the platform service` —
 # ingressClassName `nginx`, a ClusterIssuer annotation, a `tls` block whose
 # secretName cert-manager fills in. ingress-nginx and cert-manager already
 # exist on this cluster in the `platform` namespace (installed by
-# tralk-infra's `prod/platform.tf`), which is why this file installs neither.
+# The platform's infrastructure repository), which is why this file installs neither.
 #
 # The ISSUER is this repository's own — `letsencrypt-cloudflare`, in
-# `k8s/05-issuer.yaml` — and not tralk's `letsencrypt-prod`, because this
-# zone's nameservers are at Cloudflare and tralk's issuer solves against the
+# `k8s/05-issuer.yaml` — and not the platform's `letsencrypt-prod`, because this
+# zone's nameservers are at Cloudflare and the platform's issuer solves against the
 # DigitalOcean DNS API. That file argues it at length.
 #
 # Both are DNS-01, so the certificate is issued BEFORE disclosed.live resolves

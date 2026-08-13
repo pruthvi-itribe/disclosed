@@ -12,7 +12,7 @@ import { isIP } from 'node:net';
  * forwards `X-Forwarded-For` intact. The production chain does not.
  *
  * Measured against the deployed configuration rather than assumed:
- * tralk-infra's `prod/platform.tf` installs ingress-nginx 4.11.3 with NO
+ * the platform's infrastructure repository's `prod/platform.tf` installs ingress-nginx 4.11.3 with NO
  * `controller.config` block, so every ConfigMap setting is at its chart
  * default — including `use-forwarded-headers: false`. The controller-v1.11.3
  * template then emits

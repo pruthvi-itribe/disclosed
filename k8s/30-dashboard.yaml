@@ -1,5 +1,5 @@
 # The dashboard, and the one arrangement in this directory that is not a
-# straight copy of how tralkserver is deployed.
+# straight copy of how the platform service is deployed.
 #
 # ================================================================
 # WHY THERE ARE TWO CONTAINERS IN THIS POD
@@ -12,7 +12,7 @@
 #
 # A Kubernetes Service sends traffic to the POD IP. A process bound to
 # loopback is not reachable at the pod IP, so the ordinary shape — Service to
-# container port, which is all tralkserver needs because it binds every
+# container port, which is all the platform service needs because it binds every
 # interface — cannot work here and no annotation makes it work.
 #
 # EVERY CONTAINER IN A POD SHARES ONE NETWORK NAMESPACE. That is the same
@@ -156,7 +156,7 @@ metadata:
   labels:
     app: dashboard
 spec:
-  # ClusterIP by omission, like tralkserver's. The Ingress is the only way in
+  # ClusterIP by omission, like the platform service's. The Ingress is the only way in
   # from outside; a LoadBalancer here would be a second public entrance with
   # no TLS and no cert-manager in front of it.
   selector:
@@ -184,7 +184,7 @@ spec:
   replicas: 1
 
   # RollingUpdate, unlike the two workers. Nothing about a second dashboard is
-  # incorrect, so this is the one workload where tralkserver's strategy
+  # incorrect, so this is the one workload where the platform service's strategy
   # applies unchanged.
   strategy:
     type: RollingUpdate
@@ -264,7 +264,7 @@ spec:
             # and that is the whole list, because those are exactly the two
             # that WRITE X-Forwarded-For. The DigitalOcean load balancer in
             # front of them is `protocol: tcp` with proxy-protocol off
-            # (tralk-infra prod/platform.tf), so it forwards bytes and
+            # (the platform's infrastructure repository prod/platform.tf), so it forwards bytes and
             # touches no header. Cloudflare writes one and it does not
             # survive: ingress-nginx runs at the chart default
             # `use-forwarded-headers: false`, which REPLACES
@@ -367,7 +367,7 @@ spec:
           #
           # `/api/health` is one of the four routes outside the session
           # guard, which is why a monitor can use it without a credential.
-          # Numbers mirror tralkserver's readiness probe.
+          # Numbers mirror the platform service's readiness probe.
           readinessProbe:
             httpGet:
               path: /api/health

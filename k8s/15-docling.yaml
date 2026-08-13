@@ -6,16 +6,16 @@
 #
 # docling-serve holds 2.3-2.6 GB resident with OCR off and up to 7.4 GB on
 # large OCR jobs (measured, docs/deploy-digitalocean.md §7). The prod node
-# that runs tralkserver has ~2.5 CPU / ~4.4 GB unrequested; on 2026-08-11 a
+# that runs the platform service has ~2.5 CPU / ~4.4 GB unrequested; on 2026-08-11 a
 # burst of heavy conversions OOM-killed the local container inside a shared
 # 7.65 GB pool — the exact failure a shared node invites at results-season
 # peak, when both products are busiest. So the pool was grown 1 -> 2 nodes
 # (2026-08-12) and this Deployment's REQUESTS are sized to be unschedulable
-# on the tralk node (3 CPU / 5 Gi against its ~2.5 / ~4.4 free): placement
+# on the the platform node (3 CPU / 5 Gi against its ~2.5 / ~4.4 free): placement
 # on the new node is enforced by arithmetic, not by a selector a node
 # replacement would strand.
 #
-# NOTE the pool is terraform-managed from tralk-infra with count=1 in state;
+# NOTE the pool is terraform-managed from the platform's infrastructure repository with count=1 in state;
 # until that var is bumped to 2, a `terraform apply` there would shrink the
 # pool and evict this. (Recorded 2026-08-12; remove this sentence when the
 # var is updated.)

@@ -1,7 +1,7 @@
 # Claim length: what the 120-character cap was deleting
 
-Run 2026-08-13 against the **production** database (`turret` on
-`prod-mongo-v2`, reached from inside the DOKS cluster — it is VPC-private),
+Run 2026-08-13 against the **production** database (`turret` on the
+platform's managed Mongo, reached from inside the DOKS cluster — it is VPC-private),
 holding **2,763 filings** spanning 2026-08-11 to 2026-08-13. Read-only:
 nothing was written and no index was created.
 

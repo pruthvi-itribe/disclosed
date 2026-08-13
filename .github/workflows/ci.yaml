@@ -1,7 +1,7 @@
 name: Build and Lint Checks
 
 # The four gates CLAUDE.md names, in the order that fails cheapest first:
-# lint, types, Jest, build. Structured after tralk-nest-server's `lint.yaml`
+# lint, types, Jest, build. Structured after the platform server's `lint.yaml`
 # — same workflow name, same push/pull_request pair, same concurrency group —
 # so one habit reads both repositories.
 #
@@ -74,7 +74,7 @@ jobs:
         uses: actions/checkout@v4
 
       # 20, matching the Dockerfile's `node:20-alpine` and `@types/node ^20`.
-      # tralk pins 18 for its own dependency reasons; the number that matters
+      # the platform pins 18 for its own dependency reasons; the number that matters
       # here is the one the images actually run.
       - name: Set up Node.js
         uses: actions/setup-node@v4
