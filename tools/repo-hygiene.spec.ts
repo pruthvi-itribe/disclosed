@@ -148,7 +148,8 @@ const FORBIDDEN: ReadonlyArray<{
     // It is the one place an address must be real: an ACME registration that
     // cannot be delivered to means expiry warnings vanish while everything
     // still looks healthy. Recorded in k8s/05-issuer.yaml beside the value.
-    exempt: /__fixtures__|\/corpus\/|\.spec\.ts:|@disclosed\.live|pruthvi@itribe\.in/,
+    exempt:
+      /__fixtures__|\/corpus\/|\.spec\.ts:|@disclosed\.live|pruthvi@itribe\.in/,
     why: 'personal data in a public repository; use a role address on our own domain, or an angle-bracket placeholder filled in at apply time',
   },
   {
