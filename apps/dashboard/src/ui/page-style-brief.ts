@@ -158,9 +158,17 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 #brief-deck[hidden] { display: none; }
 
 /* EVERY CARD IS EXACTLY ONE VIEWPORT, which is what lets the lede be set at
-   25px without any card in the deck changing height: a 120-character claim —
-   the hard cap claim-verify.ts enforces — wraps to four lines at 390px and
-   occupies about 128px, and the card has room for that at its maximum.
+   25px without any card in the deck changing height.
+
+   THE MEASUREMENT BEHIND THAT WAS TAKEN AT A CAP THAT HAS SINCE MOVED. It
+   read: a 120-character claim — the hard cap claim-verify.ts then enforced —
+   wraps to four lines at 390px and occupies about 128px, and the card has room
+   for that at its maximum. The cap became 200 on 2026-08-13, so the four
+   lines, the 128px and the room they fit into are all figures about a claim
+   120 characters long, while the longest one now stored is 200. The rule below
+   is unchanged and its argument no longer follows from the constant: what a
+   200-character claim does to a card at 390px has to be read off the rendered
+   page before this paragraph can state a number again.
 
    100% of the deck rather than of the window, because the tab bar is above the
    deck and a card measured against the window would hide its own footer behind
