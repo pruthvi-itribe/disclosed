@@ -129,8 +129,12 @@ These override any habit of writing more, sooner, or cleverer.
 
 ## Commands
 
-- `npm test` — Jest, no network, ~10s. `npx tsc --noEmit -p tsconfig.json`,
-  `npm run lint`.
+- `npm test` — Jest, no network, ~15s, 5,613 tests. `npx tsc --noEmit -p
+  tsconfig.json`, and **`npm run lint:ci` — not `npm run lint`**. `lint`
+  carries `--fix`, so it REPAIRS the tree and exits 0; it can only fail on
+  something prettier cannot rewrite, which is how a formatting error reached
+  `main` and reddened the build on 2026-08-13. `lint:ci` is the same rule set
+  with nothing mutated, and it is what CI runs.
 - `npm run test:e2e` / `npx playwright test` — needs the dashboard running;
   `DASHBOARD_URL` overrides the default `http://127.0.0.1:7717`. **It requires
   `AUTH_MODE=local`**, which is what an environment with no `FIREBASE_*` keys
@@ -139,6 +143,39 @@ These override any habit of writing more, sooner, or cleverer.
   in the server — see `e2e/session.ts`.
 - `npm run start:dashboard` (port from `DASHBOARD_PORT`, default 7717).
 - Component names for the UI: `docs/ui-components.md`.
+
+## Shipping a change
+
+**Nothing lands on `main` by pushing to it.** The branch is protected and the
+protection binds admins too, so a direct push is refused by the remote rather
+than by convention:
+
+> `GH006: Protected branch update failed` — *Changes must be made through a
+> pull request. Required status check "lint, types, tests, build" is expected.*
+
+Every change goes through a pull request whose four gates have gone green, and
+the branch must be current with `main` before it merges:
+
+```bash
+git checkout -b <type>/<slug>          # feat/, fix/, chore/, ci/, docs/, test/
+# commit as usual — one logical change, the evidence in the message
+git push -u origin <type>/<slug>
+gh pr create --fill
+gh pr merge --auto --merge             # lands itself the moment CI passes
+```
+
+Review approvals are set to zero, so a solo change is not blocked waiting for
+somebody to click. The gate is the build, not a person.
+
+`ci.yaml` deliberately carries **no `paths:` filter**, and adding one back
+breaks the protection: a required check that never starts is *pending*, not
+skipped, so a PR touching only `docs/` or `k8s/` would be unmergeable forever
+with nothing in the UI saying why.
+
+Deploying stays a separate manual act and is not part of merging: the deploy
+workflow is `workflow_dispatch` only, run against `main` after a merge, and
+dispatching it requires write access to the repository — which is why a public
+repository is not a deployable one.
 
 ## Conventions
 
