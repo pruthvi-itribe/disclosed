@@ -1,24 +1,30 @@
 # The public entrance: disclosed.live to the dashboard Service.
 #
 # Shaped exactly like tralk-infra's `kubernetes_ingress_v1.tralkserver` —
-# ingressClassName `nginx`, the `letsencrypt-prod` ClusterIssuer annotation,
-# a `tls` block whose secretName cert-manager fills in. Both of those already
-# exist on this cluster in the `platform` namespace (ingress-nginx and
-# cert-manager, installed by tralk-infra's `prod/platform.tf`), which is why
-# this file installs neither.
+# ingressClassName `nginx`, a ClusterIssuer annotation, a `tls` block whose
+# secretName cert-manager fills in. ingress-nginx and cert-manager already
+# exist on this cluster in the `platform` namespace (installed by
+# tralk-infra's `prod/platform.tf`), which is why this file installs neither.
 #
-# The issuer solves DNS-01 against the DO DNS zone, so the certificate is
-# issued BEFORE disclosed.live resolves at the ingress load balancer. That is
-# the whole reason DNS-01 was chosen there and it is worth the same here: the
-# cert can be in place before the A record moves off the droplet, which makes
-# the cutover a DNS change rather than a downtime window.
+# The ISSUER is this repository's own — `letsencrypt-cloudflare`, in
+# `k8s/05-issuer.yaml` — and not tralk's `letsencrypt-prod`, because this
+# zone's nameservers are at Cloudflare and tralk's issuer solves against the
+# DigitalOcean DNS API. That file argues it at length.
+#
+# Both are DNS-01, so the certificate is issued BEFORE disclosed.live resolves
+# at the ingress load balancer: the cert can be in place before the A record
+# moves, which makes the cutover a DNS change rather than a downtime window.
+#
+# `www` needs no second entry in the issuer's `dnsZones` selector: cert-manager
+# matches a DNS name against the zone that CONTAINS it, so `disclosed.live`
+# covers `www.disclosed.live` too.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: dashboard
   namespace: disclosed
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
 spec:
   ingressClassName: nginx
   tls:
@@ -56,7 +62,7 @@ metadata:
   name: dashboard-www
   namespace: disclosed
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
     nginx.ingress.kubernetes.io/permanent-redirect: https://disclosed.live$request_uri
     nginx.ingress.kubernetes.io/permanent-redirect-code: '301'
 spec:

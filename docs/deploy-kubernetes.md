@@ -235,6 +235,16 @@ not compose: with the zone at Cloudflare, cert-manager will write a TXT record
 into a DO zone nobody resolves, the challenge will never propagate, and the
 Ingress will sit without a certificate while giving no obvious reason.
 
+**Decided 2026-08-13: option 3.** `disclosed.live` was registered at Namecheap
+and its nameservers move to **Cloudflare**, because the app is already built
+for that edge — `CF-Connecting-IP` is the production rate-limit key and only
+exists when Cloudflare is in the path. So this repository ships its own
+`letsencrypt-cloudflare` ClusterIssuer in [`k8s/05-issuer.yaml`](../k8s/05-issuer.yaml),
+solving DNS-01 with a Cloudflare token scoped to `Zone / DNS / Edit` on that
+one zone, and both Ingresses carry that annotation. tralk's `letsencrypt-prod`
+is untouched and still owns tralk's zones. The three options are kept below
+because the reasoning is what makes the choice re-checkable.
+
 Three ways out, in the order they cost:
 
 1. **Move `disclosed.live`'s nameservers to DigitalOcean.** The existing issuer

@@ -1,0 +1,72 @@
+# The ACME issuer for disclosed.live, solved at Cloudflare.
+#
+# ================================================================
+# WHY NOT THE `letsencrypt-prod` ISSUER ALREADY ON THIS CLUSTER
+# ================================================================
+#
+# tralk-infra's `prod/platform.tf` installs a `letsencrypt-prod` ClusterIssuer
+# that solves DNS-01 through the DigitalOcean DNS API. That works for tralk's
+# zones because their nameservers are AT DigitalOcean. disclosed.live's are
+# not: the zone sits at Cloudflare so the app gets an edge, and the app is
+# built for that — `CF-Connecting-IP` is the production rate-limit key, and it
+# only exists when Cloudflare is in the path (see the trust-proxy note in
+# `k8s/30-dashboard.yaml`).
+#
+# Point the existing issuer at this zone and cert-manager writes a
+# `_acme-challenge` TXT record into a DigitalOcean zone nobody resolves. The
+# challenge never propagates, the Ingress sits without a certificate, and
+# nothing says why. So this zone gets its own issuer, solved where its records
+# actually live. `letsencrypt-prod` is untouched and still owns tralk's zones.
+#
+# DNS-01 rather than HTTP-01, for the reason the original file gives: the
+# certificate is issued BEFORE disclosed.live resolves at the load balancer,
+# so the cutover is a DNS change rather than a downtime window. HTTP-01 would
+# invert that — no certificate until the A record has already moved — and
+# behind Cloudflare it also has to survive "Always Use HTTPS" redirecting the
+# challenge to a port whose certificate does not exist yet.
+#
+# ================================================================
+# THE CREDENTIAL, WHICH IS NOT IN THIS FILE
+# ================================================================
+#
+# The token is a Kubernetes Secret named `cloudflare-dns`, created by hand in
+# cert-manager's OWN namespace (`platform`) — a ClusterIssuer resolves every
+# secretRef there, not in the namespace of the Ingress that uses it. Same
+# pattern and same namespace as the `digitalocean-dns` secret beside it, and
+# the same reason: it never hits git, CI or a Terraform state file.
+#
+#   kubectl -n platform create secret generic cloudflare-dns \
+#     --from-literal=api-token='<Cloudflare API token>'
+#
+# Scope the token to `Zone / DNS / Edit` on disclosed.live and nothing else.
+# A Global API Key also works and is refused here on purpose: it carries the
+# whole account, cannot be scoped, and cannot be revoked without breaking
+# every other use of it.
+#
+# The `dnsZones` selector is the second half of that containment. Without it
+# this issuer would offer to solve ANY zone asked of it with this token; with
+# it, a certificate request for some other name finds no solver and fails
+# loudly instead of silently trying and timing out.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-cloudflare
+spec:
+  acme:
+    # Same address tralk's issuer registers, so expiry mail lands in one place.
+    email: pr@itribe.in
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Its OWN account key. Sharing `letsencrypt-account` with tralk's issuer
+    # would work, and would also mean a rotation there silently re-registers
+    # this one.
+    privateKeySecretRef:
+      name: letsencrypt-cloudflare-account
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-dns
+              key: api-token
+        selector:
+          dnsZones:
+            - disclosed.live
