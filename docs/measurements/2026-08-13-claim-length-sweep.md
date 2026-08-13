@@ -11,11 +11,19 @@ This is the sweep cited by `MAX_CLAIM_CHARS` in
 can re-run.
 
 **It is not the same corpus as
-[`2026-08-11-processing-audit.md`](./2026-08-11-processing-audit.md)**, which
-ran against the *local development* database (`127.0.0.1:27117`, 5,062
-filings) two days earlier. Where the two disagree they are describing
-different populations, not contradicting each other — `too-long` is 208 there
-and 154 here, which is 4.1% and 5.6% of their respective corpora.
+[`2026-08-11-processing-audit.md`](./2026-08-11-processing-audit.md)**, and the
+difference is the WINDOW AND THE POPULATION rather than the host. That audit
+also ran against a live `turret` database — it says so in its header — two days
+earlier, over **5,062 filings disseminated 2026-08-04 to 2026-08-11**; this one
+holds **2,763 disseminated 2026-08-11 to 2026-08-13**. Where the two disagree
+they are describing different populations, not contradicting each other.
+
+`too-long` is 208 there and 154 here, which divides out to 4.1% and 5.6% of
+their respective corpora. **Read that pair loosely.** The audit's 5,062 is
+explicitly NSE-only — it holds 2,104 BSE announcements separately and never
+processes them (its §8) — while the §1 query below applies no exchange filter,
+so the two denominators are not built the same way. The division is right; what
+the ratio means across the two is looser than the numbers look.
 
 ## 1. Discard reasons, ranked
 
@@ -114,10 +122,14 @@ p50 66   p75 85   p90 102   p95 110   p99 118   max 120
 ```
 
 **These are grid points, not thresholds the data chose.** 200 recovers exactly
-what 180 recovers; the single claim beyond both is 203 characters, so **204**
-is the smallest bound admitting all 154. 240 is simply the next point tested
-after 200 — it is not a fact about the corpus, and a comment that says "240
-would be needed for all of them" is describing this grid rather than the data.
+what 180 recovers; the single claim beyond both is 203 characters. The gate is
+`if (text.length > MAX_CLAIM_CHARS)` — a strict `>`, so the bound is an
+INCLUSIVE maximum and a claim of exactly N passes at cap N. **203** is
+therefore the smallest bound admitting all 154, not 204. (Section 3's `max 120`
+under a cap of 120 is the same fact seen from the other side.) 240 is simply
+the next point tested after 200 — it is not a fact about the corpus, and a
+comment that says "240 would be needed for all of them" is describing this grid
+rather than the data.
 
 200 was chosen for **headroom** above the observed p90 of 143, not because it
 recovers more than 180.
