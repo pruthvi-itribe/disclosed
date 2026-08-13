@@ -224,9 +224,17 @@ body.briefing #view-brief { flex: 1 1 auto; min-height: 0; }
 }
 .bname { font-size: 13px; color: var(--muted); min-width: 0; }
 
-/* THE CLAIM IS THE CARD. Set at the size of a headline because it is one, and
-   because MAX_CLAIM_CHARS = 120 guarantees it fits: no other string in this
-   product can be given a whole screen without a truncation rule.
+/* THE CLAIM IS THE CARD. Set at the size of a headline because it is one.
+
+   THE FIT NO LONGER FOLLOWS FROM THE NUMBER. This size was chosen when
+   MAX_CLAIM_CHARS was 120 — short enough that a claim was guaranteed a whole
+   screen without a truncation rule, which no other string in this product
+   gets. That constant was raised to 200 on 2026-08-13, because 120 was a wire
+   line's bound deleting claims the verbatim gate had already accepted, and 200
+   is two thirds longer than anything this rule was ever measured against. The
+   size below is unchanged and the guarantee behind it is gone: whether the
+   longest stored claim still fits is now an open question to be answered by
+   looking at the rendered page, not by arithmetic here.
 
    overflow-wrap because claim text is exchange-derived and can carry a very
    long unbroken token, and a card that overflows sideways breaks the one

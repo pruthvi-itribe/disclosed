@@ -175,7 +175,7 @@ function checkOne(
     return discard(
       'too-long',
       text,
-      `${text.length} characters exceeds the ${MAX_CLAIM_CHARS} a wire line may carry`,
+      `${text.length} characters exceeds the ${MAX_CLAIM_CHARS} a stored claim may carry`,
     );
   }
 

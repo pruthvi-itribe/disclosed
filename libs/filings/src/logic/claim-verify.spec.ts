@@ -426,7 +426,7 @@ describe('verifyClaims — the categorical refusals', () => {
     expect(reasons([claim({ text })])).toEqual(['empty-claim']);
   });
 
-  it('discards a claim longer than a wire line may carry', () => {
+  it('discards a claim longer than storage may carry', () => {
     expect(reasons([claim({ text: 'x'.repeat(MAX_CLAIM_CHARS + 1) })])).toEqual(
       ['too-long'],
     );
