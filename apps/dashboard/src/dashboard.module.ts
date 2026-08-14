@@ -37,6 +37,7 @@ import {
 } from './auth/auth.tokens';
 import { FirebaseSignInService } from './auth/firebase-sign-in';
 import { AdminSdkVerifier } from './auth/firebase-verifier';
+import { JsonOnlyGuard } from './auth/json-only.guard';
 import { OriginGuard, SessionGuard } from './auth/session.guard';
 import { SessionService } from './auth/session.service';
 import { WatchlistController } from './auth/watchlist.controller';
@@ -335,11 +336,12 @@ export const FILING_MODEL = 'Filing';
               () => new Date(),
             ),
     },
-    // Both guards and the filter are referenced by class in `@UseGuards` /
+    // The guards and the filter are referenced by class in `@UseGuards` /
     // `@UseFilters`, which Nest instantiates from their own metadata. They are
     // listed here so their own dependencies resolve in this module's context.
     SessionGuard,
     OriginGuard,
+    JsonOnlyGuard,
     ApiErrorFilter,
   ],
 })

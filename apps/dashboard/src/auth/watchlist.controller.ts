@@ -32,6 +32,7 @@ import {
 } from '../http/query-params';
 import { CompanyDirectory } from '../search/company-directory';
 import { ApiError, ApiErrorFilter } from './api-error';
+import { JsonOnlyGuard } from './json-only.guard';
 import { OriginGuard, SessionGuard, type AuthedRequest } from './session.guard';
 import { SkipAuthLimits, SkipEveryLimit } from './throttle';
 
@@ -256,7 +257,7 @@ export class WatchlistController {
    */
   @Post()
   @Header('Cache-Control', 'no-store')
-  @UseGuards(OriginGuard)
+  @UseGuards(JsonOnlyGuard, OriginGuard)
   async add(
     @Req() request: AuthedRequest,
     @Query() query: RawQuery,
@@ -297,7 +298,7 @@ export class WatchlistController {
   /** Removes a symbol. `200` even when it was not there, for the same reason. */
   @Delete(':symbol')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(OriginGuard)
+  @UseGuards(JsonOnlyGuard, OriginGuard)
   @HttpCode(200)
   async remove(
     @Req() request: AuthedRequest,

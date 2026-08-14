@@ -87,6 +87,7 @@ const call = async (
     cookie?: string;
     bearer?: string;
     origin?: string | null;
+    contentType?: string | null;
   } = {},
 ): Promise<{
   status: number;
@@ -94,7 +95,26 @@ const call = async (
   setCookie: string | null;
 }> => {
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+
+  /**
+   * JSON ON EVERY MUTATION, BODY OR NOT, exactly as the shipped page sends it.
+   *
+   * `JsonOnlyGuard` answers 415 to a mutation asked in anything else, and the
+   * bodyless ones — logout, watchlist add, watchlist remove — are the point of
+   * it rather than an exception to it. This helper used to set the header only
+   * alongside a body, which is the same bug the browser client had.
+   *
+   * `contentType: null` omits it and a string overrides it, which is how the
+   * refusal itself is tested.
+   */
+  const contentType =
+    options.contentType === undefined
+      ? method === 'GET'
+        ? null
+        : 'application/json'
+      : options.contentType;
+  if (contentType !== null) headers['Content-Type'] = contentType;
+
   if (options.cookie !== undefined) headers.Cookie = options.cookie;
   if (options.bearer !== undefined) {
     headers.Authorization = `Bearer ${options.bearer}`;
@@ -827,6 +847,64 @@ describe('CSRF keys on transport, not on route', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.data).toMatchObject({ symbol: 'RELIANCE' });
+  });
+});
+
+/**
+ * EVERY MUTATION MUST BE ASKED IN JSON, and that is what makes the transport
+ * rule above safe.
+ *
+ * An HTML form can emit only `application/x-www-form-urlencoded`,
+ * `multipart/form-data` or `text/plain`, so a cross-origin form POST — the one
+ * cross-site shape that needs no preflight — cannot reach a handler here at
+ * all.
+ *
+ * WHERE EACH REFUSAL IS OBSERVED IS NOT ARBITRARY. Nest runs controller-scoped
+ * guards before method-scoped ones, so on `WatchlistController` — which carries
+ * `SessionGuard` at the class level — an unauthenticated request answers 401
+ * long before `JsonOnlyGuard` is reached. The watchlist test therefore presents
+ * a real session; the auth routes carry no class-level session guard and can be
+ * asked cold. Measured 2026-08-14: without a cookie, a form-encoded
+ * `POST /api/watchlist` answers 401, not 415.
+ */
+describe('mutations must be asked in JSON', () => {
+  it('refuses a form-encoded auth mutation with 415', async () => {
+    const response = await call('POST', '/api/auth/login', {
+      body: { email: freshEmail(), password: PASSWORD },
+      contentType: 'application/x-www-form-urlencoded',
+    });
+
+    expect(response.status).toBe(415);
+    expect(response.body.error?.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
+
+  // THE BODYLESS MUTATION IS THE ONE WORTH ATTACKING and is not exempt:
+  // `POST /api/watchlist?symbol=X` takes its argument from the query string, so
+  // a form whose `action` carries the query needs no body at all.
+  it('refuses a bodyless watchlist mutation with no content type', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('POST', '/api/watchlist?symbol=RELIANCE', {
+      cookie,
+      contentType: null,
+    });
+
+    expect(response.status).toBe(415);
+    expect(response.body.error?.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
+
+  // The type alone is compared, so a charset parameter passes and a suffixed
+  // type does not — a prefix match would let `application/json-patch+json`
+  // through.
+  it('accepts a charset parameter on the same media type', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('DELETE', '/api/watchlist/RELIANCE', {
+      cookie,
+      contentType: 'application/json; charset=utf-8',
+    });
+
+    expect(response.status).toBe(200);
   });
 });
 

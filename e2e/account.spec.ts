@@ -60,6 +60,20 @@ const watchConsole = (page: Page): string[] => {
  */
 const origin = originUrl;
 
+/**
+ * What every non-GET call below has to carry.
+ *
+ * The `Origin` for the reason above, and the JSON content type because
+ * `JsonOnlyGuard` refuses a mutation asked in anything else with a 415 — a
+ * bodyless one included, which is most of the calls here. Playwright sets the
+ * type itself when `data` is an object, so the register and login calls need
+ * no help; the watchlist and logout calls send no body at all.
+ */
+const MUTATION_HEADERS = (): Record<string, string> => ({
+  Origin: origin(),
+  'Content-Type': 'application/json',
+});
+
 /** Unique per run, so a killed run cannot collide with the next one. */
 const EMAIL = `e2e-loop-${Date.now()}-${Math.floor(Math.random() * 1e6)}@turret.test`;
 const PASSWORD = RUN_PASSWORD;
@@ -159,12 +173,12 @@ test.afterAll(async ({ request }) => {
       for (const row of body.data) {
         await request.delete(
           `/api/watchlist/${encodeURIComponent(row.symbol)}`,
-          { headers: { Origin: origin() } },
+          { headers: MUTATION_HEADERS() },
         );
       }
     }
     await request.post('/api/auth/logout-all', {
-      headers: { Origin: origin() },
+      headers: MUTATION_HEADERS(),
     });
   }
 
@@ -430,7 +444,7 @@ test.describe('signed in', () => {
     for (const symbol of [loud, quiet]) {
       const added = await page.request.post(
         `/api/watchlist?symbol=${encodeURIComponent(symbol)}`,
-        { headers: { Origin: origin() } },
+        { headers: MUTATION_HEADERS() },
       );
       expect([200, 201]).toContain(added.status());
     }
@@ -493,7 +507,7 @@ test.describe('signed in', () => {
       for (const symbol of [loud, quiet]) {
         await page.request.delete(
           `/api/watchlist/${encodeURIComponent(symbol)}`,
-          { headers: { Origin: origin() } },
+          { headers: MUTATION_HEADERS() },
         );
       }
     }
@@ -528,7 +542,13 @@ test.describe('signed in', () => {
 
     const response = await page.request.post(
       `/api/watchlist?symbol=${encodeURIComponent(symbol)}`,
-      { headers: { Origin: 'http://evil.example' } },
+      {
+        // The JSON type is what makes the ORIGIN the thing refused. It is
+        // asserted first on this route, so a request without it answers 415
+        // and this test would prove the media-type guard while claiming to
+        // prove the CSRF one.
+        headers: { ...MUTATION_HEADERS(), Origin: 'http://evil.example' },
+      },
     );
 
     expect(response.status()).toBe(403);

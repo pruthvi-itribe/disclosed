@@ -358,8 +358,14 @@ export const SCRIPT_BASE = `
       credentials: 'same-origin',
       headers: { Accept: 'application/json' }
     };
-    if (body !== undefined && body !== null) {
+    // SENT ON EVERY MUTATION, INCLUDING THE ONES WITH NO BODY. The server
+    // answers 415 without it - see json-only.guard.ts - and three calls here
+    // pass no body at all: watchlist add, watchlist remove and sign out. Making
+    // this conditional on a body is what would 415 the live dashboard.
+    if (method !== 'GET') {
       init.headers['Content-Type'] = 'application/json';
+    }
+    if (body !== undefined && body !== null) {
       init.body = JSON.stringify(body);
     }
     return fetch(path, init).then(function (res) {

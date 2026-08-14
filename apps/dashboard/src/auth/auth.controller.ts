@@ -25,6 +25,7 @@ import type { AuthConfig } from '../config/auth-config';
 import { ok, type ApiEnvelope } from '../http/envelope';
 import { FilingQueryService } from '../filings/filing-query.service';
 import { ApiError, ApiErrorFilter } from './api-error';
+import { JsonOnlyGuard } from './json-only.guard';
 import { AuthService } from './auth.service';
 import {
   ChangePasswordDto,
@@ -127,7 +128,7 @@ export class AuthController {
    */
   @Post('auth/firebase')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(OriginGuard)
+  @UseGuards(JsonOnlyGuard, OriginGuard)
   @HttpCode(200)
   async firebaseSignIn(
     @Body() body: FirebaseTokenDto,
@@ -160,7 +161,7 @@ export class AuthController {
    */
   @Post('auth/register')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(OriginGuard)
+  @UseGuards(JsonOnlyGuard, OriginGuard)
   @HttpCode(201)
   async register(
     @Body() body: CredentialsDto,
@@ -181,7 +182,7 @@ export class AuthController {
    */
   @Post('auth/login')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(OriginGuard)
+  @UseGuards(JsonOnlyGuard, OriginGuard)
   @HttpCode(200)
   async login(
     @Body() body: CredentialsDto,
@@ -225,7 +226,7 @@ export class AuthController {
   /** Ends this session and clears the cookie. */
   @Post('auth/logout')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(OriginGuard)
+  @UseGuards(JsonOnlyGuard, OriginGuard)
   @HttpCode(200)
   @SkipEveryLimit()
   async logout(
@@ -239,7 +240,7 @@ export class AuthController {
   /** Ends every session this user has. */
   @Post('auth/logout-all')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(SessionGuard, OriginGuard)
+  @UseGuards(JsonOnlyGuard, SessionGuard, OriginGuard)
   @HttpCode(200)
   @SkipEveryLimit()
   async logoutAll(
@@ -263,7 +264,7 @@ export class AuthController {
    */
   @Post('auth/password')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(SessionGuard, OriginGuard)
+  @UseGuards(JsonOnlyGuard, SessionGuard, OriginGuard)
   @HttpCode(200)
   async changePassword(
     @Body() body: ChangePasswordDto,
