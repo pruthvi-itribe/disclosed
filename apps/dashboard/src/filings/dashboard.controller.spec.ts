@@ -43,6 +43,7 @@ const SIGNED_IN: Signedin = {
   email: 'asha@example.com',
   sessionId: 's1',
   lastSeenWatchlistAt: null,
+  transport: 'cookie',
 };
 
 /**

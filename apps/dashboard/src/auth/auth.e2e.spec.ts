@@ -85,6 +85,7 @@ const call = async (
   options: {
     body?: unknown;
     cookie?: string;
+    bearer?: string;
     origin?: string | null;
   } = {},
 ): Promise<{
@@ -95,6 +96,9 @@ const call = async (
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   if (options.cookie !== undefined) headers.Cookie = options.cookie;
+  if (options.bearer !== undefined) {
+    headers.Authorization = `Bearer ${options.bearer}`;
+  }
   if (options.origin !== null) headers.Origin = options.origin ?? origin;
 
   const response = await fetch(`${origin}${path}`, {
@@ -737,6 +741,35 @@ describe('the Watching feed', () => {
     expect((response.body.meta as { watching: unknown[] }).watching).toEqual(
       [],
     );
+  });
+});
+
+describe('the Bearer transport', () => {
+  it('resolves the same session the cookie does', async () => {
+    // ONE CREDENTIAL, TWO ENVELOPES. A script has no cookie jar, so the only
+    // way it can present a session is a header — and if the two doors resolved
+    // differently there would be two answers to "who is this request", which is
+    // the thing `SessionService` exists to prevent.
+    const { email, cookie } = await registerFresh();
+    const token = cookie.split('=')[1];
+
+    const viaCookie = await call('GET', '/api/me', { cookie });
+    const viaBearer = await call('GET', '/api/me', { bearer: token });
+
+    expect(viaBearer.status).toBe(200);
+    expect((viaBearer.body.data as { email: string }).email).toBe(email);
+    expect(viaBearer.body.data).toEqual(viaCookie.body.data);
+  });
+
+  it('refuses a Bearer token that was never minted', async () => {
+    // Token-shaped and the right length, so it gets as far as the indexed read
+    // and is refused for not being there rather than for not parsing.
+    const response = await call('GET', '/api/watchlist', {
+      bearer: 'Z'.repeat(43),
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error?.code).toBe('UNAUTHENTICATED');
   });
 });
 
