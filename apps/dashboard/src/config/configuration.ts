@@ -88,6 +88,20 @@ export interface DashboardConfig {
    * See `readTrustProxy` for the two forms and for why `true` is refused.
    */
   readonly trustProxy: boolean | number | string;
+  /**
+   * Origins allowed to call this API cross-origin, or empty.
+   *
+   * NOT the browser path. The React client is served same-origin by the Caddy
+   * sidecar, so it never makes a cross-origin request and never needs this.
+   * It exists for a local React dev server on another port, a staging build,
+   * and non-browser clients.
+   *
+   * Empty allows nothing, and a wildcard is refused outright: `*` and
+   * `credentials` are mutually exclusive per the CORS specification, so
+   * honouring one would produce a server that answers every preflight and
+   * still drops every session.
+   */
+  readonly corsAllowedOrigins: readonly string[];
 }
 
 /**
@@ -388,6 +402,36 @@ export const readTrustProxy = (
   return value;
 };
 
+/**
+ * Reads the cross-origin allowlist, or stops the process on a wildcard.
+ *
+ * Unset and blank both mean the empty list, which allows nothing — the same
+ * fail-closed rule every other key here follows, and the correct production
+ * value: the React client is served same-origin by the Caddy sidecar, so CORS
+ * never engages at all. A `CORS_ALLOWED_ORIGINS=` line parsed to `['']` would
+ * be worse than useless, because an empty entry matches a request that sent no
+ * `Origin` header.
+ */
+const readCorsAllowedOrigins = (env: NodeJS.ProcessEnv): readonly string[] => {
+  const raw = env.CORS_ALLOWED_ORIGINS;
+  if (raw === undefined || raw.trim() === '') return [];
+
+  const origins = raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin !== '');
+
+  if (origins.includes('*')) {
+    throw new Error(
+      'CORS_ALLOWED_ORIGINS may not be `*`: a wildcard cannot carry ' +
+        'credentials, so every session cookie and Bearer header would be ' +
+        'dropped. Name the origins.',
+    );
+  }
+
+  return origins;
+};
+
 /** Whether an origin names this machine. Unparseable is not loopback. */
 const isLoopbackOrigin = (origin: string): boolean => {
   try {
@@ -420,6 +464,7 @@ export const loadDashboardConfig = (
     auth: loadAuthConfig(env),
     adminEnabled: readAdminEnabled(env, publicOrigin),
     trustProxy: readTrustProxy(env),
+    corsAllowedOrigins: readCorsAllowedOrigins(env),
   };
 };
 
@@ -459,6 +504,13 @@ export const describeDashboardConfig = (config: DashboardConfig): string =>
     // an `origin=https://...` line is the shape of a misconfigured deployment,
     // and this is where it shows.
     `proxy=${config.trustProxy === false ? 'off' : String(config.trustProxy)}`,
+    // HOW MANY ORIGINS MAY CALL THIS API CROSS-ORIGIN, and `cors=0` is the
+    // shipped production value rather than a warning: the React client is
+    // served same-origin by the Caddy sidecar and never makes a cross-origin
+    // request. It is printed because `cors=0` is also the shape of a dev
+    // server whose origin was never added, and a blocked preflight says
+    // nothing about which of the two happened.
+    `cors=${config.corsAllowedOrigins.length}`,
     // WHICH WAY IN IS OPEN, and whether it actually works. A host running
     // `AUTH_MODE=firebase` with no project keys serves a sign-in page nobody
     // can sign in through, and this line is where an operator looks first.
