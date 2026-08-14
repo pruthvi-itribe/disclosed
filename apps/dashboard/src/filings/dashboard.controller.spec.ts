@@ -8,7 +8,7 @@ import {
   METHOD_METADATA,
   PATH_METADATA,
 } from '@nestjs/common/constants';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { SessionGuard } from '../auth/session.guard';
 import type { SessionService, Signedin } from '../auth/session.service';
 import {
@@ -19,6 +19,7 @@ import {
   MAX_DAYS,
   MAX_LIMIT,
 } from './dashboard.controller';
+import type { RawQuery } from '../http/query-params';
 import type { FilingQueryService, RecentQuery } from './filing-query.service';
 import type { CompanyDirectory } from '../search/company-directory';
 import type { DirectorySnapshot } from '../search/directory.types';
@@ -154,6 +155,57 @@ interface Calls {
 
 let calls: Calls;
 let controller: DashboardController;
+
+/**
+ * What `getFilings` WROTE, rather than what it returned.
+ *
+ * The route answers through `@Res` now, because the validator it sends is a
+ * hash of the exact bytes it sends and the two have to be one string — the
+ * argument is on the route. That makes a pair of doubles the only way to call
+ * it from a unit test, so here is the pair: they record, and this file goes on
+ * being about ARGUMENT MAPPING. The wire itself — the status, the header, the
+ * empty body on a 304 — is `dashboard.e2e.spec.ts`'s subject, over real HTTP.
+ */
+interface Sent {
+  status: number;
+  readonly headers: Record<string, string>;
+  body: string | null;
+}
+
+const askFilings = (
+  query: RawQuery,
+  options: {
+    readonly ifNoneMatch?: string;
+    readonly on?: DashboardController;
+  } = {},
+): Promise<Sent> => {
+  const sent: Sent = { status: 200, headers: {}, body: null };
+  const response = {
+    setHeader: (name: string, value: string) => {
+      sent.headers[name.toLowerCase()] = value;
+    },
+    status: (code: number) => {
+      sent.status = code;
+      return response;
+    },
+    type: () => response,
+    send: (body: string) => {
+      sent.body = body;
+      return response;
+    },
+    end: () => response,
+  };
+  const request = {
+    headers:
+      options.ifNoneMatch === undefined
+        ? {}
+        : { 'if-none-match': options.ifNoneMatch },
+  } as unknown as Request;
+
+  return (options.on ?? controller)
+    .getFilings(query, request, response as unknown as Response)
+    .then(() => sent);
+};
 
 beforeEach(() => {
   calls = { recent: [], categories: [], days: [] };
@@ -380,7 +432,7 @@ describe('DashboardController — summary', () => {
 
 describe('DashboardController — filings', () => {
   it('applies the documented defaults when nothing is asked for', async () => {
-    await controller.getFilings({});
+    await askFilings({});
 
     expect(calls.recent).toEqual([
       {
@@ -393,7 +445,7 @@ describe('DashboardController — filings', () => {
   });
 
   it('passes the validated filters through untouched', async () => {
-    await controller.getFilings({
+    await askFilings({
       limit: '50',
       offset: '100',
       symbol: 'reliance',
@@ -408,11 +460,40 @@ describe('DashboardController — filings', () => {
     });
   });
 
-  it('returns the page metadata beside the rows', async () => {
-    const response = await controller.getFilings({ limit: '10' });
+  it('sends the page metadata beside the rows, in the envelope', async () => {
+    const sent = await askFilings({ limit: '10' });
 
-    expect(response.success).toBe(true);
-    expect(response.meta).toMatchObject({ limit: 10, offset: 0 });
+    expect(sent.status).toBe(200);
+    expect(JSON.parse(sent.body ?? 'null')).toMatchObject({
+      success: true,
+      meta: { limit: 10, offset: 0 },
+    });
+  });
+
+  it('answers a repeat ask with 304 and no body, and repeats the validator', async () => {
+    // The saving itself, at the level where the comparison lives. What it costs
+    // to get wrong is a page that never updates, so the validator that comes
+    // back is asserted as well as the status.
+    const first = await askFilings({ limit: '10' });
+    const validator = first.headers.etag;
+
+    expect(validator).toMatch(/^"[A-Za-z0-9_-]{43}"$/);
+
+    const second = await askFilings(
+      { limit: '10' },
+      { ifNoneMatch: validator },
+    );
+
+    expect(second.status).toBe(304);
+    expect(second.body).toBeNull();
+    expect(second.headers.etag).toBe(validator);
+  });
+
+  it('answers a validator it did not issue with the whole page', async () => {
+    const sent = await askFilings({ limit: '10' }, { ifNoneMatch: '"stale"' });
+
+    expect(sent.status).toBe(200);
+    expect(sent.body).not.toBeNull();
   });
 
   it.each([
@@ -421,15 +502,15 @@ describe('DashboardController — filings', () => {
     ['offset', '-1'],
     ['limit', String(MAX_LIMIT + 1)],
   ])('rejects %s=%s rather than quietly defaulting it', async (key, value) => {
-    await expect(controller.getFilings({ [key]: value })).rejects.toThrow(
+    await expect(askFilings({ [key]: value })).rejects.toThrow(
       BadRequestException,
     );
   });
 
   it('rejects a filter given as an object', async () => {
-    await expect(
-      controller.getFilings({ symbol: { $ne: null } }),
-    ).rejects.toThrow(BadRequestException);
+    await expect(askFilings({ symbol: { $ne: null } })).rejects.toThrow(
+      BadRequestException,
+    );
   });
 });
 
@@ -488,19 +569,19 @@ describe('DashboardController — enrichment filters', () => {
     ['amount', 'extracted'],
     ['amount', 'refused'],
   ])('passes %s=%s through to the query layer', async (key, value) => {
-    await controller.getFilings({ [key]: value });
+    await askFilings({ [key]: value });
 
     expect(calls.recent[0]).toMatchObject({ [key]: value });
   });
 
   it('passes a refusal reason through', async () => {
-    await controller.getFilings({ refusal: 'unit-scaled-header' });
+    await askFilings({ refusal: 'unit-scaled-header' });
 
     expect(calls.recent[0].refusal).toBe('unit-scaled-header');
   });
 
   it('passes the plans filter through to the query layer', async () => {
-    await controller.getFilings({ plans: 'only' });
+    await askFilings({ plans: 'only' });
 
     expect(calls.recent[0].plans).toBe('only');
   });
@@ -512,7 +593,7 @@ describe('DashboardController — enrichment filters', () => {
   ])(
     'rejects an unknown %s value "%s" rather than matching nothing',
     async (key, value) => {
-      await expect(controller.getFilings({ [key]: value })).rejects.toThrow(
+      await expect(askFilings({ [key]: value })).rejects.toThrow(
         BadRequestException,
       );
     },
@@ -529,40 +610,38 @@ describe('DashboardController — enrichment filters', () => {
     async (key, value) => {
       // A filter that silently matched nothing would be indistinguishable from
       // "nothing was refused", on the one page whose job is showing refusals.
-      await expect(controller.getFilings({ [key]: value })).rejects.toThrow(
+      await expect(askFilings({ [key]: value })).rejects.toThrow(
         BadRequestException,
       );
     },
   );
 
   it('trims surrounding whitespace before checking the allowlist', async () => {
-    await controller.getFilings({ state: ' enriched ' });
+    await askFilings({ state: ' enriched ' });
 
     expect(calls.recent[0].state).toBe('enriched');
   });
 
   it('names the accepted values when it rejects one', async () => {
-    await expect(controller.getFilings({ state: 'done' })).rejects.toThrow(
-      /enriched/,
-    );
+    await expect(askFilings({ state: 'done' })).rejects.toThrow(/enriched/);
   });
 
   it('rejects a repeated enrichment filter', async () => {
     // Express parses `?state=a&state=b` into an array, which must never reach
     // a Mongo filter as a value the caller chose.
     await expect(
-      controller.getFilings({ state: ['enriched', 'pending'] }),
+      askFilings({ state: ['enriched', 'pending'] }),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('rejects a bracketed operator smuggled into a filter', async () => {
-    await expect(
-      controller.getFilings({ refusal: { $ne: null } }),
-    ).rejects.toThrow(BadRequestException);
+    await expect(askFilings({ refusal: { $ne: null } })).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('leaves every enrichment filter undefined when none is given', async () => {
-    await controller.getFilings({});
+    await askFilings({});
 
     expect(calls.recent[0].state).toBeUndefined();
     expect(calls.recent[0].amount).toBeUndefined();
@@ -641,7 +720,9 @@ describe('DashboardController — the panel is a deployment decision', () => {
     const off = makeController(false);
 
     await expect(off.getSummary()).resolves.toBeDefined();
-    await expect(off.getFilings({})).resolves.toBeDefined();
+    await expect(askFilings({}, { on: off })).resolves.toMatchObject({
+      status: 200,
+    });
     await expect(off.getSuggestions({})).resolves.toBeDefined();
     expect(off.getHealth()).toBeDefined();
   });

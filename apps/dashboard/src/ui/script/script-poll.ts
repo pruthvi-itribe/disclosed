@@ -79,6 +79,18 @@ export const SCRIPT_POLL = `
       // other view polls anonymously and touches no session.
       state.view === 'watching' ? refreshWatching(fresh) : getJson(query()).then(function (b) {
         if (!fresh()) return;
+        // NOTHING CHANGED SINCE THE LAST ASK, so the server sent 304 and no
+        // body - see the header on 'api/filings' for what that is worth in
+        // bytes. There is nothing to draw and what is on screen is current.
+        //
+        // THE CLOCK IS THE EXCEPTION. Each card's "3 min ago" is read against
+        // the BROWSER's clock rather than against the payload, so it goes wrong
+        // whether or not a filing changed; 'touchFeedTimes' rewrites those four
+        // characters in place, from the timestamp on the card itself.
+        if (b === NOT_MODIFIED) {
+          touchFeedTimes(document);
+          return;
+        }
         // BOTH VIEWS, FROM ONE REQUEST. Rendering only the visible one would
         // save a few milliseconds of DOM work and cost a tab switch a round
         // trip — and the two would then be able to disagree, which is the one

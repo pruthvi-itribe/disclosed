@@ -11,6 +11,7 @@ import {
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
 import { ok, okWith, type ApiEnvelope } from '../http/envelope';
 import { CLAIM_TOPICS } from '@app/filings';
@@ -253,13 +254,61 @@ export class DashboardController {
    * default — a filter that quietly did nothing is indistinguishable from one
    * that matched everything, and on the refusal filters that difference is the
    * whole point of the view.
+   *
+   * ================================================================
+   * THE ONE ROUTE THAT CARRIES A VALIDATOR, AND WHY IT IS THIS ONE
+   * ================================================================
+   *
+   * The page polls every four seconds and asks two questions a tick. Measured
+   * against the local stack on 2026-08-14, signed in: `api/summary` answers in
+   * 475 bytes, and this route in 104,478 for the ask the feed actually makes
+   * (`limit=25&offset=0&tier=verified`, read off Chromium) — 213,403 once the
+   * feed auto-grows to 50 rows. At 900 polls an hour that is ~94 MB an hour for
+   * ONE open tab, nearly all of it re-sending rows the reader is already
+   * looking at. Server time was never the problem — 9.3 to 12.6 ms a request,
+   * five runs — and a 304 does not save it (the query still runs, and answers
+   * in 8.2 to 8.6 ms). The bytes were the problem: the same revalidated ask is
+   * 0 bytes of body and 191 of header.
+   *
+   * So this route answers a repeat ask with 304 and nothing else, and the
+   * summary is left alone: 475 bytes does not repay a conditional request, and
+   * its body carries `generatedAt` anyway, so no two answers are ever equal.
+   *
+   * THE VALIDATOR IS A HASH OF THE BYTES BELOW IT, which is the only definition
+   * that is correct by construction. The tempting shortcut is the newest
+   * arrival timestamp the summary already computes, and it is WRONG: enrichment
+   * finishes on filings that are already in the window and rewrites their
+   * claims, their state and their outcome without moving any arrival time. A
+   * reader would sit on a 304 while the page silently went stale.
+   *
+   * WRITTEN THROUGH `@Res` RATHER THAN RETURNED, so the string that is hashed
+   * IS the string that is sent. Handing the envelope back to Nest and hashing a
+   * second serialisation of it would agree today and would be a hash of
+   * something else the day an express `json replacer` is set.
+   *
+   * `Cache-Control: no-store` DOES NOT MOVE, and the two are not in tension.
+   * `no-store` says no cache may keep this — it is an authenticated response —
+   * and a browser therefore never has a validator of its own to revalidate
+   * with. This is the APPLICATION revalidating explicitly: the page holds the
+   * ETag in a JS variable for as long as the tab is open, and nothing is
+   * stored. See `script-base.ts`.
+   *
+   * EXPRESS'S OWN FRESHNESS IS NOT WHAT IS RELIED ON. It tags every response it
+   * sends `W/"..."` and would answer 304 by itself — except that `req.fresh` is
+   * false whenever the REQUEST carries `Cache-Control: no-cache`, which is a
+   * header the client did not choose to send (Node's fetch adds it to any
+   * conditional request, and a browser adds it on a reload). A saving that
+   * switches itself off on a header nobody wrote is not a mechanism; this
+   * comparison is one line and says what it does.
    */
   @Get('api/filings')
   @Header('Cache-Control', 'no-store')
   @UseGuards(SessionGuard)
   async getFilings(
     @Query() query: RawQuery,
-  ): Promise<ApiEnvelope<readonly FilingView[], PageMeta>> {
+    @Req() request: Request,
+    @Res() response: Response,
+  ): Promise<void> {
     const page = await this.filings.getRecent({
       limit: readBoundedInteger('limit', query, {
         fallback: DEFAULT_LIMIT,
@@ -300,7 +349,34 @@ export class DashboardController {
       refusal: readFilter('refusal', query),
     });
 
-    return okWith(page.items, page.meta);
+    // TYPED ON THE WAY OUT, THOUGH THE METHOD RETURNS NOTHING. Writing through
+    // `@Res` costs this route its declared return type, and the envelope's
+    // shape is a contract the page parses; stated here, it is still checked.
+    const envelope: ApiEnvelope<readonly FilingView[], PageMeta> = okWith(
+      page.items,
+      page.meta,
+    );
+    const body = JSON.stringify(envelope);
+    // STRONG — no `W/` prefix — because it is a hash of the whole body rather
+    // than of a property of it, and because the page tells this validator apart
+    // from express's automatic weak one by exactly that: it revalidates against
+    // the tag a route meant to issue, not against every tag a framework added.
+    const validator = `"${createHash('sha256').update(body).digest('base64url')}"`;
+
+    // ON BOTH ANSWERS. A 304 without it leaves the reader holding a validator
+    // they can no longer confirm, and the next poll would be a full page again.
+    response.setHeader('ETag', validator);
+
+    // Exact equality, and deliberately no list parsing: the one client that
+    // sends this header sends back the one tag it was given. A comma-separated
+    // list from something else is simply not a match, which is a full page —
+    // the safe direction.
+    if (request.headers['if-none-match'] === validator) {
+      response.status(304).end();
+      return;
+    }
+
+    response.type('application/json').send(body);
   }
 
   /**

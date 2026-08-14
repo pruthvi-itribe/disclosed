@@ -536,3 +536,148 @@ describe('dashboard over HTTP — type-ahead', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 });
+
+/**
+ * REVALIDATION, ON THE ONE ROUTE WHERE THE BYTES ARE WORTH A PROTOCOL.
+ *
+ * The page polls every four seconds and asks two questions each tick. Measured
+ * against the local stack on 2026-08-14: `api/summary` answers in 475 bytes and
+ * the feed's own ask — `limit=25&offset=0&tier=verified` — in 104,478, which is
+ * ~94 MB an hour for one open tab, nearly all of it re-sending rows the reader
+ * is already looking at. Revalidated, the same ask is 0 bytes of body and 191
+ * of header. Server time was never the problem and is not what this saves: 9.3
+ * to 12.6 ms for the 200 against 8.2 to 8.6 for the 304.
+ *
+ * SO THE FEED CARRIES A VALIDATOR AND THE SUMMARY DOES NOT. 475 bytes does not
+ * repay a conditional request, and the summary's body is not even stable — it
+ * carries `generatedAt`, so no two answers are ever byte-equal and every
+ * conditional ask would be answered 200 anyway.
+ *
+ * WHY IT HAD TO BE BUILT AT ALL, given express tags every response it sends:
+ * `Cache-Control: no-store` means the browser never stores the response, so it
+ * never has a validator to revalidate WITH and never sends one. This is the
+ * APPLICATION revalidating explicitly — the store is a JS object in the tab,
+ * and `no-store` stays exactly as it was.
+ */
+describe('dashboard over HTTP — revalidating the feed', () => {
+  const FEED = '/api/filings?limit=2';
+
+  const getRaw = (path: string, validator?: string): Promise<Response> =>
+    fetch(`${origin}${path}`, {
+      headers:
+        validator === undefined
+          ? signedInHeaders()
+          : { ...signedInHeaders(), 'If-None-Match': validator },
+    });
+
+  it('answers a first ask with the rows and a strong validator', async () => {
+    const response = await getRaw(FEED);
+
+    expect(response.status).toBe(200);
+    // STRONG, AND THAT IS THE ASSERTION. Express tags everything else it sends
+    // `W/"..."` on the way out; this one is quoted base64url of a sha256 over
+    // the exact bytes below it, which is what makes it worth trusting.
+    expect(response.headers.get('etag')).toMatch(/^"[A-Za-z0-9_-]{43}"$/);
+    // STILL JSON. The route writes its own body now rather than returning one
+    // for Nest to serialise, and express types a bare string as `text/html`.
+    expect(response.headers.get('content-type')).toBe(
+      'application/json; charset=utf-8',
+    );
+    expect((await response.text()).length).toBeGreaterThan(100);
+  });
+
+  it('issues a strong validator on this route and on no other', async () => {
+    // THE BOUND THE PAGE RELIES ON. `getJson` stores a validator only when it
+    // is STRONG, which is how it revalidates against a tag a route meant to
+    // issue rather than against the `W/"..."` express puts on everything. Add
+    // a second strong one and its renderer starts receiving the "nothing
+    // changed" sentinel it was never taught to expect — silently, on the tick
+    // after the data stops moving. This says which route may have one.
+    const others = ['/api/summary', '/api/suggest?q=rel', '/api/categories'];
+
+    for (const path of others) {
+      const validator = (await getRaw(path)).headers.get('etag');
+      expect([path, validator === null || validator.startsWith('W/')]).toEqual([
+        path,
+        true,
+      ]);
+    }
+  });
+
+  it('answers the same ask with 304 and no body at all', async () => {
+    const first = await getRaw(FEED);
+    const validator = first.headers.get('etag') ?? '';
+    const second = await getRaw(FEED, validator);
+
+    expect(second.status).toBe(304);
+    // CARRIED ON THE 304 TOO. A revalidation that answers without the validator
+    // leaves the client holding one it can no longer confirm.
+    expect(second.headers.get('etag')).toBe(validator);
+    expect(await second.text()).toBe('');
+  });
+
+  it('keeps the 304 unstorable, exactly like the 200 it stands in for', async () => {
+    const first = await getRaw(FEED);
+    const second = await getRaw(FEED, first.headers.get('etag') ?? '');
+
+    expect(second.status).toBe(304);
+    // THE SECURITY PROPERTY, UNCHANGED. Every one of these responses is behind
+    // a session; a storable one is a reader's feed replayable to somebody else.
+    expect(second.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('answers a validator it did not issue with the whole page', async () => {
+    const response = await getRaw(FEED, '"not-a-validator-this-server-issued"');
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Envelope<FilingView[], PageMeta>;
+    expect(body.data.map((row) => row.seqId)).toEqual([103, 102]);
+  });
+
+  it('validates per URL, so changing a filter is never answered 304', async () => {
+    const feed = await getRaw(FEED);
+    const filtered = await getRaw(
+      `${FEED}&category=${encodeURIComponent('Board Meeting')}`,
+      feed.headers.get('etag') ?? '',
+    );
+
+    expect(filtered.status).toBe(200);
+    const body = (await filtered.json()) as Envelope<FilingView[], PageMeta>;
+    expect(body.data.map((row) => row.seqId)).toEqual([102]);
+  });
+
+  it('issues a different validator once the rows behind it change', async () => {
+    // THE ONE THAT PROVES THE MECHANISM, so the data actually changes rather
+    // than the test asserting on a constant. A validator computed from
+    // something other than the payload — the newest arrival timestamp, say —
+    // passes every other test in this block and fails this one, which is why
+    // it is here: enrichment finishes on filings already in the window and
+    // rewrites their claims without moving any arrival time.
+    const probe = '/api/filings?symbol=ETAGPROBE';
+    const empty = await getRaw(probe);
+    const before = empty.headers.get('etag') ?? '';
+
+    expect(empty.status).toBe(200);
+    expect((await getRaw(probe, before)).status).toBe(304);
+
+    await model.insertMany([
+      {
+        ...makeFiling(9001, '2026-08-05T07:00:00.000Z', 'General Updates'),
+        symbol: 'ETAGPROBE',
+        companyName: 'Etag Probe Limited',
+      },
+    ]);
+
+    try {
+      const after = await getRaw(probe, before);
+
+      expect(after.status).toBe(200);
+      expect(after.headers.get('etag')).not.toBe(before);
+      const body = (await after.json()) as Envelope<FilingView[], PageMeta>;
+      expect(body.data.map((row) => row.seqId)).toEqual([9001]);
+    } finally {
+      // The collection is left as the rest of this file expects to find it.
+      await model.deleteOne({ seqId: 9001 });
+    }
+  });
+});
