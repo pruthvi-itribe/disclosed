@@ -227,11 +227,22 @@ check() {
   # process dies before jest prints ANY completion line — but the stack it dies
   # with runs through jest-circus. Checked both ways: `zzz-no-such-suite`
   # matches none of these patterns, and the dropped-await run matches eleven.
+  #
+  # `.*` AFTER `node_modules/`, NOT A LITERAL PATH, and for the same reason the
+  # TS pattern above needs one. Jest underlines the package segment of every
+  # stack frame whether or not stdout is a TTY, so the literal bytes are
+  # `node_modules/<ESC>[4mjest-circus`. Measured on the fire-and-forget mutant,
+  # which is the only one here that kills the runner: `node_modules/jest-`
+  # scored 0 and the verdict printed was HARNESS ERROR — a caught mutation
+  # reported as a broken toolchain, and counted as a failure. With `.*` it
+  # scores the eleven frames the paragraph above already claimed, and prints
+  # CRASHED. The other three evidence forms all scored 0 on that run, so this
+  # branch was carrying the whole verdict alone.
   if ! grep -qE "^Tests:" <<<"$out"; then
     if [ "$rc" -eq 0 ]; then
       echo "SURVIVED | $label   <-- TEST GAP"
       FAILURES=$((FAILURES + 1))
-    elif grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/jest-(circus|runner)|Ran all test suites" <<<"$out"; then
+    elif grep -qE "^(Test Suites:|PASS |FAIL )|node_modules/.*jest-(circus|runner)|Ran all test suites" <<<"$out"; then
       echo "CRASHED  | $label"
       echo "           runner died before reporting (exit $rc); the suite is red"
       CRASHES=$((CRASHES + 1))

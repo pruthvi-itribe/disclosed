@@ -74,8 +74,10 @@
 #     nouns, no advisory words) rather than its rows.
 #   - `apps/ingest/src/main.ts`. Composition, verified by running the process.
 #
-# Tally, so a report can quote it without recounting: 38 mutations across eight
-# groups, plus 4 independence checks = 42 `check` calls.
+# Tally, so a report can quote it without recounting: 45 mutations across eight
+# groups, plus 4 independence checks = 49 `check` calls. (Was 38 + 4 = 42, and
+# had drifted: seven mutations were added without it. Recounted against a full
+# run, which reported 49 verdicts.)
 
 set -uo pipefail
 
