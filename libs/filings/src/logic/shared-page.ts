@@ -87,7 +87,27 @@
  * filings print it both ways, and bounded at both ends so a longer alphanumeric
  * run cannot contribute a false one.
  */
-const COMPANY_IDENTITY = /\b[LU]\d{5}[A-Za-z]{2}\d{4}[A-Za-z]{3}\d{6}\b/g;
+/**
+ * A Corporate Identification Number, in whatever case the document prints it.
+ *
+ * THE `i` FLAG IS LOAD-BEARING AND WAS MISSING. The leading class used to be
+ * `[LU]` while the letter runs after it were `[A-Za-z]`, so a CIN printed
+ * entirely in lower case matched NOTHING — and because this gate fails OPEN
+ * (fewer identities means "not a shared page"), such a document named zero
+ * companies and walked straight through the attribution refusal. That is the
+ * one refusal this project may never get wrong: a shared page whose claims are
+ * published carries another company's words under this filer's name.
+ *
+ * The spec had a test called "finds a CIN however the filing cases it" that
+ * passed the whole time. It fed one upper-case CIN and one lower-case one and
+ * asserted a count of 1 — which it got because only the upper-case half ever
+ * matched. It asserted the right number for the wrong reason.
+ *
+ * Found by mutation testing on 2026-08-14: narrowing the letter runs to `[A-Z]`
+ * and dropping the `.toUpperCase()` below BOTH survived the full 5,711-test
+ * suite, which is what sent somebody to read this line.
+ */
+const COMPANY_IDENTITY = /\b[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}\b/gi;
 
 /**
  * Every distinct company registration number the document prints.
