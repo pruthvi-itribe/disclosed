@@ -126,6 +126,9 @@ describe('loadDashboardConfig', () => {
       // Nothing is in front of this process, so a forwarded header is a claim
       // rather than a fact. Express's own default, restated.
       trustProxy: false,
+      // Nothing calls this API cross-origin by default. The React client is
+      // served same-origin by the Caddy sidecar and never needs an entry here.
+      corsAllowedOrigins: [],
     });
   });
 
@@ -155,6 +158,7 @@ describe('loadDashboardConfig', () => {
       auth: { mode: 'local', firebase: null, missing: [] },
       adminEnabled: true,
       trustProxy: false,
+      corsAllowedOrigins: [],
     });
   });
 
@@ -420,5 +424,51 @@ describe('readAdminEnabled — where the operator panel exists', () => {
     expect(describeDashboardConfig(loadDashboardConfig(env()))).toContain(
       'admin=on',
     );
+  });
+});
+
+describe('CORS_ALLOWED_ORIGINS', () => {
+  it('is empty when unset, which allows nothing', () => {
+    expect(loadDashboardConfig(env()).corsAllowedOrigins).toEqual([]);
+  });
+
+  // FAILS CLOSED, the posture isAllowedOrigin already takes: a blank setting
+  // that parsed to [''] would match an empty Origin header and allow it.
+  it('is empty when blank, rather than holding an empty entry', () => {
+    expect(
+      loadDashboardConfig(env({ CORS_ALLOWED_ORIGINS: '  ' }))
+        .corsAllowedOrigins,
+    ).toEqual([]);
+  });
+
+  it('splits on commas and trims', () => {
+    expect(
+      loadDashboardConfig(
+        env({ CORS_ALLOWED_ORIGINS: 'https://a.example, https://b.example' }),
+      ).corsAllowedOrigins,
+    ).toEqual(['https://a.example', 'https://b.example']);
+  });
+
+  // A wildcard is refused rather than honoured: `*` and credentials are
+  // mutually exclusive per the CORS specification, so an operator who sets it
+  // gets a server that will not start instead of a session that never arrives.
+  it('refuses a wildcard by stopping the process', () => {
+    expect(() =>
+      loadDashboardConfig(env({ CORS_ALLOWED_ORIGINS: '*' })),
+    ).toThrow(/CORS_ALLOWED_ORIGINS/);
+  });
+
+  // Printed because an empty list is both the shipped production value and the
+  // shape of a dev server whose origin was never added — an operator debugging
+  // a blocked preflight reads this line first.
+  it('counts the origins in the startup line', () => {
+    expect(describeDashboardConfig(loadDashboardConfig(env()))).toContain(
+      'cors=0',
+    );
+    expect(
+      describeDashboardConfig(
+        loadDashboardConfig(env({ CORS_ALLOWED_ORIGINS: 'https://a.example' })),
+      ),
+    ).toContain('cors=1');
   });
 });

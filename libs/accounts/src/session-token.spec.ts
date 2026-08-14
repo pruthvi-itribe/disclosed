@@ -5,6 +5,7 @@ import {
   mintSessionToken,
   needsRenewal,
   readSessionCookie,
+  readSessionToken,
   RENEW_AFTER_MS,
   SESSION_COOKIE,
   SESSION_TOKEN_BYTES,
@@ -204,5 +205,68 @@ describe('readSessionCookie', () => {
 
   it('ignores a value that is not token-shaped', () => {
     expect(readSessionCookie(`${SESSION_COOKIE}=has spaces`)).toBeNull();
+  });
+});
+
+describe('readSessionToken', () => {
+  const TOKEN = 'A'.repeat(43);
+  const COOKIE = `${SESSION_COOKIE}=${TOKEN}`;
+
+  it('reads a Bearer token', () => {
+    expect(readSessionToken(`Bearer ${TOKEN}`, undefined)).toEqual({
+      token: TOKEN,
+      transport: 'bearer',
+    });
+  });
+
+  it('reads the cookie when there is no Authorization header', () => {
+    expect(readSessionToken(undefined, COOKIE)).toEqual({
+      token: TOKEN,
+      transport: 'cookie',
+    });
+  });
+
+  // BEARER WINS. It is the explicit credential; a cookie is ambient.
+  // Cookie-first would let a stale cookie shadow a freshly issued token.
+  it('prefers Bearer when both are present', () => {
+    const other = 'B'.repeat(43);
+    expect(
+      readSessionToken(`Bearer ${TOKEN}`, `${SESSION_COOKIE}=${other}`),
+    ).toEqual({ token: TOKEN, transport: 'bearer' });
+  });
+
+  // RFC 6750 says the scheme is case-insensitive.
+  it('accepts the scheme in any case', () => {
+    expect(readSessionToken(`bEaReR ${TOKEN}`, undefined)?.transport).toBe(
+      'bearer',
+    );
+  });
+
+  it('refuses a scheme that is not Bearer', () => {
+    expect(readSessionToken(`Basic ${TOKEN}`, undefined)).toBeNull();
+  });
+
+  // The same shape check readSessionCookie makes, and for the same reason: a
+  // value we could not have minted costs an indexed read to disprove.
+  it('refuses a Bearer value that is not token-shaped', () => {
+    expect(readSessionToken('Bearer not a token!', undefined)).toBeNull();
+    expect(readSessionToken('Bearer ', undefined)).toBeNull();
+  });
+
+  // Express hands a repeated header through as an array; String(array) would
+  // join it into something that could pass.
+  it('refuses a repeated Authorization header', () => {
+    expect(readSessionToken([`Bearer ${TOKEN}`], undefined)).toBeNull();
+  });
+
+  // A malformed Authorization header must NOT silently fall through to the
+  // cookie: a client that meant to present a Bearer token and got it wrong is
+  // told so, rather than being answered as somebody else.
+  it('does not fall back to the cookie when Authorization is malformed', () => {
+    expect(readSessionToken('Bearer !!!', COOKIE)).toBeNull();
+  });
+
+  it('returns null when neither is present', () => {
+    expect(readSessionToken(undefined, undefined)).toBeNull();
   });
 });

@@ -188,3 +188,51 @@ export const readSessionCookie = (
 
   return null;
 };
+
+/** Which header carried the credential. The CSRF decision turns on this. */
+export type SessionTransport = 'bearer' | 'cookie';
+
+/** A credential a request presented, and how it arrived. */
+export interface PresentedSession {
+  readonly token: string;
+  readonly transport: SessionTransport;
+}
+
+/**
+ * The one answer to "how is this request credentialed".
+ *
+ * Both `SessionService` and `OriginGuard` call this, which is deliberate: the
+ * guard must decide whether the CSRF check applies WITHOUT depending on the
+ * session guard having run first, because `POST /api/auth/login` carries
+ * `OriginGuard` and no `SessionGuard` at all. Two readers of the same headers
+ * would be two chances to disagree about what a request is.
+ *
+ * BEARER IS TRIED FIRST and a malformed one does not fall through to the
+ * cookie. A browser never sets `Authorization` by itself, so its presence is a
+ * deliberate act by a client that meant to authenticate that way; answering it
+ * as somebody else's cookie session would be the wrong user, silently.
+ */
+export const readSessionToken = (
+  authorization: string | string[] | undefined,
+  cookie: string | undefined,
+): PresentedSession | null => {
+  if (authorization !== undefined) {
+    // A repeated header arrives as an array, and joining it could produce a
+    // value that parses. Refused rather than coerced.
+    if (typeof authorization !== 'string') return null;
+
+    const at = authorization.indexOf(' ');
+    if (at < 0) return null;
+    if (authorization.slice(0, at).toLowerCase() !== 'bearer') return null;
+
+    const value = authorization.slice(at + 1).trim();
+    return value !== '' && TOKEN_SHAPE.test(value)
+      ? { token: value, transport: 'bearer' }
+      : null;
+  }
+
+  const fromCookie = readSessionCookie(cookie);
+  return fromCookie === null
+    ? null
+    : { token: fromCookie, transport: 'cookie' };
+};

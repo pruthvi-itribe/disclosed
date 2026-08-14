@@ -44,6 +44,23 @@ async function bootstrap(): Promise<void> {
   // reachable by every process on the host.
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 
+  // CROSS-ORIGIN CALLERS, AND THERE ARE NORMALLY NONE. The React client is
+  // served same-origin by the Caddy sidecar, so this list is empty in
+  // production and CORS never engages. It is here for a local dev server on
+  // another port and for non-browser clients.
+  //
+  // `credentials` is on because the session travels as a cookie for a browser,
+  // and that is precisely why the origin list may never be `*` — the
+  // configuration reader refuses one.
+  if (config.corsAllowedOrigins.length > 0) {
+    app.enableCors({
+      origin: [...config.corsAllowedOrigins],
+      credentials: true,
+      methods: ['GET', 'POST', 'DELETE'],
+      allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+    });
+  }
+
   /**
    * WHAT THE FORWARDED HEADERS ARE WORTH, and it is `false` unless an operator
    * said otherwise — see `readTrustProxy`. Two things read this and nothing

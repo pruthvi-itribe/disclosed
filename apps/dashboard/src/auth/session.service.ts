@@ -5,10 +5,11 @@ import {
   hashSessionToken,
   mintSessionToken,
   needsRenewal,
-  readSessionCookie,
+  readSessionToken,
   sessionCookie,
   sessionExpiry,
   type SessionRepository,
+  type SessionTransport,
   type UserRepository,
 } from '@app/accounts';
 import { describeError, stackOf } from '@app/common';
@@ -19,14 +20,16 @@ export interface Signedin {
   readonly email: string;
   readonly sessionId: string;
   readonly lastSeenWatchlistAt: Date | null;
+  /** Which header carried the credential on THIS request. */
+  readonly transport: SessionTransport;
 }
 
 /**
  * Minting, resolving and revoking sessions, and the cookie that carries them.
  *
  * ONE PLACE DECIDES WHETHER A REQUEST IS SIGNED IN. The guard calls this and
- * `api/me` calls this; two readers of the same cookie would be two chances to
- * disagree about what an expired session means.
+ * `api/me` calls this; two readers of the same credential would be two chances
+ * to disagree about what an expired session means.
  */
 export class SessionService {
   private readonly logger = new Logger('session');
@@ -79,10 +82,13 @@ export class SessionService {
    * suggestion.
    */
   async resolve(request: Request): Promise<Signedin | null> {
-    const token = readSessionCookie(request.headers.cookie);
-    if (token === null) return null;
+    const presented = readSessionToken(
+      request.headers.authorization,
+      request.headers.cookie,
+    );
+    if (presented === null) return null;
 
-    const tokenHash = hashSessionToken(token);
+    const tokenHash = hashSessionToken(presented.token);
     const session = await this.sessions.findByTokenHash(tokenHash);
     if (session === null) return null;
 
@@ -110,15 +116,22 @@ export class SessionService {
       email: user.email,
       sessionId: session.id,
       lastSeenWatchlistAt: user.lastSeenWatchlistAt,
+      transport: presented.transport,
     };
   }
 
   /** Sign out: this session, and the cookie. */
   async close(request: Request, response: Response): Promise<void> {
-    const token = readSessionCookie(request.headers.cookie);
-    if (token !== null) {
-      await this.sessions.deleteByTokenHash(hashSessionToken(token));
+    const presented = readSessionToken(
+      request.headers.authorization,
+      request.headers.cookie,
+    );
+    if (presented !== null) {
+      await this.sessions.deleteByTokenHash(hashSessionToken(presented.token));
     }
+    // The cookie is cleared regardless of which transport signed out. A Bearer
+    // client has no cookie to clear and the header is harmless to it; a browser
+    // that somehow presented both must not be left holding a live cookie.
     this.clearCookie(request, response);
   }
 

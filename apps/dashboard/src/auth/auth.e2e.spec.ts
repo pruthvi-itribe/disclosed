@@ -85,7 +85,9 @@ const call = async (
   options: {
     body?: unknown;
     cookie?: string;
+    bearer?: string;
     origin?: string | null;
+    contentType?: string | null;
   } = {},
 ): Promise<{
   status: number;
@@ -93,8 +95,30 @@ const call = async (
   setCookie: string | null;
 }> => {
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+
+  /**
+   * JSON ON EVERY MUTATION, BODY OR NOT, exactly as the shipped page sends it.
+   *
+   * `JsonOnlyGuard` answers 415 to a mutation asked in anything else, and the
+   * bodyless ones — logout, watchlist add, watchlist remove — are the point of
+   * it rather than an exception to it. This helper used to set the header only
+   * alongside a body, which is the same bug the browser client had.
+   *
+   * `contentType: null` omits it and a string overrides it, which is how the
+   * refusal itself is tested.
+   */
+  const contentType =
+    options.contentType === undefined
+      ? method === 'GET'
+        ? null
+        : 'application/json'
+      : options.contentType;
+  if (contentType !== null) headers['Content-Type'] = contentType;
+
   if (options.cookie !== undefined) headers.Cookie = options.cookie;
+  if (options.bearer !== undefined) {
+    headers.Authorization = `Bearer ${options.bearer}`;
+  }
   if (options.origin !== null) headers.Origin = options.origin ?? origin;
 
   const response = await fetch(`${origin}${path}`, {
@@ -737,6 +761,150 @@ describe('the Watching feed', () => {
     expect((response.body.meta as { watching: unknown[] }).watching).toEqual(
       [],
     );
+  });
+});
+
+describe('the Bearer transport', () => {
+  it('resolves the same session the cookie does', async () => {
+    // ONE CREDENTIAL, TWO ENVELOPES. A script has no cookie jar, so the only
+    // way it can present a session is a header — and if the two doors resolved
+    // differently there would be two answers to "who is this request", which is
+    // the thing `SessionService` exists to prevent.
+    const { email, cookie } = await registerFresh();
+    const token = cookie.split('=')[1];
+
+    const viaCookie = await call('GET', '/api/me', { cookie });
+    const viaBearer = await call('GET', '/api/me', { bearer: token });
+
+    expect(viaBearer.status).toBe(200);
+    expect((viaBearer.body.data as { email: string }).email).toBe(email);
+    expect(viaBearer.body.data).toEqual(viaCookie.body.data);
+  });
+
+  it('refuses a Bearer token that was never minted', async () => {
+    // Token-shaped and the right length, so it gets as far as the indexed read
+    // and is refused for not being there rather than for not parsing.
+    const response = await call('GET', '/api/watchlist', {
+      bearer: 'Z'.repeat(43),
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error?.code).toBe('UNAUTHENTICATED');
+  });
+});
+
+/**
+ * THE CSRF CHECK KEYS ON THE TRANSPORT THAT CARRIED THE CREDENTIAL.
+ *
+ * EVERY TEST HERE PRESENTS A REAL SESSION, which is the whole reason the block
+ * proves anything. `WatchlistController` carries `SessionGuard` at the CLASS
+ * level and `OriginGuard` on the METHOD, and Nest runs controller-scoped guards
+ * first — so a made-up token answers 401 from the session guard and never
+ * reaches the origin guard at all. Measured 2026-08-14: a 43-character
+ * never-minted cookie sent from `http://evil.example` answers 401, not 403. A
+ * test written that way would assert on the session guard while claiming to
+ * assert on this one.
+ */
+describe('CSRF keys on transport, not on route', () => {
+  it('still refuses a cookie-authenticated mutation from a foreign origin', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('POST', '/api/watchlist?symbol=RELIANCE', {
+      cookie,
+      origin: 'http://evil.example',
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error?.code).toBe('BAD_ORIGIN');
+  });
+
+  // Today's behaviour, and it must survive: a browser sends Origin on every
+  // cross-origin request and on every same-origin POST, so an absent one on a
+  // cookie mutation is not a browser this application serves.
+  it('still refuses a cookie-authenticated mutation with no Origin', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('POST', '/api/watchlist?symbol=RELIANCE', {
+      cookie,
+      origin: null,
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error?.code).toBe('BAD_ORIGIN');
+  });
+
+  // THE CHANGE. A phone sends no Origin and must not be refused for it: the
+  // browser never attaches an Authorization header by itself, so there is no
+  // ambient authority for a forged request to abuse.
+  it('lets a Bearer mutation with no Origin through to the handler', async () => {
+    const { cookie } = await registerFresh();
+    const token = cookie.split('=')[1];
+
+    const response = await call('POST', '/api/watchlist?symbol=RELIANCE', {
+      bearer: token,
+      origin: null,
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data).toMatchObject({ symbol: 'RELIANCE' });
+  });
+});
+
+/**
+ * EVERY MUTATION MUST BE ASKED IN JSON, and that is what makes the transport
+ * rule above safe.
+ *
+ * An HTML form can emit only `application/x-www-form-urlencoded`,
+ * `multipart/form-data` or `text/plain`, so a cross-origin form POST — the one
+ * cross-site shape that needs no preflight — cannot reach a handler here at
+ * all.
+ *
+ * WHERE EACH REFUSAL IS OBSERVED IS NOT ARBITRARY. Nest runs controller-scoped
+ * guards before method-scoped ones, so on `WatchlistController` — which carries
+ * `SessionGuard` at the class level — an unauthenticated request answers 401
+ * long before `JsonOnlyGuard` is reached. The watchlist test therefore presents
+ * a real session; the auth routes carry no class-level session guard and can be
+ * asked cold. Measured 2026-08-14: without a cookie, a form-encoded
+ * `POST /api/watchlist` answers 401, not 415.
+ */
+describe('mutations must be asked in JSON', () => {
+  it('refuses a form-encoded auth mutation with 415', async () => {
+    const response = await call('POST', '/api/auth/login', {
+      body: { email: freshEmail(), password: PASSWORD },
+      contentType: 'application/x-www-form-urlencoded',
+    });
+
+    expect(response.status).toBe(415);
+    expect(response.body.error?.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
+
+  // THE BODYLESS MUTATION IS THE ONE WORTH ATTACKING and is not exempt:
+  // `POST /api/watchlist?symbol=X` takes its argument from the query string, so
+  // a form whose `action` carries the query needs no body at all.
+  it('refuses a bodyless watchlist mutation with no content type', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('POST', '/api/watchlist?symbol=RELIANCE', {
+      cookie,
+      contentType: null,
+    });
+
+    expect(response.status).toBe(415);
+    expect(response.body.error?.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
+
+  // The type alone is compared, so a charset parameter passes and a suffixed
+  // type does not — a prefix match would let `application/json-patch+json`
+  // through.
+  it('accepts a charset parameter on the same media type', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('DELETE', '/api/watchlist/RELIANCE', {
+      cookie,
+      contentType: 'application/json; charset=utf-8',
+    });
+
+    expect(response.status).toBe(200);
   });
 });
 

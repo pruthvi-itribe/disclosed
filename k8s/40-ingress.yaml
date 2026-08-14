@@ -43,6 +43,47 @@ spec:
                 port:
                   number: 8080
 ---
+# api.disclosed.live — the SAME pods, reached by another name.
+#
+# For MOBILE. The browser never uses this: the React client is served
+# same-origin by the Caddy sidecar, and the session cookie is host-only, so a
+# browser calling this host would arrive with no session and look signed out
+# with nothing explaining why. A phone carries a Bearer token and has no such
+# problem.
+#
+# Paths are IDENTICAL rather than rewritten, so there is one URL space and no
+# rewrite middleware: `api.disclosed.live/api/summary` is the same route as
+# `disclosed.live/api/summary`. Mildly redundant to read, and the alternative is
+# two ways to reach every route.
+#
+# ITS OWN CERTIFICATE, for the same reason `www` has one: a secretName is
+# per-host, and cert-manager needs no second entry in the issuer's `dnsZones`
+# selector because it matches a DNS name against the zone that CONTAINS it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard-api
+  namespace: disclosed
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.disclosed.live
+      secretName: disclosed-api-tls
+  rules:
+    - host: api.disclosed.live
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard
+                port:
+                  number: 8080
+---
 # One canonical origin.
 #
 # PUBLIC_ORIGIN is `https://disclosed.live` and every mutation is
