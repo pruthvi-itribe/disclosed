@@ -287,7 +287,11 @@ check "any two columns count as year-on-year"
 perl -0pi -e 's/  left\.day === right\.day && left\.month === right\.month;/  left.month === right.month;/' "$T"
 check "the day of the period end no longer has to match"
 
-perl -0pi -e 's/    occurrences\(dates, currentDate\) > 1 \|\|\n    occurrences\(dates, priorDate\) > 1\n  \) \{/    false as boolean\n  ) {/' "$V"
+# The dates are read off `frame` now, not off a local. `\s*` between the two
+# disjuncts rather than a pinned newline-and-indent, so the next reflow does not
+# stale this again. `false as boolean` rather than `false` keeps the branch
+# reachable to the compiler, which is what stops it becoming a COMPILE verdict.
+perl -0pi -e 's/occurrences\(frame\.dates, currentDate\) > 1 \|\|\s*occurrences\(frame\.dates, priorDate\) > 1/false as boolean/' "$V"
 check "a repeated column date no longer makes the column unknowable"
 
 perl -0pi -e 's/    \(row\) => row\.currentIndex !== pair\.current \|\| row\.priorIndex !== pair\.prior,/    () => false,/' "$V"

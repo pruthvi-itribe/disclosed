@@ -320,7 +320,12 @@ T=$LOGIC/confidence-tier.ts
 
 echo "=== the route: the degraded path is the branch nothing may shadow ==="
 
-perl -0pi -e 's/  const \{ pages, text, hasTextLayer, doclingAvailable \} = input;/  const { pages, text, hasTextLayer } = input;\n  const doclingAvailable = true;/' "$P"
+# The destructure gained `textLayerCorrupt` and prettier broke it over two
+# lines, which staled a pattern pinned to the whole statement. The GUARD is the
+# thing that must not be shadowed, so that is what is broken now — falsified
+# with a `pages` test rather than a literal, so the branch stays reachable to
+# the compiler and the mutation is a behaviour change rather than dead code.
+perl -0pi -e 's/if \(!doclingAvailable\) \{/if (!doclingAvailable \&\& pages < 0) {/' "$P"
 check "a service known to be down still gets the filing (no Python, no read)"
 
 perl -0pi -e 's/  if \(!hasTextLayer\) \{/  if (!hasTextLayer \&\& !looksLikeResultsStatement(text)) \{/' "$P"
@@ -335,13 +340,15 @@ check "the OCR ceiling widened (a 600-page scan sent for OCR, ~40 minutes)"
 perl -0pi -e 's/export const DOCLING_LAYOUT_MAX_PAGES = 150;/export const DOCLING_LAYOUT_MAX_PAGES = 1_000_000;/' "$P"
 check "the layout ceiling widened (NHPC's 640-page annual report re-parsed)"
 
-perl -0pi -e 's/\): ParseRouteDecision => \(\{ route, reason, maxPages \}\);/): ParseRouteDecision => ({ route, reason, maxPages: null });/' "$P"
+perl -0pi -e 's/\{ route, reason, maxPages, forceOcr \}/{ route, reason, maxPages: null, forceOcr }/' "$P"
 check "no page ceiling sent at all (max_num_pages then rejects the document)"
 
 echo ""
 echo "=== what counts as a results statement: BOTH structural tests ==="
 
-perl -0pi -e 's/    RESULTS_STATEMENT_PATTERN\.test\(documentText\) &&/    RESULTS_STATEMENT_PATTERN.test(documentText) ||/' "$P"
+# Both tests now read the shared structural projection rather than the raw text,
+# so the argument is `structural`, not `documentText`.
+perl -0pi -e 's/RESULTS_STATEMENT_PATTERN\.test\(structural\) &&/RESULTS_STATEMENT_PATTERN.test(structural) ||/' "$P"
 check "one of the two structural tests is enough (a covering letter escalated)"
 
 echo ""

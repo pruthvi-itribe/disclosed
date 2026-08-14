@@ -273,8 +273,11 @@ check "minimum span reduced to one character"
 perl -0pi -e 's/export const MAX_SPAN_CHARS = 400;/export const MAX_SPAN_CHARS = 100_000;/' "$S"
 check "span length unbounded (a whole document quoted into a Telegram message)"
 
-perl -0pi -e 's/const WHITESPACE_RUN = \/\\s\+\/;/const WHITESPACE_RUN = \/[\\s\\w]+\/;/' "$S"
-check "whitespace collapse widened to swallow word characters"
+# DELETED 2026-08-14: "whitespace collapse widened to swallow word characters".
+# The collapse and its index map moved out of `claim-span.ts` into
+# `span-canon.ts` when the projection grew repairs beyond whitespace, and this
+# harness backs up neither that file nor runs its suite (`$SUITE` matches
+# `logic/claim*`). Mutating it would leave a file modified after the run.
 
 echo ""
 echo "=== the offset map: evidence must be the document's own bytes ==="
@@ -282,7 +285,10 @@ echo "=== the offset map: evidence must be the document's own bytes ==="
 perl -0pi -e 's/  const start = haystack\.origin\[at\];/  const start = at;/' "$S"
 check "offset reported in collapsed coordinates (evidence points elsewhere)"
 
-perl -0pi -e 's/      \? haystack\.origin\[lastIndex \+ 1\]/      ? haystack.origin[lastIndex]/' "$S"
+# The end is now one past the SOURCE index of the last projected character
+# rather than the next map entry — the ternary this used to pin is gone, and the
+# `+ 1` is the whole of what is left to break.
+perl -0pi -e 's/const end = haystack\.origin\[lastIndex\] \+ 1;/const end = haystack.origin[lastIndex];/' "$S"
 check "span end short by one character (evidence loses its last character)"
 
 perl -0pi -e 's/  return \{ offset: start, evidence: documentText\.slice\(start, end\) \};/  return { offset: start, evidence: needle };/' "$S"
@@ -334,7 +340,10 @@ check "the same claim published twice on one line"
 perl -0pi -e 's/    claims: ranked\.slice\(0, limit\),/    claims: ranked,/' "$V"
 check "per-filing claim cap removed"
 
-perl -0pi -e 's/export const MAX_CLAIM_CHARS = 120;/export const MAX_CLAIM_CHARS = 100_000;/' "$V"
+# The digits are not pinned: the cap was 120 and became 200 on 2026-08-13, and
+# pinning the value is what made this a no-op for a day. What must not change is
+# that there IS a cap.
+perl -0pi -e 's/export const MAX_CLAIM_CHARS = \d[\d_]*;/export const MAX_CLAIM_CHARS = 100_000;/' "$V"
 check "claim length unbounded"
 
 perl -0pi -e 's/  if \(text\.length < MIN_CLAIM_CHARS\) \{/  if (false) {/' "$V"
@@ -355,11 +364,17 @@ check "line length unbounded (a message Telegram discards outright)"
 echo ""
 echo "=== the eligibility gate: the cost control ==="
 
-perl -0pi -e 's/  if \(!CLAIM_BEARING_CATEGORIES\.has\(category\)\) \{/  if (false) {/' "$E"
-check "every category sent to a model (newspaper scans included)"
+# The fail-CLOSED category list and the reused routine list are both gone —
+# `claim-eligibility.ts` argues at length why an allowlist of category names
+# cannot be shown to be safe. What replaced them is two fail-OPEN triage skips,
+# named categories measured at 6.8% and 16.7% yield, and those are the two
+# category tests there are now to break. A renamed category must still be READ,
+# so these mutations open the gate rather than closing it.
+perl -0pi -e "s/category === NEWSPAPER_PAGE_CATEGORY/category === 'no-category-is-ever-this'/" "$E"
+check "newspaper pages sent to a model (the 6.8%-yield triage skip removed)"
 
-perl -0pi -e 's/  if \(isRoutine\(filing\.category\)\) \{/  if (false) {/' "$E"
-check "routine categories sent to a model"
+perl -0pi -e "s/category === CON_CALL_INTIMATION_CATEGORY/category === 'no-category-is-ever-this'/" "$E"
+check "earnings-call intimations sent to a model (the 16.7%-yield skip removed)"
 
 perl -0pi -e 's/  if \(isLegallyBlocked\(filing\)\) \{/  if (false) {/' "$E"
 check "a litigation filing reaches the extractor"
@@ -367,8 +382,10 @@ check "a litigation filing reaches the extractor"
 perl -0pi -e 's/  if \(documentText\.length < MIN_CLAIM_DOCUMENT_CHARS\) \{/  if (false) {/' "$E"
 check "covering letters sent to a model"
 
-perl -0pi -e 's/  if \(!CLAIM_SIGNAL_PATTERN\.test\(documentText\)\) \{/  if (false) {/' "$E"
-check "documents with no claim vocabulary sent to a model"
+# DELETED 2026-08-14: "documents with no claim vocabulary sent to a model".
+# `CLAIM_SIGNAL_PATTERN` was removed on purpose and has no successor — it
+# refused 100 of 932 live filings for not using one of forty words, which is the
+# same fail-closed shape as the category list. There is no code left to break.
 
 echo ""
 echo "=== the reply parser: the model's output is untrusted input ==="
@@ -392,8 +409,10 @@ perl -0pi -e "s/      if \(stopReason === 'refusal'\) \{/      if (false) {/" "$
 check "a model refusal read as a parse failure instead"
 
 # Retargeted when the adapter moved onto the shared provider boundary: the
-# parse now happens inside `claimsFromText`, which both providers call.
-perl -0pi -e "s/      return claimsFromText\(textOf\(message\), usageOf\(message\)\);/      return { outcome: 'ok', claims: [] };/" "$X"
+# parse now happens inside `claimsFromText`, which both providers call — and
+# again when `ask` started returning a decoded reply, so what is handed in is
+# `reply.text`/`reply.usage` rather than the raw message.
+perl -0pi -e "s/return claimsFromText\(reply\.text, reply\.usage\);/return { outcome: 'ok', claims: [] };/" "$X"
 check "reply parsing bypassed (every filing records 'the model found nothing')"
 
 perl -0pi -e "s/    if \(apiKey\.trim\(\)\.length === 0\) return null;//" "$X"
@@ -432,10 +451,16 @@ check "the worker ignores the configured per-filing claim cap"
 echo ""
 echo "=== the follow-up alert's claim gate ==="
 
-perl -0pi -e 's/    if \(headline === null \&\& enrichment\.claimLine === null\) return 0;//' "$W"
+# The guard grew a third reason to send (a results line) and the condition was
+# reflowed across four lines, so what is pinned is the EARLY RETURN rather than
+# the condition — `\s*` between the two statements so the next reflow does not
+# stale it again. Dropping the return announces a filing with nothing to say.
+perl -0pi -e 's/this\.noteMutedLine\(filing, enrichment, now\);\s*\n\s*return 0;/this.noteMutedLine(filing, enrichment, now);/' "$W"
 check "a follow-up sent for a filing with neither a figure nor a claim"
 
-perl -0pi -e 's/          claimLine: enrichment\.claimLine,/          claimLine: null,/' "$W"
+# What reaches the wire is `wireClaimLine` — the MUTED line — not the stored
+# one, so that is the name to break.
+perl -0pi -e 's/claimLine: wireClaimLine,/claimLine: null,/' "$W"
 check "the claim line dropped on its way to the wire"
 
 

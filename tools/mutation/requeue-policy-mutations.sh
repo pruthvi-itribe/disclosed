@@ -301,7 +301,12 @@ check "a refusal states no reason"
 perl -0pi -e "s/, as \\\$\{decision\.reason\}; \`/, as something else; \`/" "$R"
 check "a pre-fetch refusal stops naming which verdict the url still earns"
 
-perl -0pi -e "s/  'no-text-layer':\n    'the document parsed and carries no text: it is a raster scan, and this ' \+\n    'pipeline still has no OCR, so a re-read measures the same zero characters',/  'no-text-layer':\n    'the exchange answered about the request with a 404 or 410, which is a ' +\n    'statement about what it holds and not about what this pipeline can read',/" "$R"
+# Both sentences were rewritten — `no-text-layer` now says the DEPLOYMENT has no
+# OCR parser rather than the pipeline, and `not-found` narrowed to 410 Gone once
+# 404 started being retried. So the pattern anchors on the opening phrase and
+# runs to the end of the string rather than pinning three exact lines, which is
+# what made this a no-op.
+perl -0pi -e "s/'the document parsed and carries no text[\s\S]*?zero characters',/'the exchange answered 410 Gone, which is a statement that the document ' +\n    'existed and will not return, not one about what this pipeline can read',/" "$R"
 check "no-text-layer's argument copy-pasted from not-found's"
 
 echo ""
