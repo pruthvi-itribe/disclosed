@@ -41,6 +41,18 @@ export interface WatchedCompany {
   readonly symbol: string;
   readonly companyName: string;
   readonly addedAt: string;
+  /**
+   * The same instant as IST text, for the reason `lastFiledAtIst` exists.
+   *
+   * NOTHING DRAWS THIS TODAY, which is precisely why it was missing: the IST
+   * lock read only `filings/dashboard.types.ts`, so this type sat outside it
+   * and a raw instant with no companion went unremarked for the life of the
+   * guard. A field that ships only the instant is an invitation to format it in
+   * the browser, and a browser that is not on IST renders it 5½ hours out while
+   * looking entirely normal. Paired at declaration rather than at first use,
+   * because first use is where somebody is thinking about layout.
+   */
+  readonly addedAtIst: string;
   readonly filingsHeld: number;
   /**
    * The instant this company last filed anything held here, or null when
@@ -165,6 +177,7 @@ export class WatchlistController {
         symbol: entry.symbol,
         companyName: known?.companyName ?? entry.symbol,
         addedAt: entry.addedAt.toISOString(),
+        addedAtIst: istTimestamp(entry.addedAt),
         filingsHeld: known?.filings ?? 0,
         lastFiledAt: last === null ? null : last.toISOString(),
         lastFiledAtIst: last === null ? null : istTimestamp(last),
@@ -262,7 +275,16 @@ export class WatchlistController {
     @Req() request: AuthedRequest,
     @Query() query: RawQuery,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<ApiEnvelope<{ symbol: string; addedAt: string }, WatchlistMeta>> {
+  ): Promise<
+    // Paired by hand, and that is worth saying: the IST lock anchors on
+    // `readonly` at the start of a line, so an instant declared in an inline
+    // type literal like this one is outside its reach. Same instant, same rule
+    // as `WatchedCompany` — the response says when, in both forms.
+    ApiEnvelope<
+      { symbol: string; addedAt: string; addedAtIst: string },
+      WatchlistMeta
+    >
+  > {
     const symbol = await this.requireKnownSymbol(query);
     const result = await this.watchlists.add(
       request.signedin!.userId,
@@ -288,9 +310,14 @@ export class WatchlistController {
 
     const entries = await this.watchlists.entriesFor(request.signedin!.userId);
     const stored = entries.find((entry) => entry.symbol === symbol);
+    const addedAt = stored?.addedAt ?? this.now();
 
     return okWith(
-      { symbol, addedAt: (stored?.addedAt ?? this.now()).toISOString() },
+      {
+        symbol,
+        addedAt: addedAt.toISOString(),
+        addedAtIst: istTimestamp(addedAt),
+      },
       { used: result.used, cap: MAX_WATCHED_SYMBOLS },
     );
   }
