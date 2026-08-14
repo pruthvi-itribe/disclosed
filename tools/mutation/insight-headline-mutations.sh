@@ -352,7 +352,12 @@ check "month off by one in the 'first since' date"
 echo ""
 echo "=== the terminal states: what stops an unbounded retry against NSE ==="
 
-perl -0pi -e "s/  if \(extension === 'pdf'\) return \{ outcome: 'fetch', url: parsed\.toString\(\) \};/  return { outcome: 'fetch', url: parsed.toString() };/" "$T"
+# ZIP IS NOW A LEGITIMATE FETCH, so deleting the pdf guard no longer says what
+# this mutation means. Forcing the guard TRUE does, and says both halves of it
+# at once: an xlsx is fetched instead of refused, and the zip branch below it is
+# never reached, so an archive is fetched with `kind: 'pdf'` and handed to the
+# PDF parser exactly as before.
+perl -0pi -e "s/if \(extension === 'pdf'\) \{/if (true) {/" "$T"
 check "every extension fetched (a ZIP handed to the PDF parser, forever)"
 
 perl -0pi -e "s/    return skip\('no-attachment'\);\n  \}/    return skip('not-a-pdf');\n  }/" "$T"
@@ -388,7 +393,12 @@ check "counterparty extracted for a filing whose amount was refused"
 perl -0pi -e "s/    const headline = form === 'enriched' \? enrichment\.headline : null;/    const headline = enrichment.headline;/" "$W"
 check "follow-up sent for a degraded headline (a second copy of the first alert)"
 
-perl -0pi -e 's/    if \(!passesContentGates\(filing, this\.watchlist\)\) return 0;//' "$W"
+# `passesContentGates` was split into `isNotRoutine` and `isWatchedByOperator`
+# precisely because it folded a fact about the filing together with one
+# operator's preference — see `alert-gate.ts`. So the mutation now drops only
+# the watchlist half of `passesOperatorGates`, which is what this label always
+# meant: the operator's watchlist silences the poller lane and not this one.
+perl -0pi -e 's/ && isWatchedByOperator\(filing, this\.watchlist\)//' "$W"
 check "watchlist ignored by the enrichment lane"
 
 perl -0pi -e 's/    if \(!isWithinAlertWindow\(filing, now, this\.options\.alertWindowMs\)\) return 0;//' "$W"

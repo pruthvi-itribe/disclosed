@@ -78,9 +78,23 @@
 #     mutated by tools/mutation/common-mutations.sh — which runs them against
 #     THIS suite as well as its own, so the guarantee did not move off a test.
 #     What is still mutated here is every CALL to them.
+#   - The INSIDES of the two content gates. `isRoutine`'s wrapper, the
+#     empty-watchlist branch, the symbol-side normalisation and the blank-entry
+#     filter all moved to `libs/filings/src/logic/alert-gate.ts` when the
+#     enrichment worker needed the same two gates, and mutating them from a
+#     harness that backs up one file in `apps/ingest` cannot restore them.
+#     Four mutations were deleted rather than re-pointed. Note what that costs
+#     and what it does not: `alert-gate.spec.ts` pins the behaviour, but no
+#     harness has yet proved those tests would notice it breaking — unlike
+#     `libs/common`, whose move came with common-mutations.sh. That is a gap in
+#     mutation coverage, recorded here rather than papered over by re-anchoring
+#     these labels onto whatever in this file happens to still match.
+#     What IS mutated here is the composition and the calls: which gates this
+#     lane applies, in `shouldAlert`, and that the constructor normalises the
+#     configured watchlist at all.
 #
-# Tally, so a report can quote it without recounting: 29 mutations across five
-# groups, plus 6 independence checks = 35 `check` calls.
+# Tally, so a report can quote it without recounting: 25 mutations across five
+# groups, plus 6 independence checks = 31 `check` calls.
 
 set -uo pipefail
 
@@ -260,7 +274,7 @@ check "sorted by timestamp (ties on a shared dissemination second)"
 echo ""
 echo "=== sequential sending: a 429 is swallowed, so concurrency loses filings ==="
 
-perl -0pi -e 's/        await this\.telegram\.send\(formatFilingAlert\(filing\)\);/        void this.telegram.send(formatFilingAlert(filing));/' "$SRC"
+perl -0pi -e 's/await this\.telegram\.send\(/void this.telegram.send(/' "$SRC"
 check "fire-and-forget send (resolves before the batch has been delivered)"
 
 perl -0pi -e 's/    for \(const filing of ordered\) \{\n      try \{\n        if \(!this\.shouldAlert\(filing\)\) continue;/    await Promise.all(\n      ordered.map(async (filing) => {\n      try {\n        if (!this.shouldAlert(filing)) return;/' "$SRC"
@@ -270,7 +284,13 @@ check "Promise.all (rate limit exposed, delivery order scrambled)"
 echo ""
 echo "=== containment: one bad record must not cost the batch ==="
 
-perl -0pi -e 's/      try \{\n        if \(!this\.shouldAlert\(filing\)\) continue;\n        await this\.telegram\.send\(formatFilingAlert\(filing\)\);\n        attempted\.push\(filing\);\n      \} catch \(error\) \{.*?\n      \}\n/      if (!this.shouldAlert(filing)) continue;\n      await this.telegram.send(formatFilingAlert(filing));\n      attempted.push(filing);\n/s' "$SRC"
+# Two edits rather than one block match: the send became a three-line call when
+# the context line was added, so a pattern spanning the whole try body pinned an
+# arrangement of the statements rather than the containment itself. `try {` is
+# identified by the line it guards and the catch by the `stackOf(error)` it ends
+# on, both with `\s*` between, so a reflow of either cannot silently disarm this.
+perl -0pi -e 's/try \{\n(\s*if \(!this\.shouldAlert)/$1/' "$SRC"
+perl -0pi -e 's/\} catch \(error\) \{.*?stackOf\(error\),\s*\);\s*\}//s' "$SRC"
 check "try\/catch removed (a projected read aborts the whole batch)"
 
 perl -0pi -e 's/          stackOf\(error\),\n        \);\n/          stackOf(error),\n        );\n        throw error;\n/' "$SRC"
@@ -294,7 +314,11 @@ check "stack dropped (a programming bug reads as a bad record)"
 perl -0pi -e 's/safeText\(filing\.seqId\)/String(filing.seqId)/' "$SRC"
 check "bare String() on the seqId (throws while formatting the log line)"
 
-perl -0pi -e 's/        await this\.telegram\.send\(formatFilingAlert\(filing\)\);\n        attempted\.push\(filing\);/        attempted.push(filing);\n        await this.telegram.send(formatFilingAlert(filing));/' "$SRC"
+# Delete then re-insert, in that order: swapping two adjacent lines stopped
+# working when the send grew onto three lines, and the delete must run first or
+# it would match the copy the insert just added.
+perl -0pi -e 's/\n\s*attempted\.push\(filing\);//' "$SRC"
+perl -0pi -e 's/await this\.telegram\.send\(/attempted.push(filing);\n        await this.telegram.send(/' "$SRC"
 check "counted before sending (claims filings the formatter rejected)"
 
 perl -0pi -e 's/    return attempted;/    return ordered;/' "$SRC"
@@ -303,29 +327,26 @@ check "returns the whole window (suppressed filings reported as alerted)"
 echo ""
 echo "=== the gates: each one guards a different silence ==="
 
-perl -0pi -e 's/    if \(isRoutine\(filing\.category\)\) return false;\n//' "$SRC"
+# The gates themselves moved to `libs/filings/src/logic/alert-gate.ts` when the
+# enrichment lane grew a second copy of them. What this file still owns — and
+# what these three break — is the COMPOSITION: which gates this lane applies,
+# and to what. The three inside the library (the empty-watchlist branch, the
+# symbol-side normalisation, the blank-entry filter) are recorded in the
+# "NOT covered by mutation" list at the top rather than mutated from here.
+perl -0pi -e 's/isNotRoutine\(filing\) && //' "$SRC"
 check "routine gate removed (newspaper publications drown the signal)"
 
-perl -0pi -e 's/if \(isRoutine\(filing\.category\)\) return false;/if (!isRoutine(filing.category)) return false;/' "$SRC"
+perl -0pi -e 's/return isNotRoutine\(filing\)/return !isNotRoutine(filing)/' "$SRC"
 check "routine gate inverted (only the noise is delivered)"
 
-perl -0pi -e 's/    if \(this\.watchlist\.size === 0\) return true;\n    return this\.watchlist\.has\(normalise\(filing\.symbol\)\);/    return true;/' "$SRC"
+perl -0pi -e 's/ && isWatchedByOperator\(filing, this\.watchlist\)//' "$SRC"
 check "watchlist ignored (a configured watchlist alerts on everything)"
 
-perl -0pi -e 's/if \(this\.watchlist\.size === 0\) return true;/if (this.watchlist.size > 0) return true;/' "$SRC"
-check "empty-watchlist branch inverted (mutes the bot outright)"
-
-perl -0pi -e 's/this\.watchlist\.has\(normalise\(filing\.symbol\)\)/this.watchlist.has(filing.symbol)/' "$SRC"
-check "symbol side not normalised (a lowercase symbol never matches)"
-
-perl -0pi -e 's/symbol\.trim\(\)\.toUpperCase\(\)/symbol.toUpperCase()/' "$SRC"
-check "trim dropped (WATCHLIST=A, B silently matches nothing after the comma)"
-
-perl -0pi -e 's/symbol\.trim\(\)\.toUpperCase\(\)/symbol.trim()/' "$SRC"
-check "case folding dropped (a lowercase config entry never matches)"
-
-perl -0pi -e 's/new Set\(watchlist\.map\(normalise\)\.filter\(\(symbol\) => symbol\.length > 0\)\)/new Set(watchlist.map(normalise))/' "$SRC"
-check "blank entries kept (WATCHLIST= parses to [''] and mutes the bot)"
+# The CALL to the shared normaliser, which is this file's to get wrong: a raw
+# Set is the mistake the helper exists to prevent, and it reproduces all three
+# of the entry-side failures at once — padded, lower-cased and blank.
+perl -0pi -e 's/normaliseWatchlist\(options\.watchlist\)/new Set(options.watchlist)/' "$SRC"
+check "watchlist entries unnormalised (padded, lower-case and blank all miss)"
 
 echo ""
 echo "=== the window and the clock ==="
@@ -354,16 +375,18 @@ echo "silently cost coverage that looks covered."
 perl -0pi -e 's/\[\.\.\.alertable\]\.sort\(\(a, b\) => a\.seqId - b\.seqId\)/[...alertable].sort((a, b) => b.seqId - a.seqId)/' "$SRC"
 check "descending sort, order suite only" -t "send order is chronological"
 
-perl -0pi -e 's/        await this\.telegram\.send\(formatFilingAlert\(filing\)\);/        void this.telegram.send(formatFilingAlert(filing));/' "$SRC"
+perl -0pi -e 's/await this\.telegram\.send\(/void this.telegram.send(/' "$SRC"
 check "fire-and-forget, sequential suite only" -t "sends sequentially"
 
-perl -0pi -e 's/      try \{\n        if \(!this\.shouldAlert\(filing\)\) continue;\n        await this\.telegram\.send\(formatFilingAlert\(filing\)\);\n        attempted\.push\(filing\);\n      \} catch \(error\) \{.*?\n      \}\n/      if (!this.shouldAlert(filing)) continue;\n      await this.telegram.send(formatFilingAlert(filing));\n      attempted.push(filing);\n/s' "$SRC"
+perl -0pi -e 's/try \{\n(\s*if \(!this\.shouldAlert)/$1/' "$SRC"
+perl -0pi -e 's/\} catch \(error\) \{.*?stackOf\(error\),\s*\);\s*\}//s' "$SRC"
 check "no containment, malformed-record suite only" -t "a malformed record is skipped"
 
-perl -0pi -e 's/symbol\.trim\(\)\.toUpperCase\(\)/symbol.toUpperCase()/' "$SRC"
-check "trim dropped, watchlist suite only" -t "the watchlist"
+perl -0pi -e 's/normaliseWatchlist\(options\.watchlist\)/new Set(options.watchlist)/' "$SRC"
+check "watchlist unnormalised, watchlist suite only" -t "the watchlist"
 
-perl -0pi -e 's/        await this\.telegram\.send\(formatFilingAlert\(filing\)\);\n        attempted\.push\(filing\);/        attempted.push(filing);\n        await this.telegram.send(formatFilingAlert(filing));/' "$SRC"
+perl -0pi -e 's/\n\s*attempted\.push\(filing\);//' "$SRC"
+perl -0pi -e 's/await this\.telegram\.send\(/attempted.push(filing);\n        await this.telegram.send(/' "$SRC"
 check "counted before sending, return-value suite only" -t "attempted, not delivered"
 
 perl -0pi -e 's/      this\.options\.alertWindowMs,/      600000,/' "$SRC"

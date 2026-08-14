@@ -230,25 +230,35 @@ R=$ROOT/tools/claims/comparison-report.ts
 
 echo "=== one request, two providers: what makes them comparable at all ==="
 
-perl -0pi -e "s/          \{ role: 'system', content: CLAIM_SYSTEM_PROMPT \},/          { role: 'system', content: \`\\\${CLAIM_SYSTEM_PROMPT} Be generous.\` },/" "$O"
+# Mutated at the CALL, not in the message array: `ask()` became shared with the
+# results lane and now takes the prompt as a parameter, so the array says
+# `content: system` and pinning it would break the wrong lane.
+perl -0pi -e 's/await this\.ask\(\s*CLAIM_SYSTEM_PROMPT,/await this.ask(\n      \`\${CLAIM_SYSTEM_PROMPT} Be generous.\`,/' "$O"
 check "the OpenRouter prompt drifts from the Anthropic one"
 
 perl -0pi -e 's/        max_tokens: this\.options\.maxTokens \?\? CLAIM_MAX_TOKENS,/        max_tokens: 2_000,/' "$O"
 check "one provider measured with a smaller token ceiling than the other"
 
-perl -0pi -e 's/export const CLAIM_MAX_TOKENS = 8_000;/export const CLAIM_MAX_TOKENS = 3_000;/' "$P"
+# Both ceilings were raised — 8_000 -> 32_000 and 120_000 -> 180_000 — and the
+# harness kept naming the old numbers, so it stopped mutating anything. The
+# literal is the point of these two, so the pattern re-states it and must be
+# updated with it; claim-provider.spec.ts pins both against the same values.
+perl -0pi -e 's/export const CLAIM_MAX_TOKENS = 32_000;/export const CLAIM_MAX_TOKENS = 3_000;/' "$P"
 check "the shared token ceiling changed out from under both adapters"
 
-perl -0pi -e 's/export const CLAIM_TIMEOUT_MS = 120_000;/export const CLAIM_TIMEOUT_MS = 5_000;/' "$P"
+perl -0pi -e 's/export const CLAIM_TIMEOUT_MS = 180_000;/export const CLAIM_TIMEOUT_MS = 5_000;/' "$P"
 check "the shared timeout changed (a slow model reported as a failing one)"
 
 perl -0pi -e 's/        temperature: 0,/        temperature: 1,/' "$O"
 check "extraction resampled rather than read (a rerun stops meaning anything)"
 
-perl -0pi -e 's/        provider: \{ require_parameters: true \},/        provider: { require_parameters: false },/' "$O"
+# Both flags kept their meaning and lost their line. `provider` grew the
+# quantization floor and the host order, and `json_schema` collapsed onto one
+# line — so the flag alone is the anchor, and neither reflow can reach it again.
+perl -0pi -e 's/require_parameters: true/require_parameters: false/' "$O"
 check "routing allowed to a host that would ignore the JSON schema"
 
-perl -0pi -e 's/            strict: true,/            strict: false,/' "$O"
+perl -0pi -e 's/strict: true/strict: false/' "$O"
 check "the schema sent unenforced"
 
 perl -0pi -e "s/export const CLAIM_SCHEMA_NAME = 'notable_claims';/export const CLAIM_SCHEMA_NAME = '';/" "$O"
@@ -296,8 +306,10 @@ check "a content-filter decline reported as a parse failure"
 perl -0pi -e "s/      if \(choice\.finish_reason === 'length'\) \{/      if (false) {/" "$O"
 check "a reply truncated at the ceiling reported as bad JSON"
 
-perl -0pi -e 's/      return claimsFromText\(\n        typeof content === .string. \? content : .., \n        usageOf\(payload\),\n      \);/      return { outcome: "ok", claims: [] };/' "$O"
-perl -0pi -e "s/      return claimsFromText\(\s*typeof content === 'string' \? content : '',\s*usageOf\(payload\),\s*\);/      return { outcome: 'ok', claims: [] };/s" "$O"
+# One line now, not four: reading the content out of the envelope moved into
+# `ask()`, which hands back a `RawReply`, so `extract` just parses it. Both of
+# the old spellings described the shape it used to have.
+perl -0pi -e "s/return claimsFromText\(reply\.text, reply\.usage\);/return { outcome: 'ok', claims: [] };/" "$O"
 check "OpenRouter reply parsing bypassed (every filing finds nothing)"
 
 perl -0pi -e "s/    if \(apiKey\.trim\(\)\.length === 0\) return null;//" "$O"
@@ -342,7 +354,11 @@ echo "=== provider selection ==="
 perl -0pi -e "s/    case 'openrouter':\n      return OpenRouterClaimExtractor\.fromApiKey\(apiKey, options\);/    case 'openrouter':\n      return ClaudeClaimExtractor.fromApiKey(apiKey, options);/" "$F"
 check "the Anthropic adapter built when OpenRouter was asked for"
 
-perl -0pi -e "s/  const options = \{ model: config\.claimModel, effort: config\.claimEffort \};/  const options = { model: 'claude-opus-5', effort: config.claimEffort };/" "$F"
+# The options object grew two document caps and broke onto five lines, so only
+# the field being ignored is named. It is hardcoded to the factory spec's own
+# DEFAULT model, deliberately: the test that must die is the one configuring a
+# different one, not every test that happens to use the default.
+perl -0pi -e "s/model: config\.claimModel,/model: 'claude-opus-5',/" "$F"
 check "the factory ignores the configured model"
 
 echo ""
