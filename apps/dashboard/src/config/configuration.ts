@@ -24,6 +24,11 @@
  * not being reintroduced for the sake of one shared function.
  */
 
+// NOT from the barrel. `libs/common` depends on nothing, but this module is
+// read before the container exists and a barrel import is how that stops
+// being true later.
+import { describeMongoTarget } from '@app/common/mongo-target';
+
 import {
   describeAuthConfig,
   loadAuthConfig,
@@ -468,20 +473,10 @@ export const loadDashboardConfig = (
   };
 };
 
-/**
- * Strips the `user:password@` section of a connection string.
- *
- * A mongo URI routinely carries credentials, and the startup line below is the
- * one place the configuration is printed. Redacting is not optional: a password
- * in a log file outlives the process that wrote it.
- */
-const redactCredentials = (uri: string): string =>
-  uri.replace(/\/\/[^@/]*@/, '//***@');
-
 /** A single startup line describing the configuration actually in force. */
 export const describeDashboardConfig = (config: DashboardConfig): string =>
   [
-    `mongo=${redactCredentials(config.mongoUri)}`,
+    `mongo=${describeMongoTarget(config.mongoUri)}`,
     `bind=${config.host}:${config.port}`,
     // NO LONGER `mode=read-only` UNQUALIFIED. This process now writes `users`,
     // `sessions` and `watchlists`, and it still never writes a filing — which

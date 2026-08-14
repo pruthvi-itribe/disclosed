@@ -334,8 +334,16 @@ describe('describeConfig', () => {
     expect(describeConfig(config)).not.toContain(secret);
   });
 
-  it('still shows where mongo is, minus the credentials', () => {
-    expect(describeConfig(config)).toContain('db:27017/turret');
+  // RENAMED WITH THE BEHAVIOUR IT ASSERTS. It used to be "still shows where
+  // mongo is", and where mongo is is precisely what this line no longer says:
+  // naming the cluster names the target, and these logs are destined to be
+  // shipped off the node. The database name is what an operator reads it for.
+  it('names the database but not the host it lives on', () => {
+    const line = describeConfig(config);
+
+    expect(line).toContain('/turret');
+    expect(line).toContain('<host-withheld>');
+    expect(line).not.toContain('db:27017');
   });
 
   it('reports whether telegram is configured, without the values', () => {
