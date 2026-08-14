@@ -63,6 +63,26 @@
 #   - The prompt TEXT. It is a request, not a control: every rule it states is
 #     also enforced by results-verify.ts, and those enforcements are mutated
 #     here. What IS mutated is the reply parser, because that is code.
+
+# ==============================================================================
+# WHY COLOUR IS TURNED OFF, AND WHAT IT WAS SILENTLY COSTING
+# ==============================================================================
+#
+# jest writes `\e[1mTests:` — it emits ANSI escapes even when its output is a
+# pipe rather than a terminal. Every harness in this directory decides a
+# mutation was CAUGHT with `grep -qE "^Tests:"`, and that pattern cannot match a
+# line beginning with an escape. So the CAUGHT branch was unreachable in all
+# twelve of them, and every killed mutation was filed as CRASHED instead.
+#
+# NOT FAIL-OPEN — a real test gap still reports SURVIVED — but it destroyed the
+# distinction these harnesses exist to draw, to the point that the task list
+# carried a note explaining that CRASHED "really means caught". It does not have
+# to mean that.
+#
+# `FORCE_COLOR=0` rather than `NO_COLOR=1`: measured 2026-08-14, jest honours
+# the first and ignores the second.
+export FORCE_COLOR=0
+
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -267,7 +287,11 @@ check "any two columns count as year-on-year"
 perl -0pi -e 's/  left\.day === right\.day && left\.month === right\.month;/  left.month === right.month;/' "$T"
 check "the day of the period end no longer has to match"
 
-perl -0pi -e 's/    occurrences\(dates, currentDate\) > 1 \|\|\n    occurrences\(dates, priorDate\) > 1\n  \) \{/    false as boolean\n  ) {/' "$V"
+# The dates are read off `frame` now, not off a local. `\s*` between the two
+# disjuncts rather than a pinned newline-and-indent, so the next reflow does not
+# stale this again. `false as boolean` rather than `false` keeps the branch
+# reachable to the compiler, which is what stops it becoming a COMPILE verdict.
+perl -0pi -e 's/occurrences\(frame\.dates, currentDate\) > 1 \|\|\s*occurrences\(frame\.dates, priorDate\) > 1/false as boolean/' "$V"
 check "a repeated column date no longer makes the column unknowable"
 
 perl -0pi -e 's/    \(row\) => row\.currentIndex !== pair\.current \|\| row\.priorIndex !== pair\.prior,/    () => false,/' "$V"

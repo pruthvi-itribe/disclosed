@@ -82,6 +82,26 @@
 # Tally, so a report can quote it without recounting: 14 mutations in four
 # groups = 14 `check` calls.
 
+
+# ==============================================================================
+# WHY COLOUR IS TURNED OFF, AND WHAT IT WAS SILENTLY COSTING
+# ==============================================================================
+#
+# jest writes `\e[1mTests:` — it emits ANSI escapes even when its output is a
+# pipe rather than a terminal. Every harness in this directory decides a
+# mutation was CAUGHT with `grep -qE "^Tests:"`, and that pattern cannot match a
+# line beginning with an escape. So the CAUGHT branch was unreachable in all
+# twelve of them, and every killed mutation was filed as CRASHED instead.
+#
+# NOT FAIL-OPEN — a real test gap still reports SURVIVED — but it destroyed the
+# distinction these harnesses exist to draw, to the point that the task list
+# carried a note explaining that CRASHED "really means caught". It does not have
+# to mean that.
+#
+# `FORCE_COLOR=0` rather than `NO_COLOR=1`: measured 2026-08-14, jest honours
+# the first and ignores the second.
+export FORCE_COLOR=0
+
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -281,7 +301,12 @@ check "a refusal states no reason"
 perl -0pi -e "s/, as \\\$\{decision\.reason\}; \`/, as something else; \`/" "$R"
 check "a pre-fetch refusal stops naming which verdict the url still earns"
 
-perl -0pi -e "s/  'no-text-layer':\n    'the document parsed and carries no text: it is a raster scan, and this ' \+\n    'pipeline still has no OCR, so a re-read measures the same zero characters',/  'no-text-layer':\n    'the exchange answered about the request with a 404 or 410, which is a ' +\n    'statement about what it holds and not about what this pipeline can read',/" "$R"
+# Both sentences were rewritten — `no-text-layer` now says the DEPLOYMENT has no
+# OCR parser rather than the pipeline, and `not-found` narrowed to 410 Gone once
+# 404 started being retried. So the pattern anchors on the opening phrase and
+# runs to the end of the string rather than pinning three exact lines, which is
+# what made this a no-op.
+perl -0pi -e "s/'the document parsed and carries no text[\s\S]*?zero characters',/'the exchange answered 410 Gone, which is a statement that the document ' +\n    'existed and will not return, not one about what this pipeline can read',/" "$R"
 check "no-text-layer's argument copy-pasted from not-found's"
 
 echo ""

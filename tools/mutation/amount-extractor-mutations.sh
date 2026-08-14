@@ -72,8 +72,30 @@
 #     test to kill it would be fitting the suite to the harness rather than to
 #     a guarantee, which is the failure mode these scripts exist to expose.
 #
-# Tally, so a report can quote it without recounting: 31 mutations across four
-# groups, plus 6 independence checks = 37 `check` calls.
+# Tally, so a report can quote it without recounting: 34 mutations across four
+# groups, plus 6 independence checks = 40 `check` calls. Counted 2026-08-14 with
+# `grep -c '^perl -0pi'`; the previous figure said 37 and had been stale for
+# three commits, which is exactly the drift that also stales the anchors.
+
+
+# ==============================================================================
+# WHY COLOUR IS TURNED OFF, AND WHAT IT WAS SILENTLY COSTING
+# ==============================================================================
+#
+# jest writes `\e[1mTests:` — it emits ANSI escapes even when its output is a
+# pipe rather than a terminal. Every harness in this directory decides a
+# mutation was CAUGHT with `grep -qE "^Tests:"`, and that pattern cannot match a
+# line beginning with an escape. So the CAUGHT branch was unreachable in all
+# twelve of them, and every killed mutation was filed as CRASHED instead.
+#
+# NOT FAIL-OPEN — a real test gap still reports SURVIVED — but it destroyed the
+# distinction these harnesses exist to draw, to the point that the task list
+# carried a note explaining that CRASHED "really means caught". It does not have
+# to mean that.
+#
+# `FORCE_COLOR=0` rather than `NO_COLOR=1`: measured 2026-08-14, jest honours
+# the first and ignores the second.
+export FORCE_COLOR=0
 
 set -uo pipefail
 
@@ -236,11 +258,13 @@ check "one-lakh floor removed (face values and issue prices become amounts)"
 perl -0pi -e 's/if \(!figure\.includes\(.,.\) \|\| value < MIN_UNITLESS_RUPEES\) continue;\n      matches\.push\(\{ rupees: value, text: whole, start, carriesUnit: false \}\);/matches.push({ rupees: value, text: whole, start, carriesUnit: false });/' "$P"
 check "unit-less figures accepted unconditionally (Rs. 10 is an amount)"
 
-perl -0pi -e 's/if \(\n      !INDIAN_GROUPING\.test\(integerPart\) &&\n      !INTERNATIONAL_GROUPING\.test\(integerPart\)\n    \) \{\n      return null;\n    \}//' "$P"
+# The two grouping regexes moved to `grouped-number.ts` when the results lane
+# needed the same judgement, and this harness does not back that file up — so
+# what is mutated here is the CALL, which is what rupee-parse.ts still owns.
+# The regexes themselves are mutated by hybrid-parsing-coverage-mutations.sh,
+# which does back up `grouped-number.ts`.
+perl -0pi -e 's/if \(!isWellGroupedInteger\(integerPart\)\) return null;/if (integerPart.length < 0) return null;/' "$P"
 check "grouping check removed (Rs. 30,00,000,00 read as 30 crore by luck)"
-
-perl -0pi -e 's{const INDIAN_GROUPING = /.*/;}{const INDIAN_GROUPING = /^[0-9,]+\$/;}' "$P"
-check "Indian grouping accepts any digits and commas"
 
 perl -0pi -e "s/const GAP = '\[\^\\\\\\\\S\\\\\\\\n\]\*\\\\\\\\n\?\[\^\\\\\\\\S\\\\\\\\n\]\*';/const GAP = '\\\\\\\\s*';/" "$P"
 check "whitespace unbounded (a marker binds across blank lines)"
@@ -314,19 +338,26 @@ check "value-band detection disabled (a band reported as a point value)"
 echo ""
 echo "=== the decision: order, tie-breaks and which position wins ==="
 
-perl -0pi -e 's/  if \(hasAmbiguityKeyword\(documentText\) \|\| hasAmbiguityKeyword\(summary\)\) \{/  if (false) {/' "$X"
-check "ambiguity gate removed (a Letter of Intent published as a win)"
+# `hasAmbiguityKeyword` was split in two when the one list turned out to be two
+# rules wearing one name (`ambiguity.ts` argues it): rumour framing stays
+# document-wide, conditional framing is scoped to the sentence a candidate was
+# read from. So the two mutations below now break the two halves separately —
+# the letter-of-intent case is the sentence-scoped one.
+perl -0pi -e "s/const phrase = conditionalFramingIn\(sentence\);/const phrase = conditionalFramingIn('');/" "$X"
+check "conditional framing never found (a Letter of Intent published as a win)"
 
-perl -0pi -e 's/hasAmbiguityKeyword\(documentText\) \|\| hasAmbiguityKeyword\(summary\)/hasAmbiguityKeyword(summary)/' "$X"
-check "ambiguity checked in the summary only, not the PDF text"
+perl -0pi -e 's/hasRumourFraming\(documentText\) \|\| hasRumourFraming\(summary\)/hasRumourFraming(summary)/' "$X"
+check "rumour framing checked in the summary only, not the PDF text"
 
-perl -0pi -e 's/  if \(scaleHeaders\.length > 0 && candidates\.some\(\(c\) => !c\.carriesUnit\)\) \{/  if (scaleHeaders.length > 0 \&\& candidates.every((c) => !c.carriesUnit) \&\& false) {/' "$X"
+# `candidates` is now the pre-filter list and `admitted` the one that survived
+# the sentence-scoped conditional test; the guards moved onto `admitted`.
+perl -0pi -e 's/admitted\.some\(\(c\) => !c\.carriesUnit\)/admitted.length < 0/' "$X"
 check "scale guard neutered (the thousands table read at face value)"
 
 perl -0pi -e 's/  if \(values\.length > 1\) \{/  if (values.length > 99) {/' "$X"
 check "disagreement tolerated (two tranches collapse to whichever came first)"
 
-perl -0pi -e 's/  const chosen = candidates\[0\];/  const chosen = candidates[candidates.length - 1];/' "$X"
+perl -0pi -e 's/const chosen = admitted\[0\];/const chosen = admitted[admitted.length - 1];/' "$X"
 check "the last anchored position quoted instead of the first"
 
 perl -0pi -e 's/  const found = marked\.length > 0 \? marked : scanBareAmounts\(window\.text\);/  const found = [...marked, ...scanBareAmounts(window.text)];/' "$X"
@@ -357,13 +388,13 @@ CORPUS='libs/filings/src/logic/amount-corpus'
 perl -0pi -e 's/export const MIN_UNITLESS_RUPEES = 100_000;/export const MIN_UNITLESS_RUPEES = 1;/' "$P"
 check_in "$HAND" "one-lakh floor, hand-written suites only (no corpus)"
 
-perl -0pi -e 's/  if \(hasAmbiguityKeyword\(documentText\) \|\| hasAmbiguityKeyword\(summary\)\) \{/  if (false) {/' "$X"
-check_in "$HAND" "ambiguity gate, hand-written suites only (no corpus)"
+perl -0pi -e "s/const phrase = conditionalFramingIn\(sentence\);/const phrase = conditionalFramingIn('');/" "$X"
+check_in "$HAND" "conditional framing, hand-written suites only (no corpus)"
 
 perl -0pi -e 's/  return found;\n\}/  return [];\n}/' "$H"
 check_in 'libs/filings/src/logic/amount-hazards' "scale detection disabled, hazards suite only"
 
-perl -0pi -e 's/  if \(scaleHeaders\.length > 0 && candidates\.some\(\(c\) => !c\.carriesUnit\)\) \{/  if (false) {/' "$X"
+perl -0pi -e 's/admitted\.some\(\(c\) => !c\.carriesUnit\)/admitted.length < 0/' "$X"
 check_in "$CORPUS" "scale guard neutered, corpus measurement only"
 
 perl -0pi -e 's/export const PHRASE_REACH_CHARS = 60;/export const PHRASE_REACH_CHARS = 4_000;/' "$A"

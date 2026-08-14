@@ -74,8 +74,30 @@
 #     nouns, no advisory words) rather than its rows.
 #   - `apps/ingest/src/main.ts`. Composition, verified by running the process.
 #
-# Tally, so a report can quote it without recounting: 38 mutations across eight
-# groups, plus 4 independence checks = 42 `check` calls.
+# Tally, so a report can quote it without recounting: 45 mutations across eight
+# groups, plus 4 independence checks = 49 `check` calls. (Was 38 + 4 = 42, and
+# had drifted: seven mutations were added without it. Recounted against a full
+# run, which reported 49 verdicts.)
+
+
+# ==============================================================================
+# WHY COLOUR IS TURNED OFF, AND WHAT IT WAS SILENTLY COSTING
+# ==============================================================================
+#
+# jest writes `\e[1mTests:` — it emits ANSI escapes even when its output is a
+# pipe rather than a terminal. Every harness in this directory decides a
+# mutation was CAUGHT with `grep -qE "^Tests:"`, and that pattern cannot match a
+# line beginning with an escape. So the CAUGHT branch was unreachable in all
+# twelve of them, and every killed mutation was filed as CRASHED instead.
+#
+# NOT FAIL-OPEN — a real test gap still reports SURVIVED — but it destroyed the
+# distinction these harnesses exist to draw, to the point that the task list
+# carried a note explaining that CRASHED "really means caught". It does not have
+# to mean that.
+#
+# `FORCE_COLOR=0` rather than `NO_COLOR=1`: measured 2026-08-14, jest honours
+# the first and ignores the second.
+export FORCE_COLOR=0
 
 set -uo pipefail
 
@@ -352,7 +374,12 @@ check "month off by one in the 'first since' date"
 echo ""
 echo "=== the terminal states: what stops an unbounded retry against NSE ==="
 
-perl -0pi -e "s/  if \(extension === 'pdf'\) return \{ outcome: 'fetch', url: parsed\.toString\(\) \};/  return { outcome: 'fetch', url: parsed.toString() };/" "$T"
+# ZIP IS NOW A LEGITIMATE FETCH, so deleting the pdf guard no longer says what
+# this mutation means. Forcing the guard TRUE does, and says both halves of it
+# at once: an xlsx is fetched instead of refused, and the zip branch below it is
+# never reached, so an archive is fetched with `kind: 'pdf'` and handed to the
+# PDF parser exactly as before.
+perl -0pi -e "s/if \(extension === 'pdf'\) \{/if (true) {/" "$T"
 check "every extension fetched (a ZIP handed to the PDF parser, forever)"
 
 perl -0pi -e "s/    return skip\('no-attachment'\);\n  \}/    return skip('not-a-pdf');\n  }/" "$T"
@@ -388,7 +415,12 @@ check "counterparty extracted for a filing whose amount was refused"
 perl -0pi -e "s/    const headline = form === 'enriched' \? enrichment\.headline : null;/    const headline = enrichment.headline;/" "$W"
 check "follow-up sent for a degraded headline (a second copy of the first alert)"
 
-perl -0pi -e 's/    if \(!passesContentGates\(filing, this\.watchlist\)\) return 0;//' "$W"
+# `passesContentGates` was split into `isNotRoutine` and `isWatchedByOperator`
+# precisely because it folded a fact about the filing together with one
+# operator's preference — see `alert-gate.ts`. So the mutation now drops only
+# the watchlist half of `passesOperatorGates`, which is what this label always
+# meant: the operator's watchlist silences the poller lane and not this one.
+perl -0pi -e 's/ && isWatchedByOperator\(filing, this\.watchlist\)//' "$W"
 check "watchlist ignored by the enrichment lane"
 
 perl -0pi -e 's/    if \(!isWithinAlertWindow\(filing, now, this\.options\.alertWindowMs\)\) return 0;//' "$W"
