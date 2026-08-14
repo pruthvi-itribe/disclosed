@@ -6,6 +6,7 @@ import type { ThrottlerStorageOptions } from '@nestjs/throttler/dist/throttler-s
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { Model } from 'mongoose';
 import { SESSION_MODEL, type SessionDocument } from '@app/accounts';
+import { istTimestamp } from '@app/common';
 import type { Filing, FilingDocument } from '@app/filings';
 import { DashboardModule, FILING_MODEL } from '../dashboard.module';
 
@@ -619,6 +620,17 @@ describe('the watchlist', () => {
         lastFiledAtIst: '2026-08-05 10:40:00',
       }),
     ]);
+
+    // `addedAt` is stamped at request time, so there is no fixed string to
+    // assert against — what IS assertable is that its companion renders THAT
+    // instant in IST. The name-level lock in `ist-contract.spec.ts` cannot see
+    // this: `addedAtIst: entry.addedAt.toISOString()` satisfies every check
+    // there and puts UTC text in a field a reader would read as IST.
+    const [row] = response.body.data as ReadonlyArray<{
+      addedAt: string;
+      addedAtIst: string;
+    }>;
+    expect(row.addedAtIst).toBe(istTimestamp(new Date(row.addedAt)));
   });
 
   it('removes a symbol, and says so even when it was not there', async () => {
