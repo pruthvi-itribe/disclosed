@@ -318,17 +318,33 @@ describe('describeDashboardConfig', () => {
     expect(line).not.toContain('mode=read-only');
   });
 
-  it('redacts credentials in the mongo URI', () => {
-    // This is the one place the configuration is printed, and a password in a
-    // log file outlives the process that wrote it.
+  it('prints neither the credentials nor the host of a remote mongo', () => {
+    // This is the one place the configuration is printed. The password was
+    // always redacted; the HOST no longer survives either, because naming the
+    // cluster names the target and these logs are destined to be shipped off
+    // the node. The database name is what an operator actually reads this line
+    // for. See `libs/common/src/mongo-target.ts`.
     const line = describeDashboardConfig(
       loadDashboardConfig(
-        env({ MONGO_URI: 'mongodb://user:s3cret@host:27017/turret' }),
+        env({ MONGO_URI: 'mongodb://user:s3cret@some-cluster.example/turret' }),
       ),
     );
 
-    expect(line).toContain('mongodb://***@host:27017/turret');
+    expect(line).toContain('mongodb://***@<host-withheld>/turret');
     expect(line).not.toContain('s3cret');
+    expect(line).not.toContain('some-cluster');
+  });
+
+  // Loopback is printed in full on purpose: it gives an attacker nothing, and
+  // on a laptop the port is the whole question.
+  it('still prints a loopback mongo in full, port included', () => {
+    const line = describeDashboardConfig(
+      loadDashboardConfig(
+        env({ MONGO_URI: 'mongodb://localhost:27117/turret' }),
+      ),
+    );
+
+    expect(line).toContain('mongodb://localhost:27117/turret');
   });
 });
 

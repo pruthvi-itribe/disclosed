@@ -10,6 +10,11 @@
 // barrel drags in mongoose and an HTTP client. `claim-provider.ts` is types and
 // constants only, and it is imported rather than restated so the allowlist the
 // config validates against and the one the adapters implement cannot drift.
+// Deep, for the reason the imports below already give: this module is loaded
+// before anything else and a barrel is how an unrelated dependency arrives at
+// boot. `mongo-target.ts` is a pure string function with no imports of its own.
+import { describeMongoTarget } from '@app/common/mongo-target';
+
 import {
   CLAIM_EFFORT_LEVELS,
   CLAIM_PROVIDERS,
@@ -585,16 +590,6 @@ export const claimApiKeyOf = (config: {
     : config.anthropicApiKey;
 
 /**
- * Strips the `user:password@` section of a connection string.
- *
- * A mongo URI routinely carries credentials, and the startup line below is the
- * one place the whole configuration is printed. Redacting is not optional: a
- * password in a log file outlives the process that wrote it.
- */
-const redactCredentials = (uri: string): string =>
-  uri.replace(/\/\/[^@/]*@/, '//***@');
-
-/**
  * A single startup line describing the configuration actually in force.
  *
  * Exists because a default that silently applied is indistinguishable from a
@@ -603,7 +598,7 @@ const redactCredentials = (uri: string): string =>
  */
 export const describeConfig = (config: IngestConfig): string =>
   [
-    `mongo=${redactCredentials(config.mongoUri)}`,
+    `mongo=${describeMongoTarget(config.mongoUri)}`,
     `hot=${config.hotIntervalMs}ms`,
     `idle=${config.idleIntervalMs}ms`,
     `drain=${config.drainIntervalMs}ms`,
