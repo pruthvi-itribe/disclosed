@@ -311,11 +311,37 @@ export const SCRIPT_BASE = `
     setText('live-text', label);
   }
 
+  // THE VALIDATOR THE LAST ANSWER CARRIED, PER PATH, FOR AS LONG AS THIS TAB
+  // IS OPEN.
+  //
+  // Keyed by the WHOLE path including its query string, because that is what
+  // the validator describes: a filter change is a different question and must
+  // never be answered out of the answer to the old one.
+  //
+  // IN MEMORY AND NOWHERE ELSE. Not localStorage, not sessionStorage: this is
+  // a fingerprint of an authenticated response, and the responses themselves
+  // are 'no-store' precisely so nothing keeps them. Closing the tab forgets it.
+  var etags = {};
+
+  // What a 304 resolves to. AN OBJECT, TESTED BY IDENTITY, rather than null or
+  // undefined: 'nothing changed' and 'nothing came back' are different facts
+  // and a caller that cannot tell them apart renders the second as the first.
+  var NOT_MODIFIED = { notModified: true };
+
   // Every response is an envelope. A body that is not one is a proxy, an error
   // page or a version mismatch, and is reported rather than rendered as empty.
   function getJson(path) {
-    return fetch(path, { headers: { Accept: 'application/json' } })
+    var headers = { Accept: 'application/json' };
+    if (Object.prototype.hasOwnProperty.call(etags, path)) {
+      headers['If-None-Match'] = etags[path];
+    }
+    return fetch(path, { headers: headers })
       .then(function (res) {
+        // BEFORE THE res.ok BRANCH BELOW, and that order is the whole thing:
+        // res.ok is FALSE for a 304. Read as a failure, the ordinary answer to
+        // almost every poll would put a red banner on a page that is exactly
+        // up to date.
+        if (res.status === 304) return NOT_MODIFIED;
         if (!res.ok) {
           return res.text().then(function (body) {
             var failure = new Error(path + ' returned ' + res.status + ': ' + body.slice(0, 200));
@@ -327,9 +353,22 @@ export const SCRIPT_BASE = `
             throw failure;
           });
         }
+        // STORED ONLY WHEN IT IS STRONG, which is how this page tells a
+        // validator a route MEANT to issue from one express added on the way
+        // out. Express tags every response it sends, weakly - 'W/' - including
+        // the summary, the watchlist and the type-ahead, and revalidating
+        // against those would hand a 304 to renderers that were never taught
+        // what one means. The filings route computes its own; nothing else does.
+        //
+        // DELETED WHEN AN ANSWER DOES NOT CARRY ONE, so the store always holds
+        // what the last answer said rather than what some earlier one did.
+        var tag = res.headers.get('ETag');
+        if (tag !== null && tag.charAt(0) === '"') etags[path] = tag;
+        else delete etags[path];
         return res.json();
       })
       .then(function (body) {
+        if (body === NOT_MODIFIED) return body;
         if (!body || body.success !== true) {
           throw new Error(path + ' returned a body that is not a success envelope');
         }

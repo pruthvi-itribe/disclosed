@@ -201,6 +201,11 @@ export const SCRIPT_FEED = `
     // would be one for any future deep link to a filing. The seqId is the one
     // value that identifies this card across repaints.
     card.setAttribute('data-seq', String(f.seqId));
+    // THE TIME THIS CARD IS SHOWING, IN THE ONLY FORM THAT SURVIVES A POLL
+    // THAT RETURNED NOTHING. 'touchFeedTimes' rewrites the relative time
+    // without rebuilding the card, and on a 304 there is no payload left to
+    // read it from - see that function.
+    card.setAttribute('data-at', f.disseminatedAt);
 
     var head = document.createElement('header');
     head.className = 'cardhead';
@@ -557,19 +562,24 @@ export const SCRIPT_FEED = `
    * WRITTEN ONLY WHEN IT DIFFERS. Assigning textContent replaces the text node
    * even when the string is identical, which would put a node creation per
    * card back on every tick - the thing being removed.
+   *
+   * READ OFF THE CARD, NOT OFF A PAYLOAD, and that is what makes it survive a
+   * poll that returned nothing: 'api/filings' answers a repeat ask with 304 and
+   * no body now, so the tick that needs this most is the tick with no items in
+   * it. The timestamp each card renders is on the card as 'data-at'.
+   *
+   * Takes any root with cards under it: a container when a draw has just
+   * happened, the whole document when nothing changed and every visible card is
+   * equally stale.
    */
-  function touchFeedTimes(feed, items) {
-    var at = {};
-    for (var i = 0; i < items.length; i++) {
-      at[String(items[i].seqId)] = items[i].disseminatedAt;
-    }
-    var cards = feed.querySelectorAll('[data-ui="card"]');
+  function touchFeedTimes(root) {
+    var cards = root.querySelectorAll('[data-ui="card"]');
     for (var c = 0; c < cards.length; c++) {
-      var seq = cards[c].getAttribute('data-seq');
-      if (!Object.prototype.hasOwnProperty.call(at, seq)) continue;
+      var at = cards[c].getAttribute('data-at');
+      if (at === null) continue;
       var when = cards[c].querySelector('.when');
       if (!when) continue;
-      var text = relativeTime(at[seq]);
+      var text = relativeTime(at);
       if (when.textContent !== text) when.textContent = text;
     }
   }
@@ -596,7 +606,7 @@ export const SCRIPT_FEED = `
 
     var signature = feedSignature(items, meta, chrome);
     if (feedSignatures[feed.id] === signature) {
-      touchFeedTimes(feed, items);
+      touchFeedTimes(feed);
       return;
     }
     feedSignatures[feed.id] = signature;

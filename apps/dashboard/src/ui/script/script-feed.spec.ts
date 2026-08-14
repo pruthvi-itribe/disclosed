@@ -341,3 +341,43 @@ describe('feedSignature — whether the feed is rebuilt at all', () => {
     );
   });
 });
+
+/**
+ * WHAT A POLL THAT CHANGED NOTHING NOW COSTS, AND WHAT IT MUST STILL DO.
+ *
+ * `api/filings` answers a repeat ask with 304 and no body (the argument is on
+ * the route), so `refresh` has no payload to draw and skips the render. That is
+ * the saving. What it must NOT skip is the clock: `feedSignature` deliberately
+ * leaves `relativeTime` out — it changes on every card every minute and
+ * including it would mean never skipping a rebuild — and `touchFeedTimes` is
+ * what keeps those four characters honest without rebuilding a card.
+ *
+ * So the time each card reads is written onto the card as `data-at`, and the
+ * touch-up walks the DOM rather than a payload it no longer has. Without this
+ * a tab left open through a quiet hour reads "10 min ago" for an hour.
+ */
+describe('a poll that changed nothing', () => {
+  it('writes the timestamp onto the card, where the touch-up can find it', () => {
+    expect(cutFunction(SCRIPT, 'function feedCard(')).toContain(
+      "card.setAttribute('data-at', f.disseminatedAt)",
+    );
+  });
+
+  it('reads the times off the DOM rather than off a payload', () => {
+    const touch = cutFunction(SCRIPT, 'function touchFeedTimes(');
+
+    expect(touch).toContain("getAttribute('data-at')");
+    // The old signature took the items and built a seqId map out of them. A
+    // 304 carries no items, so a touch-up that needs them cannot run at all.
+    expect(touch).not.toContain('items');
+  });
+
+  it('refreshes the clock on the branch that skips the render', () => {
+    const branch = SCRIPT.indexOf('if (b === NOT_MODIFIED)');
+    expect(branch).toBeGreaterThan(-1);
+    // Inside the branch, before it returns: the whole body of it is one call.
+    expect(SCRIPT.slice(branch, branch + 200)).toContain(
+      'touchFeedTimes(document)',
+    );
+  });
+});
