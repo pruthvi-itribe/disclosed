@@ -229,3 +229,56 @@ describe('extractPdfText against the real parser', () => {
     expect(typeof defaultPdfParser()).toBe('function');
   });
 });
+
+/**
+ * The log filter, exercised through a real parse rather than in isolation.
+ *
+ * `pdf-log-noise.spec.ts` proves the allowlist. This proves the wiring: that
+ * installing it from `defaultPdfParser` does not cost us pdf.js's real
+ * warnings, which is the risk a console filter carries.
+ */
+describe('pdf.js log noise, end to end', () => {
+  /** The fixture with its xref pointer broken. pdf.js rebuilds it, and says so. */
+  const damaged = (): Buffer => {
+    const good = readFileSync(
+      join(__dirname, '../../../../test/fixtures/text-layer.pdf'),
+    );
+    return Buffer.from(
+      good.toString('latin1').replace(/startxref\s*\d+/, 'startxref 999999'),
+      'latin1',
+    );
+  };
+
+  const parseCapturingLogs = async (data: Buffer): Promise<string[]> => {
+    // `defaultPdfParser()` installs the filter over the real console.log, so
+    // the capture has to go on top of it — replacing it first would test a
+    // console the filter is not attached to.
+    const parser = defaultPdfParser();
+    const seen: string[] = [];
+    const real = console.log;
+    console.log = (...args: unknown[]): void => {
+      seen.push(args.map(String).join(' '));
+    };
+    try {
+      await parser(data);
+    } finally {
+      console.log = real;
+    }
+    return seen;
+  };
+
+  // THE ONE THAT MATTERS. A damaged cross reference table is a fact about a
+  // filing; if the filter ate this, it would be eating evidence.
+  it('still prints a real pdf.js warning', async () => {
+    expect(await parseCapturingLogs(damaged())).toContain(
+      'Warning: Indexing all PDF objects',
+    );
+  });
+
+  it('prints nothing at all for a healthy document', async () => {
+    const good = readFileSync(
+      join(__dirname, '../../../../test/fixtures/text-layer.pdf'),
+    );
+    expect(await parseCapturingLogs(good)).toEqual([]);
+  });
+});
