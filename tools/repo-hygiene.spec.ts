@@ -117,8 +117,21 @@ const FORBIDDEN: ReadonlyArray<{
     pattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}',
     // Placeholders and example domains are the whole point of the rule being
     // satisfiable, so they are not violations of it.
+    //
+    // THE RESERVED TLDs ARE THE SAME ARGUMENT, MADE STRUCTURALLY. RFC 2606
+    // reserves `.test`, `.example`, `.invalid` and `.localhost` so that they
+    // can never be delegated: an address there cannot reach a person, in any
+    // file, so it is not personal data anywhere rather than only inside a
+    // fixture. This closes a real hole — the `.spec.ts` path exemption below
+    // is a PROXY for "this is a fixture address", and it stopped working the
+    // moment a plan document quoted the test code a spec was about to contain.
+    // The TLD is the better signal, and it needs no exemption list to keep up.
+    //
+    // The trailing `(?![a-zA-Z0-9.-])` forces the matched TLD to be the LAST
+    // label. Without it the unanchored match would settle for `x@sub.turret`
+    // inside `x@sub.turret.test` and report the reserved address anyway.
     refine:
-      /[a-zA-Z0-9._%+-]+@(?!example\.|your-|acme-|sentry\.|localhost|newjob\.)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i,
+      /[a-zA-Z0-9._%+-]+@(?!example\.|your-|acme-|sentry\.|localhost|newjob\.)[a-zA-Z0-9.-]+\.(?!(?:test|example|invalid|localhost)(?![a-zA-Z0-9.-]))[a-zA-Z]{2,}(?![a-zA-Z0-9.-])/i,
     // FIXTURES ARE EXEMPT, and the exemption is load-bearing rather than
     // convenient. `__fixtures__` holds the VERBATIM TEXT of real filings —
     // the corpus the verbatim gate is tested against — and the addresses in
@@ -280,6 +293,39 @@ describe('the repository names nothing an attacker could use', () => {
 
         expect(found.trim()).not.toBe('');
       });
+    },
+  );
+});
+
+/**
+ * The reserved-TLD carve-out, proven in BOTH directions.
+ *
+ * A widening of a security rule that is only tested for what it now allows is
+ * a hole with a passing test beside it. These assert that the rule still finds
+ * what it is for.
+ */
+describe('the personal-email rule and RFC 2606 reserved TLDs', () => {
+  const rule = FORBIDDEN.find((r) => r.what === 'a personal email address');
+  const matches = (value: string): boolean =>
+    rule?.refine?.test(value) ?? false;
+
+  it.each(['bearer@turret.test', 'wiring@turret.test', 'a@b.invalid'])(
+    'does not report %s, which can never reach a person',
+    (address) => {
+      expect(matches(address)).toBe(false);
+    },
+  );
+
+  // A reserved TLD one label deep must not let a real domain pass by being
+  // matched short — `x@sub.turret` inside `x@sub.turret.test`.
+  it('does not report a reserved address that carries a subdomain', () => {
+    expect(matches('x@sub.turret.test')).toBe(false);
+  });
+
+  it.each(['someone@somewhere.co', 'pruthvi@itribe.in', 'a.b@Example2.Com'])(
+    'still reports %s',
+    (address) => {
+      expect(matches(address)).toBe(true);
     },
   );
 });
