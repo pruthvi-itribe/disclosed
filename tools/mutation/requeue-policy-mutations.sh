@@ -82,6 +82,26 @@
 # Tally, so a report can quote it without recounting: 14 mutations in four
 # groups = 14 `check` calls.
 
+
+# ==============================================================================
+# WHY COLOUR IS TURNED OFF, AND WHAT IT WAS SILENTLY COSTING
+# ==============================================================================
+#
+# jest writes `\e[1mTests:` — it emits ANSI escapes even when its output is a
+# pipe rather than a terminal. Every harness in this directory decides a
+# mutation was CAUGHT with `grep -qE "^Tests:"`, and that pattern cannot match a
+# line beginning with an escape. So the CAUGHT branch was unreachable in all
+# twelve of them, and every killed mutation was filed as CRASHED instead.
+#
+# NOT FAIL-OPEN — a real test gap still reports SURVIVED — but it destroyed the
+# distinction these harnesses exist to draw, to the point that the task list
+# carried a note explaining that CRASHED "really means caught". It does not have
+# to mean that.
+#
+# `FORCE_COLOR=0` rather than `NO_COLOR=1`: measured 2026-08-14, jest honours
+# the first and ignores the second.
+export FORCE_COLOR=0
+
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
