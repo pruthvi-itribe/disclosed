@@ -1,3 +1,5 @@
+import { installPdfLogFilter } from './pdf-log-noise';
+
 /**
  * Turns PDF bytes into text, or says the bytes are not a readable PDF.
  *
@@ -82,6 +84,13 @@ let cached: PdfParser | null = null;
  */
 export function defaultPdfParser(): PdfParser {
   if (cached === null) {
+    // INSTALLED HERE because this is the only place that decides a process is
+    // going to parse PDFs at all. A process that never calls this — the
+    // dashboard, which imports this barrel for the mongoose schema — never has
+    // its console touched. pdf.js cannot be asked to be quieter; the argument
+    // and the measurement are in `pdf-log-noise.ts`.
+    installPdfLogFilter();
+
     // A deliberate `require`, and the lint rule is suppressed rather than
     // satisfied. A static `import` would put the whole of pdf.js — two
     // megabytes of parser — into every process that imports `@app/filings`,
