@@ -178,13 +178,21 @@ const FORBIDDEN: ReadonlyArray<{
  * Greps the git INDEX, and returns the offending lines.
  *
  * `--cached` rather than the working tree, and `-I` to skip binaries. The
- * lockfile is excluded because it is generated and its hashes trip the UUID
- * pattern; nothing in it is written by a person.
+ * lockfiles are excluded because they are generated and their hashes trip the
+ * UUID pattern; nothing in one is written by a person.
+ *
+ * `*package-lock.json` RATHER THAN `package-lock.json`, and the star is the
+ * whole point: a bare pathspec is a path PREFIX, so it excluded the root
+ * lockfile and nothing else. The moment `apps/web` arrived with a second tree,
+ * its lockfile carried npm's copy of `glob@7`'s deprecation notice — which
+ * ends in the maintainer's own address — and the personal-email rule fired on
+ * a third party's published text inside a file no human wrote. Git's wildmatch
+ * runs without WM_PATHNAME here, so the star crosses `/` and covers any depth.
  */
 function grepTracked(pattern: string, scope?: readonly string[]): string[] {
   const paths =
     scope === undefined
-      ? ['.', ':!package-lock.json', ':!*.svg', ':!docs/images/*']
+      ? ['.', ':!*package-lock.json', ':!*.svg', ':!docs/images/*']
       : [...scope];
   try {
     const out = execFileSync(

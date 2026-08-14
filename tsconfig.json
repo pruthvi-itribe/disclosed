@@ -25,5 +25,12 @@
       "@app/notify/*": ["libs/notify/src/*"]
     }
   },
-  "exclude": ["node_modules", "dist"]
+  // `apps/web` is its own project with its own tsconfig, and it must stay out
+  // of this one. With no `include`, tsc walks everything under the root: it
+  // would pick up the client's `.tsx` files (no `jsx` setting here, so they do
+  // not compile), its `vite.config.ts` (no `vitest` types here) and its specs.
+  // The two trees also disagree deliberately — the client is ESNext modules
+  // with `noUncheckedIndexedAccess`, the server is CommonJS without it — so
+  // one compiler pass over both could only ever be the weaker of the two.
+  "exclude": ["node_modules", "dist", "apps/web"]
 }

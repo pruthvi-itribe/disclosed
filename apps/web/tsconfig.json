@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    // `@testing-library/jest-dom` IS DELIBERATELY ABSENT FROM THIS LIST. Its
+    // package entry point is `/// <reference path="jest.d.ts" />`, which
+    // declares the global `describe`/`it`/`expect` for JEST — and resolving
+    // `jest` walks up to the SERVER tree's `@types/jest`, so listing it here
+    // pulls the repository's other dependency tree into this program and then
+    // fails with TS6200 on eight identifiers vitest already owns.
+    //
+    // The matchers are still typed: `src/test-setup.ts` imports
+    // `@testing-library/jest-dom/vitest`, whose `declare module 'vitest'`
+    // augments `Assertion` across the whole program, and that file is inside
+    // `include`. Types via the import, not via `types` — which is what the
+    // library's own vitest instructions say to do.
+    "types": ["vitest/globals"]
+  },
+  "include": ["src", "tools", "vite.config.ts"]
+}

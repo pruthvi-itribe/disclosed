@@ -11,6 +11,18 @@ node_modules
 .env.*
 !.env.example
 
+# The React client's GENERATED trees, and only those. Docker matches patterns
+# against the full relative path, so the bare `node_modules` and `dist` above
+# catch the ROOT ones and not these — which `COPY apps ./apps` would then send
+# to the daemon and into the build stage on every build, a 200 MB darwin-arm64
+# tree the image immediately overwrites with its own install.
+#
+# THE SOURCE STAYS IN THE CONTEXT DELIBERATELY: the client is built inside the
+# image and served from the dashboard pod, so a blanket `apps/web` would copy
+# nothing for that stage to build.
+apps/web/node_modules
+apps/web/dist
+
 # Build output. The image compiles its own from source; copying a host build in
 # would ship whatever was last on this laptop.
 dist
