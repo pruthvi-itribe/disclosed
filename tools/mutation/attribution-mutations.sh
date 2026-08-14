@@ -293,8 +293,18 @@ echo "=== what counts as a company: the CIN scan ==="
 # line: it is the finding, not a stale anchor, and the fix is a test rather than
 # a smaller mutation. Anchored on the two letter runs only — the `\b` bounds are
 # a separate guarantee with its own mutation below.
-perl -0pi -e 's/\[A-Za-z\]\{2\}\\d\{4\}\[A-Za-z\]\{3\}/[A-Z]{2}\\d{4}[A-Z]{3}/' "$S"
-check "CIN matched upper-case only (a mixed-case CIN names no company)"
+# RE-ANCHORED 2026-08-14, and the reason is the point of this whole harness.
+# This mutation SURVIVED when it was written: the scan read `[LU]...[A-Za-z]`,
+# so a lower-case CIN matched nothing, the gate failed OPEN, and a shared page
+# printed in lower case walked through the attribution refusal. The spec's
+# "finds a CIN however the filing cases it" passed the entire time, because it
+# asserted a count of 1 that it got from the upper-case half alone.
+#
+# The scan is now `[A-Z]...` with the `i` flag, so making it case-sensitive is
+# dropping that flag rather than narrowing the classes. Anchored on the flags,
+# which is the smallest fragment that still expresses the mutation.
+perl -0pi -e 's/\\d\{6\}\\b\/gi;/\\d{6}\\b\/g;/' "$S"
+check "CIN matched case-sensitively (a lower-case CIN names no company)"
 
 perl -0pi -e 's|/\\b\[LU\](.*?)\\d\{6\}\\b/g|/[LU]$1\\d{6}/g|' "$S"
 check "CIN bounds dropped (an order number contributes a company)"

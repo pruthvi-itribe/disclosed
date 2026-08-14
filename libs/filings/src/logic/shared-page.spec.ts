@@ -23,6 +23,30 @@ describe('companyIdentitiesIn', () => {
     expect(companyIdentitiesIn(document).size).toBe(1);
   });
 
+  // THE TEST ABOVE PASSED FOR THE WRONG REASON and this one is why it is now
+  // trustworthy. The pattern's leading class was `[LU]`, so the lower-cased
+  // half of that document matched NOTHING: the assertion read 1 and meant
+  // "only the upper-case one was seen", not "both were seen and folded".
+  //
+  // Found by a mutation, not by reading: narrowing `[A-Za-z]` to `[A-Z]` and
+  // dropping the `.toUpperCase()` both SURVIVED the whole 5,711-test suite.
+  //
+  // WHY IT IS A BUG AND NOT A CURIOSITY. The gate fails OPEN — fewer
+  // identities means "not a shared page" — so a document printing its CINs in
+  // lower case named ZERO companies and walked straight through the
+  // attribution refusal, which is the one this project may never get wrong.
+  it('finds a CIN that is printed entirely in lower case', () => {
+    const document = `cin: ${cin(1).toLowerCase()}`;
+
+    expect(companyIdentitiesIn(document).size).toBe(1);
+  });
+
+  it('refuses a lower-cased shared page, as it would an upper-cased one', () => {
+    expect(
+      isSharedPage(pageNaming(SHARED_PAGE_MIN_IDENTITIES).toLowerCase()),
+    ).toBe(true);
+  });
+
   it('counts distinct companies, not occurrences', () => {
     // A CIN in a page header repeats on every page of a long filing.
     const repeated = `${cin(7)} `.repeat(40);
