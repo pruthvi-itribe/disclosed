@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
-import { isAllowedOrigin } from '@app/accounts';
+import { isAllowedOrigin, readSessionToken } from '@app/accounts';
 import { ApiError } from './api-error';
 import type { Signedin } from './session.service';
 import { SessionService } from './session.service';
@@ -65,8 +65,44 @@ export class OriginGuard implements CanActivate {
     this.publicOrigin = config.getOrThrow<string>('publicOrigin');
   }
 
+  /**
+   * CSRF DEFENDS AMBIENT AUTHORITY, so this check keys on the TRANSPORT that
+   * carried the credential rather than on the route.
+   *
+   * A browser attaches cookies by itself and never attaches an `Authorization`
+   * header by itself. A forged cross-site request can therefore ride a cookie
+   * and cannot ride a Bearer token, so a Bearer request has nothing for this
+   * check to protect and is refused by it only spuriously — which is what a
+   * phone, sending no `Origin` at all, would have hit on every mutation.
+   *
+   * `origin-guard.ts` justified refusing an absent `Origin` with "an absent one
+   * on a mutation means a non-browser client — which holds no cookie this
+   * design would honour anyway". That was true until Bearer existed, and it is
+   * the sentence this change invalidates: a non-browser client now holds a
+   * credential this design does honour. The refusal itself is unchanged and
+   * still applies to every cookie-carried mutation; what changed is that the
+   * caller now decides which requests it covers.
+   *
+   * WHAT COVERS A BEARER REQUEST INSTEAD is the browser's own cross-origin
+   * rules. An `Authorization` header makes a request non-simple, so a
+   * cross-site caller has to clear a CORS preflight before the real request is
+   * sent — and this application enables no CORS, so the preflight goes
+   * unanswered and the browser never sends it. An HTML form, which needs no
+   * preflight, cannot set the header at all.
+   *
+   * READS THE HEADERS ITSELF rather than trusting anything `SessionGuard` left
+   * on the request, because there is no ordering to depend on:
+   * `POST /api/auth/login` carries this guard and no `SessionGuard`. Both call
+   * `readSessionToken`, so the two cannot disagree about what a request is.
+   */
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
+
+    const presented = readSessionToken(
+      request.headers.authorization,
+      request.headers.cookie,
+    );
+    if (presented?.transport === 'bearer') return true;
 
     if (!isAllowedOrigin(request.headers.origin, this.publicOrigin)) {
       throw new ApiError(

@@ -5,15 +5,25 @@
  * session cookie on a cross-site POST; this refuses the request outright when
  * the browser says it came from somewhere else. Double-submit tokens would be a
  * third layer and a lot of plumbing, and with no cross-site surface and no CORS
- * enabled they are not earning it — revisit if a mobile client or a third-party
- * integration ever appears.
+ * enabled they are not earning it.
  *
  * AN ABSENT `Origin` IS REFUSED, and that is the only interesting decision
  * here. Browsers send `Origin` on every cross-origin request and on every
- * same-origin POST, so an absent one on a mutation means a non-browser client —
- * which holds no cookie this design would honour anyway. Allowing it would make
- * the guard trivially bypassable by anything that can omit a header, which is
- * everything except a browser.
+ * same-origin POST, so an absent one on a mutation is not a browser this
+ * application serves. Allowing it would make the guard trivially bypassable by
+ * anything that can omit a header, which is everything except a browser.
+ *
+ * THAT PARAGRAPH USED TO END "which holds no cookie this design would honour
+ * anyway", and told the reader to revisit it if a mobile client ever appeared.
+ * One has. `Authorization: Bearer` is now a second credential transport, so a
+ * non-browser client does hold a credential this design honours and the
+ * sentence is retired rather than left standing.
+ *
+ * WHAT DID NOT CHANGE IS THIS FUNCTION. An absent `Origin` is still refused on
+ * every request that reaches it. What changed is upstream, in
+ * `session.guard.ts`: `OriginGuard` now asks this only of cookie-carried
+ * mutations, because CSRF defends ambient authority and a Bearer token is not
+ * ambient — a browser never attaches that header by itself.
  */
 
 /**

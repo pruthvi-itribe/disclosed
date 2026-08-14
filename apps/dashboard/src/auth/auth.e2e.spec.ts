@@ -773,6 +773,63 @@ describe('the Bearer transport', () => {
   });
 });
 
+/**
+ * THE CSRF CHECK KEYS ON THE TRANSPORT THAT CARRIED THE CREDENTIAL.
+ *
+ * EVERY TEST HERE PRESENTS A REAL SESSION, which is the whole reason the block
+ * proves anything. `WatchlistController` carries `SessionGuard` at the CLASS
+ * level and `OriginGuard` on the METHOD, and Nest runs controller-scoped guards
+ * first — so a made-up token answers 401 from the session guard and never
+ * reaches the origin guard at all. Measured 2026-08-14: a 43-character
+ * never-minted cookie sent from `http://evil.example` answers 401, not 403. A
+ * test written that way would assert on the session guard while claiming to
+ * assert on this one.
+ */
+describe('CSRF keys on transport, not on route', () => {
+  it('still refuses a cookie-authenticated mutation from a foreign origin', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('POST', '/api/watchlist?symbol=RELIANCE', {
+      cookie,
+      origin: 'http://evil.example',
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error?.code).toBe('BAD_ORIGIN');
+  });
+
+  // Today's behaviour, and it must survive: a browser sends Origin on every
+  // cross-origin request and on every same-origin POST, so an absent one on a
+  // cookie mutation is not a browser this application serves.
+  it('still refuses a cookie-authenticated mutation with no Origin', async () => {
+    const { cookie } = await registerFresh();
+
+    const response = await call('POST', '/api/watchlist?symbol=RELIANCE', {
+      cookie,
+      origin: null,
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error?.code).toBe('BAD_ORIGIN');
+  });
+
+  // THE CHANGE. A phone sends no Origin and must not be refused for it: the
+  // browser never attaches an Authorization header by itself, so there is no
+  // ambient authority for a forged request to abuse.
+  it('lets a Bearer mutation with no Origin through to the handler', async () => {
+    const { cookie } = await registerFresh();
+    const token = cookie.split('=')[1];
+
+    const response = await call('POST', '/api/watchlist?symbol=RELIANCE', {
+      bearer: token,
+      origin: null,
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data).toMatchObject({ symbol: 'RELIANCE' });
+  });
+});
+
 describe('the rate limit', () => {
   it('fires on the auth routes after the per-minute burst', async () => {
     // THE LIMITER IS NOT DEFERRED TO THE EXPOSURE GATE. Credential stuffing
