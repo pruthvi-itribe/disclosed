@@ -103,9 +103,18 @@ const wireInstantsIn = (source: string): readonly string[] =>
     .filter((match) => !DOMAIN_DATE.test(match[2]))
     .map((match) => match[1]);
 
+/**
+ * The companion must be the WHOLE identifier, not a prefix of one.
+ *
+ * `includes('readonly addedAtIst')` is satisfied by `readonly addedAtIstXX`,
+ * so a typo in the companion's name would leave the field unpaired and this
+ * lock green — found by renaming a real companion and watching the check pass.
+ * The trailing class ends the identifier at whatever legally follows it: `:`,
+ * `?`, or a space before either.
+ */
 const withoutCompanion = (source: string): readonly string[] =>
   wireInstantsIn(source).filter(
-    (name) => !source.includes(`readonly ${name}Ist`),
+    (name) => !new RegExp(`readonly ${name}Ist\\s*[?:]`).test(source),
   );
 
 /**
@@ -208,5 +217,37 @@ describe('the IST contract', () => {
     expect(withoutCompanion('  readonly builtAt: string;')).toEqual([
       'builtAt',
     ]);
+  });
+});
+
+/**
+ * The companion check itself, proven in both directions.
+ *
+ * A prefix match is the failure this guards: the first version accepted
+ * `addedAtIstXX` as the companion for `addedAt`, which means a typo in the
+ * companion's NAME would have left the field unpaired with the lock green.
+ * Found by renaming a real companion and watching the check pass.
+ */
+describe('the companion must be the whole identifier', () => {
+  const withField = (companion: string): string =>
+    [
+      'interface Row {',
+      '  readonly addedAt: string;',
+      `  ${companion}`,
+      '}',
+    ].join('\n');
+
+  it.each(['readonly addedAtIst: string;', 'readonly addedAtIst?: string;'])(
+    'accepts %s',
+    (companion) => {
+      expect(withoutCompanion(withField(companion))).toEqual([]);
+    },
+  );
+
+  it.each([
+    'readonly addedAtIstXX: string;',
+    'readonly addedAtIstanbul: string;',
+  ])('refuses %s, which only starts with the right name', (companion) => {
+    expect(withoutCompanion(withField(companion))).toEqual(['addedAt']);
   });
 });
