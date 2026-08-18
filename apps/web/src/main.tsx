@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { createApiGet } from './shared/api/api-get';
+import { createApiSend } from './shared/api/api-send';
 import { createEtagStore } from './shared/api/etag-store';
 // The four stylesheets the server concatenated into one <style> element,
 // imported in the same order so the cascade resolves identically. All are
@@ -22,11 +23,13 @@ const root = document.getElementById('root');
 if (root === null) throw new Error('#root is missing from the document');
 
 const apiGet = createApiGet(createEtagStore());
+const apiSend = createApiSend();
 
 createRoot(root).render(
   <StrictMode>
     <App
       apiGet={apiGet}
+      apiSend={apiSend}
       onSessionEnded={() => {
         // Reloading hands the decision back to the server, which answers the
         // front door with the landing page. Guarded against a loop by the

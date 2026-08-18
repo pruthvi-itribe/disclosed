@@ -77,12 +77,33 @@ const flush = async () => {
   });
 };
 
-const renderApp = async (apiGet = okApiGet()) => {
+const okApiSend = () =>
+  vi.fn((path: string): Promise<unknown> => {
+    if (path === '/api/me') {
+      return Promise.resolve(
+        envelope({
+          signedIn: true,
+          email: 'r@example.invalid',
+          watchCount: 0,
+          watchCap: 50,
+          unread: 0,
+          channels: [],
+        }),
+      );
+    }
+    return Promise.resolve(envelope(null));
+  });
+
+const renderApp = async (apiGet = okApiGet(), apiSend = okApiSend()) => {
   const view = render(
-    <App apiGet={apiGet as never} onSessionEnded={vi.fn()} />,
+    <App
+      apiGet={apiGet as never}
+      apiSend={apiSend as never}
+      onSessionEnded={vi.fn()}
+    />,
   );
   await flush();
-  return { apiGet, ...view };
+  return { apiGet, apiSend, ...view };
 };
 
 describe('App', () => {

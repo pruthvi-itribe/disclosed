@@ -1,6 +1,6 @@
 import type { FilterState } from '../../app/filter-state';
 
-export type ViewName = 'brief' | 'feed' | 'company';
+export type ViewName = 'brief' | 'feed' | 'company' | 'watching';
 
 /**
  * The Brief's window: the server caps a page at 200, and a verified IST day

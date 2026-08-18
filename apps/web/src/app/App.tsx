@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useReducer, useState } from 'react';
-import type { ApiResult } from '../shared/api/api-get';
+import type { ApiEnvelope, ApiResult } from '../shared/api/api-get';
+import type { SendMethod } from '../shared/api/api-send';
 import { usePoll } from '../shared/api/use-poll';
+import { useMe } from '../shared/api/use-me';
 import type { FilingView } from '../shared/types/api';
 import { filterReducer, INITIAL_FILTERS } from './filter-state';
 import { initialViewState, viewReducer } from './view-state';
@@ -18,6 +20,11 @@ export interface AppProps {
     path: string,
     current?: () => boolean,
   ) => Promise<ApiResult<T>>;
+  readonly apiSend: <T>(
+    path: string,
+    method: SendMethod,
+    body?: unknown,
+  ) => Promise<ApiEnvelope<T>>;
   readonly onSessionEnded: () => void;
 }
 
@@ -28,7 +35,11 @@ export interface AppProps {
  * position. The focus dialog lives outside the polled sections and holds a
  * snapshot; the Watching view and account controls arrive with Plan 3.
  */
-export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
+export function App({
+  apiGet,
+  apiSend,
+  onSessionEnded,
+}: AppProps): JSX.Element {
   const [filters, dispatchFilters] = useReducer(filterReducer, INITIAL_FILTERS);
   const [viewState, dispatchView] = useReducer(
     viewReducer,
@@ -44,6 +55,8 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
     filters,
     onSessionEnded,
   });
+
+  const account = useMe({ apiSend, onReload: onSessionEnded });
 
   // ONE CLASS ON THE BODY, so exactly one view is ever in scroll-lock: the
   // deck is a scroll container sized to the window, and the page behind it
@@ -73,10 +86,19 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
         viewState={viewState}
         live={live}
         summary={summary}
+        me={account.me}
+        unread={account.unread}
         onShowView={(view) => dispatchView({ type: 'show', view })}
+        onSignOut={account.signOut}
       />
-      <div id="alert" className="alert" hidden={failure === null}>
-        {failure ?? ''}
+      {/* One banner, last-writer-wins the way the old #alert did; the poll's
+          sentence outranks the account's because it is the fresher fact. */}
+      <div
+        id="alert"
+        className="alert"
+        hidden={failure === null && account.failure === null}
+      >
+        {failure ?? account.failure ?? ''}
       </div>
 
       <section
@@ -133,6 +155,18 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
           onPickGroup={pickGroup}
           onGrow={() => dispatchFilters({ type: 'grow' })}
         />
+      </section>
+
+      <section
+        id="view-watching"
+        data-ui="view-watching"
+        className="view"
+        role="tabpanel"
+        aria-labelledby="tab-watching"
+        hidden={viewState.view !== 'watching'}
+      >
+        {/* The watchlist first, then what it said — filled by the Watching
+            task; the section exists so the tab has a panel to control. */}
       </section>
 
       {viewState.company !== null && (
