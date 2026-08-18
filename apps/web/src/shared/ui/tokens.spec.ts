@@ -17,7 +17,7 @@ const REQUIRED = [
 ] as const;
 
 describe('the design tokens', () => {
-  const css = readFileSync(join(__dirname, 'tokens.module.css'), 'utf8');
+  const css = readFileSync(join(__dirname, 'tokens.css'), 'utf8');
 
   it.each(REQUIRED)('defines %s', (token) => {
     expect(css).toContain(`${token}:`);

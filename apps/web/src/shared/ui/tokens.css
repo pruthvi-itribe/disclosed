@@ -9,6 +9,11 @@
  * off-origin. The reasoning behind each value — the contrast sweep that placed
  * --accent, the brand family from the logo tile — stays in `page-style.ts`,
  * which is where a change would have to start.
+ *
+ * PLAIN CSS RATHER THAN A CSS MODULE, measured: a `.module.css` imported for
+ * side effects alone is treeshaken by Vite (the 2026-08-18 build emitted no
+ * CSS at all), and `:root` custom properties are global by nature — a module,
+ * whose whole job is scoping, is the wrong vehicle for them.
  */
 :root {
   --bg: #0d1117;
