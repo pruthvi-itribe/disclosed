@@ -98,6 +98,15 @@ interface Company {
   /** True when a previous run of this tool already filled one in. */
   bseIndustry: string | null;
   filings: number;
+  /**
+   * How many of those filings already carry `bseIndustry`. The company-level
+   * value above says "some filing has it"; this says how many — and the two
+   * disagreeing is the partial-coverage state a symbol enters every time a
+   * new filing arrives after a run, because ingest does not stamp the field.
+   * Found live 2026-08-18: MOTHERSON held it on 19 of 24 filings, the
+   * company page reads the newest, and the chip sat empty.
+   */
+  stamped: number;
 }
 
 interface Row {
@@ -125,11 +134,13 @@ const foldCompanies = (rows: readonly Row[]): Map<string, Company> => {
       nseIndustry: null,
       bseIndustry: null,
       filings: 0,
+      stamped: 0,
     };
     held.filings += 1;
     held.companyName = text(row.companyName) ?? held.companyName;
     held.nseIndustry = held.nseIndustry ?? text(row.industry);
     held.bseIndustry = held.bseIndustry ?? text(row.bseIndustry);
+    if (text(row.bseIndustry) !== null) held.stamped += 1;
     const isin = text(row.isin);
     if (isin !== null) held.isins.add(isin);
     companies.set(symbol, held);
@@ -339,9 +350,18 @@ async function applyWrites(
   found: Map<string, string>,
   commit: boolean,
 ): Promise<void> {
-  const changed = [...found.entries()].filter(
-    ([symbol, industry]) => companies.get(symbol)?.bseIndustry !== industry,
-  );
+  // Offered when the value differs OR when coverage is partial: the write
+  // below is an updateMany by symbol, so it repairs both states — but the
+  // old value-only check read "some filing has it" as "every filing has
+  // it", and a symbol whose newer filings arrived after the last run was
+  // skipped forever while its company page showed no industry.
+  const changed = [...found.entries()].filter(([symbol, industry]) => {
+    const held = companies.get(symbol);
+    return (
+      held !== undefined &&
+      (held.bseIndustry !== industry || held.stamped < held.filings)
+    );
+  });
   const filings = changed.reduce(
     (n, [symbol]) => n + (companies.get(symbol)?.filings ?? 0),
     0,
