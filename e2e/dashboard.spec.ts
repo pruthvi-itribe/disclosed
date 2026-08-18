@@ -208,6 +208,46 @@ test.describe('the insight filter', () => {
       .poll(async () => page.locator('#feed .card').count())
       .toBeGreaterThanOrEqual(before);
   });
+
+  // THE ROUND-TRIP. Both clients keep one painted feed while validators are
+  // kept per path, so re-ticking the box re-asks a path whose validator is
+  // still held — and a 304 for it used to confirm rows no longer on screen,
+  // leaving the feed unfiltered with the box ticked. Found live 2026-08-18.
+  // '#feed-info' ("25 of 11,918") is the signal: the two asks answer with
+  // different totals whenever any filing in the collection is unverified.
+  test('re-ticking it narrows the feed back down', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    await expect(page.locator('#feed .card')).not.toHaveCount(0);
+
+    // Asked of the API first, so the skip is a fact about the data rather
+    // than a race with the repaint: the two totals differ whenever any
+    // filing in the collection is unverified.
+    const total = async (tier: string): Promise<number> => {
+      const response = await page.request.get(
+        `api/filings?limit=1&offset=0${tier}`,
+      );
+      const body = (await response.json()) as {
+        meta: { total: number };
+      };
+      return body.meta.total;
+    };
+    test.skip(
+      (await total('&tier=verified')) === (await total('')),
+      'every filing in the collection is verified — the two asks are indistinguishable',
+    );
+
+    const filtered = await page.locator('#feed-info').textContent();
+    await page.locator('#only-insights').uncheck();
+    await expect
+      .poll(() => page.locator('#feed-info').textContent())
+      .not.toBe(filtered);
+
+    await page.locator('#only-insights').check();
+    await expect
+      .poll(() => page.locator('#feed-info').textContent())
+      .toBe(filtered);
+  });
 });
 
 test.describe('the card', () => {

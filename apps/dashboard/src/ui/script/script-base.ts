@@ -330,9 +330,18 @@ export const SCRIPT_BASE = `
 
   // Every response is an envelope. A body that is not one is a proxy, an error
   // page or a version mismatch, and is reported rather than rendered as empty.
-  function getJson(path) {
+  //
+  // 'revalidate' is passed as false when the caller no longer HOLDS the body
+  // the stored validator fingerprints. A 304 answers "what you hold is
+  // current", and each container paints exactly one answer while validators
+  // are kept per path - so a filter round-trip re-asks a path whose validator
+  // is still here, and a 304 for it would confirm rows no longer on screen.
+  // Found live on 2026-08-18: uncheck 'Only filings with verified claims',
+  // re-check it, and the feed stayed unfiltered. The fresh answer's validator
+  // is still stored below, so the next same-path ask revalidates as usual.
+  function getJson(path, revalidate) {
     var headers = { Accept: 'application/json' };
-    if (Object.prototype.hasOwnProperty.call(etags, path)) {
+    if (revalidate !== false && Object.prototype.hasOwnProperty.call(etags, path)) {
       headers['If-None-Match'] = etags[path];
     }
     return fetch(path, { headers: headers })
