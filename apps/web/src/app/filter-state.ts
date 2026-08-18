@@ -11,6 +11,12 @@ export interface FilterState {
   readonly q: string;
   readonly symbol: string;
   readonly topic: string;
+  /**
+   * The card's group tag still filters even though the feed's group CHIPS
+   * were deleted (the topic axis beat them: financial 368 vs results 152).
+   * The tag toggles — clicking the active group clears it.
+   */
+  readonly group: string;
   readonly plans: boolean;
   readonly onlyInsights: boolean;
 }
@@ -25,6 +31,7 @@ export const INITIAL_FILTERS: FilterState = {
   q: '',
   symbol: '',
   topic: '',
+  group: '',
   plans: false,
   onlyInsights: true,
 };
@@ -40,6 +47,7 @@ export const LIMIT_STEPS: readonly number[] = [25, 50, 100, 200, 500];
 export type FilterAction =
   | { readonly type: 'chip'; readonly topic: string; readonly plans: boolean }
   | { readonly type: 'onlyInsights'; readonly value: boolean }
+  | { readonly type: 'pickGroup'; readonly group: string }
   | { readonly type: 'grow' };
 
 export const filterReducer = (
@@ -53,6 +61,12 @@ export const filterReducer = (
       return { ...state, topic: action.topic, plans: action.plans, offset: 0 };
     case 'onlyInsights':
       return { ...state, onlyInsights: action.value, offset: 0 };
+    case 'pickGroup':
+      return {
+        ...state,
+        group: state.group === action.group ? '' : action.group,
+        offset: 0,
+      };
     // Grows the window, keeping the offset — a feed a reader is part-way
     // down must not jump to the top. No step above the cap: no request.
     case 'grow': {

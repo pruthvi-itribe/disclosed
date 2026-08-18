@@ -70,3 +70,16 @@ describe('filingsQuery', () => {
     );
   });
 });
+
+describe('the group filter', () => {
+  it('serialises group between symbol and topic, as query() did', () => {
+    const grouped = {
+      ...INITIAL_FILTERS,
+      group: 'results',
+      topic: 'financial',
+    };
+    expect(filingsQuery(grouped, 'feed', null)).toBe(
+      '/api/filings?limit=25&offset=0&tier=verified&group=results&topic=financial',
+    );
+  });
+});

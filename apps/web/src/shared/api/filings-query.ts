@@ -36,6 +36,7 @@ export const filingsQuery = (
   if (filters.q) parts.push(`q=${encodeURIComponent(filters.q)}`);
   if (filters.symbol)
     parts.push(`symbol=${encodeURIComponent(filters.symbol)}`);
+  if (filters.group) parts.push(`group=${encodeURIComponent(filters.group)}`);
   if (filters.topic) parts.push(`topic=${encodeURIComponent(filters.topic)}`);
   // The literal single value the server accepts; anything else answers 400.
   if (filters.plans) parts.push('plans=only');

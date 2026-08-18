@@ -10,6 +10,7 @@ describe('the filter reducer', () => {
       q: '',
       symbol: '',
       topic: '',
+      group: '',
       plans: false,
       onlyInsights: true,
     });
@@ -70,5 +71,25 @@ describe('the filter reducer', () => {
     const before = { ...INITIAL_FILTERS };
     filterReducer(before, { type: 'chip', topic: 'financial', plans: false });
     expect(before).toEqual(INITIAL_FILTERS);
+  });
+});
+
+describe('the group tag', () => {
+  // The feed's group CHIPS were deleted, but the card's group tag still
+  // filters: pickGroup toggles — clicking the active group clears it.
+  it('picks a group and zeroes the offset', () => {
+    const paged = { ...INITIAL_FILTERS, offset: 25 };
+    const next = filterReducer(paged, { type: 'pickGroup', group: 'results' });
+    expect(next.group).toBe('results');
+    expect(next.offset).toBe(0);
+  });
+
+  it('picking the active group clears it', () => {
+    const grouped = { ...INITIAL_FILTERS, group: 'results' };
+    const next = filterReducer(grouped, {
+      type: 'pickGroup',
+      group: 'results',
+    });
+    expect(next.group).toBe('');
   });
 });
