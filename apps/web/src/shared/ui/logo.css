@@ -1,0 +1,33 @@
+/*
+ * logo.ts BRAND_LOGO_STYLE, ported verbatim. DO NOT EDIT BY HAND:
+ * styles-mirror.spec.ts compares this file against the server stylesheet
+ * character for character, so a change starts there and is re-extracted.
+ */
+
+/* ---------------------------------------------------------------- logo --- */
+/* THE GAP GREW WITH THE MARK, and the old number was right for the old
+   drawing. The line-and-dot mark ended in a stroke pointing at the word, so
+   .18em let it point INTO it. A filled tile has no such arrow: at .18em it
+   collided with the D of the wordmark and read as one crowded object. .34em is
+   the tile's own corner radius at this size, which is the distance the eye
+   already expects between a chip and the text it labels. */
+.logo {
+  display: inline-flex; align-items: center; gap: .34em;
+  font-size: 21px; line-height: 1;
+}
+/* 'block' removes the inline descender gap that would push the wordmark up by
+   a couple of pixels against the mark. 1.28em rather than the old 1.15: a tile
+   is read by its area and an outline by its extent, so the same nominal height
+   makes a filled mark look smaller than the drawn one it replaced. */
+.logomark { display: block; flex: 0 0 auto; height: 1.28em; width: auto; }
+.logotype {
+  font-weight: 650; letter-spacing: -0.035em; color: var(--text);
+  white-space: nowrap;
+}
+/* The full stop, in the flash colour, set slightly large and pulled tight so it
+   reads as a mark rather than as punctuation somebody forgot to delete. IT IS
+   THE SAME CYAN AS THE FOLD in the tile beside it — the founder's artwork puts
+   that cyan on the dot of the i and on ".live", so the wordmark's own dot is
+   where it belongs here. It was --bad, which was a red full stop carrying no
+   failure: a semantic colour spent on decoration. */
+.dotmark { color: var(--flash); font-size: 1.15em; margin-left: -0.02em; }

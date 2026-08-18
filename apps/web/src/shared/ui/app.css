@@ -1,0 +1,14 @@
+/*
+ * The ONE stylesheet that is not a verbatim port, and the whole of why it
+ * exists: the server page's CSS styles the BODY's direct children —
+ * body.briefing becomes a 100dvh flex column whose #view-brief flexes to the
+ * remaining height — but a React application mounts everything inside #root,
+ * which would otherwise sit between body and those children and break every
+ * such rule. display:contents removes #root from layout entirely: the body's
+ * flex sees the same children the server-rendered page gave it, and every
+ * ported rule applies unchanged. Found live on 2026-08-18: without this the
+ * Brief's deck escaped its viewport cage and the page behind it scrolled.
+ */
+#root {
+  display: contents;
+}

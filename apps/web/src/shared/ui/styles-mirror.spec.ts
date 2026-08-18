@@ -52,6 +52,16 @@ describe('the ported stylesheets', () => {
     );
   });
 
+  it('logo.css is BRAND_LOGO_STYLE whole', () => {
+    const source = readFileSync(join(SERVER_UI, 'logo.ts'), 'utf8');
+    const marker = 'export const BRAND_LOGO_STYLE = `';
+    const start = source.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    const from = start + marker.length;
+    const body = source.slice(from, source.indexOf('`;', from));
+    expect(portedCss('logo.css')).toBe(body);
+  });
+
   it('focus.css is PAGE_STYLE_FOCUS whole', () => {
     expect(portedCss('focus.css')).toBe(
       literalBody('page-style-focus.ts', 'PAGE_STYLE_FOCUS'),

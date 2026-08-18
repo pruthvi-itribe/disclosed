@@ -3,7 +3,17 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { createApiGet } from './shared/api/api-get';
 import { createEtagStore } from './shared/api/etag-store';
+// The four stylesheets the server concatenated into one <style> element,
+// imported in the same order so the cascade resolves identically. All are
+// verbatim ports (styles-mirror.spec.ts) and Vite emits them as the one
+// stylesheet link the bundle audit budgets.
 import './shared/ui/tokens.css';
+import './shared/ui/page.css';
+import './shared/ui/brief.css';
+import './shared/ui/focus.css';
+import './shared/ui/logo.css';
+// The one non-ported rule: #root { display: contents } — see its header.
+import './shared/ui/app.css';
 
 const root = document.getElementById('root');
 // A THROW RATHER THAN A SILENT RETURN. A missing mount point means the

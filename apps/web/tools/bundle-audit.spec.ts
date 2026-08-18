@@ -84,15 +84,71 @@ describe('auditBundle', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('reports a second link element', () => {
+  // THE LINK BUDGET IS TWO, EACH NAMED: the inlined data: favicon (loads
+  // nothing) and the ONE stylesheet Vite emits into assets/ (same-origin, on
+  // disk, audited above). The server-rendered page allowed only the favicon
+  // because it inlined its CSS in a <style> element; a built bundle's
+  // stylesheet arrives as a link, and refusing it would be refusing the
+  // build. Anything else — a second stylesheet, a font, an absolute href —
+  // still fails.
+  it('allows the favicon and the one emitted stylesheet', () => {
     const dir = bundleWith({
       'index.html': CLEAN_HTML.replace(
         '</head>',
-        '<link rel="stylesheet" href="/a.css"></head>',
+        '<link rel="stylesheet" crossorigin href="/assets/style-x.css"></head>',
       ),
       'assets/main.js': '',
     });
-    expect(auditBundle(dir).map((v) => v.rule)).toContain('one-link-only');
+    expect(auditBundle(dir)).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports a second stylesheet', () => {
+    const dir = bundleWith({
+      'index.html': CLEAN_HTML.replace(
+        '</head>',
+        '<link rel="stylesheet" href="/assets/a.css"><link rel="stylesheet" href="/assets/b.css"></head>',
+      ),
+      'assets/main.js': '',
+    });
+    expect(auditBundle(dir).map((v) => v.rule)).toContain('link-budget');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports a link that is neither the favicon nor a stylesheet', () => {
+    const dir = bundleWith({
+      'index.html': CLEAN_HTML.replace(
+        '</head>',
+        '<link rel="preconnect" href="/x"></head>',
+      ),
+      'assets/main.js': '',
+    });
+    expect(auditBundle(dir).map((v) => v.rule)).toContain('link-budget');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports a stylesheet link that leaves the bundle', () => {
+    const dir = bundleWith({
+      'index.html': CLEAN_HTML.replace(
+        '</head>',
+        '<link rel="stylesheet" href="https://cdn.example/a.css"></head>',
+      ),
+      'assets/main.js': '',
+    });
+    const rules = auditBundle(dir).map((v) => v.rule);
+    expect(rules).toContain('absolute-url');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports a second icon link', () => {
+    const dir = bundleWith({
+      'index.html': CLEAN_HTML.replace(
+        '</head>',
+        '<link rel="icon" href="data:image/svg+xml,y"></head>',
+      ),
+      'assets/main.js': '',
+    });
+    expect(auditBundle(dir).map((v) => v.rule)).toContain('link-budget');
     rmSync(dir, { recursive: true, force: true });
   });
 
