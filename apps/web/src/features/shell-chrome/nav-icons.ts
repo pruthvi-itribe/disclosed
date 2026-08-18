@@ -36,3 +36,9 @@ export const ICON_NAV_PROFILE: readonly IconShape[] = [
   ['circle', 'cx', '12', 'cy', '8', 'r', '4'],
   ['path', 'd', 'M4.5 20.5a7.5 7.5 0 0 1 15 0'],
 ];
+
+// The funnel: what the sheet actually is (direction 2026-08-18 — 'it's
+// more like a filter icon, right? then it's a filter view').
+export const ICON_NAV_FILTER: readonly IconShape[] = [
+  ['path', 'd', 'M4 5h16l-6.2 7.2V18l-3.6 2.4v-8.2Z'],
+];

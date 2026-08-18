@@ -67,6 +67,35 @@ describe('the shell chrome', () => {
     );
   });
 
+  // The filter view is a curtain over the feed, so what narrows the feed
+  // must announce itself ON the feed, clearable without reopening the
+  // curtain (direction 2026-08-18).
+  it('announces an applied search on the feed and clears it from there', async () => {
+    const { container } = await renderApp();
+    fireEvent.click(
+      container.querySelector('[data-ui="nav-explore"]') as Element,
+    );
+    await flush();
+    const input = container.querySelector('#symbol') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'SWIGGY' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    const pill = container.querySelector('[data-ui="active-search"]');
+    expect(pill?.textContent).toContain('“SWIGGY”');
+
+    fireEvent.click(pill as Element);
+    await flush();
+    expect(container.querySelector('[data-ui="active-filters"]')).toBeNull();
+    // Reopening the filter view finds the box empty, not haunted.
+    fireEvent.click(
+      container.querySelector('[data-ui="nav-explore"]') as Element,
+    );
+    expect((container.querySelector('#symbol') as HTMLInputElement).value).toBe(
+      '',
+    );
+  });
+
   it('gives the account a surface: who, what, and the way out', async () => {
     const { container, apiSend } = await renderApp();
     fireEvent.click(

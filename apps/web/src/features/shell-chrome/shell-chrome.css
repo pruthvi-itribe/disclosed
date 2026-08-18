@@ -183,3 +183,38 @@ html.native-shell #dir-legend {
   opacity: 0.75;
   margin: 0 0 8px;
 }
+
+/* What narrows the feed, pinned under the header so it is clearable from
+   the results themselves — the filter view is a curtain, and a filter set
+   behind a curtain must announce itself in front of it. */
+.activefilters {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 54px);
+  left: 0;
+  right: 0;
+  z-index: 39;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 20px 9px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.activefilters .activepill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--brand-1);
+  background: color-mix(in srgb, var(--brand-1) 18%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.activefilters .activepill .pillx {
+  font-size: 14px;
+  color: var(--muted);
+}
