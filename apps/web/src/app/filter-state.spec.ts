@@ -192,4 +192,28 @@ describe('search and the picked suggestion', () => {
     expect(next.q).toBe('');
     expect(next.picked).toBeNull();
   });
+
+  // The undo's promise is 'reverse exactly what the pick did'. A group
+  // applied LATER from a card's tag overwrote the pick's write, so it is
+  // not the pick's to take — clearing on kind alone silently widened the
+  // feed to everything. (The old client has the same defect; not ported.)
+  it('typing after a pick leaves a group a card tag applied later', () => {
+    const picked = filterReducer(INITIAL_FILTERS, {
+      type: 'applySuggestion',
+      item: {
+        kind: 'group',
+        value: 'capital',
+        head: 'Capital',
+        name: '',
+        filings: 30,
+      },
+    });
+    const retagged = filterReducer(picked, {
+      type: 'pickGroup',
+      group: 'results',
+    });
+    const next = filterReducer(retagged, { type: 'undoPick' });
+    expect(next.group).toBe('results');
+    expect(next.picked).toBeNull();
+  });
 });
