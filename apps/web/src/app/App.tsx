@@ -17,8 +17,7 @@ import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
 import { SearchBox } from '../features/search/SearchBox';
-import { ShareCopyButton } from '../features/share/ShareCopyButton';
-import { ShareImageButton } from '../features/share/ShareImageButton';
+import { useShareSlots } from '../features/share/share-slots';
 import { SearchNote } from '../features/search/SearchNote';
 import type { WatchlistFeedMeta } from '../shared/types/account';
 
@@ -61,6 +60,7 @@ export function App({
 
   const { filings, meta, summary, live, failure, refresh } = usePoll({
     apiGet,
+    apiSend,
     view: viewState.view,
     company: viewState.company,
     filters,
@@ -109,25 +109,7 @@ export function App({
   const pickGroup = useCallback((group: string) => {
     dispatchFilters({ type: 'pickGroup', group });
   }, []);
-  // The share controls per surface — the ui names are the parity contract.
-  const shareOnCard = useCallback(
-    (f: FilingView) => (
-      <>
-        <ShareCopyButton filing={f} ui="card-copy" />
-        <ShareImageButton filing={f} ui="card-copy-image" />
-      </>
-    ),
-    [],
-  );
-  const shareOnFocus = useCallback(
-    (f: FilingView) => (
-      <>
-        <ShareCopyButton filing={f} ui="focus-copy" />
-        <ShareImageButton filing={f} ui="focus-copy-image" />
-      </>
-    ),
-    [],
-  );
+  const { onCard: shareOnCard, onFocus: shareOnFocus } = useShareSlots();
 
   const items = filings ?? [];
 
@@ -244,9 +226,16 @@ export function App({
       >
         {viewState.view === 'watching' && (
           <WatchingView
-            items={items}
-            // The poll fed this view, so its meta carries the roster half.
-            meta={meta as WatchlistFeedMeta | null}
+            // UNTIL THE WATCHLIST RESPONSE LANDS, the poll's meta is still
+            // the FEED's — a page window with no roster in it. The view must
+            // see null (its loading state), never a meta of the wrong shape:
+            // handing it one crashed the page live on 2026-08-18.
+            items={meta !== null && 'watching' in meta ? items : []}
+            meta={
+              meta !== null && 'watching' in meta
+                ? (meta as WatchlistFeedMeta)
+                : null
+            }
             filters={filters}
             todayIstDay={summary?.todayIstDay ?? null}
             previousIstDay={summary?.previousIstDay ?? null}
