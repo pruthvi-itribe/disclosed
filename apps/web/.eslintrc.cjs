@@ -32,5 +32,13 @@ module.exports = {
     'react-hooks/exhaustive-deps': 'error',
     'react/no-danger': 'error',
     'jsx-a11y/anchor-is-valid': 'error',
+    // This project's ceiling is 300 — tighter than the repository's 800,
+    // because a component file that large is several components. Applies to
+    // specs too: every file complies today (largest 276), and a spec that
+    // outgrows it splits by behaviour the way the source splits by unit.
+    'max-lines': [
+      'error',
+      { max: 300, skipBlankLines: false, skipComments: false },
+    ],
   },
 };

@@ -33,5 +33,26 @@ module.exports = {
     // That idiom is used deliberately in tests to build records with a key
     // absent, so allow it. Severity stays at the recommended config's 'error'.
     '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
+    // THE 800-LINE FILE CEILING, ENFORCED. CLAUDE.md has carried the rule
+    // since the start, and three files drifted past it while it was only a
+    // sentence in a doc — each now carries a visible in-file exemption
+    // naming its reason, so the debt lives where the file does. Total lines,
+    // comments included, because that is how the documented rule counts.
+    'max-lines': [
+      'error',
+      { max: 800, skipBlankLines: false, skipComments: false },
+    ],
   },
+  overrides: [
+    {
+      // SPECS ARE EXEMPT, and it is practice rather than laxity: a suite
+      // enumerating one behaviour's cases (page.spec.ts holds 2,494 lines of
+      // served-document assertions) is cohesive at sizes a module is not,
+      // and splitting it scatters a single behaviour's evidence across
+      // files. The web project's own config caps ITS specs at 300 along
+      // with everything else, which is the direction of travel.
+      files: ['**/*.spec.ts'],
+      rules: { 'max-lines': 'off' },
+    },
+  ],
 };
