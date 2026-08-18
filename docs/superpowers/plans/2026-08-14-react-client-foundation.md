@@ -1,6 +1,6 @@
 # React Client — Plan 1: Foundation
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** A static React application that builds, proves it is self-contained, and can fetch the feed — with no product surfaces in it yet.
 
@@ -59,7 +59,7 @@
 
 **Why its own `package.json`:** the repo has no npm workspaces and one dependency tree that the server images install with `npm ci`. Adding React and Vite to it would put a UI toolchain into `apps/ingest`'s image for no reason. A nested project keeps the trees separate at the cost of one extra install step, which Task 6 wires into CI.
 
-- [ ] **Step 1: Create the project files**
+- [x] **Step 1: Create the project files**
 
 `apps/web/package.json`:
 
@@ -212,7 +212,7 @@ apps/web/dist/
 apps/web/node_modules/
 ```
 
-- [ ] **Step 2: Write a smoke test that proves the toolchain runs**
+- [x] **Step 2: Write a smoke test that proves the toolchain runs**
 
 `apps/web/src/smoke.spec.ts`:
 
@@ -231,7 +231,7 @@ it('has strict null checking on', () => {
 });
 ```
 
-- [ ] **Step 3: Install and run**
+- [x] **Step 3: Install and run**
 
 ```bash
 npm --prefix apps/web install
@@ -239,7 +239,7 @@ npm --prefix apps/web test
 ```
 Expected: 2 passed.
 
-- [ ] **Step 4: Build**
+- [x] **Step 4: Build**
 
 ```bash
 npm --prefix apps/web run build
@@ -247,7 +247,7 @@ ls apps/web/dist
 ```
 Expected: `index.html` and an `assets/` directory. If `tsc --noEmit` fails, fix the types rather than relaxing `tsconfig.json`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web .gitignore
@@ -271,7 +271,7 @@ git commit -m "feat: scaffold the web client as its own project"
 
 **Why this replaces the served-document specs:** `page.spec.ts` and its siblings assert what is IN the HTML, which bounds only what we wrote. On 2026-08-13 a third-party script fetched two Google origins that appeared nowhere in the document and the CSP blocked them in production. Reading the emitted bundle sees a transitive import that would fetch at runtime.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `apps/web/tools/bundle-audit.spec.ts`:
 
@@ -359,12 +359,12 @@ describe('auditBundle', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npm --prefix apps/web test -- bundle-audit`
 Expected: FAIL — cannot find module `./bundle-audit`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `apps/web/tools/bundle-audit.ts`:
 
@@ -438,12 +438,12 @@ export const auditBundle = (dir: string): readonly Violation[] => {
 };
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npm --prefix apps/web test -- bundle-audit`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Run it against the real bundle**
+- [x] **Step 5: Run it against the real bundle**
 
 ```bash
 npm --prefix apps/web run build
@@ -455,7 +455,7 @@ npx --prefix apps/web tsx apps/web/tools/run-audit.ts 2>/dev/null || \
 
 If the real bundle reports violations, they are real — fix the build, not the audit. Vite emits a `crossorigin` attribute and absolute paths beginning `/`, neither of which matches `https?://`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/tools
@@ -487,7 +487,7 @@ git commit -m "test: audit the built bundle for anything that would leave this o
   ```
   `'unchanged'` is a 304 — the caller keeps what it has. `'stale'` means a newer request superseded this one and the response must be discarded. A 401 rejects with `SessionEndedError`.
 
-- [ ] **Step 1: Write the failing tests for the store**
+- [x] **Step 1: Write the failing tests for the store**
 
 `apps/web/src/shared/api/etag-store.spec.ts`:
 
@@ -540,12 +540,12 @@ describe('createEtagStore', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npm --prefix apps/web test -- etag-store`
 Expected: FAIL — cannot find module `./etag-store`.
 
-- [ ] **Step 3: Implement the store**
+- [x] **Step 3: Implement the store**
 
 `apps/web/src/shared/api/etag-store.ts`:
 
@@ -583,7 +583,7 @@ export const createEtagStore = (): EtagStore => {
 };
 ```
 
-- [ ] **Step 4: Write the failing tests for `apiGet`**
+- [x] **Step 4: Write the failing tests for `apiGet`**
 
 `apps/web/src/shared/api/api-get.spec.ts`:
 
@@ -690,12 +690,12 @@ describe('apiGet', () => {
 });
 ```
 
-- [ ] **Step 5: Run to verify it fails**
+- [x] **Step 5: Run to verify it fails**
 
 Run: `npm --prefix apps/web test -- api-get`
 Expected: FAIL — cannot find module `./api-get`.
 
-- [ ] **Step 6: Implement**
+- [x] **Step 6: Implement**
 
 `apps/web/src/shared/api/api-get.ts`:
 
@@ -766,12 +766,12 @@ export const createApiGet =
   };
 ```
 
-- [ ] **Step 7: Run to verify it passes**
+- [x] **Step 7: Run to verify it passes**
 
 Run: `npm --prefix apps/web test`
 Expected: PASS — 2 smoke, 6 audit, 6 store, 8 apiGet.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/web/src/shared/api
@@ -790,7 +790,7 @@ git commit -m "feat: a fetch layer that revalidates without caching"
 
 **Ported verbatim.** The values come from `apps/dashboard/src/ui/page-style.ts`. Changing one here would be a visual change, and this project's whole discipline is that the React client looks identical.
 
-- [ ] **Step 1: Read the current values**
+- [x] **Step 1: Read the current values**
 
 ```bash
 grep -A 20 ":root" apps/dashboard/src/ui/page-style.ts | head -30
@@ -798,7 +798,7 @@ grep -A 20 ":root" apps/dashboard/src/ui/page-style.ts | head -30
 
 Copy the fourteen declarations exactly: `--bg`, `--panel`, `--text`, `--muted`, `--line`, `--accent`, `--ok`, `--warn`, `--bad`, `--flash`, `--brand-ink`, `--brand-gradient`, `--sans`, `--mono`.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `apps/web/src/shared/ui/tokens.spec.ts`:
 
@@ -837,12 +837,12 @@ describe('the design tokens', () => {
 });
 ```
 
-- [ ] **Step 3: Run to verify it fails**
+- [x] **Step 3: Run to verify it fails**
 
 Run: `npm --prefix apps/web test -- tokens`
 Expected: FAIL — cannot read `tokens.module.css`.
 
-- [ ] **Step 4: Create the stylesheet**
+- [x] **Step 4: Create the stylesheet**
 
 Write `apps/web/src/shared/ui/tokens.module.css` with a `:root` block carrying the fourteen declarations copied verbatim from Step 1, headed by:
 
@@ -858,12 +858,12 @@ Write `apps/web/src/shared/ui/tokens.module.css` with a `:root` block carrying t
  */
 ```
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run: `npm --prefix apps/web test -- tokens`
 Expected: PASS, 15 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/src/shared/ui
@@ -882,7 +882,7 @@ git commit -m "feat: port the design tokens verbatim"
 - Consumes: `createApiGet`, `createEtagStore`, `SessionEndedError` from Task 3.
 - Produces: a mounted application that fetches `/api/summary` once and reports the outcome. **No product surface** — this proves the wiring, and Plan 2 draws the feed.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `apps/web/src/app/App.spec.tsx`:
 
@@ -935,12 +935,12 @@ describe('App', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npm --prefix apps/web test -- App`
 Expected: FAIL — cannot find module `./App`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `apps/web/src/app/App.tsx`:
 
@@ -1027,12 +1027,12 @@ createRoot(root).render(
 );
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npm --prefix apps/web test`
 Expected: PASS, 26 tests across five files.
 
-- [ ] **Step 5: Prove it against the real server**
+- [x] **Step 5: Prove it against the real server**
 
 ```bash
 npm run start:dashboard   # AUTH_MODE=local, in another shell
@@ -1040,7 +1040,7 @@ npm --prefix apps/web run dev
 ```
 Sign in through the server-rendered page first so the cookie exists, then open the Vite dev server and confirm the count renders. **A count means the cookie reached the API cross-port**, which is the one thing a unit test cannot show.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/src
@@ -1058,7 +1058,7 @@ git commit -m "feat: mount the client and read the summary route"
 - Consumes: `npm --prefix apps/web run build`, `auditBundle` from Task 2.
 - Produces: a red build when the web project fails to compile, test, lint, or emits a bundle that would leave this origin.
 
-- [ ] **Step 1: Add an audit runner**
+- [x] **Step 1: Add an audit runner**
 
 `apps/web/tools/run-audit.ts`:
 
@@ -1080,7 +1080,7 @@ console.log('bundle audit: clean');
 
 Add to `apps/web/package.json` scripts: `"audit": "vite-node tools/run-audit.ts"`, and `vite-node` to devDependencies.
 
-- [ ] **Step 2: Wire it into CI**
+- [x] **Step 2: Wire it into CI**
 
 In `.github/workflows/ci.yaml`, after the existing `Build` step:
 
@@ -1104,7 +1104,7 @@ In `.github/workflows/ci.yaml`, after the existing `Build` step:
           npm --prefix apps/web run audit
 ```
 
-- [ ] **Step 3: Verify the audit can fail CI**
+- [x] **Step 3: Verify the audit can fail CI**
 
 Temporarily add `fetch('https://example.com/x')` to `apps/web/src/app/App.tsx`, then:
 
@@ -1113,11 +1113,11 @@ npm --prefix apps/web run build && npm --prefix apps/web run audit
 ```
 Expected: a non-zero exit naming `absolute-url`. **Remove the line afterwards** and re-run to confirm it passes. A check never seen failing is not a check.
 
-- [ ] **Step 4: Build the bundle into the dashboard image**
+- [x] **Step 4: Build the bundle into the dashboard image**
 
 In `Dockerfile`, add a stage before the runtime stage that installs `apps/web` and runs its build, then copy `apps/web/dist` into the image at `/srv/web`. Caddy serves that path in Plan 4; nothing reads it yet, and putting it in place now means Plan 4 is a Caddy change alone.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/ci.yaml Dockerfile apps/web
@@ -1128,11 +1128,11 @@ git commit -m "ci: build, test and audit the web client"
 
 ## Final verification, before the PR
 
-- [ ] `npm test` — the server's 5,713 must be untouched; this plan adds no server code.
-- [ ] `npm --prefix apps/web test` — 26 passing.
-- [ ] `npm --prefix apps/web run build && npm --prefix apps/web run audit` — clean.
-- [ ] `npm run lint:ci` and `npx tsc --noEmit -p tsconfig.json` — the server's gates still pass; `apps/web` is excluded from the root tsconfig's `include`, so confirm it is not being compiled twice.
-- [ ] Open the PR; `lint, types, tests, build` green before merge.
+- [x] `npm test` — the server's 5,713 must be untouched; this plan adds no server code.
+- [x] `npm --prefix apps/web test` — 26 passing.
+- [x] `npm --prefix apps/web run build && npm --prefix apps/web run audit` — clean.
+- [x] `npm run lint:ci` and `npx tsc --noEmit -p tsconfig.json` — the server's gates still pass; `apps/web` is excluded from the root tsconfig's `include`, so confirm it is not being compiled twice.
+- [x] Open the PR; `lint, types, tests, build` green before merge.
 
 ## The follow-on plans
 
