@@ -108,6 +108,41 @@ reaches a notification body raw, and IST stays server-owned.
   Push. Verify: Lighthouse installability pass; `page.spec.ts` budget for
   the one allowed `<link>` is re-argued in the spec, not silently widened.
 
+## Phase A7 — native feel (requirement raised 2026-08-18)
+
+**The bar, in the user's words: it must not feel like a wrapper; it should
+perform like a Flutter app.** That is achievable in this architecture, but
+only by killing every webview TELL deliberately — each is small, and
+together they are the whole difference between "app" and "site in a box":
+
+- [ ] **A7.1. No white flash, no lingering splash:** the OS-painted frame
+  and the splash both carry the theme's `--bg`, and the splash auto-hides
+  the moment the WebView paints (`launchShowDuration: 0`) — a splash that
+  lingers is delay dressed as branding. Verify: on-device, part of A4.
+- [ ] **A7.2. Shell-feel CSS, scoped to the binary:** `main.tsx` marks
+  `<html>` `native-shell` only when Capacitor reports a native platform, so
+  the web document never changes. Under the mark: theme background on the
+  overscroll bounce, safe-area insets on `<html>` (body's padding varies by
+  breakpoint; a calc() per breakpoint would be a copy that drifts), and
+  tap-highlight/long-press-callout/text-selection removed on CONTROLS only
+  — the filing text stays selectable, because quoting the document is the
+  product. Verify: web suite green and unchanged; the class absent from a
+  browser render; the rest on-device in A4.
+- [ ] **A7.3. The Brief's 100dvh cage on a notched device** is a known
+  open question under `viewport-fit=cover` — measured on hardware in A4,
+  not guessed.
+- [ ] **A7.4. On-device feel pass (with A4):** scroll at 60fps on the
+  grown feed (if it stutters, virtualize THEN, with the measurement in
+  hand — not speculatively), keyboard behavior on the search box, status
+  bar styled to the theme, view transitions judged against the native bar.
+  What the pass finds becomes named tasks here; "it feels fine" is not a
+  recordable result, so each check gets a yes/no against a device named in
+  this doc.
+- If the bar is still not met after A7.4 with the tells dead and 60fps
+  held, the next conversation is native navigation chrome (bottom tabs,
+  native transitions via plugin) — and only after that, a native client.
+  Each step is cheaper than the rewrite it defers.
+
 ## Phase B — push
 
 - [ ] **B1. Device registration:** the push plugin's token posted to a new
