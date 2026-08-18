@@ -30,7 +30,12 @@ export default defineConfig({
     // for Caddy, forwarding to the dashboard's default port. Cookies are
     // per-host rather than per-port, so the session cookie set by the
     // server-rendered sign-in rides along.
-    proxy: { '/api': 'http://127.0.0.1:7717' },
+    proxy: {
+      '/api': 'http://127.0.0.1:7717',
+      // The share card's raster mark — same-origin in production, and
+      // without this dev always falls back to the favicon branch.
+      '/brand': 'http://127.0.0.1:7717',
+    },
   },
   test: {
     environment: 'jsdom',

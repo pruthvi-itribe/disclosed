@@ -18,6 +18,7 @@ import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
 import { SearchBox } from '../features/search/SearchBox';
 import { ShareCopyButton } from '../features/share/ShareCopyButton';
+import { ShareImageButton } from '../features/share/ShareImageButton';
 import { SearchNote } from '../features/search/SearchNote';
 import type { WatchlistFeedMeta } from '../shared/types/account';
 
@@ -110,11 +111,21 @@ export function App({
   }, []);
   // The share controls per surface — the ui names are the parity contract.
   const shareOnCard = useCallback(
-    (f: FilingView) => <ShareCopyButton filing={f} ui="card-copy" />,
+    (f: FilingView) => (
+      <>
+        <ShareCopyButton filing={f} ui="card-copy" />
+        <ShareImageButton filing={f} ui="card-copy-image" />
+      </>
+    ),
     [],
   );
   const shareOnFocus = useCallback(
-    (f: FilingView) => <ShareCopyButton filing={f} ui="focus-copy" />,
+    (f: FilingView) => (
+      <>
+        <ShareCopyButton filing={f} ui="focus-copy" />
+        <ShareImageButton filing={f} ui="focus-copy-image" />
+      </>
+    ),
     [],
   );
 

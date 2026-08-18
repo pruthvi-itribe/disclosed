@@ -6,9 +6,9 @@ import { ICON_DONE, ICON_FAIL, type IconShape } from './icons';
 export interface IconReport {
   /** Success: the check mark and its word, reverting to idle after ms. */
   readonly done: (word: string, revertAfterMs: number) => void;
-  /** Failure: the cross and its word — deliberately NO revert. A check
-   * after a refused write is a control reporting success for a failure. */
-  readonly fail: (word: string) => void;
+  /** Failure: the cross and its word. No revert unless asked — the text
+   * copy's cross is permanent, the image outcomes all revert. */
+  readonly fail: (word: string, revertAfterMs?: number) => void;
 }
 
 /**
@@ -52,8 +52,13 @@ export function ReportingIconButton({
         setShowing({ shapes, word: '' });
       }, revertAfterMs);
     },
-    fail: (word) => {
+    fail: (word, revertAfterMs) => {
       setShowing({ shapes: ICON_FAIL, word });
+      if (revertAfterMs === undefined) return;
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => {
+        setShowing({ shapes, word: '' });
+      }, revertAfterMs);
     },
   };
 
