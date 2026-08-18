@@ -28,6 +28,7 @@ export interface PollArgs {
   readonly apiGet: <T>(
     path: string,
     current?: () => boolean,
+    revalidate?: boolean,
   ) => Promise<ApiResult<T>>;
   /**
    * The ETag-free read, for the Watching view alone: one authenticated
@@ -100,6 +101,14 @@ export const usePoll = ({
   onHealthy,
 }: PollArgs): PollState => {
   const [pages, setPages] = useState<Partial<Record<Container, PageSlot>>>({});
+  // WHICH PATH EACH CONTAINER'S HELD BODY ANSWERS. The validator store keeps
+  // one validator per path while a container keeps one body, so after a
+  // filter round-trip the store still holds the old path's validator — and a
+  // 304 for it would confirm a body the slot no longer has. Found live on
+  // 2026-08-18: uncheck 'Only filings with verified claims', re-check it,
+  // and the feed stayed unfiltered. A validator is sent only while the
+  // container still holds that path's answer.
+  const heldRef = useRef<Partial<Record<Container, string>>>({});
   const [summary, setSummary] = useState<SummaryView | null>(null);
   const [health, setHealth] = useState<Health>({
     failures: 0,
@@ -119,8 +128,14 @@ export const usePoll = ({
 
     const watching = view === 'watching' && company === null;
     const container: Container = company !== null ? 'company' : view;
-    const keep = (data: readonly FilingView[], pageMeta: PageMeta): void =>
+    const keep = (
+      asked: string,
+      data: readonly FilingView[],
+      pageMeta: PageMeta,
+    ): void => {
+      heldRef.current = { ...heldRef.current, [container]: asked };
       setPages((prev) => ({ ...prev, [container]: { data, meta: pageMeta } }));
+    };
     const filingsJob =
       watching && apiSend !== undefined
         ? apiSend<readonly FilingView[]>(
@@ -128,11 +143,15 @@ export const usePoll = ({
             'GET',
           ).then((body) => {
             if (!current()) return;
-            keep(body.data, body.meta as PageMeta);
+            keep('/api/watchlist/feed', body.data, body.meta as PageMeta);
           })
-        : apiGet<readonly FilingView[]>(query, current).then((result) => {
+        : apiGet<readonly FilingView[]>(
+            query,
+            current,
+            heldRef.current[container] === query,
+          ).then((result) => {
             if (result.status === 'ok') {
-              keep(result.body.data, result.body.meta as PageMeta);
+              keep(query, result.body.data, result.body.meta as PageMeta);
             }
           });
 

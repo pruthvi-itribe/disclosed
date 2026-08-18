@@ -132,6 +132,53 @@ describe('usePoll', () => {
     expect(result.current.live).toBe('live');
   });
 
+  // THE FILTER ROUND-TRIP. The feed keeps ONE body per container while the
+  // validator store keeps one per path, so toggling a filter off and back on
+  // re-asks a path whose validator the store still has — and a 304 for it
+  // would confirm a body the slot no longer holds. Found live on 2026-08-18:
+  // uncheck 'Only filings with verified claims', re-check it, feed stuck
+  // unfiltered. The mock below is the server's rule: an unchanged body
+  // revalidates to 304, but only when the ask carried a validator at all.
+  it('repaints after a filter round-trip rather than trusting a stale 304', async () => {
+    const FILTERED = [{ seqId: 9 }];
+    const answered = new Set<string>();
+    const apiGet = vi.fn(
+      (
+        path: string,
+        _current?: () => boolean,
+        revalidate?: boolean,
+      ): AnyResult => {
+        if (path === '/api/summary') {
+          return Promise.resolve({ status: 'ok', body: envelope(SUMMARY) });
+        }
+        if (revalidate !== false && answered.has(path)) {
+          return Promise.resolve({ status: 'unchanged' });
+        }
+        answered.add(path);
+        return Promise.resolve({
+          status: 'ok',
+          body: envelope(
+            path.includes('tier=verified') ? FILTERED : FILINGS,
+            META,
+          ),
+        });
+      },
+    );
+    const { result, rerender } = renderPoll(
+      apiGet as unknown as ReturnType<typeof okApiGet>,
+    );
+    await flush();
+    expect(result.current.filings).toEqual(FILTERED);
+
+    rerender({ filters: { ...INITIAL_FILTERS, onlyInsights: false } });
+    await flush();
+    expect(result.current.filings).toEqual(FILINGS);
+
+    rerender({ filters: INITIAL_FILTERS });
+    await flush();
+    expect(result.current.filings).toEqual(FILTERED);
+  });
+
   // Responses do not arrive in the order requests were sent; the sequence is
   // claimed before dispatch and a superseded request's current() reads false.
   it('hands apiGet a currency check that expires on the next refresh', async () => {

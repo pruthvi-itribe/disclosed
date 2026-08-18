@@ -35,8 +35,15 @@ export const createApiGet =
   async <T>(
     path: string,
     current: () => boolean = () => true,
+    // A 304 answers "what you hold is current", which is only true while the
+    // caller still holds this path's body. The poll keeps ONE body per
+    // container and the store one validator per path, so after a filter
+    // round-trip the slot holds a different question's answer — the caller
+    // passes false and the ask goes out unconditional. The fresh validator is
+    // still remembered below, so the next same-path ask revalidates as usual.
+    revalidate = true,
   ): Promise<ApiResult<T>> => {
-    const validator = store.validatorFor(path);
+    const validator = revalidate ? store.validatorFor(path) : null;
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (validator !== null) headers['If-None-Match'] = validator;
 

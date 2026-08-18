@@ -48,6 +48,33 @@ describe('apiGet', () => {
     expect(second).toEqual({ status: 'unchanged' });
   });
 
+  // A 304 answers "what you hold is current", which is only true while the
+  // caller still holds this path's body. After a filter round-trip the feed's
+  // one slot holds a DIFFERENT query's answer, so the caller says so and the
+  // ask goes out unconditional — found live on 2026-08-18: uncheck 'Only
+  // filings with verified claims', re-check it, and the feed stayed unfiltered.
+  it('asks unconditionally when the caller no longer holds this body', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(envelope, '"abc"'))
+      .mockResolvedValueOnce(jsonResponse(envelope, '"def"'));
+    const store = createEtagStore();
+    const apiGet = createApiGet(store, fetcher);
+
+    await apiGet('/api/filings');
+    const second = await apiGet('/api/filings', () => true, false);
+
+    const headers = fetcher.mock.calls[1]?.[1]?.headers as Record<
+      string,
+      string
+    >;
+    expect(headers['If-None-Match']).toBeUndefined();
+    // The fresh answer's validator is still remembered, so the NEXT ask —
+    // once the body is held again — revalidates as usual.
+    expect(second).toEqual({ status: 'ok', body: envelope });
+    expect(store.validatorFor('/api/filings')).toBe('"def"');
+  });
+
   // `res.ok` is FALSE for 304. Handling it after an `!ok` guard would throw on
   // every successful revalidation, which is the single easiest way to get this
   // wrong.
