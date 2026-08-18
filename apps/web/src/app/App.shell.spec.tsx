@@ -47,6 +47,26 @@ describe('the shell chrome', () => {
     expect(container.querySelector('[data-ui="sheet"]')).toBeNull();
   });
 
+  // The feed the filters drive is BEHIND the sheet: a committed search
+  // must close it onto the results, or it reads as no results at all.
+  it('closes the sheet onto the results when a search commits', async () => {
+    const { container } = await renderApp();
+    fireEvent.click(
+      container.querySelector('[data-ui="nav-explore"]') as Element,
+    );
+    await flush();
+
+    const input = container.querySelector('#symbol') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'SWIGGY' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    expect(container.querySelector('[data-ui="sheet"]')).toBeNull();
+    expect((container.querySelector('#view-feed') as HTMLElement).hidden).toBe(
+      false,
+    );
+  });
+
   it('gives the account a surface: who, what, and the way out', async () => {
     const { container, apiSend } = await renderApp();
     fireEvent.click(

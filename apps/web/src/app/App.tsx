@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useReducer, useRef, useState } from 'react';
 import type { ApiEnvelope, ApiResult } from '../shared/api/api-get';
 import type { SendMethod } from '../shared/api/api-send';
 import { usePoll } from '../shared/api/use-poll';
 import type { WatchControls } from '../shared/ui/WatchButton';
 import type { FilingView } from '../shared/types/api';
 import { filterReducer, INITIAL_FILTERS } from './filter-state';
+import { useFilterDispatch } from './use-filter-dispatch';
+import { useBriefBodyClass } from './use-brief-body-class';
 import { initialViewState, viewReducer } from './view-state';
 import { TopBar } from './TopBar';
 import { Hero } from '../features/feed/Hero';
@@ -95,15 +97,7 @@ export function App({
         }
       : null;
 
-  // ONE CLASS ON THE BODY, so exactly one view is ever in scroll-lock: the
-  // deck is a scroll container sized to the window, and the page behind it
-  // must not scroll too.
-  useEffect(() => {
-    document.body.className = viewState.view === 'brief' ? 'briefing' : '';
-    return () => {
-      document.body.className = '';
-    };
-  }, [viewState.view]);
+  useBriefBodyClass(viewState.view);
 
   const openCompany = useCallback((symbol: string) => {
     dispatchView({ type: 'openCompany', symbol });
@@ -118,13 +112,22 @@ export function App({
 
   const items = filings ?? [];
 
-  // One controls element, two homes — see FilterControls.
+  // One controls element, two homes — see FilterControls; the commit
+  // behaviour is use-filter-dispatch's.
+  const filterDispatch = useFilterDispatch({
+    shell,
+    dispatchFilters,
+    onCommitted: useCallback(() => {
+      setSheet(null);
+      dispatchView({ type: 'show', view: 'feed' });
+    }, []),
+  });
   const controls = (
     <FilterControls
       ref={searchBox}
       filters={filters}
       apiGet={apiGet}
-      dispatch={dispatchFilters}
+      dispatch={filterDispatch}
     />
   );
 
