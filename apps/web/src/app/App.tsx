@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useReducer, useState } from 'react';
-import type { ApiResult } from '../shared/api/api-get';
+import type { ApiEnvelope, ApiResult } from '../shared/api/api-get';
+import type { SendMethod } from '../shared/api/api-send';
 import { usePoll } from '../shared/api/use-poll';
+import { useMe } from '../shared/api/use-me';
+import { useWatch } from '../features/watch/use-watch';
+import type { WatchControls } from '../shared/ui/WatchButton';
 import type { FilingView } from '../shared/types/api';
 import { filterReducer, INITIAL_FILTERS } from './filter-state';
 import { initialViewState, viewReducer } from './view-state';
@@ -11,6 +15,11 @@ import { FeedGrid } from '../shared/ui/FeedGrid';
 import { BriefView } from '../features/brief/BriefView';
 import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
+import { WatchingView } from '../features/watching/WatchingView';
+import { SearchBox } from '../features/search/SearchBox';
+import { useShareSlots } from '../features/share/share-slots';
+import { SearchNote } from '../features/search/SearchNote';
+import type { WatchlistFeedMeta } from '../shared/types/account';
 
 export interface AppProps {
   /** Injected, so a test needs no network. */
@@ -18,6 +27,11 @@ export interface AppProps {
     path: string,
     current?: () => boolean,
   ) => Promise<ApiResult<T>>;
+  readonly apiSend: <T>(
+    path: string,
+    method: SendMethod,
+    body?: unknown,
+  ) => Promise<ApiEnvelope<T>>;
   readonly onSessionEnded: () => void;
 }
 
@@ -28,7 +42,11 @@ export interface AppProps {
  * position. The focus dialog lives outside the polled sections and holds a
  * snapshot; the Watching view and account controls arrive with Plan 3.
  */
-export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
+export function App({
+  apiGet,
+  apiSend,
+  onSessionEnded,
+}: AppProps): JSX.Element {
   const [filters, dispatchFilters] = useReducer(filterReducer, INITIAL_FILTERS);
   const [viewState, dispatchView] = useReducer(
     viewReducer,
@@ -36,14 +54,41 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
     initialViewState,
   );
   const [focused, setFocused] = useState<FilingView | null>(null);
+  // What the search input SHOWS — not yet a filter: q becomes one on Enter,
+  // and a pick writes the head here the way the old page wrote the input.
+  const [searchText, setSearchText] = useState('');
 
   const { filings, meta, summary, live, failure, refresh } = usePoll({
     apiGet,
+    apiSend,
     view: viewState.view,
     company: viewState.company,
     filters,
     onSessionEnded,
   });
+
+  const account = useMe({ apiSend, onReload: onSessionEnded });
+  const watch = useWatch({
+    apiSend,
+    enabled: account.me?.signedIn === true,
+  });
+
+  // Null when signed out, so every star-drawing surface draws nothing. A
+  // toggle from inside the Watching view asks for an immediate poll — the
+  // poll owns that list, and an unwatched row must not sit there for four
+  // seconds.
+  const watchControls: WatchControls | null =
+    account.me?.signedIn === true
+      ? {
+          watched: watch.watched,
+          pending: watch.pending,
+          onToggle: (symbol) => {
+            void watch.toggle(symbol).then(() => {
+              if (viewState.view === 'watching') refresh();
+            });
+          },
+        }
+      : null;
 
   // ONE CLASS ON THE BODY, so exactly one view is ever in scroll-lock: the
   // deck is a scroll container sized to the window, and the page behind it
@@ -64,6 +109,7 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
   const pickGroup = useCallback((group: string) => {
     dispatchFilters({ type: 'pickGroup', group });
   }, []);
+  const { onCard: shareOnCard, onFocus: shareOnFocus } = useShareSlots();
 
   const items = filings ?? [];
 
@@ -73,10 +119,21 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
         viewState={viewState}
         live={live}
         summary={summary}
+        me={account.me}
+        unread={account.unread}
         onShowView={(view) => dispatchView({ type: 'show', view })}
+        onSignOut={account.signOut}
       />
-      <div id="alert" className="alert" hidden={failure === null}>
-        {failure ?? ''}
+      {/* One banner, last-writer-wins the way the old #alert did; the poll's
+          sentence outranks the account's because it is the fresher fact. */}
+      <div
+        id="alert"
+        className="alert"
+        hidden={
+          failure === null && account.failure === null && watch.failure === null
+        }
+      >
+        {failure ?? account.failure ?? watch.failure ?? ''}
       </div>
 
       <section
@@ -114,6 +171,28 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
         <Hero summary={summary} />
         <FeedControls
           filters={filters}
+          search={
+            <SearchBox
+              text={searchText}
+              onTextChange={setSearchText}
+              onTyped={() => dispatchFilters({ type: 'undoPick' })}
+              apiGet={apiGet}
+              onApply={(item) =>
+                dispatchFilters({ type: 'applySuggestion', item })
+              }
+              onSubmit={(q) => dispatchFilters({ type: 'submitSearch', q })}
+            />
+          }
+          note={
+            <SearchNote
+              picked={filters.picked}
+              q={filters.q}
+              onClear={() => {
+                dispatchFilters({ type: 'clearSearch' });
+                setSearchText('');
+              }}
+            />
+          }
           onChip={(topic, plans) =>
             dispatchFilters({ type: 'chip', topic, plans })
           }
@@ -132,7 +211,44 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}
           onGrow={() => dispatchFilters({ type: 'grow' })}
+          watch={watchControls}
+          share={shareOnCard}
         />
+      </section>
+
+      <section
+        id="view-watching"
+        data-ui="view-watching"
+        className="view"
+        role="tabpanel"
+        aria-labelledby="tab-watching"
+        hidden={viewState.view !== 'watching'}
+      >
+        {viewState.view === 'watching' && (
+          <WatchingView
+            // UNTIL THE WATCHLIST RESPONSE LANDS, the poll's meta is still
+            // the FEED's — a page window with no roster in it. The view must
+            // see null (its loading state), never a meta of the wrong shape:
+            // handing it one crashed the page live on 2026-08-18.
+            items={meta !== null && 'watching' in meta ? items : []}
+            meta={
+              meta !== null && 'watching' in meta
+                ? (meta as WatchlistFeedMeta)
+                : null
+            }
+            filters={filters}
+            todayIstDay={summary?.todayIstDay ?? null}
+            previousIstDay={summary?.previousIstDay ?? null}
+            watch={watchControls}
+            watchCap={account.me?.watchCap ?? 50}
+            onOpenCompany={openCompany}
+            onOpenFocus={openFocus}
+            onPickGroup={pickGroup}
+            share={shareOnCard}
+            onRoster={watch.setFromRoster}
+            onSeen={account.clearUnread}
+          />
+        )}
       </section>
 
       {viewState.company !== null && (
@@ -150,11 +266,18 @@ export function App({ apiGet, onSessionEnded }: AppProps): JSX.Element {
           onOpenCompany={openCompany}
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}
+          watch={watchControls}
+          share={shareOnCard}
         />
       )}
 
       {focused !== null && (
-        <FocusDialog filing={focused} onClose={() => setFocused(null)} />
+        <FocusDialog
+          filing={focused}
+          onClose={() => setFocused(null)}
+          watch={watchControls}
+          share={shareOnFocus}
+        />
       )}
     </>
   );

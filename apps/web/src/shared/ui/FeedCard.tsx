@@ -8,6 +8,7 @@ import { Insight } from './Insight';
 import { IconLink } from './IconLink';
 import { ICON_SOURCE, SOURCE_LABEL } from './icons';
 import { insightLines } from './insight-lines';
+import { WatchButton, type WatchControls } from './WatchButton';
 
 /**
  * Claims a card leads with, measured at 1440px over the live feed: three
@@ -24,6 +25,14 @@ export interface FeedCardProps {
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
+  /** Null when signed out: the star is absent, not disabled. */
+  readonly watch?: WatchControls | null;
+  /**
+   * The share controls, slotted in so this shared file owns no product
+   * feature. Drawn only when the card has at least one line — a filing
+   * that said nothing verifiable has nothing worth a chat window.
+   */
+  readonly share?: ((filing: FilingView) => JSX.Element) | null;
 }
 
 /**
@@ -37,6 +46,8 @@ export function FeedCard({
   onOpenCompany,
   onOpenFocus,
   onPickGroup,
+  watch = null,
+  share = null,
 }: FeedCardProps): JSX.Element {
   const lines = insightLines(filing.enrichment);
   const quiet = lines.length === 0;
@@ -150,6 +161,10 @@ export function FeedCard({
           {filing.category}
         </span>
         <span className="grow" />
+        {watch !== null && (
+          <WatchButton symbol={filing.symbol} controls={watch} />
+        )}
+        {share !== null && lines.length > 0 && share(filing)}
         {source !== null && (
           <IconLink
             shapes={ICON_SOURCE}

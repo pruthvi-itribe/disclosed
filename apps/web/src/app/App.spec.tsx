@@ -77,12 +77,36 @@ const flush = async () => {
   });
 };
 
-const renderApp = async (apiGet = okApiGet()) => {
+const okApiSend = () =>
+  vi.fn((path: string): Promise<unknown> => {
+    if (path === '/api/me') {
+      return Promise.resolve(
+        envelope({
+          signedIn: true,
+          email: 'r@example.invalid',
+          watchCount: 0,
+          watchCap: 50,
+          unread: 0,
+          channels: [],
+        }),
+      );
+    }
+    if (path === '/api/watchlist') {
+      return Promise.resolve(envelope([], { used: 0, cap: 50 }));
+    }
+    return Promise.resolve(envelope(null));
+  });
+
+const renderApp = async (apiGet = okApiGet(), apiSend = okApiSend()) => {
   const view = render(
-    <App apiGet={apiGet as never} onSessionEnded={vi.fn()} />,
+    <App
+      apiGet={apiGet as never}
+      apiSend={apiSend as never}
+      onSessionEnded={vi.fn()}
+    />,
   );
   await flush();
-  return { apiGet, ...view };
+  return { apiGet, apiSend, ...view };
 };
 
 describe('App', () => {
@@ -158,5 +182,65 @@ describe('App', () => {
     const alert = container.querySelector('#alert') as HTMLElement;
     expect(alert.hidden).toBe(false);
     expect(alert.textContent).toBe('Refresh failed (1 in a row): 502');
+  });
+});
+
+describe('the Watching tab', () => {
+  it('survives the switch while the feed meta is still current', async () => {
+    // The regression: opening Watching hands the view the FEED's meta —
+    // which carries no roster — until the watchlist response lands. The
+    // view must see null, not a meta of the wrong shape.
+    const apiSend = vi.fn((path: string): Promise<unknown> => {
+      if (path === '/api/me') {
+        return Promise.resolve(
+          envelope({
+            signedIn: true,
+            email: 'r@example.invalid',
+            watchCount: 1,
+            watchCap: 50,
+            unread: 2,
+            channels: [],
+          }),
+        );
+      }
+      if (path.startsWith('/api/watchlist/feed')) {
+        return Promise.resolve(
+          envelope([filing()], {
+            ...meta,
+            unread: 0,
+            watching: [
+              {
+                symbol: 'INFY',
+                companyName: 'Infosys',
+                addedAt: 'x',
+                addedAtIst: 'x',
+                filingsHeld: 1,
+                lastFiledAt: null,
+                lastFiledAtIst: null,
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(envelope([], { used: 0, cap: 50 }));
+    });
+    const okGet = okApiGet();
+    const { container } = await renderApp(okGet, apiSend as never);
+
+    fireEvent.click(container.querySelector('#tab-watching') as Element);
+    await flush();
+    await flush();
+
+    expect(
+      (container.querySelector('#view-watching') as HTMLElement).hidden,
+    ).toBe(false);
+    expect(apiSend.mock.calls.map((c) => c[0])).toContain(
+      '/api/watchlist/feed?limit=25&offset=0',
+    );
+    expect(
+      container
+        .querySelector('[data-ui="watching-row"]')
+        ?.getAttribute('data-symbol'),
+    ).toBe('INFY');
   });
 });

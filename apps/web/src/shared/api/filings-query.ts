@@ -1,6 +1,6 @@
 import type { FilterState } from '../../app/filter-state';
 
-export type ViewName = 'brief' | 'feed' | 'company';
+export type ViewName = 'brief' | 'feed' | 'company' | 'watching';
 
 /**
  * The Brief's window: the server caps a page at 200, and a verified IST day
@@ -36,6 +36,8 @@ export const filingsQuery = (
   if (filters.q) parts.push(`q=${encodeURIComponent(filters.q)}`);
   if (filters.symbol)
     parts.push(`symbol=${encodeURIComponent(filters.symbol)}`);
+  if (filters.category)
+    parts.push(`category=${encodeURIComponent(filters.category)}`);
   if (filters.group) parts.push(`group=${encodeURIComponent(filters.group)}`);
   if (filters.topic) parts.push(`topic=${encodeURIComponent(filters.topic)}`);
   // The literal single value the server accepts; anything else answers 400.

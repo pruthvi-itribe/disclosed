@@ -21,4 +21,8 @@ export type {
   ResultsView,
   ResultsFigureView,
   IndustrySource,
+  SuggestionsView,
+  CompanySuggestion,
+  CategorySuggestion,
+  GroupSuggestion,
 } from '../../../../dashboard/src/filings/dashboard.types';

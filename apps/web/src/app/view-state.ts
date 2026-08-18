@@ -6,7 +6,7 @@ export interface ViewState {
 }
 
 export type ViewAction =
-  | { readonly type: 'show'; readonly view: 'brief' | 'feed' }
+  | { readonly type: 'show'; readonly view: 'brief' | 'feed' | 'watching' }
   | { readonly type: 'openCompany'; readonly symbol: string };
 
 /**

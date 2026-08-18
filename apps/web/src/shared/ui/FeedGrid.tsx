@@ -6,6 +6,7 @@ import { DIRECTION_GLYPH } from '../format/vocab';
 import { feedBucket } from './feed-bucket';
 import { insightLines } from './insight-lines';
 import { FeedCard } from './FeedCard';
+import type { WatchControls } from './WatchButton';
 
 /** The server's MAX_LIMIT, restated for the at-cap note. */
 const LIMIT_MAX = 500;
@@ -26,6 +27,15 @@ const emptyHint = (filters: FilterState): string => {
     );
   }
   if (filters.onlyInsights) {
+    // Named with its NUMBER: the picked company is the one case where the
+    // page can say exactly what the toggle is hiding.
+    if (filters.picked !== null && filters.picked.kind === 'company') {
+      return (
+        `${filters.picked.head} has ${groupInt(filters.picked.filings)} filing(s),` +
+        ' and none of them carries a claim matched against the source document.' +
+        ' Untick the filter above to see them.'
+      );
+    }
     return (
       'Only filings with a claim matched against the source document are shown.' +
       ' Untick the filter above to see everything that arrived.'
@@ -52,6 +62,9 @@ export interface FeedGridProps {
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
   readonly onGrow: () => void;
+  /** Null when signed out: the star is absent, not disabled. */
+  readonly watch?: WatchControls | null;
+  readonly share?: ((filing: FilingView) => JSX.Element) | null;
 }
 
 /**
@@ -72,6 +85,8 @@ export function FeedGrid({
   onOpenFocus,
   onPickGroup,
   onGrow,
+  watch = null,
+  share = null,
 }: FeedGridProps): JSX.Element {
   const moreRef = useRef<HTMLButtonElement | null>(null);
 
@@ -136,6 +151,8 @@ export function FeedGrid({
         onOpenCompany={onOpenCompany}
         onOpenFocus={onOpenFocus}
         onPickGroup={onPickGroup}
+        watch={watch}
+        share={share}
       />,
     );
   }
