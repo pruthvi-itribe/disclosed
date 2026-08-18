@@ -71,35 +71,47 @@ holds unchanged.
 
 ## Tasks
 
-- [ ] **Config.** `readWebClient(env)` and `readWebDistDir(env)` in
+- [x] **Config.** `readWebClient(env)` and `readWebDistDir(env)` in
   `configuration.ts`; `webClient` + `webDistDir` on `DashboardConfig`;
   `describeDashboardConfig` prints `web=server|react` so the startup line
   answers "which client is this host serving". Tests: default, both values,
   garbage throws with the sentence.
-- [ ] **Bundle loader.** `ui/web-bundle.ts`: `loadWebBundle(distDir)` returns
+- [x] **Bundle loader.** `ui/web-bundle.ts`: `loadWebBundle(distDir)` returns
   `{ indexHtml, assets }` read eagerly, throwing a sentence naming the
   directory when react mode cannot be served; a `WEB_BUNDLE` provider in
   `dashboard.module.ts` that resolves to `null` in server mode (never touching
   disk) and to the loaded bundle in react mode. Tests against a temp dir:
   loads, lists only real files, throws on absence.
-- [ ] **Front door + assets route.** The react branch in `getPage`; the
+- [x] **Front door + assets route.** The react branch in `getPage`; the
   guarded `/assets/:file` route serving from the map. Tests: signed-in react
   mode gets the dist document; signed-out gets the landing byte-identically in
   both modes; assets 401 signed-out, 404 unknown name, correct types and the
   immutable header signed-in.
-- [ ] **Dockerfile.** `ENV WEB_DIST_DIR=/srv/web` on the dashboard target —
+- [x] **Dockerfile.** `ENV WEB_DIST_DIR=/srv/web` on the dashboard target —
   the copy already exists; this names it for the config.
-- [ ] **Manifests + docs.** `WEB_CLIENT` documented as the optional cutover
+- [x] **Manifests + docs.** `WEB_CLIENT` documented as the optional cutover
   variable in `docker-compose.deploy.yml`, `k8s/30-dashboard.yaml` and
   `docs/deploy-kubernetes.md` — what it does, what rollback is. No live
   identifiers, per the hygiene rule.
-- [ ] **The parity run, and it is the load-bearing task.** The full Playwright
+- [x] **The parity run, and it is the load-bearing task.** The full Playwright
   suite against `AUTH_MODE=local` twice: once with `WEB_CLIENT` unset, once
   `=react`, same assertions. Record both counts here when the runs have
   actually happened — a number written before the run poisons the record. A
   divergence is either a React bug (fix it) or a spec of server markup rather
   than behaviour (re-point it at `data-ui`/`data-seq` and say so in the
   commit).
+  - Measured 2026-08-18 (PR #23), full suite, `AUTH_MODE=local`, same data:
+    server mode **125 passed / 1 skipped / 0 failed**; react mode **118
+    passed / 8 skipped / 0 failed**, run twice. The skip delta is five
+    admin-surface tests (the panel stays server-rendered; they skip with a
+    printed reason) plus two data-honest precondition skips that float with
+    the live collection. The run caught three real parity gaps, each fixed
+    test-first before the counts above: the `#company-feed`/`#watch-feed`
+    ids were missing, the Watching section (and `#watch-count`) was not
+    mounted from sign-in, and the brief card's Copy control had never been
+    ported. Two specs were re-pointed at behaviour rather than server
+    markup (focus-close may unmount; admin specs skip against the React
+    document), with the reasons written into the specs.
 
 ## Out of scope, restated from the spec
 
