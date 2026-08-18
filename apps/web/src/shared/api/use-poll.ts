@@ -59,6 +59,21 @@ interface Health {
  * apiGet's currency seam; a 304 sets no state, which is what keeps React
  * from touching a feed that has not changed.
  */
+interface PageSlot {
+  readonly data: readonly FilingView[];
+  readonly meta: PageMeta;
+}
+
+/**
+ * ONE SLOT PER CONTAINER, which is the old client's shape restated in
+ * state: each of the four surfaces kept its own last draw, and a 304 meant
+ * "THIS container unchanged". A single shared slot re-created the bug the
+ * hard way — Watching's page overwrote the feed's, the feed's refetch
+ * 304'd (which sets no state), and the feed rendered Watching's data.
+ * Found live at phone width on 2026-08-18.
+ */
+type Container = 'feed' | 'brief' | 'company' | 'watching';
+
 export const usePoll = ({
   apiGet,
   apiSend,
@@ -67,8 +82,7 @@ export const usePoll = ({
   filters,
   onSessionEnded,
 }: PollArgs): PollState => {
-  const [filings, setFilings] = useState<readonly FilingView[] | null>(null);
-  const [meta, setMeta] = useState<PageMeta | null>(null);
+  const [pages, setPages] = useState<Partial<Record<Container, PageSlot>>>({});
   const [summary, setSummary] = useState<SummaryView | null>(null);
   const [health, setHealth] = useState<Health>({
     failures: 0,
@@ -87,6 +101,9 @@ export const usePoll = ({
     const current = (): boolean => seq === seqRef.current;
 
     const watching = view === 'watching' && company === null;
+    const container: Container = company !== null ? 'company' : view;
+    const keep = (data: readonly FilingView[], pageMeta: PageMeta): void =>
+      setPages((prev) => ({ ...prev, [container]: { data, meta: pageMeta } }));
     const filingsJob =
       watching && apiSend !== undefined
         ? apiSend<readonly FilingView[]>(
@@ -94,13 +111,11 @@ export const usePoll = ({
             'GET',
           ).then((body) => {
             if (!current()) return;
-            setFilings(body.data);
-            setMeta(body.meta as PageMeta);
+            keep(body.data, body.meta as PageMeta);
           })
         : apiGet<readonly FilingView[]>(query, current).then((result) => {
             if (result.status === 'ok') {
-              setFilings(result.body.data);
-              setMeta(result.body.meta as PageMeta);
+              keep(result.body.data, result.body.meta as PageMeta);
             }
           });
 
@@ -169,5 +184,13 @@ export const usePoll = ({
         ? 'down'
         : 'stale';
 
-  return { filings, meta, summary, live, failure: health.message, refresh };
+  const shown = pages[company !== null ? 'company' : view];
+  return {
+    filings: shown?.data ?? null,
+    meta: shown?.meta ?? null,
+    summary,
+    live,
+    failure: health.message,
+    refresh,
+  };
 };
