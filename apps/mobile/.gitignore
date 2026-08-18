@@ -1,1 +1,5 @@
 node_modules
+# Operator-supplied Firebase configs: each carries an API key the
+# repo-hygiene build rightly refuses. Supplied at build time, never tracked.
+ios/App/App/GoogleService-Info.plist
+android/app/google-services.json

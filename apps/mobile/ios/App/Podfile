@@ -11,12 +11,16 @@ install! 'cocoapods', :disable_input_output_paths => true
 def capacitor_pods
   pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-
+  pod 'CapacitorFirebaseAuthentication', :path => '../../node_modules/@capacitor-firebase/authentication'
 end
 
 target 'App' do
   capacitor_pods
-  # Add your Pods here
+  # The plugin's default subspec is Lite and compiles NO provider: without
+  # the Google subspec, signInWithGoogle rejects at runtime and the door's
+  # one button appears dead. Declared HERE rather than in capacitor_pods,
+  # which `cap sync` regenerates.
+  pod 'CapacitorFirebaseAuthentication/Google', :path => '../../node_modules/@capacitor-firebase/authentication'
 end
 
 post_install do |installer|

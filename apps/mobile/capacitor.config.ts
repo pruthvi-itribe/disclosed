@@ -18,6 +18,14 @@ const config: CapacitorConfig = {
   // is the loudest wrapper tell there is.
   backgroundColor: '#0d1117',
   plugins: {
+    // Google only — the door's one button. The ID token it returns is
+    // exchanged at the server's existing POST /api/auth/firebase for the
+    // same session cookie the website gets; skipNativeAuth stays false so
+    // the plugin completes the native Firebase sign-in it started.
+    FirebaseAuthentication: {
+      skipNativeAuth: false,
+      providers: ['google.com'],
+    },
     // The bundle ships inside the binary and paints in well under a second,
     // so a splash that LINGERS is pure delay dressed as branding: show it
     // only for as long as the WebView actually needs (auto-hide, no fixed

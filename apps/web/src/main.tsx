@@ -82,6 +82,40 @@ const priorSignedOutReloadAt = ((): number | null => {
 })();
 
 /**
+ * THE NATIVE GOOGLE DOOR, reached through the bridge Capacitor injects
+ * rather than through an import: the plugin's JS proxy arrives on
+ * `window.Capacitor.Plugins` from the native side, so the web bundle
+ * carries no Capacitor or Firebase dependency and the bundle audit stays
+ * exactly as it was. Null in a browser and in a shell built without the
+ * plugin — the door's button then explains itself instead of doing
+ * nothing.
+ */
+const nativeGoogle = (): (() => Promise<string>) | null => {
+  const plugin = (
+    window as {
+      Capacitor?: {
+        Plugins?: {
+          FirebaseAuthentication?: {
+            signInWithGoogle: () => Promise<{
+              credential?: { idToken?: string } | null;
+            }>;
+          };
+        };
+      };
+    }
+  ).Capacitor?.Plugins?.FirebaseAuthentication;
+  if (plugin === undefined) return null;
+  return async () => {
+    const result = await plugin.signInWithGoogle();
+    const idToken = result.credential?.idToken;
+    if (typeof idToken !== 'string' || idToken === '') {
+      throw new Error('Google returned no token to exchange.');
+    }
+    return idToken;
+  };
+};
+
+/**
  * THE SHELL'S FRONT DOOR. The web relies on the server's: a signed-out
  * reload lands on the landing page. The shell has no front door — its
  * first build painted a themed void and polled 401s forever — so a session
@@ -100,7 +134,7 @@ const showShellSignIn = (): void => {
         }
         apiSend={apiSend}
         onSignedIn={() => window.location.reload()}
-        signInWithGoogle={null}
+        signInWithGoogle={nativeGoogle()}
       />
     </StrictMode>,
   );
