@@ -16,7 +16,9 @@ describe('apiSend', () => {
     expect(path).toBe('/api/auth/login');
     expect(init).toMatchObject({
       method: 'POST',
-      credentials: 'same-origin',
+      // 'include', matching api-get: identical for the browser's
+      // same-origin asks, required for the mobile shell's cross-origin ones.
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'a@b.c', password: 'x' }),
     });

@@ -1,0 +1,15 @@
+{
+  "name": "disclosed-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Capacitor shell: the audited apps/web bundle inside a native binary, so the shell paints with zero network requests.",
+  "scripts": {
+    "sync": "cap sync"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^6.2.1",
+    "@capacitor/ios": "^6.2.1"
+  }
+}

@@ -52,8 +52,12 @@ export const createApiSend =
     const response = await fetcher(path, {
       method,
       // The whole session is a cookie the page cannot read; a future edit
-      // to 'omit' would sign everybody out silently.
-      credentials: 'same-origin',
+      // to 'omit' would sign everybody out silently. 'include' rather than
+      // 'same-origin' — identical for the browser (every ask here is
+      // same-origin) and required for the mobile shell, whose WebView asks
+      // the production origin from a local scheme. api-get already says
+      // 'include' for the same reason.
+      credentials: 'include',
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });

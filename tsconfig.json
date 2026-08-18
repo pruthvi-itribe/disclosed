@@ -32,5 +32,5 @@
   // The two trees also disagree deliberately — the client is ESNext modules
   // with `noUncheckedIndexedAccess`, the server is CommonJS without it — so
   // one compiler pass over both could only ever be the weaker of the two.
-  "exclude": ["node_modules", "dist", "apps/web"]
+  "exclude": ["node_modules", "dist", "apps/web", "apps/mobile"]
 }

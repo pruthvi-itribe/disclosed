@@ -22,7 +22,7 @@ module.exports = {
   // a parser pointed at the root tsconfig — which excludes them, so every one
   // would fail as "not found by the project" before a single rule ran. The
   // rules are not relaxed; the ownership is moved.
-  ignorePatterns: ['.eslintrc.js', 'apps/web/'],
+  ignorePatterns: ['.eslintrc.js', 'apps/web/', 'apps/mobile/'],
   rules: {
     '@typescript-eslint/interface-name-prefix': 'off',
     '@typescript-eslint/explicit-function-return-type': 'off',

@@ -161,8 +161,12 @@ const FORBIDDEN: ReadonlyArray<{
     // It is the one place an address must be real: an ACME registration that
     // cannot be delivered to means expiry warnings vanish while everything
     // still looks healthy. Recorded in k8s/05-issuer.yaml beside the value.
+    // `@2x`/`@3x` is Apple's Retina scale suffix: generated asset catalogs
+    // (apps/mobile/ios) name icons `AppIcon-512@2x.png`, which has an
+    // address's shape and names a file, not a person. Bounded to the exact
+    // suffix-plus-extension so `someone@2xmail.co` would still be reported.
     exempt:
-      /__fixtures__|\/corpus\/|\.spec\.ts:|@disclosed\.live|pruthvi@itribe\.in/,
+      /__fixtures__|\/corpus\/|\.spec\.ts:|@disclosed\.live|pruthvi@itribe\.in|@[23]x\.png/,
     why: 'personal data in a public repository; use a role address on our own domain, or an angle-bracket placeholder filled in at apply time',
   },
   {
@@ -336,4 +340,14 @@ describe('the personal-email rule and RFC 2606 reserved TLDs', () => {
       expect(matches(address)).toBe(true);
     },
   );
+
+  // The Apple scale-suffix carve-out, proven in both directions like the
+  // TLDs above: a widening only tested for what it now allows is a hole
+  // with a passing test beside it.
+  it('exempts an asset catalog line, and nothing shaped like a person', () => {
+    const exempt = rule?.exempt;
+    expect(exempt?.test('"filename" : "AppIcon-512@2x.png",')).toBe(true);
+    expect(exempt?.test('reach me at someone@2xmail.co')).toBe(false);
+    expect(exempt?.test('someone@somewhere.co')).toBe(false);
+  });
 });
