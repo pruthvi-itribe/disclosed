@@ -1,6 +1,5 @@
 import { fireEvent, render } from '@testing-library/react';
 import { act } from '@testing-library/react';
-import { useState } from 'react';
 import { SearchBox } from './SearchBox';
 import { SearchNote } from './SearchNote';
 import { SUGGEST_DEBOUNCE_MS } from './use-suggest';
@@ -27,44 +26,16 @@ const answer = {
   },
 };
 
-// The box is controlled; the harness owns the text the way App does, with
-// the spy recording what the parent was told.
-function Harness({
-  apiGet,
-  handlers,
-}: {
-  readonly apiGet: never;
-  readonly handlers: {
-    onTextChange: ReturnType<typeof vi.fn>;
-    onTyped: ReturnType<typeof vi.fn>;
-    onApply: ReturnType<typeof vi.fn>;
-    onSubmit: ReturnType<typeof vi.fn>;
-  };
-}): JSX.Element {
-  const [text, setText] = useState('');
-  return (
-    <SearchBox
-      text={text}
-      apiGet={apiGet}
-      onTextChange={(value) => {
-        handlers.onTextChange(value);
-        setText(value);
-      }}
-      onTyped={handlers.onTyped}
-      onApply={handlers.onApply}
-      onSubmit={handlers.onSubmit}
-    />
-  );
-}
-
+// The draft is the box's own state now (review finding #10), so the
+// harness owns nothing: the spies record what the parent is told, and what
+// the input SHOWS is asserted on the input itself.
 const renderBox = (apiGet = vi.fn().mockResolvedValue(answer)) => {
   const handlers = {
-    onTextChange: vi.fn(),
     onTyped: vi.fn(),
     onApply: vi.fn(),
     onSubmit: vi.fn(),
   };
-  const view = render(<Harness apiGet={apiGet as never} handlers={handlers} />);
+  const view = render(<SearchBox apiGet={apiGet as never} {...handlers} />);
   return { apiGet, handlers, ...view };
 };
 
@@ -133,7 +104,8 @@ describe('SearchBox', () => {
       name: 'Britannia Industries',
       filings: 120,
     });
-    expect(handlers.onTextChange).toHaveBeenCalledWith('BRITANNIA');
+    // The pick writes the head into the box's own draft.
+    expect(input.value).toBe('BRITANNIA');
     expect(handlers.onSubmit).not.toHaveBeenCalled();
   });
 
