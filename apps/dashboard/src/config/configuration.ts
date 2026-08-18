@@ -107,6 +107,20 @@ export interface DashboardConfig {
    * still drops every session.
    */
   readonly corsAllowedOrigins: readonly string[];
+  /**
+   * Which client a SIGNED-IN reader is served at `GET /`: the server-rendered
+   * page, or the React bundle. The signed-out branch — the landing page — is
+   * identical in both modes, and the switch is this variable alone: the dist
+   * ships inside the image either way, so rollback is unsetting it, never an
+   * image build. See `readWebClient` for why a typo stops the process.
+   */
+  readonly webClient: 'server' | 'react';
+  /**
+   * Where the React bundle lives when `webClient` is `react`. The laptop
+   * layout by default; the Dockerfile sets `/srv/web`, where the image copies
+   * the dist. Never read in server mode.
+   */
+  readonly webDistDir: string;
 }
 
 /**
@@ -332,6 +346,28 @@ export const readAdminEnabled = (
 };
 
 /**
+ * Which client a signed-in reader is served, or stops the process.
+ *
+ * `server` (the default, and what an unset or blank variable means) or the
+ * exact word `react`. Anything else THROWS rather than guessing: the operator
+ * touching this flag is mid-cutover, and a typo silently meaning `server` is
+ * a rollback nobody asked for — the same fail-loud rule as `ADMIN_ENABLED`.
+ */
+export const readWebClient = (env: NodeJS.ProcessEnv): 'server' | 'react' => {
+  const raw = env.WEB_CLIENT;
+  if (raw === undefined || raw.trim() === '') return 'server';
+
+  const wanted = raw.trim();
+  if (wanted === 'server' || wanted === 'react') return wanted;
+
+  throw new Error(
+    `WEB_CLIENT must be "server" or "react", but was "${raw}". It decides ` +
+      'which client a signed-in reader is served, so an unreadable value is ' +
+      'not guessed at.',
+  );
+};
+
+/**
  * Reads what the `X-Forwarded-*` headers are worth, or stops the process.
  *
  * ================================================================
@@ -470,6 +506,8 @@ export const loadDashboardConfig = (
     adminEnabled: readAdminEnabled(env, publicOrigin),
     trustProxy: readTrustProxy(env),
     corsAllowedOrigins: readCorsAllowedOrigins(env),
+    webClient: readWebClient(env),
+    webDistDir: readString('WEB_DIST_DIR', env, 'apps/web/dist'),
   };
 };
 
@@ -492,6 +530,10 @@ export const describeDashboardConfig = (config: DashboardConfig): string =>
     // the outside: an operator who cannot find the Admin tab reads this line
     // and learns whether it was refused or never made.
     `admin=${config.adminEnabled ? 'on' : 'off'}`,
+    // WHICH CLIENT A SIGNED-IN READER IS SERVED. Printed because the cutover
+    // and its rollback are this one variable, and mid-cutover this line is
+    // where an operator confirms which side of it a restarted process is on.
+    `web=${config.webClient}`,
     // WHAT THE FORWARDED HEADERS ARE WORTH ON THIS HOST. Printed because the
     // two things that key off it — which address the rate limiter counts, and
     // whether the session cookie carries `Secure` — are both invisible until

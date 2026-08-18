@@ -9,6 +9,7 @@ import {
   readPort,
   readString,
   readTrustProxy,
+  readWebClient,
 } from './configuration';
 
 /** A clean environment, so nothing here depends on the developer's shell. */
@@ -129,6 +130,10 @@ describe('loadDashboardConfig', () => {
       // Nothing calls this API cross-origin by default. The React client is
       // served same-origin by the Caddy sidecar and never needs an entry here.
       corsAllowedOrigins: [],
+      // The cutover flag: unset means the server-rendered page, and the
+      // laptop layout for the dist. See `readWebClient`.
+      webClient: 'server',
+      webDistDir: 'apps/web/dist',
     });
   });
 
@@ -159,6 +164,8 @@ describe('loadDashboardConfig', () => {
       adminEnabled: true,
       trustProxy: false,
       corsAllowedOrigins: [],
+      webClient: 'server',
+      webDistDir: 'apps/web/dist',
     });
   });
 
@@ -291,7 +298,52 @@ describe('readTrustProxy', () => {
   });
 });
 
+describe('readWebClient — which client the signed-in reader is served', () => {
+  it('serves the server-rendered page unless told otherwise', () => {
+    expect(readWebClient(env())).toBe('server');
+    expect(readWebClient(env({ WEB_CLIENT: '' }))).toBe('server');
+    expect(readWebClient(env({ WEB_CLIENT: 'server' }))).toBe('server');
+  });
+
+  it('serves the React bundle only on the exact word', () => {
+    expect(readWebClient(env({ WEB_CLIENT: 'react' }))).toBe('react');
+  });
+
+  // A typo must stop the process, not silently serve the wrong client: the
+  // operator flipping this flag is mid-cutover, and 'React' quietly meaning
+  // 'server' is a rollback nobody asked for.
+  it('refuses any other value with a sentence', () => {
+    expect(() => readWebClient(env({ WEB_CLIENT: 'React' }))).toThrow(
+      /WEB_CLIENT/,
+    );
+    expect(() => readWebClient(env({ WEB_CLIENT: 'caddy' }))).toThrow(
+      /"server" or "react"/,
+    );
+  });
+
+  it('rides loadDashboardConfig with the dist directory beside it', () => {
+    const config = loadDashboardConfig(env({ WEB_CLIENT: 'react' }));
+    expect(config.webClient).toBe('react');
+    expect(config.webDistDir).toBe('apps/web/dist');
+    expect(
+      loadDashboardConfig(env({ WEB_DIST_DIR: '/srv/web' })).webDistDir,
+    ).toBe('/srv/web');
+  });
+});
+
 describe('describeDashboardConfig', () => {
+  it('names which client a signed-in reader is served', () => {
+    // The startup line is where an operator mid-cutover looks first.
+    expect(describeDashboardConfig(loadDashboardConfig(env()))).toContain(
+      'web=server',
+    );
+    expect(
+      describeDashboardConfig(
+        loadDashboardConfig(env({ WEB_CLIENT: 'react' })),
+      ),
+    ).toContain('web=react');
+  });
+
   it('says what the forwarded headers are worth', () => {
     // Both things that key off it — which address the rate limiter counts, and
     // whether the cookie carries `Secure` — are invisible until somebody is
