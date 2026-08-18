@@ -1,6 +1,6 @@
 # React Client — Plan 2: The Reading Surfaces
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** The feed, the focus dialog, the company page and the Brief, rendered by
 React at parity — element for element, `data-ui` for `data-ui` — from the same
@@ -135,18 +135,18 @@ document contains only this application.
 
 **Files:** `src/shared/types/api.ts`, `src/shared/types/type-only-imports.spec.ts`
 
-- [ ] Write the failing spec: read every `src/**/*.{ts,tsx}` file, regex the
+- [x] Write the failing spec: read every `src/**/*.{ts,tsx}` file, regex the
   import statements, and fail on any import whose specifier resolves outside
   `apps/web` that is not `import type`. Plant both cases in fixtures strings to
   prove the regex sees them.
-- [ ] `api.ts`: `import type` + `export type` for the DTOs the reading surfaces
+- [x] `api.ts`: `import type` + `export type` for the DTOs the reading surfaces
   consume: `FilingView`, `SummaryView`, `FilingsMeta` (or the actual meta
   shape), the enrichment/claim/results types they reference. Header comment:
   why imported not generated (erased at compile; drift impossible; the guard
   spec bounds the direction of the dependency).
-- [ ] `npx tsc --noEmit` in `apps/web` must pass — the compiler follows the
+- [x] `npx tsc --noEmit` in `apps/web` must pass — the compiler follows the
   relative import outside `include`, which is the mechanism working.
-- [ ] Commit: `feat: share the server's response types by type-only import`
+- [x] Commit: `feat: share the server's response types by type-only import`
 
 ### Task 2: Format helpers and vocabulary
 
@@ -157,7 +157,7 @@ included. The doubled-backslash sharp edge dies here — these are real modules
 now, `FIGURE` is written once with single escapes, and the mirror spec
 normalises the server fragment's doubling when comparing.
 
-- [ ] Failing tests first, one file per helper. The load-bearing cases:
+- [x] Failing tests first, one file per helper. The load-bearing cases:
   - `relativeTime`: the full ladder (`just now` &lt; 45s, `a minute ago` &lt; 90s,
     `N min ago`, `Nh Mm ago`, `yesterday`, `N days ago`, `Nw ago`); NaN input
     returns the raw string (debuggable, not a lie); nullish returns `—`.
@@ -176,24 +176,24 @@ normalises the server fragment's doubling when comparing.
     company), `TIER_TITLE`, `TOPIC_LABEL`, `METRIC_LABEL` each equal the
     table in the server fragment they mirror, read from the fragment source at
     test time.
-- [ ] Implement. Glyph/label lookups take `Map`s.
-- [ ] Commit: `feat: port the format helpers and the vocabulary, mirrored`
+- [x] Implement. Glyph/label lookups take `Map`s.
+- [x] Commit: `feat: port the format helpers and the vocabulary, mirrored`
 
 ### Task 3: The icons
 
 **Files:** `src/shared/ui/icons.ts`, `IconButton.tsx`, `IconLink.tsx` + specs
 
-- [ ] Failing tests: `IconButton` renders `button.iconbtn[data-ui]` with
+- [x] Failing tests: `IconButton` renders `button.iconbtn[data-ui]` with
   `aria-label` and `title` **from one string**; the svg carries
   `aria-hidden="true"` and `focusable="false"`, `viewBox` from `ICON_BOX=24`,
   size 17, stroke 1.7, `stroke=currentColor fill=none`; `IconLink` renders
   `a.iconbtn` with `rel="noopener noreferrer nofollow" target="_blank"`.
-- [ ] Port the shape tables verbatim from `script-icon.ts` (`ICON_STAR`,
+- [x] Port the shape tables verbatim from `script-icon.ts` (`ICON_STAR`,
   `ICON_COPY`, `ICON_IMAGE`, `ICON_SOURCE`, `ICON_DONE`, `ICON_FAIL` — all
   six now; Plan 3 consumes the rest without touching this file). Keep the
   header's measurement: four words took 240px of a 326px footer at 390px;
   four 34px drawings take 160px.
-- [ ] Commit: `feat: port the icon drawings and the one-string label rule`
+- [x] Commit: `feat: port the icon drawings and the one-string label rule`
 
 ### Task 4: Filter state and the poll
 
@@ -204,19 +204,19 @@ onlyInsights `true` by default, q, symbol, picked, limit 25, offset), **view
 state** (Task 9), and **poll state** (ticks, failures, live kind) which lives
 inside the hook. `todayIstDay`/`previousIstDay` ride the summary response.
 
-- [ ] Failing tests for the reducer — every writer's reset rule from the
+- [x] Failing tests for the reducer — every writer's reset rule from the
   survey: a topic click writes **both axes** and zeroes offset; only-insights
   zeroes offset; `growFeed` steps through `[25,50,100,200,500]` to the first
   step **greater than** limit, does NOT zero offset, and no-ops at 500;
   `openCompany` zeroes offset.
-- [ ] Failing tests for `filingsQuery(filters, view, company)` — the priority
+- [x] Failing tests for `filingsQuery(filters, view, company)` — the priority
   order ported from `query()`: company → `limit=200&offset=0&symbol=` (every
   feed filter ignored; "200 is roughly ten months of the heaviest measured
   filer"); brief → `tier=verified&offset=0&limit=200` (`BRIEF_WINDOW`; a
   verified IST day is 326–463 filings, the cover states the window);
   otherwise limit/offset always, `tier=verified` iff `onlyInsights && !tier`,
   then q, symbol, topic, `plans=only` — all URI-encoded.
-- [ ] Failing tests for `usePoll` (fake timers, fetch double via Plan 1's
+- [x] Failing tests for `usePoll` (fake timers, fetch double via Plan 1's
   `apiGet`): 4000ms cadence; hidden tab ticks nothing and a
   `visibilitychange` back fires a forced refresh; a superseded response is
   dropped whole (the `current()` seam Plan 1 built); 304 keeps last data and
@@ -225,17 +225,17 @@ inside the hook. `todayIstDay`/`previousIstDay` ride the summary response.
   calls `onSessionEnded` once (the latch); summary and filings ride **one**
   cycle; every filter/view change refreshes immediately (the old client's
   `refresh(true)` on every tab and chip).
-- [ ] Implement. The hook returns
+- [x] Implement. The hook returns
   `{ filings, meta, summary, live, error, refresh }` — data stays put on 304,
   which is what makes React's reconciler the signature-skip successor: no new
   state, no re-render, scroll and selection untouched.
-- [ ] Commit: `feat: the filter reducer, the query builder and the poll hook`
+- [x] Commit: `feat: the filter reducer, the query builder and the poll hook`
 
 ### Task 5: The feed
 
 **Files:** `insight-lines.ts`, `feed-bucket.ts`, `FeedCard.tsx`, `FeedGrid.tsx`, `Hero.tsx`, `LiveIndicator.tsx`, `page.css` + specs
 
-- [ ] Pure logic first, failing tests then port:
+- [x] Pure logic first, failing tests then port:
   - `insightLines`: results line first with no direction ("a results line has
     no direction of its own and never will"), echoes skipped **as headlines
     only**.
@@ -245,7 +245,7 @@ inside the hook. `todayIstDay`/`previousIstDay` ride the summary response.
     module source contains no `getDate`, `getTimezoneOffset`, `toISOString`,
     `86400000` (port of `script-feed.spec.ts:135`); both buckets null before
     the first summary → every filing named by its day.
-- [ ] `FeedCard` failing tests — the DOM contract, exactly:
+- [x] `FeedCard` failing tests — the DOM contract, exactly:
   `article.card[data-ui="card"][data-seq][data-at]`, `.quiet` + `p.stated
   [data-ui="card-outcome"]` when no lines; `.openable`, `tabIndex=0`,
   `aria-haspopup="dialog"`; head with `button.sym` (opens company,
@@ -259,7 +259,7 @@ inside the hook. `todayIstDay`/`previousIstDay` ride the summary response.
   `IconLink` only when `safeHref` passes. Card click opens focus unless
   `target.closest('a, button')`; keyboard opens on **Enter only** and only
   when the card itself has focus.
-- [ ] `FeedGrid` failing tests: day-divider `h2.bucket` inserted when the
+- [x] `FeedGrid` failing tests: day-divider `h2.bucket` inserted when the
   bucket label changes; cards keyed by `seqId` (the reconciler's version of
   "pin by data-seq, never position"); the two empty states with their exact
   sentences (`Nothing verifiable yet` under only-insights, else `No filings
@@ -269,27 +269,27 @@ inside the hook. `todayIstDay`/`previousIstDay` ride the summary response.
   do — the one count the browser still performs); IntersectionObserver on the
   more-button sentinel with `rootMargin: '200px'`, inert when the button is
   hidden or the view is not the feed.
-- [ ] `Hero` + `LiveIndicator` failing tests: `hero-today` ←
+- [x] `Hero` + `LiveIndicator` failing tests: `hero-today` ←
   `todayCount`, `hero-insights` ← `todayVerified` (server-computed — the
   browser-counted version shipped "8 filings today" beside "22 verified
   insights"), `hero-lag` ← `duration(feedLagMs)` + `lagClass`; live dot
   kinds and `generated` = `updated {generatedAtIst} IST` printed as sent.
-- [ ] Relative times tick without a rebuild: one 60-second interval at the
+- [x] Relative times tick without a rebuild: one 60-second interval at the
   grid, cards `memo`-ised on their filing + bucket; the tick re-renders only
   `.when` text — the React equivalent of `touchFeedTimes`, and the reason
   `relativeTime` stayed out of the old signature.
-- [ ] Port the feed's rules from `page-style.ts` into `page.css` verbatim
+- [x] Port the feed's rules from `page-style.ts` into `page.css` verbatim
   (minus admin-only selectors, which are recorded in the file header as
   deliberately left behind).
-- [ ] Wire into `App` behind the poll hook; **prove against the real server**
+- [x] Wire into `App` behind the poll hook; **prove against the real server**
   through the dev proxy: cards render, buckets label, 304 keeps scroll.
-- [ ] Commit: `feat: the feed at parity`
+- [x] Commit: `feat: the feed at parity`
 
 ### Task 6: The focus dialog
 
 **Files:** `FocusDialog.tsx`, `focus-lines.ts`, `focus.css` + specs
 
-- [ ] Failing tests:
+- [x] Failing tests:
   - `focusLines` returns **every** claim including echoes ("one filing opened
     on purpose cannot omit a sentence"), uncapped.
   - Structure: `#focus-back[hidden]` &gt; `#focus[role="dialog"]
@@ -310,13 +310,13 @@ inside the hook. `todayIstDay`/`previousIstDay` ride the summary response.
     `#focus-close` on open and back to the opener on close; Tab is trapped
     manually across `button, a[href], input, [tabindex]:not([tabindex="-1"])`
     (`aria-modal` is a claim the page must honour).
-- [ ] Two-phase open: `hidden=false` on commit, `.open` on the **next frame**
+- [x] Two-phase open: `hidden=false` on commit, `.open` on the **next frame**
   (`requestAnimationFrame` in an effect) — both in one commit skips the
   transition, the exact recorded bug.
-- [ ] Port `page-style-focus.ts` verbatim, including the 560px bottom-sheet
+- [x] Port `page-style-focus.ts` verbatim, including the 560px bottom-sheet
   block with `max-height: 92dvh` (at 92**vh** the close button was
   unreachable on a phone, 2026-08-13) and the reduced-motion block.
-- [ ] Commit: `feat: the focus dialog at parity`
+- [x] Commit: `feat: the focus dialog at parity`
 
 ### Task 7: The company page
 
@@ -326,7 +326,7 @@ Fed by the same poll (`symbol=` window of 200); every section computes its own
 "anything to show" and the wrapper hides on false — drawn first, hidden after,
 so the condition lives in one place.
 
-- [ ] Failing tests, per section, with the survey's rules verbatim:
+- [x] Failing tests, per section, with the survey's rules verbatim:
   - Head: identity; industry tag hidden without a value; the `co-industry-
     source` BSE mark only when `industrySource === 'bse'`; hero numbers
     (`co-verified` counted over the window client-side as today); coverage
@@ -351,17 +351,17 @@ so the condition lives in one place.
     `text` (the span is the document's bytes, the text is the extractor's
     compression), deciding words in `title`, newest first, uncapped, no floor.
   - The company feed: `FeedGrid` without chrome — no info/more/legend.
-- [ ] Implement; the section notes are static children with their
+- [x] Implement; the section notes are static children with their
   `company-*-note` names.
-- [ ] Prove against the real server through the dev proxy on a symbol with
+- [x] Prove against the real server through the dev proxy on a symbol with
   figures and one with none.
-- [ ] Commit: `feat: the company page at parity`
+- [x] Commit: `feat: the company page at parity`
 
 ### Task 8: The Brief
 
 **Files:** `brief-model.ts`, `BriefDeck.tsx`, `BriefCover.tsx`, `BriefCard.tsx`, `BriefEnd.tsx`, `BriefRail.tsx`, `BriefPager.tsx`, `brief.css` + specs
 
-- [ ] `brief-model.ts` failing tests first — this is the honesty core and it
+- [x] `brief-model.ts` failing tests first — this is the honesty core and it
   is pure:
   - candidates grouped by symbol (`Map`), a claim travelling **with its
     filing**; `hasResults`; `figures` counted by `/\d/` over claim text (an
@@ -376,7 +376,7 @@ so the condition lives in one place.
   - signature = `symbol:seqId` joined — the deck rebuilds only when it
     changes (React: the deck's children are memoised on this signature;
     twelve full-viewport cards must not be replaced under a thumb).
-- [ ] Component failing tests:
+- [x] Component failing tests:
   - Cover (fed by the **summary**, so card 0 costs no request): `brief-day`,
     the mix bar (flexGrow = count, zero groups skipped, count-desc name-asc),
     the cover line's two sentences, the rule line ending in `BRIEF_RULE` —
@@ -406,17 +406,17 @@ so the condition lives in one place.
     900px, disabled at the ends, syncing from scroll.
   - The axis is read from `getComputedStyle(deck).scrollSnapType` — the
     stylesheet answers, so the 900px breakpoint exists in exactly one place.
-- [ ] Port `page-style-brief.ts` verbatim: `body.briefing` with the
+- [x] Port `page-style-brief.ts` verbatim: `body.briefing` with the
   **child-combinator** footer rule, `dvh` not `vh`, the 431/900/reduced-motion
   blocks, the one-auto-margin rule.
-- [ ] Prove on the real server at phone width and at ≥900px.
-- [ ] Commit: `feat: the Brief at parity`
+- [x] Prove on the real server at phone width and at ≥900px.
+- [x] Commit: `feat: the Brief at parity`
 
 ### Task 9: The view switch and the shell
 
 **Files:** `view-state.ts`, `TopBar.tsx`, `App.tsx` rewrite + specs
 
-- [ ] Failing tests: three views this plan owns (`brief`, `feed`, `company`;
+- [x] Failing tests: three views this plan owns (`brief`, `feed`, `company`;
   watching and admin tabs are Plan 3/never); exactly one visible; **no tab
   lit while company is open** (reached from a card, not a tab); leaving
   `company` clears the company symbol; `body.className = 'briefing'` iff
@@ -425,23 +425,23 @@ so the condition lives in one place.
   different question); initial view = brief at ≤430px, **read once, never
   watched** (a rotated phone must not swap the view under a reader);
   `company-back` returns to the feed.
-- [ ] Replace Plan 1's status-line `App` body with the real shell: TopBar
+- [x] Replace Plan 1's status-line `App` body with the real shell: TopBar
   (brand, tabs, live indicator, `#generated`), `#alert`, the view sections.
   The `/api/summary`-count smoke behaviour from Plan 1 is superseded; its
   spec is replaced by the shell's.
-- [ ] Full manual pass against the real server through the dev proxy: feed →
+- [x] Full manual pass against the real server through the dev proxy: feed →
   card → focus → close; ticker → company → back; tab → brief → deck →
   keyboard/pager; kill the server and watch stale → down; restart and watch
   it recover.
-- [ ] Commit: `feat: the shell — three views, one poll`
+- [x] Commit: `feat: the shell — three views, one poll`
 
 ### Task 10: Gates
 
-- [ ] `npm --prefix apps/web test` — everything above green.
-- [ ] `npm --prefix apps/web run build && npm --prefix apps/web run audit` —
+- [x] `npm --prefix apps/web test` — everything above green.
+- [x] `npm --prefix apps/web run build && npm --prefix apps/web run audit` —
   the audit already runs in CI and the image; nothing new to wire, it just
   has to stay clean now that real surfaces exist.
-- [ ] `npm test`, `npm run lint:ci`, `npx tsc --noEmit -p tsconfig.json` —
+- [x] `npm test`, `npm run lint:ci`, `npx tsc --noEmit -p tsconfig.json` —
   the server untouched.
 - [ ] PR; the four gates green; auto-merge.
 
