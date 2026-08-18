@@ -1,0 +1,147 @@
+/*
+ * The shell's chrome: fixed header, bottom bar, and the two sheets. Every
+ * rule here is scoped under html.native-shell (or lives inside components
+ * only the shell renders), so the web document keeps its own layout and the
+ * parity suite keeps proving it.
+ *
+ * GEOMETRY CONTRACT with app.css's shell block: html carries only the SIDE
+ * insets; the fixed header owns the top inset, the bottom bar owns the
+ * bottom one, and the body is padded to scroll exactly between them.
+ */
+
+html.native-shell .topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: calc(env(safe-area-inset-top) + 8px) 20px 10px;
+  /* Cards scroll UNDER it: the bar keeps the theme through a blur so the
+     text stays readable over whatever passes beneath. */
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+
+html.native-shell body {
+  /* Between the bars: header ~54px of content plus the island, bar ~58px
+     plus the home indicator. */
+  padding-top: calc(env(safe-area-inset-top) + 62px);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 66px);
+}
+
+.bottomnav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  padding: 6px 8px calc(env(safe-area-inset-bottom) + 4px);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
+}
+.bottomnav .navitem {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 0 4px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10.5px;
+}
+.bottomnav .navitem.on {
+  color: var(--brand-1);
+}
+.bottomnav .navbadge {
+  position: absolute;
+  top: 2px;
+  right: 22%;
+  min-width: 15px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: var(--brand-1);
+  color: #fff;
+  font-size: 9.5px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* --------------------------------------------------------- the sheets ---- */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding: calc(env(safe-area-inset-top) + 10px) 20px
+    calc(env(safe-area-inset-bottom) + 12px);
+}
+.sheet .sheethead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+.sheet .sheethead h2 {
+  margin: 0;
+  font-size: 19px;
+}
+.sheet .sheetclose {
+  background: transparent;
+  border: 0;
+  color: var(--brand-1);
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 2px;
+}
+.sheet .sheetbody {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 8px;
+}
+.profile .profilerow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.profile .profilelabel {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.profile .profilevalue {
+  font-size: 15.5px;
+}
+.profile .profilesignout {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--bad);
+  font: inherit;
+  font-weight: 600;
+}

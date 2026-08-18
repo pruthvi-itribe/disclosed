@@ -8,17 +8,17 @@ import { filterReducer, INITIAL_FILTERS } from './filter-state';
 import { initialViewState, viewReducer } from './view-state';
 import { TopBar } from './TopBar';
 import { Hero } from '../features/feed/Hero';
-import { FeedControls } from '../features/feed/FeedControls';
 import { FeedGrid } from '../shared/ui/FeedGrid';
 import { BriefView } from '../features/brief/BriefView';
 import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
-import { SearchBox, type SearchBoxHandle } from '../features/search/SearchBox';
 import { useShareSlots } from '../features/share/share-slots';
 import { AlertsToggle } from '../features/alerts/AlertsToggle';
 import { useAccountSurfaces } from './use-account-surfaces';
-import { SearchNote } from '../features/search/SearchNote';
+import { ShellChrome } from './ShellChrome';
+import { FilterControls } from './FilterControls';
+import type { SearchBoxHandle } from '../features/search/SearchBox';
 import type { WatchlistFeedMeta } from '../shared/types/account';
 
 export interface AppProps {
@@ -58,6 +58,10 @@ export function App({
   // here it re-rendered the whole shell per keystroke. This ref is the one
   // external write the box allows: Clear emptying the input.
   const searchBox = useRef<SearchBoxHandle>(null);
+  // The shell's boot mark, set by main.tsx before React runs; a browser
+  // never carries it, so every shell-only branch below is dead code there.
+  const shell = document.documentElement.classList.contains('native-shell');
+  const [sheet, setSheet] = useState<'explore' | 'profile' | null>(null);
 
   const { account, watch, alerts, onHealthy } = useAccountSurfaces({
     apiSend,
@@ -114,9 +118,20 @@ export function App({
 
   const items = filings ?? [];
 
+  // One controls element, two homes — see FilterControls.
+  const controls = (
+    <FilterControls
+      ref={searchBox}
+      filters={filters}
+      apiGet={apiGet}
+      dispatch={dispatchFilters}
+    />
+  );
+
   return (
     <>
       <TopBar
+        compact={shell}
         viewState={viewState}
         live={live}
         summary={summary}
@@ -170,36 +185,7 @@ export function App({
         hidden={viewState.view !== 'feed'}
       >
         <Hero summary={summary} />
-        <FeedControls
-          filters={filters}
-          search={
-            <SearchBox
-              ref={searchBox}
-              onTyped={() => dispatchFilters({ type: 'undoPick' })}
-              apiGet={apiGet}
-              onApply={(item) =>
-                dispatchFilters({ type: 'applySuggestion', item })
-              }
-              onSubmit={(q) => dispatchFilters({ type: 'submitSearch', q })}
-            />
-          }
-          note={
-            <SearchNote
-              picked={filters.picked}
-              q={filters.q}
-              onClear={() => {
-                dispatchFilters({ type: 'clearSearch' });
-                searchBox.current?.clear();
-              }}
-            />
-          }
-          onChip={(topic, plans) =>
-            dispatchFilters({ type: 'chip', topic, plans })
-          }
-          onOnlyInsights={(value) =>
-            dispatchFilters({ type: 'onlyInsights', value })
-          }
-        />
+        {!shell && controls}
         <FeedGrid
           items={viewState.view === 'feed' ? items : []}
           meta={viewState.view === 'feed' ? meta : null}
@@ -288,6 +274,21 @@ export function App({
           onClose={() => setFocused(null)}
           watch={watchControls}
           share={shareOnFocus}
+        />
+      )}
+
+      {shell && (
+        <ShellChrome
+          view={viewState.view}
+          company={viewState.company}
+          sheet={sheet}
+          unread={account.unread}
+          email={account.me?.email ?? ''}
+          counts={watch.counts}
+          controls={controls}
+          onShowView={(view) => dispatchView({ type: 'show', view })}
+          onSheet={setSheet}
+          onSignOut={account.signOut}
         />
       )}
     </>

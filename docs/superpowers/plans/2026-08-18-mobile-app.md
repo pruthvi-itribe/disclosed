@@ -143,6 +143,29 @@ together they are the whole difference between "app" and "site in a box":
   native transitions via plugin) — and only after that, a native client.
   Each step is cheaper than the rewrite it defers.
 
+## Phase A8 — mobile chrome (direction set 2026-08-18, after first hands-on)
+
+The user's words, from using the app: the top bar should be FIXED with
+cards scrolling under it; the search bar need not always be there; filters
+move into their own screen on mobile; the tabs move to a BOTTOM bar; and
+profile/watchlist surfaces need real mobile treatment. All of it scoped to
+the shell (`html.native-shell`), so the web document — and the parity
+suite that binds it — is untouched.
+
+- [x] **A8.1. Fixed slim header:** brand + live dot pinned over the
+  island, content scrolling beneath a blurred backdrop.
+- [x] **A8.2. Bottom tab bar:** Brief / Feed / Watching (unread badge) /
+  Search / Profile, safe-area aware, thumb-height targets.
+- [x] **A8.3. The Explore sheet:** search box, search note, topic chips
+  and the verified-claims toggle move off the feed into a full-screen
+  sheet opened from the bottom bar — the SAME FeedControls composition,
+  relocated, so the filters keep their one implementation.
+- [x] **A8.4. The Profile sheet:** who is signed in, the watch count, and
+  sign out — the account surface the top bar's buttons were too small for.
+- [ ] **A8.5. On-device pass:** Brief deck vs the fixed bars, keyboard vs
+  the sheets, scroll-under behaviour — screenshots against a named device,
+  findings become tasks here.
+
 ## Phase B — push
 
 - [ ] **B1. Device registration:** the push plugin's token posted to a new
