@@ -1,0 +1,100 @@
+/*
+ * The shell's front door, and ONLY the shell's: this file is imported by
+ * SignInView alone, which main.tsx renders only inside the binary. Tokens
+ * come from tokens.css like every other surface; nothing here is a port,
+ * because the web has no equivalent page — that is the point of it.
+ */
+.shellauth {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.shellauth .doorbrand {
+  display: flex;
+  justify-content: center;
+}
+
+.shellauth .slides {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.shellauth .slides::-webkit-scrollbar {
+  display: none;
+}
+.shellauth .slide {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  padding: 12px 8px;
+  text-align: center;
+}
+.shellauth .slide h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+}
+.shellauth .slide p {
+  margin: 0 auto;
+  max-width: 34ch;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.shellauth .slidedots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.shellauth .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.35;
+}
+.shellauth .dot.on {
+  opacity: 1;
+  background: var(--brand-1);
+}
+
+.shellauth .doorcard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 340px;
+  width: 100%;
+  margin: 8px auto 0;
+}
+.shellauth .doorcard form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.shellauth .doorcard input {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 15px;
+}
+.shellauth .doorcard button {
+  padding: 13px 14px;
+  border-radius: 10px;
+  border: 0;
+  background: var(--brand-1);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+.shellauth .doorfail {
+  color: var(--warn);
+  font-size: 13px;
+  text-align: center;
+}

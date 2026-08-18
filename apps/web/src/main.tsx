@@ -5,6 +5,8 @@ import { createApiGet } from './shared/api/api-get';
 import { createOriginFetcher } from './shared/api/api-origin';
 import { createApiSend } from './shared/api/api-send';
 import { createEtagStore } from './shared/api/etag-store';
+import { SignInView } from './features/shell-auth/SignInView';
+import { BrandLogo } from './app/BrandLogo';
 // The four stylesheets the server concatenated into one <style> element,
 // imported in the same order so the cascade resolves identically. All are
 // verbatim ports (styles-mirror.spec.ts) and Vite emits them as the one
@@ -35,7 +37,8 @@ if (root === null) throw new Error('#root is missing from the document');
 const capacitor = (
   window as { Capacitor?: { isNativePlatform?: () => boolean } }
 ).Capacitor;
-if (capacitor?.isNativePlatform?.() === true) {
+const isNativeShell = capacitor?.isNativePlatform?.() === true;
+if (isNativeShell) {
   document.documentElement.classList.add('native-shell');
   document
     .querySelector('meta[name="viewport"]')
@@ -78,12 +81,41 @@ const priorSignedOutReloadAt = ((): number | null => {
   }
 })();
 
+/**
+ * THE SHELL'S FRONT DOOR. The web relies on the server's: a signed-out
+ * reload lands on the landing page. The shell has no front door — its
+ * first build painted a themed void and polled 401s forever — so a session
+ * that is absent or ended swaps the app for the sign-in view instead of
+ * reloading. Signing in reboots the shell, which comes up signed in.
+ */
+const showShellSignIn = (): void => {
+  reactRoot.render(
+    <StrictMode>
+      <SignInView
+        brand={<BrandLogo />}
+        authMode={
+          (import.meta.env.VITE_AUTH_MODE as string | undefined) === 'local'
+            ? 'local'
+            : 'firebase'
+        }
+        apiSend={apiSend}
+        onSignedIn={() => window.location.reload()}
+        signInWithGoogle={null}
+      />
+    </StrictMode>,
+  );
+};
+
 reactRoot.render(
   <StrictMode>
     <App
       apiGet={apiGet}
       apiSend={apiSend}
       onSessionEnded={() => {
+        if (isNativeShell) {
+          showShellSignIn();
+          return;
+        }
         if (
           priorSignedOutReloadAt !== null &&
           Date.now() - priorSignedOutReloadAt < 10_000
