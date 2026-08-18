@@ -443,7 +443,7 @@ so the condition lives in one place.
   has to stay clean now that real surfaces exist.
 - [x] `npm test`, `npm run lint:ci`, `npx tsc --noEmit -p tsconfig.json` —
   the server untouched.
-- [ ] PR; the four gates green; auto-merge.
+- [x] PR; the four gates green; auto-merge.
 
 ---
 
