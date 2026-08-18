@@ -1,6 +1,6 @@
 # React Client — Plan 3: The Account Surfaces
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `api/me`, the watch star and the Watching view, search/suggest, and
 share text + image, in the React client at parity. After this plan the client
@@ -120,7 +120,7 @@ postJson's port, a deliberate sibling of `apiGet` rather than a flag on it: a
 failed read is "refresh failed", a failed write carries a sentence the reader
 is waiting for.
 
-- [ ] Failing tests:
+- [x] Failing tests:
   - method + path + JSON body for auth writes; **query-string/path params
     and NO body** for watchlist writes (json parsing is mounted on
     `/api/auth` only — a password cannot travel in a query string, a ticker
@@ -134,13 +134,13 @@ is waiting for.
     branch** — the Watching renderer must always receive a real body
     (routing it through `apiGet` would hand it a NOT_MODIFIED sentinel it
     has no branch for).
-- [ ] Implement. Commit: `feat: the write path, and the ETag-free read`
+- [x] Implement. Commit: `feat: the write path, and the ETag-free read`
 
 ### Task 2: `api/me` and the header
 
 **Files:** `src/shared/api/use-me.ts`, `TopBar.tsx` extension, `App.tsx` wiring + specs
 
-- [ ] Failing tests:
+- [x] Failing tests:
   - `me` is `undefined` until the answer lands; the Sign out button and the
     Watching tab render NOTHING through that state (the flicker the old
     `hidden` attributes prevent).
@@ -155,14 +155,14 @@ is waiting for.
     the alert with the server's sentence, then a fresh `api/me`.
   - me errors are shown (`Could not read your account: ...`), never
     swallowed.
-- [ ] The view switch gains `watching`; no tab lit on company still holds.
-- [ ] Commit: `feat: api/me, the header controls and the unread badge`
+- [x] The view switch gains `watching`; no tab lit on company still holds.
+- [x] Commit: `feat: api/me, the header controls and the unread badge`
 
 ### Task 3: The watch star
 
 **Files:** `watch-state.ts`, `WatchButton.tsx`, `use-toggle-watch.ts` + specs; foot wiring in `FeedCard`/`FocusDialog`/`CompanyView`
 
-- [ ] Failing tests:
+- [x] Failing tests:
   - the star is `button.iconbtn.watch[data-ui="watch"][data-symbol]` with
     `aria-pressed`, label `Watch SYM` / `Stop watching SYM` feeding
     aria-label AND title from one string; `.on` when watched — the fill is
@@ -183,15 +183,15 @@ is waiting for.
   - the watched set is a `Set<string>` keyed by symbol (one company files
     repeatedly; the star belongs to the company), rebuilt wholesale from
     every Watching response.
-- [ ] Wire into the three foots (card, focus, company head) in the order the
+- [x] Wire into the three foots (card, focus, company head) in the order the
   old page draws: star, then the share controls (Task 6), then source.
-- [ ] Commit: `feat: the watch star, confirmed not optimistic`
+- [x] Commit: `feat: the watch star, confirmed not optimistic`
 
 ### Task 4: The Watching view
 
 **Files:** `WatchingView.tsx`, `Roster.tsx` + specs; poll extension
 
-- [ ] Failing tests:
+- [x] Failing tests:
   - while the Watching tab is open the poll asks
     `GET /api/watchlist/feed?limit=N&offset=0` through the ETag-free path —
     **one authenticated read per poll, both halves from one response** so
@@ -214,19 +214,19 @@ is waiting for.
   - opening the view clears the unread badge (looking at the tab IS reading
     it — the server stamps `lastSeenWatchlistAt` on the way out); the two
     empties return early and deliberately do not.
-- [ ] Commit: `feat: the Watching view — the watchlist first, then what it said`
+- [x] Commit: `feat: the Watching view — the watchlist first, then what it said`
 
 ### Task 5: Search and suggest
 
 **Files:** `use-suggest.ts`, `SearchBox.tsx`, `SearchNote.tsx` + specs; filter-state gains `category` + `picked`
 
-- [ ] Failing tests for the hook: 140ms debounce ("britannia" is ONE request,
+- [x] Failing tests for the hook: 140ms debounce ("britannia" is ONE request,
   not nine), 2-char minimum (one character matches 87 of 954 companies), a
   sequence counter dropping out-of-order responses (the debounce and the
   staleness guard are two separate things — ArrowDown-to-reopen bypasses
   the timer while a debounced request may still be in flight), the
   deliberately silent catch (the one fetch that never raises the banner).
-- [ ] Failing tests for the combobox:
+- [x] Failing tests for the combobox:
   - the input keeps DOM focus throughout; `aria-activedescendant` names the
     highlighted option's stable id (`suggest-opt-N`); `-1` means "nothing
     highlighted, Enter searches the typed text" — a real third state.
@@ -245,14 +245,14 @@ is waiting for.
     (undo exactly what the pick did, not a blanket reset).
   - the search note's exact copy per kind, with its `clear` button.
   - `/` focuses the box unless focus is in an input/select/textarea.
-- [ ] `emptyHint`'s picked-company branch (deferred from Plan 2) comes alive.
-- [ ] Commit: `feat: search, and the type-ahead that never raises a banner`
+- [x] `emptyHint`'s picked-company branch (deferred from Plan 2) comes alive.
+- [x] Commit: `feat: search, and the type-ahead that never raises a banner`
 
 ### Task 6: Share text
 
 **Files:** `share-text.ts`, `ReportingIconButton.tsx` + specs; foot wiring
 
-- [ ] Port `script-share.spec.ts`'s cases as the failing spec — it is the
+- [x] Port `script-share.spec.ts`'s cases as the failing spec — it is the
   reference: the header lines (`*Company (SYM)*`, `Category · human IST`
   with the middle dot and `disseminatedAtIstHuman`, never the fixed-width
   string), the amount as its own unlabelled paragraph before the claims,
@@ -261,17 +261,17 @@ is waiting for.
   filing._` + `Disclosed`, the exact blank-line counts, and the golden
   7-line one-claim message. Mirror `SHARE_BRAND`/`SHARE_TAIL` against the
   fragment.
-- [ ] `ReportingIconButton`: an IconButton that is an `aria-live="polite"`
+- [x] `ReportingIconButton`: an IconButton that is an `aria-live="polite"`
   region and reports through one call — the drawing swaps
   (`ICON_DONE`/`ICON_FAIL`) and a clipped `.iconsaid` word lands in the
   same update, so the visible and audible reports cannot disagree. Copied →
   revert after 1500ms; `no clipboard` and `failed` draw the cross and
   deliberately never revert. Timers cleared on unmount (the feed repaints
   every four seconds; the old page leaked them harmlessly, React cannot).
-- [ ] The copy button computes its payload from the FILING at render, stops
+- [x] The copy button computes its payload from the FILING at render, stops
   propagation, and mounts on card and focus foots only when the card has at
   least one line.
-- [ ] Commit: `feat: share as text — the filing, in a message`
+- [x] Commit: `feat: share as text — the filing, in a message`
 
 ### Task 7: Share as image
 
@@ -283,34 +283,34 @@ wrapping, figure runs) tested in vitest against the spec's own stub
 exercised against a recording fake context. jsdom has no canvas, and that is
 the seam, not a hole.
 
-- [ ] Port the planner with every measured constant and its argument: 1080
+- [x] Port the planner with every measured constant and its argument: 1080
   wide at a fixed 2× (no devicePixelRatio read), the claim cap of 8 (85.5%
   of 2,543 filings carry ≤8; the remainder is STATED — `+ N more in the
   app` — never swallowed), the literal palette (mirrored against
   `tokens.css`, where Plan 1 moved the values), the system font stacks, the
   figure-run regex (one font for every run — the line was measured in one
   font), the block order amount → claims → remainder → results.
-- [ ] Delivery: `ClipboardItem` receives an **unresolved blob promise** —
+- [x] Delivery: `ClipboardItem` receives an **unresolved blob promise** —
   Safari ends the user gesture at the first await, and an innocent
   `await toBlob` refactor breaks Safari silently (a comment, because no
   test can catch it). The four outcomes report through
   `ReportingIconButton`: `Image copied` / `Downloaded` (object-URL revoked
   after 10s) / `image failed` / `not ready`, reverting after 2000ms.
   Filename `disclosed-{symbol}.png` through the `[A-Za-z0-9._-]` whitelist.
-- [ ] Marks as module-scope singletons loaded once (never at click — the
+- [x] Marks as module-scope singletons loaded once (never at click — the
   gesture window): the data: favicon from the document's own link (already
   byte-identical, favicon-mirror.spec.ts), and `/brand/logo.png` — added
   to the Vite dev proxy beside `/api`, session-guarded same-origin in
   production. Refuse only when BOTH are absent.
-- [ ] Commit: `feat: share as image — the filing, as a picture`
+- [x] Commit: `feat: share as image — the filing, as a picture`
 
 ### Task 8: Gates and the live proof
 
-- [ ] All four gates locally (both lints, both tscs, both suites), build,
+- [x] All four gates locally (both lints, both tscs, both suites), build,
   audit — the audit's zero-external-origins rule now guards the app
   document containing no gstatic, which is the stronger form of the spec's
   intent.
-- [ ] Live proof against the real stack through the dev proxy: sign in on
+- [x] Live proof against the real stack through the dev proxy: sign in on
   the served `/auth`, land in the React client; watch a company from a
   card, see it in Watching, unwatch from the roster and watch the row leave
   on the next poll; the badge; suggest with keyboard and mouse; copy a
