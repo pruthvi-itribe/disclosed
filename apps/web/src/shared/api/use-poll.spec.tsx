@@ -132,58 +132,6 @@ describe('usePoll', () => {
     expect(result.current.live).toBe('live');
   });
 
-  // THE SECOND COMPANY. One slot serves the company container while the
-  // header prints the symbol from state — so a stale slot puts RELIANCE's
-  // name, industry and filings under TCS's symbol, an attribution mismatch.
-  // Until the slot answers the CURRENT symbol the poll hands the view
-  // nothing; the other containers keep stale data on purpose (a filter
-  // change leaves the old rows visible until the answer lands, which is the
-  // old client's behavior and is self-consistent).
-  it('hands the company view nothing until the slot answers the current symbol', async () => {
-    const RELIANCE = [{ seqId: 1 }];
-    const TCS = [{ seqId: 2 }];
-    let releaseTcs: (() => void) | null = null;
-    const apiGet = vi.fn((path: string): AnyResult => {
-      if (path === '/api/summary') {
-        return Promise.resolve({ status: 'ok', body: envelope(SUMMARY) });
-      }
-      if (path.includes('RELIANCE')) {
-        return Promise.resolve({ status: 'ok', body: envelope(RELIANCE, META) });
-      }
-      return new Promise((resolve) => {
-        releaseTcs = () =>
-          resolve({ status: 'ok', body: envelope(TCS, META) });
-      });
-    });
-    // Hoisted: an inline vi.fn() would be a new identity every render,
-    // which re-fires the refresh effect in a loop.
-    const onSessionEnded = vi.fn();
-    const { result, rerender } = renderHook(
-      (props: { company: string }) =>
-        usePoll({
-          apiGet: apiGet as never,
-          view: 'feed',
-          company: props.company,
-          filters: INITIAL_FILTERS,
-          onSessionEnded,
-        }),
-      { initialProps: { company: 'RELIANCE' } },
-    );
-    await flush();
-    expect(result.current.filings).toEqual(RELIANCE);
-
-    rerender({ company: 'TCS' });
-    await flush();
-    expect(result.current.filings).toBeNull();
-    expect(result.current.meta).toBeNull();
-
-    await act(async () => {
-      releaseTcs?.();
-      await Promise.resolve();
-    });
-    expect(result.current.filings).toEqual(TCS);
-  });
-
   // THE FILTER ROUND-TRIP. The feed keeps ONE body per container while the
   // validator store keeps one per path, so toggling a filter off and back on
   // re-asks a path whose validator the store still has — and a 304 for it

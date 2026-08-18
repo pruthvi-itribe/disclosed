@@ -178,4 +178,57 @@ describe('per-container data slots', () => {
     expect(result.current.filings).toEqual(FILINGS);
     expect(result.current.meta).toEqual(META);
   });
+
+  // THE SECOND COMPANY. One slot serves the company container while the
+  // header prints the symbol from state — so a stale slot puts RELIANCE's
+  // name, industry and filings under TCS's symbol, an attribution mismatch.
+  // Until the slot answers the CURRENT symbol the poll hands the view
+  // nothing; the other containers keep stale data on purpose (a filter
+  // change leaves the old rows visible until the answer lands, which is
+  // the old client's behavior and is self-consistent).
+  it('hands the company view nothing until the slot answers the current symbol', async () => {
+    const RELIANCE = [{ seqId: 1 }];
+    const TCS = [{ seqId: 2 }];
+    let releaseTcs: (() => void) | null = null;
+    const apiGet = vi.fn((path: string): AnyResult => {
+      if (path === '/api/summary') {
+        return Promise.resolve({ status: 'ok', body: envelope(SUMMARY) });
+      }
+      if (path.includes('RELIANCE')) {
+        return Promise.resolve({
+          status: 'ok',
+          body: envelope(RELIANCE, META),
+        });
+      }
+      return new Promise((resolve) => {
+        releaseTcs = () => resolve({ status: 'ok', body: envelope(TCS, META) });
+      });
+    });
+    // Hoisted, for the reason the first test in this file gives.
+    const onSessionEnded = vi.fn();
+    const { result, rerender } = renderHook(
+      (props: { company: string }) =>
+        usePoll({
+          apiGet: apiGet as never,
+          view: 'feed',
+          company: props.company,
+          filters: INITIAL_FILTERS,
+          onSessionEnded,
+        }),
+      { initialProps: { company: 'RELIANCE' } },
+    );
+    await flush();
+    expect(result.current.filings).toEqual(RELIANCE);
+
+    rerender({ company: 'TCS' });
+    await flush();
+    expect(result.current.filings).toBeNull();
+    expect(result.current.meta).toBeNull();
+
+    await act(async () => {
+      releaseTcs?.();
+      await Promise.resolve();
+    });
+    expect(result.current.filings).toEqual(TCS);
+  });
 });
