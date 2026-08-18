@@ -1,3 +1,9 @@
+/* eslint-disable max-lines -- 1,280 lines against the 800 ceiling. This
+ * stylesheet's own header already admits it is past the limit (the Brief,
+ * focus and auth sheets filed separately for exactly that reason), and
+ * the whole file is deleted with the server-rendered UI after the React
+ * cutover (Plan 4) ships production traffic. Not worth splitting on
+ * death row. */
 /**
  * The dashboard's stylesheet, inlined into the page.
  *

@@ -1,3 +1,9 @@
+/* eslint-disable max-lines -- 1,392 lines against the 800 ceiling,
+ * accrued while the rule was a sentence in CLAUDE.md rather than a lint
+ * error. The worker is one long pipeline whose stages share claim/refusal
+ * state; splitting it is a refactor with its own risks and its own PR,
+ * not something to smuggle into the commit that turned enforcement on.
+ * New code does not get to cite this exemption as precedent. */
 import { Injectable, Logger } from '@nestjs/common';
 import { describeError, stackOf } from '@app/common';
 import {
