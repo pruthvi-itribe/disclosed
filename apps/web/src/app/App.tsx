@@ -2,8 +2,6 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { ApiEnvelope, ApiResult } from '../shared/api/api-get';
 import type { SendMethod } from '../shared/api/api-send';
 import { usePoll } from '../shared/api/use-poll';
-import { useMe } from '../shared/api/use-me';
-import { useWatch } from '../features/watch/use-watch';
 import type { WatchControls } from '../shared/ui/WatchButton';
 import type { FilingView } from '../shared/types/api';
 import { filterReducer, INITIAL_FILTERS } from './filter-state';
@@ -18,6 +16,8 @@ import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
 import { SearchBox, type SearchBoxHandle } from '../features/search/SearchBox';
 import { useShareSlots } from '../features/share/share-slots';
+import { AlertsToggle } from '../features/alerts/AlertsToggle';
+import { useAccountSurfaces } from './use-account-surfaces';
 import { SearchNote } from '../features/search/SearchNote';
 import type { WatchlistFeedMeta } from '../shared/types/account';
 
@@ -59,21 +59,10 @@ export function App({
   // external write the box allows: Clear emptying the input.
   const searchBox = useRef<SearchBoxHandle>(null);
 
-  const account = useMe({ apiSend, onReload: onSessionEnded });
-  const watch = useWatch({
+  const { account, watch, alerts, onHealthy } = useAccountSurfaces({
     apiSend,
-    enabled: account.me?.signedIn === true,
+    onSessionEnded,
   });
-
-  // Every healthy cycle wipes the account and watchlist sentences — the
-  // old page's clearError() on a successful poll. Without this a transient
-  // 502 on api/me stayed red all session while the live dot said 'live'.
-  const accountClearFailure = account.clearFailure;
-  const watchClearFailure = watch.clearFailure;
-  const onHealthy = useCallback(() => {
-    accountClearFailure();
-    watchClearFailure();
-  }, [accountClearFailure, watchClearFailure]);
 
   const { filings, meta, summary, live, failure, refresh } = usePoll({
     apiGet,
@@ -258,6 +247,12 @@ export function App({
           // denominator no server sent.
           watchCap={account.me?.watchCap ?? watch.counts?.cap ?? null}
           counts={watch.counts}
+          alerts={
+            <AlertsToggle
+              permission={alerts.permission}
+              onRequest={alerts.request}
+            />
+          }
           onOpenCompany={openCompany}
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}

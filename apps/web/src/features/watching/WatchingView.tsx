@@ -32,6 +32,11 @@ export interface WatchingViewProps {
    * feature.
    */
   readonly counts: { readonly used: number; readonly cap: number } | null;
+  /**
+   * The desktop-alerts control, composed in by App the way FeedControls
+   * takes the search box — features do not import features.
+   */
+  readonly alerts?: JSX.Element | null;
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
@@ -63,6 +68,7 @@ export function WatchingView({
   onOpenCompany,
   onOpenFocus,
   counts,
+  alerts = null,
   onPickGroup,
   onRoster,
   onSeen,
@@ -91,6 +97,7 @@ export function WatchingView({
             ? ''
             : `${groupInt(counts.used)} of ${groupInt(counts.cap)} companies watched`}
         </span>
+        {alerts}
       </div>
       <p
         id="watch-roster-note"
