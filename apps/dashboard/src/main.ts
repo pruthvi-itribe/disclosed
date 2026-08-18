@@ -45,9 +45,15 @@ async function bootstrap(): Promise<void> {
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 
   // CROSS-ORIGIN CALLERS, AND THERE ARE NORMALLY NONE. The React client is
-  // served same-origin by the Caddy sidecar, so this list is empty in
-  // production and CORS never engages. It is here for a local dev server on
-  // another port and for non-browser clients.
+  // served same-origin, so this list is empty in production and CORS never
+  // engages. It is here for a local dev server on another port, for
+  // non-browser clients — and for the mobile shell, whose WebView serves the
+  // bundled client from a local scheme and asks this origin from there. The
+  // shell's origins are fixed strings Capacitor owns (capacitor://localhost
+  // on iOS, https://localhost on Android), added to CORS_ALLOWED_ORIGINS by
+  // the operator at deploy time like every other entry; a hostile native app
+  // gains nothing from the allowance because each app's WebView has its own
+  // cookie jar and no session in it.
   //
   // `credentials` is on because the session travels as a cookie for a browser,
   // and that is precisely why the origin list may never be `*` — the
@@ -57,7 +63,19 @@ async function bootstrap(): Promise<void> {
       origin: [...config.corsAllowedOrigins],
       credentials: true,
       methods: ['GET', 'POST', 'DELETE'],
-      allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+      // `If-None-Match` is the client's own revalidation (api-get.ts) and is
+      // not a CORS-safelisted header: absent here, every conditional GET from
+      // a cross-origin caller dies in preflight and the 304 saving with it.
+      allowedHeaders: [
+        'Content-Type',
+        'Accept',
+        'Authorization',
+        'If-None-Match',
+      ],
+      // Without this a cross-origin caller can receive the ETag and never
+      // READ it — headers.get('ETag') answers null — so the validator store
+      // stays empty and every poll is a full page, silently.
+      exposedHeaders: ['ETag'],
     });
   }
 

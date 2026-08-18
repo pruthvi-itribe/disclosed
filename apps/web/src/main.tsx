@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { createApiGet } from './shared/api/api-get';
+import { createOriginFetcher } from './shared/api/api-origin';
 import { createApiSend } from './shared/api/api-send';
 import { createEtagStore } from './shared/api/etag-store';
 // The four stylesheets the server concatenated into one <style> element,
@@ -22,8 +23,13 @@ const root = document.getElementById('root');
 // version of that to diagnose.
 if (root === null) throw new Error('#root is missing from the document');
 
-const apiGet = createApiGet(createEtagStore());
-const apiSend = createApiSend();
+// '' in the browser (same origin, no absolute URL in the bundle); the
+// mobile shell's build injects the production origin here — see api-origin.ts.
+const apiFetch = createOriginFetcher(
+  (import.meta.env.VITE_API_ORIGIN as string | undefined) ?? '',
+);
+const apiGet = createApiGet(createEtagStore(), apiFetch);
+const apiSend = createApiSend(apiFetch);
 const reactRoot = createRoot(root);
 
 /**
