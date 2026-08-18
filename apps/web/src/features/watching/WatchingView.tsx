@@ -14,6 +14,7 @@ export interface WatchingViewProps {
   readonly todayIstDay: string | null;
   readonly previousIstDay: string | null;
   readonly watch: WatchControls | null;
+  readonly share?: ((filing: FilingView) => JSX.Element) | null;
   readonly watchCap: number;
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
@@ -38,6 +39,7 @@ export function WatchingView({
   todayIstDay,
   previousIstDay,
   watch,
+  share = null,
   watchCap,
   onOpenCompany,
   onOpenFocus,
@@ -140,6 +142,7 @@ export function WatchingView({
           onPickGroup={onPickGroup}
           onGrow={() => undefined}
           watch={watch}
+          share={share}
         />
       )}
     </>

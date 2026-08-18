@@ -24,6 +24,7 @@ export interface CompanyViewProps {
   readonly onPickGroup: (group: string) => void;
   /** Null when signed out: the head's star is absent, not disabled. */
   readonly watch?: WatchControls | null;
+  readonly share?: ((filing: FilingView) => JSX.Element) | null;
 }
 
 /**
@@ -42,6 +43,7 @@ export function CompanyView({
   onOpenFocus,
   onPickGroup,
   watch = null,
+  share = null,
 }: CompanyViewProps): JSX.Element {
   const first = items[0];
   const industry = first?.industry ?? null;
@@ -134,6 +136,7 @@ export function CompanyView({
         onPickGroup={onPickGroup}
         onGrow={() => undefined}
         watch={watch}
+        share={share}
       />
     </section>
   );

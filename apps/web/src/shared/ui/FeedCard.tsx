@@ -27,6 +27,12 @@ export interface FeedCardProps {
   readonly onPickGroup: (group: string) => void;
   /** Null when signed out: the star is absent, not disabled. */
   readonly watch?: WatchControls | null;
+  /**
+   * The share controls, slotted in so this shared file owns no product
+   * feature. Drawn only when the card has at least one line — a filing
+   * that said nothing verifiable has nothing worth a chat window.
+   */
+  readonly share?: ((filing: FilingView) => JSX.Element) | null;
 }
 
 /**
@@ -41,6 +47,7 @@ export function FeedCard({
   onOpenFocus,
   onPickGroup,
   watch = null,
+  share = null,
 }: FeedCardProps): JSX.Element {
   const lines = insightLines(filing.enrichment);
   const quiet = lines.length === 0;
@@ -157,6 +164,7 @@ export function FeedCard({
         {watch !== null && (
           <WatchButton symbol={filing.symbol} controls={watch} />
         )}
+        {share !== null && lines.length > 0 && share(filing)}
         {source !== null && (
           <IconLink
             shapes={ICON_SOURCE}

@@ -64,6 +64,7 @@ export interface FeedGridProps {
   readonly onGrow: () => void;
   /** Null when signed out: the star is absent, not disabled. */
   readonly watch?: WatchControls | null;
+  readonly share?: ((filing: FilingView) => JSX.Element) | null;
 }
 
 /**
@@ -85,6 +86,7 @@ export function FeedGrid({
   onPickGroup,
   onGrow,
   watch = null,
+  share = null,
 }: FeedGridProps): JSX.Element {
   const moreRef = useRef<HTMLButtonElement | null>(null);
 
@@ -150,6 +152,7 @@ export function FeedGrid({
         onOpenFocus={onOpenFocus}
         onPickGroup={onPickGroup}
         watch={watch}
+        share={share}
       />,
     );
   }

@@ -84,11 +84,14 @@ export function FocusDialog({
   filing,
   onClose,
   watch = null,
+  share = null,
 }: {
   readonly filing: FilingView;
   readonly onClose: () => void;
   /** Null when signed out: the star is absent, not disabled. */
   readonly watch?: WatchControls | null;
+  /** The share controls, drawn only when the filing has lines. */
+  readonly share?: ((filing: FilingView) => JSX.Element) | null;
 }): JSX.Element {
   const backRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -220,6 +223,7 @@ export function FocusDialog({
           {watch !== null && (
             <WatchButton symbol={filing.symbol} controls={watch} />
           )}
+          {share !== null && lines.length > 0 && share(filing)}
           {source !== null && (
             <IconLink
               shapes={ICON_SOURCE}

@@ -17,6 +17,7 @@ import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
 import { SearchBox } from '../features/search/SearchBox';
+import { ShareCopyButton } from '../features/share/ShareCopyButton';
 import { SearchNote } from '../features/search/SearchNote';
 import type { WatchlistFeedMeta } from '../shared/types/account';
 
@@ -107,6 +108,15 @@ export function App({
   const pickGroup = useCallback((group: string) => {
     dispatchFilters({ type: 'pickGroup', group });
   }, []);
+  // The share controls per surface — the ui names are the parity contract.
+  const shareOnCard = useCallback(
+    (f: FilingView) => <ShareCopyButton filing={f} ui="card-copy" />,
+    [],
+  );
+  const shareOnFocus = useCallback(
+    (f: FilingView) => <ShareCopyButton filing={f} ui="focus-copy" />,
+    [],
+  );
 
   const items = filings ?? [];
 
@@ -209,6 +219,7 @@ export function App({
           onPickGroup={pickGroup}
           onGrow={() => dispatchFilters({ type: 'grow' })}
           watch={watchControls}
+          share={shareOnCard}
         />
       </section>
 
@@ -233,6 +244,7 @@ export function App({
             onOpenCompany={openCompany}
             onOpenFocus={openFocus}
             onPickGroup={pickGroup}
+            share={shareOnCard}
             onRoster={watch.setFromRoster}
             onSeen={account.clearUnread}
           />
@@ -255,6 +267,7 @@ export function App({
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}
           watch={watchControls}
+          share={shareOnCard}
         />
       )}
 
@@ -263,6 +276,7 @@ export function App({
           filing={focused}
           onClose={() => setFocused(null)}
           watch={watchControls}
+          share={shareOnFocus}
         />
       )}
     </>
