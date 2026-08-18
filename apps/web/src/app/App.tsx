@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { ApiEnvelope, ApiResult } from '../shared/api/api-get';
 import type { SendMethod } from '../shared/api/api-send';
 import { usePoll } from '../shared/api/use-poll';
@@ -16,7 +16,7 @@ import { BriefView } from '../features/brief/BriefView';
 import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
-import { SearchBox } from '../features/search/SearchBox';
+import { SearchBox, type SearchBoxHandle } from '../features/search/SearchBox';
 import { useShareSlots } from '../features/share/share-slots';
 import { SearchNote } from '../features/search/SearchNote';
 import type { WatchlistFeedMeta } from '../shared/types/account';
@@ -54,9 +54,10 @@ export function App({
     initialViewState,
   );
   const [focused, setFocused] = useState<FilingView | null>(null);
-  // What the search input SHOWS — not yet a filter: q becomes one on Enter,
-  // and a pick writes the head here the way the old page wrote the input.
-  const [searchText, setSearchText] = useState('');
+  // The search DRAFT is the box's own state (see SearchBox's header) — held
+  // here it re-rendered the whole shell per keystroke. This ref is the one
+  // external write the box allows: Clear emptying the input.
+  const searchBox = useRef<SearchBoxHandle>(null);
 
   const account = useMe({ apiSend, onReload: onSessionEnded });
   const watch = useWatch({
@@ -184,8 +185,7 @@ export function App({
           filters={filters}
           search={
             <SearchBox
-              text={searchText}
-              onTextChange={setSearchText}
+              ref={searchBox}
               onTyped={() => dispatchFilters({ type: 'undoPick' })}
               apiGet={apiGet}
               onApply={(item) =>
@@ -200,7 +200,7 @@ export function App({
               q={filters.q}
               onClear={() => {
                 dispatchFilters({ type: 'clearSearch' });
-                setSearchText('');
+                searchBox.current?.clear();
               }}
             />
           }
