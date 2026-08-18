@@ -70,12 +70,36 @@ export const auditBundle = (dir: string): readonly Violation[] => {
     }
 
     if (file.endsWith('.html')) {
-      const links = source.match(/<link\b/g) ?? [];
-      if (links.length > 1) {
+      // THE LINK BUDGET IS TWO, EACH NAMED: one data: favicon (loads
+      // nothing) and at most one stylesheet whose href stays relative — the
+      // file Vite emitted into assets/, which the absolute-url rule above
+      // already audits. The server-rendered page allowed only the favicon
+      // because its CSS was a <style> element; a built bundle's stylesheet
+      // arrives as a link, and refusing it would be refusing the build.
+      // Anything else is a font, a preconnect or a second sheet — refused.
+      const links = source.match(/<link\b[^>]*>/g) ?? [];
+      let icons = 0;
+      let sheets = 0;
+      for (const link of links) {
+        if (/rel="icon"/.test(link) && /href="data:/.test(link)) {
+          icons += 1;
+          continue;
+        }
+        if (/rel="stylesheet"/.test(link) && !/href="[a-z]+:/.test(link)) {
+          sheets += 1;
+          continue;
+        }
         violations.push({
           file: name,
-          rule: 'one-link-only',
-          detail: `${links.length} link elements; only the inlined favicon is allowed`,
+          rule: 'link-budget',
+          detail: `unbudgeted link: ${link}`,
+        });
+      }
+      if (icons > 1 || sheets > 1) {
+        violations.push({
+          file: name,
+          rule: 'link-budget',
+          detail: `${icons} icon and ${sheets} stylesheet links; the budget is one of each`,
         });
       }
     }

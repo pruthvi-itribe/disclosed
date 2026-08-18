@@ -1,51 +1,162 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { App } from './App';
-import { SessionEndedError } from '../shared/api/api-get';
+import type { ApiResult } from '../shared/api/api-get';
+import type { FilingView } from '../shared/types/api';
 
-const ok = {
+/**
+ * The shell: three views behind one poll, exactly one visible. Replaces
+ * Plan 1's status-line App and its spec.
+ */
+const summary = {
+  todayIstDay: '2026-08-18',
+  previousIstDay: '2026-08-17',
+  todayCount: 4,
+  todayVerified: 2,
+  todayByGroup: { narrative: 4 },
+  feedLagMs: 60_000,
+  generatedAtIst: '2026-08-18 14:00:11',
+};
+
+const filing = (over: Record<string, unknown> = {}): FilingView =>
+  ({
+    seqId: 1,
+    symbol: 'INFY',
+    companyName: 'Infosys',
+    category: 'Updates',
+    categoryGroup: 'other',
+    categoryGroupLabel: 'Other',
+    confidenceTier: 'verified',
+    confidenceTierLabel: 'Verified',
+    disseminatedAt: '2026-08-18T04:00:00.000Z',
+    disseminatedAtIst: '2026-08-18 09:30:00',
+    istDay: '2026-08-18',
+    outcome: 'An update was filed.',
+    attachmentUrl: null,
+    industry: null,
+    industrySource: null,
+    enrichment: {
+      resultsLine: null,
+      results: null,
+      claims: [
+        {
+          text: 'a fresh claim',
+          echo: false,
+          topic: null,
+          span: 's',
+          direction: null,
+          directionEvidence: null,
+        },
+      ],
+    },
+    ...over,
+  }) as unknown as FilingView;
+
+const envelope = (data: unknown, meta: unknown = null) => ({
   success: true,
-  data: { totalFilings: 9459 },
+  data,
   error: null,
-  meta: null,
+  meta,
+});
+
+const meta = { total: 1, limit: 25, offset: 0, returned: 1, hasMore: false };
+
+const okApiGet = () =>
+  vi.fn((path: string): Promise<ApiResult<unknown>> =>
+    Promise.resolve({
+      status: 'ok',
+      body:
+        path === '/api/summary'
+          ? envelope(summary)
+          : envelope([filing()], meta),
+    }),
+  );
+
+const flush = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+const renderApp = async (apiGet = okApiGet()) => {
+  const view = render(
+    <App apiGet={apiGet as never} onSessionEnded={vi.fn()} />,
+  );
+  await flush();
+  return { apiGet, ...view };
 };
 
 describe('App', () => {
-  it('reports the count the API returned', async () => {
-    const apiGet = vi.fn().mockResolvedValue({ status: 'ok', body: ok });
-
-    render(<App apiGet={apiGet} onSessionEnded={vi.fn()} />);
-
-    expect(await screen.findByText(/9459/)).toBeInTheDocument();
+  it('lands on the feed above 430px with exactly one view visible', async () => {
+    const { container } = await renderApp();
+    expect((container.querySelector('#view-feed') as HTMLElement).hidden).toBe(
+      false,
+    );
+    expect((container.querySelector('#view-brief') as HTMLElement).hidden).toBe(
+      true,
+    );
+    expect(container.querySelector('#view-company')).toBeNull();
+    expect(container.querySelectorAll('[data-ui="card"]')).toHaveLength(1);
+    expect(container.querySelector('#tab-feed')?.className).toBe('tab active');
   });
 
-  it('asks for the summary route', async () => {
-    const apiGet = vi.fn().mockResolvedValue({ status: 'ok', body: ok });
+  it('switches to the Brief, asks its question, and locks the body', async () => {
+    const { container, apiGet } = await renderApp();
+    fireEvent.click(container.querySelector('#tab-brief') as Element);
+    await flush();
 
-    render(<App apiGet={apiGet} onSessionEnded={vi.fn()} />);
-    await screen.findByText(/9459/);
+    expect((container.querySelector('#view-brief') as HTMLElement).hidden).toBe(
+      false,
+    );
+    expect(document.body.className).toBe('briefing');
+    // Every tab switch costs a round trip: the deck asks the server a
+    // different question than the feed does.
+    expect(apiGet.mock.calls.map((c) => c[0])).toContain(
+      '/api/filings?tier=verified&offset=0&limit=200',
+    );
 
-    expect(apiGet).toHaveBeenCalledWith('/api/summary');
+    fireEvent.click(container.querySelector('#tab-feed') as Element);
+    await flush();
+    expect(document.body.className).toBe('');
   });
 
-  // A session that ended is handed back to the caller, which reloads into the
-  // landing page. Rendering an error here would leave the reader on a dead
-  // page with no way forward.
-  it('hands a session that ended to its caller', async () => {
-    const apiGet = vi.fn().mockRejectedValue(new SessionEndedError());
-    const onSessionEnded = vi.fn();
+  it('a ticker opens the company view and no tab is lit', async () => {
+    const { container, apiGet } = await renderApp();
+    fireEvent.click(container.querySelector('button.sym') as Element);
+    await flush();
 
-    render(<App apiGet={apiGet} onSessionEnded={onSessionEnded} />);
+    expect(container.querySelector('#view-company')).not.toBeNull();
+    expect(container.querySelector('#co-symbol')?.textContent).toBe('INFY');
+    expect(container.querySelector('.tab.active')).toBeNull();
+    expect(apiGet.mock.calls.map((c) => c[0])).toContain(
+      '/api/filings?limit=200&offset=0&symbol=INFY',
+    );
 
-    await vi.waitFor(() => expect(onSessionEnded).toHaveBeenCalledOnce());
+    fireEvent.click(container.querySelector('#company-back') as Element);
+    await flush();
+    expect(container.querySelector('#view-company')).toBeNull();
+    expect((container.querySelector('#view-feed') as HTMLElement).hidden).toBe(
+      false,
+    );
   });
 
-  // Never swallowed. A page that silently stops updating is worse than one
+  it('a card opens the focus dialog and Escape closes it', async () => {
+    const { container } = await renderApp();
+    fireEvent.click(container.querySelector('[data-ui="card"]') as Element);
+    expect(document.querySelector('[data-ui="focus-card"]')).not.toBeNull();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.querySelector('[data-ui="focus-card"]')).toBeNull();
+  });
+
+  // Never swallowed: a page that silently stops updating is worse than one
   // that says it stopped, because the stale numbers still read as current.
-  it('says so when the request fails', async () => {
-    const apiGet = vi.fn().mockRejectedValue(new Error('502'));
-
-    render(<App apiGet={apiGet} onSessionEnded={vi.fn()} />);
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/502/);
+  it('shows the failure banner when the poll fails', async () => {
+    const failing = vi.fn((): Promise<ApiResult<unknown>> =>
+      Promise.reject(new Error('502')),
+    );
+    const { container } = await renderApp(failing as never);
+    const alert = container.querySelector('#alert') as HTMLElement;
+    expect(alert.hidden).toBe(false);
+    expect(alert.textContent).toBe('Refresh failed (1 in a row): 502');
   });
 });
