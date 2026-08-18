@@ -77,6 +77,7 @@ const renderView = (
           onToggle: vi.fn(),
         }}
         watchCap={50}
+        counts={{ used: 1, cap: 50 }}
         {...handlers}
         {...over}
       />,
@@ -91,9 +92,29 @@ describe('WatchingView', () => {
   // never a number no server sent.
   it('renders no cap it has not been told', () => {
     const { container } = renderView([filing()], meta([row()]), {
-      watchCap: null,
+      counts: null,
     });
     expect(container.querySelector('#watch-count')?.textContent).toBe('');
+  });
+
+  // The count follows what the server LAST SAID — the old applyWatchCounts,
+  // written by the sign-in read and every toggle — so it is right even
+  // before this view has ever polled (the section sits in the document from
+  // sign-in, the way the old page kept it).
+  it('counts from the server-said counts, not the roster', () => {
+    const { container } = renderView([], null, {
+      counts: { used: 2, cap: 50 },
+    });
+    expect(container.querySelector('#watch-count')?.textContent).toBe(
+      '2 of 50 companies watched',
+    );
+  });
+
+  it('names the feed half with the old page id the browser suite pins', () => {
+    const { container } = renderView([filing()], meta([row()]));
+    expect(
+      container.querySelectorAll('#watch-feed [data-ui="card"]').length,
+    ).toBeGreaterThan(0);
   });
 
   it('draws the roster first, with the count and the fixed note', () => {

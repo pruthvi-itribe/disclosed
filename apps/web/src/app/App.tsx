@@ -235,34 +235,36 @@ export function App({
         aria-labelledby="tab-watching"
         hidden={viewState.view !== 'watching'}
       >
-        {viewState.view === 'watching' && (
-          <WatchingView
-            // UNTIL THE WATCHLIST RESPONSE LANDS, the poll's meta is still
-            // the FEED's — a page window with no roster in it. The view must
-            // see null (its loading state), never a meta of the wrong shape:
-            // handing it one crashed the page live on 2026-08-18.
-            items={meta !== null && 'watching' in meta ? items : []}
-            meta={
-              meta !== null && 'watching' in meta
-                ? (meta as WatchlistFeedMeta)
-                : null
-            }
-            filters={filters}
-            todayIstDay={summary?.todayIstDay ?? null}
-            previousIstDay={summary?.previousIstDay ?? null}
-            watch={watchControls}
-            // Server-owned, on two channels (api/me, the watchlist read's
-            // meta) — never invented: a hardcoded 50 here would print a
-            // denominator no server sent.
-            watchCap={account.me?.watchCap ?? watch.counts?.cap ?? null}
-            onOpenCompany={openCompany}
-            onOpenFocus={openFocus}
-            onPickGroup={pickGroup}
-            share={shareOnCard}
-            onRoster={watch.setFromRoster}
-            onSeen={account.clearUnread}
-          />
-        )}
+        {/* MOUNTED FROM SIGN-IN, hidden with its section — the old page kept
+            the whole Watching section in the document, and #watch-count
+            updates on every toggle before the tab is ever opened. */}
+        <WatchingView
+          // UNTIL THE WATCHLIST RESPONSE LANDS, the poll's meta is still
+          // the FEED's — a page window with no roster in it. The view must
+          // see null (its loading state), never a meta of the wrong shape:
+          // handing it one crashed the page live on 2026-08-18.
+          items={meta !== null && 'watching' in meta ? items : []}
+          meta={
+            meta !== null && 'watching' in meta
+              ? (meta as WatchlistFeedMeta)
+              : null
+          }
+          filters={filters}
+          todayIstDay={summary?.todayIstDay ?? null}
+          previousIstDay={summary?.previousIstDay ?? null}
+          watch={watchControls}
+          // Server-owned, on two channels (api/me, the watchlist read's
+          // meta) — never invented: a hardcoded 50 here would print a
+          // denominator no server sent.
+          watchCap={account.me?.watchCap ?? watch.counts?.cap ?? null}
+          counts={watch.counts}
+          onOpenCompany={openCompany}
+          onOpenFocus={openFocus}
+          onPickGroup={pickGroup}
+          share={shareOnCard}
+          onRoster={watch.setFromRoster}
+          onSeen={account.clearUnread}
+        />
       </section>
 
       {viewState.company !== null && (

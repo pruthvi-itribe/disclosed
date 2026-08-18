@@ -64,6 +64,12 @@ export interface FeedGridProps {
   readonly meta: PageMeta | null;
   /** True only for the main feed: the legend, the count and Load more. */
   readonly chrome: boolean;
+  /**
+   * The container's document id. The old page named all three grids —
+   * #feed, #company-feed, #watch-feed — and the browser suite pins them;
+   * chrome's default covers only the first.
+   */
+  readonly id?: string;
   readonly filters: FilterState;
   readonly todayIstDay: string | null;
   readonly previousIstDay: string | null;
@@ -87,6 +93,7 @@ export function FeedGrid({
   items,
   meta,
   chrome,
+  id,
   filters,
   todayIstDay,
   previousIstDay,
@@ -180,7 +187,11 @@ export function FeedGrid({
           company or its shares.
         </div>
       )}
-      <div id={chrome ? 'feed' : undefined} className="feed" data-ui="feed">
+      <div
+        id={id ?? (chrome ? 'feed' : undefined)}
+        className="feed"
+        data-ui="feed"
+      >
         {empty ? (
           <div className="emptyfeed">
             <div className="emptytitle">
