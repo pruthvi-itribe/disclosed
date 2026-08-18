@@ -442,6 +442,14 @@ the platform is operated:
    without reading those comments first.
 6. **DNS.** The `A` records for `disclosed.live` and `www` are moved by hand
    after the `--resolve` check in section 5 passes.
+7. **Flipping `WEB_CLIENT=react`.** The React bundle ships inside every
+   dashboard image; the flag decides whether a signed-in reader is served it
+   or the server-rendered page (signed-out visitors see the same landing page
+   either way). It is a deliberate, human act with a rollback that is the
+   same edit reversed — an env entry in `k8s/30-dashboard.yaml`, applied as a
+   rollout, never an image build. The pod's startup line prints
+   `web=react|server`, which is where an operator confirms which side of the
+   flag a restarted process is on.
 
 ---
 

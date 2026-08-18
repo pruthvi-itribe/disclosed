@@ -130,6 +130,12 @@ services:
       # would reach the same answer, and saying it out loud costs one line and
       # removes the argument.
       ADMIN_ENABLED: 'false'
+      # THE CUTOVER FLAG, deliberately absent-by-default. Unset serves the
+      # server-rendered page; `react` serves the React bundle already inside
+      # the image to signed-in readers (signed-out visitors see the same
+      # landing page either way). The rollback is unsetting it and
+      # recreating the container — never an image build.
+      # WEB_CLIENT: react
     depends_on:
       mongo: { condition: service_healthy }
       caddy: { condition: service_started }

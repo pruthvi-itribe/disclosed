@@ -244,8 +244,17 @@ test.describe('the focus card', () => {
     await expect(page.locator('#focus-body')).not.toBeEmpty();
 
     await page.keyboard.press('Escape');
-    await expect(page.locator('#focus-body')).toBeEmpty();
-    await expect(page.locator('#focus-foot')).toBeEmpty();
+    // Emptied — or gone entirely: the server page empties the dialog's two
+    // containers in place, the React client unmounts the whole dialog. Both
+    // satisfy the guarantee this test exists for (no claim or quoted span
+    // left in the document on a shared screen); only "merely hidden" fails.
+    await expect
+      .poll(async () =>
+        (
+          await page.locator('#focus-body, #focus-foot').allTextContents()
+        ).join(''),
+      )
+      .toBe('');
   });
 
   test('survives the four-second repaint that rebuilds the feed', async ({

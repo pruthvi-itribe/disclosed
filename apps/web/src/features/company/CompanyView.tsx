@@ -128,6 +128,7 @@ export function CompanyView({
         items={items}
         meta={meta}
         chrome={false}
+        id="company-feed"
         filters={filters}
         todayIstDay={todayIstDay}
         previousIstDay={previousIstDay}

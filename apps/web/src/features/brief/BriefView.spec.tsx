@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { BriefView } from './BriefView';
 import type { FilingView, SummaryView } from '../../shared/types/api';
 
@@ -53,6 +53,44 @@ const renderBrief = (items: readonly FilingView[], h = handlers()) => ({
   ...render(
     <BriefView items={items} meta={meta as never} summary={summary} {...h} />,
   ),
+});
+
+describe('the brief card Copy control', () => {
+  // The old briefCopy(): every claim of the entry as 'SYMBOL: text' lines,
+  // 'Copied' for 1500ms, 'no clipboard' on an insecure origin, 'failed' on
+  // refusal — ported verbatim. Plan 3 forgot this control entirely; the
+  // browser suite's tap-zone test is what caught the absence.
+  it('copies every claim as symbol-prefixed lines and says Copied', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const { container } = renderBrief([
+      withClaims('AAA', 1, ['first claim', 'second claim']),
+    ]);
+
+    const copy = container.querySelector(
+      '[data-ui="brief-card"] .copy',
+    ) as HTMLButtonElement;
+    expect(copy.textContent).toBe('Copy');
+    fireEvent.click(copy);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(writeText).toHaveBeenCalledWith(
+      'AAA: first claim\nAAA: second claim',
+    );
+    expect(copy.textContent).toBe('Copied');
+  });
+
+  it('says so when there is no clipboard, instead of throwing', () => {
+    Object.assign(navigator, { clipboard: undefined });
+    const { container } = renderBrief([withClaims('AAA', 1, ['a claim'])]);
+    const copy = container.querySelector(
+      '[data-ui="brief-card"] .copy',
+    ) as HTMLButtonElement;
+    fireEvent.click(copy);
+    expect(copy.textContent).toBe('no clipboard');
+  });
 });
 
 describe('BriefView', () => {

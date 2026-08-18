@@ -31,6 +31,17 @@ const watchAlert = async (page: Page): Promise<void> => {
 const adminIsBuilt = async (page: Page): Promise<boolean> =>
   (await page.locator('#tab-admin').count()) > 0;
 
+/**
+ * The React client has no operator surface — the panel stays server-rendered
+ * permanently (recorded in the Plan 3 doc), so under `WEB_CLIENT=react` the
+ * tab is absent while the three routes still answer wherever ADMIN_ENABLED
+ * is true. That is not the inconsistency the test below guards against; it
+ * is the shipped split, so the test skips against the React document rather
+ * than failing on it.
+ */
+const isReactClient = async (page: Page): Promise<boolean> =>
+  (await page.locator('#root').count()) > 0;
+
 test.describe('the operator panel', () => {
   test('is consistent with itself: tab, section, and the three routes', async ({
     page,
@@ -40,6 +51,10 @@ test.describe('the operator panel', () => {
 
     await page.goto('/');
     await expect(page.locator('#live-text')).not.toHaveText('connecting');
+    test.skip(
+      await isReactClient(page),
+      'the admin panel stays server-rendered; run WEB_CLIENT=server to exercise it',
+    );
 
     const built = await adminIsBuilt(page);
 
