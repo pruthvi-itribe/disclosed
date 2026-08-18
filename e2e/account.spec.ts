@@ -281,12 +281,16 @@ test.describe('the grown feed', () => {
     await expect(page.locator('#live-text')).not.toHaveText('connecting');
 
     // Widen so the window can actually grow, then take every step to 500.
+    // The click is dispatched IN the page: the auto-grow observer fires the
+    // moment Playwright scrolls the button into view for a real click, and
+    // the repaint it triggers makes the button unstable under the cursor.
     await page.locator('#only-insights').uncheck();
     for (let i = 0; i < 4; i++) {
-      const more = page.locator('#feed-more');
-      if (await more.isHidden()) break;
-      await more.click();
+      await page
+        .locator('#feed-more')
+        .evaluate((b) => (b as HTMLButtonElement).click());
     }
+    await expect(page.locator('#feed-info')).toContainText('500 of');
 
     await page.locator('#tab-watching').click();
     await expect(page.locator('#view-watching')).toBeVisible();
