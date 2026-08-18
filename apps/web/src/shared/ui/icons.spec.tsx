@@ -49,9 +49,15 @@ describe('IconButton', () => {
 
   it('renders every shape of a multi-shape drawing', () => {
     const { container } = render(
-      <IconButton shapes={ICON_IMAGE} label="Copy as image" ui="card-copy-image" />,
+      <IconButton
+        shapes={ICON_IMAGE}
+        label="Copy as image"
+        ui="card-copy-image"
+      />,
     );
-    expect(container.querySelectorAll('rect, circle, polyline')).toHaveLength(3);
+    expect(container.querySelectorAll('rect, circle, polyline')).toHaveLength(
+      3,
+    );
   });
 });
 
