@@ -21,8 +21,12 @@ describe('the shell chrome', () => {
     expect(container.querySelector('#tab-feed')).toBeNull();
     expect(container.querySelector('#signout')).toBeNull();
     expect(container.querySelector('[data-ui="brand-logo"]')).not.toBeNull();
-    // The feed is decluttered: search and filters live behind the sheet.
+    // The feed is decluttered: search and filters live behind the sheet,
+    // and the hero is its one-line form — three stacked stats pushed the
+    // first card below a phone's fold.
     expect(container.querySelector('#symbol')).toBeNull();
+    expect(container.querySelector('.herocompact')).not.toBeNull();
+    expect(container.querySelector('.herostat')).toBeNull();
   });
 
   it('opens search and filters as a sheet, the same controls relocated', async () => {
