@@ -356,6 +356,48 @@ describe('feedSignature — whether the feed is rebuilt at all', () => {
  * touch-up walks the DOM rather than a payload it no longer has. Without this
  * a tab left open through a quiet hour reads "10 min ago" for an hour.
  */
+/**
+ * The picked-company sentence is the one place the hint states a FACT about
+ * a company — "none of them carries a matched claim" — and it can only say
+ * that honestly while the insight toggle is the sole other narrowing. With
+ * a group or topic ANDed in, that filter may be what emptied the feed, and
+ * the sentence becomes a false claim of our own. The React client's
+ * emptyHint has carried this gate since Plan 2; this runs the served one.
+ */
+describe('the empty-feed hint', () => {
+  const hint = (state: Record<string, unknown>): string =>
+    new Function(
+      'state',
+      'groupInt',
+      `${cutFunction(SCRIPT, 'function emptyHint(')}
+return emptyHint();`,
+    )(state, String) as string;
+
+  const picked = {
+    plans: false,
+    onlyInsights: true,
+    q: '',
+    symbol: 'RELIANCE',
+    picked: { kind: 'company', head: 'RELIANCE', filings: 24 },
+  };
+
+  it('names the company only while the toggle is the sole narrowing', () => {
+    const said = hint({ ...picked, group: '', topic: '' });
+    expect(said).toContain('RELIANCE has 24 filing(s)');
+  });
+
+  it('does not claim the company has no matched claims when a chip is lit', () => {
+    for (const narrowed of [
+      { ...picked, group: '', topic: 'orders' },
+      { ...picked, group: 'results', topic: '' },
+    ]) {
+      const said = hint(narrowed);
+      expect(said).not.toContain('none of them carries');
+      expect(said).toContain('Untick the filter above');
+    }
+  });
+});
+
 describe('a poll that changed nothing', () => {
   it('writes the timestamp onto the card, where the touch-up can find it', () => {
     expect(cutFunction(SCRIPT, 'function feedCard(')).toContain(

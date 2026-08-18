@@ -32,7 +32,8 @@ const emptyHint = (filters: FilterState): string => {
     // toggle is the sole other narrowing. With a group or topic ANDed in,
     // that filter may be what emptied the feed, and stating 'none of them
     // carries a matched claim' would be printing a false claim of our own.
-    // (The old client's emptyHint has the same defect; not ported.)
+    // (The old client's emptyHint had the same defect until 2026-08-18;
+    // both now carry this gate.)
     if (
       filters.picked !== null &&
       filters.picked.kind === 'company' &&
