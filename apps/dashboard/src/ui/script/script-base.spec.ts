@@ -61,7 +61,7 @@ interface Sentinel {
   readonly notModified?: boolean;
 }
 
-type GetJson = (path: string) => Promise<Sentinel>;
+type GetJson = (path: string, revalidate?: boolean) => Promise<Sentinel>;
 
 /**
  * `getJson` running against a `fetch` this file answers for.
@@ -151,6 +151,32 @@ describe('getJson — revalidating instead of re-fetching', () => {
     expect(asked.map((ask) => ask.ifNoneMatch)).toEqual([
       undefined,
       '"tag-one"',
+    ]);
+  });
+
+  // A 304 answers "what you hold is current", which is only true while the
+  // page still shows this path's answer. The feed keeps ONE painted body
+  // while validators are kept per path, so a filter round-trip re-asks a
+  // path whose validator is still held — and a 304 for it would confirm rows
+  // no longer on screen. Found live on 2026-08-18: uncheck 'Only filings
+  // with verified claims', re-check it, and the feed stayed unfiltered.
+  it("asks unconditionally when told the painted body is another path's", async () => {
+    const { asked, getJson } = harness([
+      { status: 200, etag: '"tag-one"', body: PAGE },
+      { status: 200, etag: '"tag-two"', body: PAGE },
+      { status: 304, etag: '"tag-two"' },
+    ]);
+
+    await getJson(FEED);
+    await getJson(FEED, false);
+    // The fresh validator is still remembered, so the next same-path ask —
+    // once the body is painted again — revalidates as usual.
+    await getJson(FEED);
+
+    expect(asked.map((ask) => ask.ifNoneMatch)).toEqual([
+      undefined,
+      undefined,
+      '"tag-two"',
     ]);
   });
 

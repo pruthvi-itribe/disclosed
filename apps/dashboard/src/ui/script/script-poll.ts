@@ -58,6 +58,16 @@ export const SCRIPT_POLL = `
     return 'api/filings?' + parts.join('&');
   }
 
+  // WHICH QUERY EACH CONTAINER'S PAINTED ROWS ANSWER. The validator store in
+  // 'script-base.ts' keeps one validator per path while each container shows
+  // one answer, so after a filter round-trip the stored validator fingerprints
+  // rows the feed no longer shows - and revalidating with it would 304 the
+  // repaint away. See the header on 'getJson' for the live failure this fixes.
+  // The feed and the admin table draw from the same response, so they share
+  // the 'feed' entry; the brief's query never varies and the company's varies
+  // by symbol, which is the same bug when a reader returns to an earlier one.
+  var painted = {};
+
   function refresh(force) {
     var slow = force === true || state.ticks % SLOW_EVERY === 0;
     // Claimed BEFORE the requests go out. Responses do not arrive in the order
@@ -77,7 +87,10 @@ export const SCRIPT_POLL = `
       // session cookie on it, and it handles its own 401 rather than reporting
       // a session that ended as a page failure - see 'refreshWatching'. Every
       // other view polls anonymously and touches no session.
-      state.view === 'watching' ? refreshWatching(fresh) : getJson(query()).then(function (b) {
+      state.view === 'watching' ? refreshWatching(fresh) : (function () {
+        var q = query();
+        var container = state.company !== null ? 'company' : (state.view === 'brief' ? 'brief' : 'feed');
+        return getJson(q, painted[container] === q).then(function (b) {
         if (!fresh()) return;
         // NOTHING CHANGED SINCE THE LAST ASK, so the server sent 304 and no
         // body - see the header on 'api/filings' for what that is worth in
@@ -91,6 +104,7 @@ export const SCRIPT_POLL = `
           touchFeedTimes(document);
           return;
         }
+        painted[container] = q;
         // BOTH VIEWS, FROM ONE REQUEST. Rendering only the visible one would
         // save a few milliseconds of DOM work and cost a tab switch a round
         // trip — and the two would then be able to disagree, which is the one
@@ -113,7 +127,8 @@ export const SCRIPT_POLL = `
         // without the panel there is no table to draw them into and no
         // 'renderFilings' in this scope at all.
         if (ADMIN_ENABLED) renderFilings(b.data, b.meta);
-      })
+        });
+      })()
     ];
     // THE THREE ROUTES ONLY THE PANEL READS, asked for by the panel's own
     // fragment. They are not merely skipped when it is absent — the fragment
