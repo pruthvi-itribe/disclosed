@@ -23,6 +23,15 @@ export default defineConfig({
     cssCodeSplit: false,
     sourcemap: false,
   },
+  server: {
+    // DEV ONLY — the production bundle is served from the dashboard's own
+    // origin by Caddy (Plan 4), so `apiGet` asks for a relative `/api/...`.
+    // In dev the bundle lives on Vite's port instead, and this proxy stands in
+    // for Caddy, forwarding to the dashboard's default port. Cookies are
+    // per-host rather than per-port, so the session cookie set by the
+    // server-rendered sign-in rides along.
+    proxy: { '/api': 'http://127.0.0.1:7717' },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
