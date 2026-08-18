@@ -51,18 +51,30 @@ export class SessionGuard implements CanActivate {
  */
 @Injectable()
 export class OriginGuard implements CanActivate {
-  private readonly publicOrigin: string;
+  private readonly allowedOrigins: readonly string[];
 
   /**
-   * Reads the allowed origin ONCE, at construction.
+   * Reads the allowed origins ONCE, at construction.
    *
    * Through `ConfigService` rather than as an injected string because Nest
    * instantiates a route-level guard from its own class metadata — a custom
    * provider for the same class token is not consulted — so a primitive
    * constructor argument here is a container error at boot.
+   *
+   * THE CREDENTIALED-CORS LIST IS PART OF THE ALLOWANCE, and that is one
+   * trust decision rather than a loosening: an operator who lists an origin
+   * in CORS_ALLOWED_ORIGINS (never `*` — the reader refuses one) has already
+   * declared that origin may make cookie-carrying requests, and refusing its
+   * mutations here while CORS accepts its credentials would be two rules
+   * disagreeing about the same origin. In production the list is empty and
+   * nothing changes; the mobile shell's fixed WebView origin is the case
+   * this exists for.
    */
   constructor(config: ConfigService) {
-    this.publicOrigin = config.getOrThrow<string>('publicOrigin');
+    this.allowedOrigins = [
+      config.getOrThrow<string>('publicOrigin'),
+      ...config.getOrThrow<readonly string[]>('corsAllowedOrigins'),
+    ];
   }
 
   /**
@@ -104,7 +116,10 @@ export class OriginGuard implements CanActivate {
     );
     if (presented?.transport === 'bearer') return true;
 
-    if (!isAllowedOrigin(request.headers.origin, this.publicOrigin)) {
+    const allowed = this.allowedOrigins.some((candidate) =>
+      isAllowedOrigin(request.headers.origin, candidate),
+    );
+    if (!allowed) {
       throw new ApiError(
         'BAD_ORIGIN',
         'This request did not come from this site.',

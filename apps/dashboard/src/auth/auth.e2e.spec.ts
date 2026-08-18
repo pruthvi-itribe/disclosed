@@ -200,6 +200,11 @@ beforeAll(async () => {
    */
   priorAuthMode = process.env.AUTH_MODE;
   process.env.AUTH_MODE = 'local';
+  // The mobile shell's fixed WebView origin, allowed the way an operator
+  // allows it in production: through the credentialed-CORS list. The origin
+  // guard honours the same list — one trust decision, not two rules that
+  // can disagree.
+  process.env.CORS_ALLOWED_ORIGINS = 'capacitor://localhost';
 
   const moduleRef = await Test.createTestingModule({
     imports: [DashboardModule],
@@ -232,6 +237,7 @@ afterAll(async () => {
   await mongo.stop();
   delete process.env.MONGO_URI;
   delete process.env.PUBLIC_ORIGIN;
+  delete process.env.CORS_ALLOWED_ORIGINS;
   if (priorAuthMode === undefined) delete process.env.AUTH_MODE;
   else process.env.AUTH_MODE = priorAuthMode;
 }, 60_000);
@@ -422,6 +428,23 @@ describe('the Origin guard', () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error?.code).toBe('BAD_ORIGIN');
+  });
+
+  // The shell's WebView asks from a fixed origin the operator listed for
+  // credentialed CORS. Refusing its sign-in here while CORS accepts its
+  // credentials would be two rules disagreeing about one trust decision.
+  it('accepts a sign-in from an origin on the credentialed-CORS list', async () => {
+    const email = freshEmail();
+    await call('POST', '/api/auth/register', {
+      body: { email, password: PASSWORD },
+    });
+
+    const response = await call('POST', '/api/auth/login', {
+      body: { email, password: PASSWORD },
+      origin: 'capacitor://localhost',
+    });
+
+    expect(response.status).toBe(200);
   });
 
   it('refuses a mutation with no Origin header at all', async () => {
