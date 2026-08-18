@@ -59,6 +59,37 @@ describe('the watching branch', () => {
     ]);
   });
 
+  // The feed's Load more grows the shared limit through 500, but the
+  // watchlist feed's bounds reader THROWS at 201 rather than clamping —
+  // sending the grown limit unclamped 400s every poll and kills the
+  // Watching view for the whole session.
+  it('clamps the grown feed limit to the server cap of 200', async () => {
+    const apiGet = okApiGet();
+    const apiSend = vi.fn().mockResolvedValue({
+      success: true,
+      data: FILINGS,
+      error: null,
+      meta: { ...META, unread: 0, watching: [] },
+    });
+    const onSessionEnded = vi.fn();
+    renderHook(() =>
+      usePoll({
+        apiGet: apiGet as never,
+        apiSend: apiSend as never,
+        view: 'watching',
+        company: null,
+        filters: { ...INITIAL_FILTERS, limit: 500 },
+        onSessionEnded,
+      }),
+    );
+    await flush();
+
+    expect(apiSend).toHaveBeenCalledWith(
+      '/api/watchlist/feed?limit=200&offset=0',
+      'GET',
+    );
+  });
+
   it('a 401 from the watching feed ends the session once', async () => {
     const onSessionEnded = vi.fn();
     const apiGet = okApiGet();

@@ -15,6 +15,15 @@ export const FAST_MS = 4000;
 
 export type LiveKind = 'connecting' | 'live' | 'stale' | 'down';
 
+/**
+ * The server's MAX_WATCH_LIMIT, restated: the watchlist feed's bounds
+ * reader THROWS a 400 rather than clamping, and the feed's own limit grows
+ * through 500 — so the grown limit sent unclamped kills the Watching view
+ * for the whole session. account-mirror.spec.ts asserts the server's
+ * constant still reads 200, the same way the account types are mirrored.
+ */
+export const WATCHLIST_FEED_MAX_LIMIT = 200;
+
 export interface PollArgs {
   readonly apiGet: <T>(
     path: string,
@@ -107,7 +116,7 @@ export const usePoll = ({
     const filingsJob =
       watching && apiSend !== undefined
         ? apiSend<readonly FilingView[]>(
-            `/api/watchlist/feed?limit=${filters.limit}&offset=0`,
+            `/api/watchlist/feed?limit=${Math.min(filters.limit, WATCHLIST_FEED_MAX_LIMIT)}&offset=0`,
             'GET',
           ).then((body) => {
             if (!current()) return;

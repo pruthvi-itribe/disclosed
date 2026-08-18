@@ -33,6 +33,17 @@ describe('the mirrored account types', () => {
     }
   });
 
+  // use-poll clamps the watchlist feed's limit to this value because the
+  // server's bounds reader throws rather than clamps; a change there must
+  // fail here, not 400 in production.
+  it('the watchlist feed limit cap still reads 200 on the server', () => {
+    const source = readFileSync(
+      join(AUTH_DIR, 'watchlist.controller.ts'),
+      'utf8',
+    );
+    expect(source).toMatch(/MAX_WATCH_LIMIT = 200;/);
+  });
+
   it('WatchedCompany matches watchlist.controller.ts field for field', () => {
     const source = readFileSync(
       join(AUTH_DIR, 'watchlist.controller.ts'),
