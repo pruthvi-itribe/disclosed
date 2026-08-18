@@ -1,5 +1,5 @@
 import { insightLines } from './insight-lines';
-import type { EnrichmentView } from '../../shared/types/api';
+import type { EnrichmentView } from '../types/api';
 
 const enrichment = (over: Partial<EnrichmentView>): EnrichmentView =>
   ({ resultsLine: null, claims: [], ...over }) as EnrichmentView;

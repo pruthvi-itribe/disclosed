@@ -1,6 +1,6 @@
 import { fireEvent, render } from '@testing-library/react';
 import { FeedCard } from './FeedCard';
-import type { FilingView } from '../../shared/types/api';
+import type { FilingView } from '../types/api';
 
 const filing = (over: Record<string, unknown> = {}): FilingView =>
   ({

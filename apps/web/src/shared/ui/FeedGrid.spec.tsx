@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react';
 import { FeedGrid } from './FeedGrid';
 import { INITIAL_FILTERS } from '../../app/filter-state';
-import type { FilingView, PageMeta } from '../../shared/types/api';
+import type { FilingView, PageMeta } from '../types/api';
 
 const filing = (over: Record<string, unknown>): FilingView =>
   ({

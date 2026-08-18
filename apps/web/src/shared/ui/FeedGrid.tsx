@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import type { FilingView, PageMeta } from '../../shared/types/api';
+import type { FilingView, PageMeta } from '../types/api';
 import type { FilterState } from '../../app/filter-state';
-import { groupInt } from '../../shared/format/group-int';
-import { DIRECTION_GLYPH } from '../../shared/format/vocab';
+import { groupInt } from '../format/group-int';
+import { DIRECTION_GLYPH } from '../format/vocab';
 import { feedBucket } from './feed-bucket';
 import { insightLines } from './insight-lines';
 import { FeedCard } from './FeedCard';

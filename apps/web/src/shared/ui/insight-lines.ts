@@ -1,4 +1,4 @@
-import type { EnrichmentView } from '../../shared/types/api';
+import type { EnrichmentView } from '../types/api';
 
 /** One headline line on a card: the text, and the movement mark's facts. */
 export interface InsightLine {

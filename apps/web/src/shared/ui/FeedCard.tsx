@@ -1,12 +1,12 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import type { FilingView } from '../../shared/types/api';
-import { relativeTime } from '../../shared/format/relative-time';
-import { safeHref } from '../../shared/format/safe-href';
-import { describeKey } from '../../shared/format/describe';
-import { TIER_TITLE } from '../../shared/format/vocab';
-import { Insight } from '../../shared/ui/Insight';
-import { IconLink } from '../../shared/ui/IconLink';
-import { ICON_SOURCE, SOURCE_LABEL } from '../../shared/ui/icons';
+import type { FilingView } from '../types/api';
+import { relativeTime } from '../format/relative-time';
+import { safeHref } from '../format/safe-href';
+import { describeKey } from '../format/describe';
+import { TIER_TITLE } from '../format/vocab';
+import { Insight } from './Insight';
+import { IconLink } from './IconLink';
+import { ICON_SOURCE, SOURCE_LABEL } from './icons';
 import { insightLines } from './insight-lines';
 
 /**
