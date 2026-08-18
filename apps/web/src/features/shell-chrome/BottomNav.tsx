@@ -3,8 +3,8 @@ import { ICON_STAR } from '../../shared/ui/icons';
 import {
   ICON_NAV_BRIEF,
   ICON_NAV_FEED,
+  ICON_NAV_FILTER,
   ICON_NAV_PROFILE,
-  ICON_NAV_SEARCH,
 } from './nav-icons';
 import './shell-chrome.css';
 
@@ -63,8 +63,8 @@ export function BottomNav({
       )}
       {item(
         'explore',
-        'Search',
-        <IconSvg shapes={ICON_NAV_SEARCH} size={22} />,
+        'Filters',
+        <IconSvg shapes={ICON_NAV_FILTER} size={22} />,
       )}
       {item(
         'profile',

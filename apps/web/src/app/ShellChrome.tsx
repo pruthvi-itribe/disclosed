@@ -1,4 +1,7 @@
 import { BottomNav, type NavPick } from '../features/shell-chrome/BottomNav';
+import { ActiveFilters } from '../features/shell-chrome/ActiveFilters';
+import type { FilterAction, FilterState } from './filter-state';
+import type { ViewState } from './view-state';
 import { groupInt } from '../shared/format/group-int';
 import { ProfileContent, Sheet } from '../features/shell-chrome/Sheets';
 
@@ -11,29 +14,34 @@ import { ProfileContent, Sheet } from '../features/shell-chrome/Sheets';
  * the document carries the shell's boot mark; the web never sees any of it.
  */
 export function ShellChrome({
-  view,
-  company,
+  viewState,
   sheet,
   unread,
   email,
   counts,
+  filters,
+  dispatch,
+  onSearchCleared,
   controls,
   onShowView,
   onSheet,
   onSignOut,
 }: {
-  readonly view: string;
-  readonly company: string | null;
+  readonly viewState: ViewState;
   readonly sheet: 'explore' | 'profile' | null;
   readonly unread: number;
   readonly email: string;
   readonly counts: { readonly used: number; readonly cap: number } | null;
+  readonly filters: FilterState;
+  readonly dispatch: (action: FilterAction) => void;
+  readonly onSearchCleared: () => void;
   readonly controls: JSX.Element;
   readonly onShowView: (view: 'brief' | 'feed' | 'watching') => void;
   readonly onSheet: (sheet: 'explore' | 'profile' | null) => void;
   readonly onSignOut: () => void;
 }): JSX.Element {
   // Null while a company is open: reached from a card, not a tab.
+  const { view, company } = viewState;
   const navView: NavPick | null =
     company === null &&
     (view === 'brief' || view === 'feed' || view === 'watching')
@@ -68,6 +76,13 @@ export function ShellChrome({
             onSignOut={onSignOut}
           />
         </Sheet>
+      )}
+      {navView === 'feed' && sheet === null && (
+        <ActiveFilters
+          filters={filters}
+          dispatch={dispatch}
+          onSearchCleared={onSearchCleared}
+        />
       )}
       <BottomNav active={sheet ?? navView} unread={unread} onPick={pick} />
     </>

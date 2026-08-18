@@ -60,11 +60,10 @@ export function App({
   // here it re-rendered the whole shell per keystroke. This ref is the one
   // external write the box allows: Clear emptying the input.
   const searchBox = useRef<SearchBoxHandle>(null);
-  // The shell's boot mark, set by main.tsx before React runs; a browser
-  // never carries it, so every shell-only branch below is dead code there.
+  // The shell's boot mark (set by main.tsx before React runs; a browser
+  // never carries it, so every shell branch below is dead code there).
   const shell = document.documentElement.classList.contains('native-shell');
   const [sheet, setSheet] = useState<'explore' | 'profile' | null>(null);
-
   const { account, watch, alerts, onHealthy } = useAccountSurfaces({
     apiSend,
     onSessionEnded,
@@ -282,12 +281,14 @@ export function App({
 
       {shell && (
         <ShellChrome
-          view={viewState.view}
-          company={viewState.company}
+          viewState={viewState}
           sheet={sheet}
           unread={account.unread}
           email={account.me?.email ?? ''}
           counts={watch.counts}
+          filters={filters}
+          dispatch={filterDispatch}
+          onSearchCleared={() => searchBox.current?.clear()}
           controls={controls}
           onShowView={(view) => dispatchView({ type: 'show', view })}
           onSheet={setSheet}
