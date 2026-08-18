@@ -121,28 +121,28 @@ export function SignInView({
         {brand}
       </div>
       <div className="doorstory">
-      <div
-        className="slides"
-        data-ui="shell-slides"
-        onScroll={(event) => {
-          const box = event.currentTarget;
-          if (box.clientWidth > 0) {
-            setAt(Math.round(box.scrollLeft / box.clientWidth));
-          }
-        }}
-      >
-        {SLIDES.map((slide) => (
-          <section key={slide.head} className="slide">
-            <h2>{slide.head}</h2>
-            <p>{slide.body}</p>
-          </section>
-        ))}
-      </div>
-      <div className="slidedots" aria-hidden="true">
-        {SLIDES.map((slide, i) => (
-          <span key={slide.head} className={`dot${i === at ? ' on' : ''}`} />
-        ))}
-      </div>
+        <div
+          className="slides"
+          data-ui="shell-slides"
+          onScroll={(event) => {
+            const box = event.currentTarget;
+            if (box.clientWidth > 0) {
+              setAt(Math.round(box.scrollLeft / box.clientWidth));
+            }
+          }}
+        >
+          {SLIDES.map((slide) => (
+            <section key={slide.head} className="slide">
+              <h2>{slide.head}</h2>
+              <p>{slide.body}</p>
+            </section>
+          ))}
+        </div>
+        <div className="slidedots" aria-hidden="true">
+          {SLIDES.map((slide, i) => (
+            <span key={slide.head} className={`dot${i === at ? ' on' : ''}`} />
+          ))}
+        </div>
       </div>
 
       <div className="doorcard" data-ui="shell-door">
