@@ -269,6 +269,37 @@ test.describe('the sign-in page', () => {
   });
 });
 
+test.describe('the grown feed', () => {
+  // The feed's limit grows through 500 just by scrolling, while the
+  // watchlist route rejects limits above 200 with a 400 rather than
+  // clamping. Sent unclamped, the first Watching poll after that growth
+  // killed the view for the whole session — a red banner every four
+  // seconds and no roster. Both clients must clamp what they ask.
+  test('does not take the Watching view down with it', async ({ page }) => {
+    const errors = watchConsole(page);
+    await page.goto('/');
+    await expect(page.locator('#live-text')).not.toHaveText('connecting');
+
+    // Widen so the window can actually grow, then take every step to 500.
+    await page.locator('#only-insights').uncheck();
+    for (let i = 0; i < 4; i++) {
+      const more = page.locator('#feed-more');
+      if (await more.isHidden()) break;
+      await more.click();
+    }
+
+    await page.locator('#tab-watching').click();
+    await expect(page.locator('#view-watching')).toBeVisible();
+    // The count line is written only from a watchlist answer, so its
+    // presence IS the proof the route answered 200.
+    await expect(page.locator('#watch-count')).toContainText(
+      'companies watched',
+    );
+    await expect(page.locator('#alert')).toBeHidden();
+    expect(errors).toEqual([]);
+  });
+});
+
 test.describe('the loop', () => {
   // STARTS SIGNED OUT, and it has to: `signInThroughTheForm` opens `/auth`, and
   // a browser that already holds a session is redirected off that page to the
