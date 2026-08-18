@@ -13,6 +13,21 @@ const config: CapacitorConfig = {
   appId: 'app.disclosed.mobile',
   appName: 'Disclosed',
   webDir: '../web/dist',
+  // The theme's --bg (tokens.css), so the frame the OS paints before the
+  // WebView's first frame is the app's own color — a white flash at launch
+  // is the loudest wrapper tell there is.
+  backgroundColor: '#0d1117',
+  plugins: {
+    // The bundle ships inside the binary and paints in well under a second,
+    // so a splash that LINGERS is pure delay dressed as branding: show it
+    // only for as long as the WebView actually needs (auto-hide, no fixed
+    // duration). Measured cold-start numbers land in plan task A4.
+    SplashScreen: {
+      backgroundColor: '#0d1117',
+      launchAutoHide: true,
+      launchShowDuration: 0,
+    },
+  },
 };
 
 export default config;

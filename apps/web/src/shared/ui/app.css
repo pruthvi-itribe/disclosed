@@ -12,3 +12,39 @@
 #root {
   display: contents;
 }
+
+/*
+ * THE SHELL'S FEEL RULES. main.tsx adds `native-shell` to <html> only when
+ * Capacitor reports this document is running inside the binary, so the web
+ * page never carries the class and the browser experience is unchanged —
+ * the parity suite keeps proving the same document either way.
+ *
+ * Each rule below removes one webview TELL — the details that make a
+ * wrapped page feel wrapped (the bar set 2026-08-18: native feel, not "a
+ * web view in a frame"):
+ *  - html gets the app's own background, so the iOS rubber-band overscroll
+ *    reveals the theme rather than a white void, and the first frame before
+ *    CSS applies is not a flash.
+ *  - the safe-area insets pad <html>, not <body>: body's padding varies by
+ *    breakpoint and a calc() per breakpoint would be a copy that drifts.
+ *    The Brief's 100dvh cage on a notched device is a KNOWN open question —
+ *    measured on hardware in plan task A4, not guessed here.
+ *  - tap highlight, long-press callout and text selection are browser
+ *    affordances on CONTROLS only; the filing text itself stays selectable,
+ *    because quoting the document is the product.
+ */
+html.native-shell {
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+}
+html.native-shell button,
+html.native-shell .tab,
+html.native-shell a {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

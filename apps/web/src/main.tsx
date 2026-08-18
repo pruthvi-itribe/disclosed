@@ -23,6 +23,28 @@ const root = document.getElementById('root');
 // version of that to diagnose.
 if (root === null) throw new Error('#root is missing from the document');
 
+/**
+ * THE SHELL'S ONE BOOT MARK. Capacitor injects `window.Capacitor` into the
+ * WebView it owns; a browser never has it, so the web document never gains
+ * the class and app.css's shell-feel rules never apply there. The viewport
+ * is widened to the notch (`viewport-fit=cover`) HERE rather than in
+ * index.html, because the meta is shared with the web build — where cover
+ * would push content under a landscape notch that Safari otherwise
+ * manages itself.
+ */
+const capacitor = (
+  window as { Capacitor?: { isNativePlatform?: () => boolean } }
+).Capacitor;
+if (capacitor?.isNativePlatform?.() === true) {
+  document.documentElement.classList.add('native-shell');
+  document
+    .querySelector('meta[name="viewport"]')
+    ?.setAttribute(
+      'content',
+      'width=device-width, initial-scale=1, viewport-fit=cover',
+    );
+}
+
 // '' in the browser (same origin, no absolute URL in the bundle); the
 // mobile shell's build injects the production origin here — see api-origin.ts.
 const apiFetch = createOriginFetcher(
