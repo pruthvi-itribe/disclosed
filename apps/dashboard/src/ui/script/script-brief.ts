@@ -565,11 +565,22 @@ export const SCRIPT_BRIEF = `
     );
   }
 
-  /** What the deck holds, as one string, so a repaint that changed nothing costs nothing. */
+  /**
+   * What the deck holds, as one string, so a repaint that changed nothing
+   * costs nothing.
+   *
+   * THE WHOLE CARD, NOT symbol:seqId. Enrichment rewrites a filing's claims,
+   * state and outcome IN PLACE without moving any arrival time - the exact
+   * event the filings route's ETag header documents, and what every backfill
+   * tool does - so a signature of identity alone kept a deck of outdated
+   * claims on screen until card order changed. 'feedSignature' hashes the
+   * whole item for exactly this stated reason; twelve cards cost what the
+   * feed's two hundred already do.
+   */
   function briefSignature(cards) {
     var parts = [];
     for (var i = 0; i < cards.length; i++) {
-      parts.push(cards[i].symbol + ':' + briefLede(cards[i]).filing.seqId);
+      parts.push(JSON.stringify(cards[i]));
     }
     return parts.join('|');
   }
