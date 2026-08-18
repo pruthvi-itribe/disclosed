@@ -159,6 +159,52 @@ describe('FeedGrid', () => {
     );
   });
 
+  // The company-specific sentence states as FACT that none of the picked
+  // company's filings carries a matched claim — which the page can only
+  // honestly say when the insight toggle is the sole other narrowing. With
+  // a group or topic ANDed in, that filter may be what emptied the feed,
+  // and in a product whose first invariant is that no unverified claim
+  // reaches a reader, the client must not print a false one. (The old
+  // client's emptyHint has the same defect; deliberately not ported.)
+  it('does not blame the company when a group or topic also narrows', () => {
+    const picked = {
+      kind: 'company' as const,
+      value: 'TCS',
+      head: 'TCS',
+      name: 'Tata Consultancy',
+      filings: 42,
+    };
+    const { container } = render(
+      <FeedGrid
+        items={[]}
+        meta={meta({ total: 0, returned: 0 })}
+        chrome
+        filters={{ ...INITIAL_FILTERS, picked, group: 'capital' }}
+        todayIstDay="2026-08-18"
+        previousIstDay="2026-08-17"
+        {...handlers}
+      />,
+    );
+    const hint = container.querySelector('.emptyhint')?.textContent ?? '';
+    expect(hint).not.toContain('none of them carries');
+    expect(hint).toContain('Only filings with a claim matched');
+
+    const { container: alone } = render(
+      <FeedGrid
+        items={[]}
+        meta={meta({ total: 0, returned: 0 })}
+        chrome
+        filters={{ ...INITIAL_FILTERS, picked }}
+        todayIstDay="2026-08-18"
+        previousIstDay="2026-08-17"
+        {...handlers}
+      />,
+    );
+    expect(alone.querySelector('.emptyhint')?.textContent).toContain(
+      'TCS has 42 filing(s), and none of them carries a claim',
+    );
+  });
+
   // The Plans chip is blamed first: it is the narrowest filter (128 of 3,466
   // filings), and letting the insight toggle take the blame would send the
   // reader to the wrong control.

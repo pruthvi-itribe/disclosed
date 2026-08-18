@@ -28,8 +28,17 @@ const emptyHint = (filters: FilterState): string => {
   }
   if (filters.onlyInsights) {
     // Named with its NUMBER: the picked company is the one case where the
-    // page can say exactly what the toggle is hiding.
-    if (filters.picked !== null && filters.picked.kind === 'company') {
+    // page can say exactly what the toggle is hiding — but ONLY while the
+    // toggle is the sole other narrowing. With a group or topic ANDed in,
+    // that filter may be what emptied the feed, and stating 'none of them
+    // carries a matched claim' would be printing a false claim of our own.
+    // (The old client's emptyHint has the same defect; not ported.)
+    if (
+      filters.picked !== null &&
+      filters.picked.kind === 'company' &&
+      filters.group === '' &&
+      filters.topic === ''
+    ) {
       return (
         `${filters.picked.head} has ${groupInt(filters.picked.filings)} filing(s),` +
         ' and none of them carries a claim matched against the source document.' +

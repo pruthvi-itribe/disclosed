@@ -24,28 +24,58 @@ if (root === null) throw new Error('#root is missing from the document');
 
 const apiGet = createApiGet(createEtagStore());
 const apiSend = createApiSend();
+const reactRoot = createRoot(root);
 
-createRoot(root).render(
+/**
+ * DEV-ONLY loop breaker, read once at boot. In production a signed-out
+ * reload lands on the server's front door, which answers with the landing
+ * page — a page making no API call — and that ends the chain; the breaker
+ * must not run there, or signing out twice inside ten seconds would wipe
+ * the page to an unstyled dead sentence. The Vite dev server has no front
+ * door: it serves this app to a signed-out browser too, and an unguarded
+ * reload loops forever. The marker (not authenticated data — it says only
+ * "that boot reloaded for being signed out") is REMOVED as it is read, so
+ * a signed-in visit clears it and a later genuine sign-out reloads
+ * normally. Storage can THROW (Safari's Block All Cookies) — then there
+ * is no breaker, and the reload below still happens.
+ */
+const priorSignedOutReloadAt = ((): number | null => {
+  if (!import.meta.env.DEV) return null;
+  try {
+    const marker = sessionStorage.getItem('signed-out-reload');
+    sessionStorage.removeItem('signed-out-reload');
+    return marker === null ? null : Number(marker);
+  } catch {
+    return null;
+  }
+})();
+
+reactRoot.render(
   <StrictMode>
     <App
       apiGet={apiGet}
       apiSend={apiSend}
       onSessionEnded={() => {
-        // Reloading hands the decision back to the server, which answers
-        // the front door with the landing page — a page making no API call,
-        // which is what ends the chain in production. The Vite dev server
-        // has no front door: it serves this app to a signed-out browser
-        // too, and an unguarded reload loops forever. One timestamp in
-        // sessionStorage (not authenticated data — it says only "a reload
-        // just happened") breaks the loop: a second signed-out answer
-        // within ten seconds stops with a sentence instead of a reload.
-        const marker = sessionStorage.getItem('signed-out-reload');
-        if (marker !== null && Date.now() - Number(marker) < 10_000) {
+        if (
+          priorSignedOutReloadAt !== null &&
+          Date.now() - priorSignedOutReloadAt < 10_000
+        ) {
+          // Two signed-out answers across consecutive boots: stop with a
+          // sentence instead of reloading forever. Unmount FIRST — a
+          // wiped body does not clear React's four-second poll interval,
+          // which would keep firing requests against the dead session.
+          reactRoot.unmount();
           document.body.textContent =
             'Signed out. Open the dashboard origin to sign in.';
           return;
         }
-        sessionStorage.setItem('signed-out-reload', String(Date.now()));
+        if (import.meta.env.DEV) {
+          try {
+            sessionStorage.setItem('signed-out-reload', String(Date.now()));
+          } catch {
+            // No storage, no breaker — the reload happens regardless.
+          }
+        }
         window.location.reload();
       }}
     />

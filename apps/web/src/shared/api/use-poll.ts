@@ -15,6 +15,15 @@ export const FAST_MS = 4000;
 
 export type LiveKind = 'connecting' | 'live' | 'stale' | 'down';
 
+/**
+ * The server's MAX_WATCH_LIMIT, restated: the watchlist feed's bounds
+ * reader THROWS a 400 rather than clamping, and the feed's own limit grows
+ * through 500 — so the grown limit sent unclamped kills the Watching view
+ * for the whole session. account-mirror.spec.ts asserts the server's
+ * constant still reads 200, the same way the account types are mirrored.
+ */
+export const WATCHLIST_FEED_MAX_LIMIT = 200;
+
 export interface PollArgs {
   readonly apiGet: <T>(
     path: string,
@@ -35,6 +44,13 @@ export interface PollArgs {
   readonly company: string | null;
   readonly filters: FilterState;
   readonly onSessionEnded: () => void;
+  /**
+   * Fired on every successful cycle — the old page's clearError() on a
+   * healthy poll, restated. The account and watchlist hooks own failure
+   * sentences this signal is what clears; without it a transient 502
+   * stays red all session while the live dot says 'live'.
+   */
+  readonly onHealthy?: () => void;
 }
 
 export interface PollState {
@@ -81,6 +97,7 @@ export const usePoll = ({
   company,
   filters,
   onSessionEnded,
+  onHealthy,
 }: PollArgs): PollState => {
   const [pages, setPages] = useState<Partial<Record<Container, PageSlot>>>({});
   const [summary, setSummary] = useState<SummaryView | null>(null);
@@ -107,7 +124,7 @@ export const usePoll = ({
     const filingsJob =
       watching && apiSend !== undefined
         ? apiSend<readonly FilingView[]>(
-            `/api/watchlist/feed?limit=${filters.limit}&offset=0`,
+            `/api/watchlist/feed?limit=${Math.min(filters.limit, WATCHLIST_FEED_MAX_LIMIT)}&offset=0`,
             'GET',
           ).then((body) => {
             if (!current()) return;
@@ -130,6 +147,7 @@ export const usePoll = ({
       () => {
         if (!current()) return;
         setHealth({ failures: 0, everLive: true, message: null });
+        onHealthy?.();
       },
       (error: unknown) => {
         if (!current()) return;
@@ -153,7 +171,16 @@ export const usePoll = ({
         }));
       },
     );
-  }, [apiGet, apiSend, query, view, company, filters.limit, onSessionEnded]);
+  }, [
+    apiGet,
+    apiSend,
+    query,
+    view,
+    company,
+    filters.limit,
+    onSessionEnded,
+    onHealthy,
+  ]);
 
   // The query is in refresh's identity, so a filter, view or company change
   // refetches immediately — the old client's refresh(true) on every writer.

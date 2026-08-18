@@ -4,8 +4,11 @@ import type { SuggestionsView } from '../../shared/types/api';
 import type { PickedSuggestion } from '../../app/filter-state';
 
 /**
- * Under the ~200ms a fluent typist spends per character, so "britannia" is
- * ONE request rather than nine; 140ms reads as instant, 400ms reads as slow.
+ * Coalesces only bursts FASTER than 140ms — key repeat, a paste, an IME
+ * commit. A fluent typist's ~200ms-per-character cadence outruns it, so
+ * most keystrokes still fire their own request; the sequence counter, not
+ * this timer, is what keeps the answers ordered. 140ms reads as instant,
+ * 400ms reads as slow.
  */
 export const SUGGEST_DEBOUNCE_MS = 140;
 
@@ -52,6 +55,15 @@ export const useSuggest = ({
   const timerRef = useRef<number | null>(null);
 
   const close = useCallback(() => {
+    // Closed must STICK: cancel the queued debounce and invalidate any
+    // in-flight answer, or a keystroke's request fires after Enter,
+    // Escape or blur and pops the list back open over the freshly
+    // filtered feed.
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    seqRef.current += 1;
     setOpen(false);
     setActiveState(-1);
   }, []);

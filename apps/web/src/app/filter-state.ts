@@ -71,17 +71,26 @@ export type FilterAction =
 
 /**
  * Reverses ONLY what a pick did — company clears the symbol, category the
- * category, group the group. A blanket reset would clear a group applied
- * from a card's tag, which was never the pick's to take.
+ * category, group the group, and each only while the field STILL HOLDS the
+ * pick's value: a group applied later from a card's tag overwrote the
+ * pick's write and was never the pick's to take. (The old client clears on
+ * kind alone and silently widens the feed; deliberately not ported.)
  */
 const undoPicked = (state: FilterState): FilterState => {
   if (state.picked === null) return state;
+  const { kind, value } = state.picked;
   const cleared =
-    state.picked.kind === 'company'
-      ? { symbol: '' }
-      : state.picked.kind === 'category'
-        ? { category: '' }
-        : { group: '' };
+    kind === 'company'
+      ? state.symbol === value
+        ? { symbol: '' }
+        : {}
+      : kind === 'category'
+        ? state.category === value
+          ? { category: '' }
+          : {}
+        : state.group === value
+          ? { group: '' }
+          : {};
   return { ...state, ...cleared, picked: null };
 };
 

@@ -142,6 +142,47 @@ describe('useWatch', () => {
     expect(result.current.pending.has('TCS')).toBe(false);
   });
 
+  // The set always equals what the server LAST said — which makes response
+  // order the thing that matters: a slow initial load resolving after a
+  // confirmed toggle is older than the toggle, and applying it wholesale
+  // unfills a star the server holds filled.
+  it('a slow initial load never overwrites a confirmed toggle', async () => {
+    let resolveLoad!: (v: unknown) => void;
+    const apiSend = vi.fn().mockReturnValueOnce(
+      new Promise((r) => {
+        resolveLoad = r;
+      }),
+    );
+    const { result } = renderWatch(apiSend);
+    await flush();
+
+    apiSend.mockResolvedValueOnce(envelope(null, { used: 1, cap: 50 }));
+    await act(async () => {
+      await result.current.toggle('TCS');
+    });
+    expect(result.current.watched.has('TCS')).toBe(true);
+
+    await act(async () => {
+      resolveLoad(envelope([], { used: 0, cap: 50 }));
+    });
+    expect(result.current.watched.has('TCS')).toBe(true);
+    expect(result.current.counts).toEqual({ used: 1, cap: 50 });
+  });
+
+  // The poll clears the shared banner on every healthy cycle, the way the
+  // old page's clearError() did — this is the hook-side half.
+  it('clearFailure wipes the sentence', async () => {
+    const apiSend = vi.fn().mockRejectedValue(new Error('boom'));
+    const { result } = renderWatch(apiSend);
+    await flush();
+    expect(result.current.failure).not.toBeNull();
+
+    act(() => {
+      result.current.clearFailure();
+    });
+    expect(result.current.failure).toBeNull();
+  });
+
   // Every Watching poll overwrites the set wholesale — the response is the
   // single source of truth, which is what fixes a second tab's changes.
   it('setFromRoster replaces the set and the counts', async () => {

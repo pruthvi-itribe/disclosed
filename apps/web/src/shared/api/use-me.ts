@@ -21,6 +21,8 @@ export interface MeState {
   readonly refreshMe: () => void;
   readonly signOut: () => void;
   readonly clearUnread: () => void;
+  /** The poll's clearError(): every healthy cycle wipes the sentence. */
+  readonly clearFailure: () => void;
 }
 
 /**
@@ -82,6 +84,7 @@ export const useMe = ({ apiSend, onReload }: UseMeArgs): MeState => {
   }, [apiSend, reloadOnce, refreshMe]);
 
   const clearUnread = useCallback(() => setUnread(0), []);
+  const clearFailure = useCallback(() => setFailure(null), []);
 
-  return { me, unread, failure, refreshMe, signOut, clearUnread };
+  return { me, unread, failure, refreshMe, signOut, clearUnread, clearFailure };
 };

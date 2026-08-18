@@ -45,9 +45,10 @@ describe('useSuggest', () => {
   const renderSuggest = (apiGet: ReturnType<typeof vi.fn>) =>
     renderHook(() => useSuggest({ apiGet: apiGet as never }));
 
-  // Under the ~200ms a fluent typist spends per character: "britannia" is
-  // ONE request, not nine.
-  it('debounces typing into one request', async () => {
+  // A burst faster than the debounce — key repeat, a paste — coalesces
+  // into one request. Real typing at ~200ms per character outruns the
+  // 140ms timer; the sequence guard below handles that case.
+  it('debounces a fast burst into one request', async () => {
     const apiGet = vi.fn().mockResolvedValue(answer([COMPANY]));
     const { result } = renderSuggest(apiGet);
 
@@ -154,6 +155,43 @@ describe('useSuggest', () => {
     const { result } = renderSuggest(apiGet);
     act(() => result.current.openNow('br'));
     await flush();
+    expect(result.current.open).toBe(false);
+  });
+
+  // Enter, Escape and blur all mean CLOSED — and closed must stick: a
+  // queued debounce or an in-flight answer reopening the list over the
+  // freshly filtered feed is the box overruling the reader.
+  it('close() cancels a queued request', async () => {
+    const apiGet = vi.fn().mockResolvedValue(answer([COMPANY]));
+    const { result } = renderSuggest(apiGet);
+
+    act(() => result.current.onInput('brita'));
+    act(() => result.current.close());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SUGGEST_DEBOUNCE_MS);
+    });
+
+    expect(apiGet).not.toHaveBeenCalled();
+    expect(result.current.open).toBe(false);
+  });
+
+  it('an answer landing after close() stays closed', async () => {
+    let resolveLate!: (v: ApiResult<unknown>) => void;
+    const apiGet = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise<ApiResult<unknown>>((r) => {
+          resolveLate = r;
+        }),
+    );
+    const { result } = renderSuggest(apiGet);
+
+    act(() => result.current.openNow('brita'));
+    act(() => result.current.close());
+    await act(async () => {
+      resolveLate(answer([COMPANY]) as never);
+      await Promise.resolve();
+    });
+
     expect(result.current.open).toBe(false);
   });
 

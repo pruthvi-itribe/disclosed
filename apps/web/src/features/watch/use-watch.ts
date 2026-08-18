@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiEnvelope } from '../../shared/api/api-get';
 import type { SendMethod } from '../../shared/api/api-send';
 import type { WatchedCompany } from '../../shared/types/account';
@@ -20,8 +20,10 @@ export interface WatchState {
   readonly toggle: (symbol: string) => Promise<void>;
   readonly setFromRoster: (
     rows: readonly Pick<WatchedCompany, 'symbol'>[],
-    cap: number,
+    cap: number | null,
   ) => void;
+  /** The poll's clearError(): every healthy cycle wipes the sentence. */
+  readonly clearFailure: () => void;
 }
 
 /**
@@ -48,11 +50,18 @@ export const useWatch = ({
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [counts, setCounts] = useState<WatchCounts | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // Counts every server-confirmed write. "Last said" means last ANSWERED,
+  // not last dispatched: a slow initial load resolving after a confirmed
+  // toggle is older than the toggle, and applying it wholesale would
+  // unfill a star the server holds filled.
+  const writesRef = useRef(0);
 
   useEffect(() => {
     if (!enabled) return;
+    const before = writesRef.current;
     apiSend<readonly WatchedCompany[]>('/api/watchlist', 'GET').then(
       (body) => {
+        if (writesRef.current !== before) return;
         setWatched(new Set(body.data.map((row) => row.symbol)));
         setCounts(body.meta as WatchCounts);
       },
@@ -74,6 +83,7 @@ export const useWatch = ({
             : `/api/watchlist?symbol=${encodeURIComponent(symbol)}`,
           on ? 'DELETE' : 'POST',
         );
+        writesRef.current += 1;
         setWatched((prev) => {
           const next = new Set(prev);
           if (on) next.delete(symbol);
@@ -97,12 +107,26 @@ export const useWatch = ({
   );
 
   const setFromRoster = useCallback(
-    (rows: readonly Pick<WatchedCompany, 'symbol'>[], cap: number) => {
+    (rows: readonly Pick<WatchedCompany, 'symbol'>[], cap: number | null) => {
+      writesRef.current += 1;
       setWatched(new Set(rows.map((row) => row.symbol)));
-      setCounts({ used: rows.length, cap });
+      // Cap null means no server channel has answered yet; the roster is
+      // still the newer set, but the counts keep whatever the server last
+      // said rather than taking an invented denominator.
+      setCounts((prev) => (cap !== null ? { used: rows.length, cap } : prev));
     },
     [],
   );
 
-  return { watched, pending, counts, failure, toggle, setFromRoster };
+  const clearFailure = useCallback(() => setFailure(null), []);
+
+  return {
+    watched,
+    pending,
+    counts,
+    failure,
+    toggle,
+    setFromRoster,
+    clearFailure,
+  };
 };
