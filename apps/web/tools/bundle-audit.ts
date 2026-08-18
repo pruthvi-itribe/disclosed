@@ -46,12 +46,16 @@ const filesUnder = (dir: string): readonly string[] =>
  */
 export const auditBundle = (dir: string): readonly Violation[] => {
   if (!existsSync(dir)) {
-    return [{ file: dir, rule: 'no-bundle', detail: 'the directory does not exist' }];
+    return [
+      { file: dir, rule: 'no-bundle', detail: 'the directory does not exist' },
+    ];
   }
 
   const files = filesUnder(dir).filter((f) => /\.(html|js|css)$/.test(f));
   if (files.length === 0) {
-    return [{ file: dir, rule: 'no-bundle', detail: 'no html, js or css emitted' }];
+    return [
+      { file: dir, rule: 'no-bundle', detail: 'no html, js or css emitted' },
+    ];
   }
 
   const violations: Violation[] = [];

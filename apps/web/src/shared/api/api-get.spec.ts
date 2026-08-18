@@ -52,24 +52,34 @@ describe('apiGet', () => {
   // every successful revalidation, which is the single easiest way to get this
   // wrong.
   it('does not treat 304 as a failure', async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 304 }));
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 304 }));
     const apiGet = createApiGet(createEtagStore(), fetcher);
 
-    await expect(apiGet('/api/filings')).resolves.toEqual({ status: 'unchanged' });
+    await expect(apiGet('/api/filings')).resolves.toEqual({
+      status: 'unchanged',
+    });
   });
 
   // A session that ended under an open tab is not a pipeline fault. The caller
   // reloads into the landing page rather than painting a red banner every four
   // seconds.
   it('rejects a 401 with SessionEndedError', async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 401 }));
     const apiGet = createApiGet(createEtagStore(), fetcher);
 
-    await expect(apiGet('/api/filings')).rejects.toBeInstanceOf(SessionEndedError);
+    await expect(apiGet('/api/filings')).rejects.toBeInstanceOf(
+      SessionEndedError,
+    );
   });
 
   it('throws with the status for any other failure', async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response('nope', { status: 500 }));
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response('nope', { status: 500 }));
     const apiGet = createApiGet(createEtagStore(), fetcher);
 
     await expect(apiGet('/api/filings')).rejects.toThrow(/500/);

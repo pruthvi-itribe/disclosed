@@ -2,7 +2,12 @@ import { render, screen } from '@testing-library/react';
 import { App } from './App';
 import { SessionEndedError } from '../shared/api/api-get';
 
-const ok = { success: true, data: { totalFilings: 9459 }, error: null, meta: null };
+const ok = {
+  success: true,
+  data: { totalFilings: 9459 },
+  error: null,
+  meta: null,
+};
 
 describe('App', () => {
   it('reports the count the API returned', async () => {

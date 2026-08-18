@@ -11,9 +11,23 @@ import { join } from 'path';
  * verbatim port cannot leave a referenced token behind.
  */
 const REQUIRED = [
-  '--bg', '--panel', '--panel-2', '--text', '--muted', '--line', '--accent',
-  '--brand-1', '--brand-2', '--brand-gradient', '--brand-ink', '--flash',
-  '--ok', '--warn', '--bad', '--sans', '--mono',
+  '--bg',
+  '--panel',
+  '--panel-2',
+  '--text',
+  '--muted',
+  '--line',
+  '--accent',
+  '--brand-1',
+  '--brand-2',
+  '--brand-gradient',
+  '--brand-ink',
+  '--flash',
+  '--ok',
+  '--warn',
+  '--bad',
+  '--sans',
+  '--mono',
 ] as const;
 
 describe('the design tokens', () => {
@@ -37,7 +51,17 @@ describe('the design tokens', () => {
   // clients drift apart.
   it('matches the server stylesheet value for value', () => {
     const source = readFileSync(
-      join(__dirname, '..', '..', '..', '..', 'dashboard', 'src', 'ui', 'page-style.ts'),
+      join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        '..',
+        'dashboard',
+        'src',
+        'ui',
+        'page-style.ts',
+      ),
       'utf8',
     );
     for (const token of REQUIRED) {

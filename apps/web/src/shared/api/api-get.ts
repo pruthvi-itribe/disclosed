@@ -32,7 +32,10 @@ export type Fetcher = (input: string, init: RequestInit) => Promise<Response>;
 
 export const createApiGet =
   (store: EtagStore, fetcher: Fetcher = fetch) =>
-  async <T>(path: string, current: () => boolean = () => true): Promise<ApiResult<T>> => {
+  async <T>(
+    path: string,
+    current: () => boolean = () => true,
+  ): Promise<ApiResult<T>> => {
     const validator = store.validatorFor(path);
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (validator !== null) headers['If-None-Match'] = validator;

@@ -34,7 +34,11 @@ describe('auditBundle', () => {
 
   it.each([
     ['a CDN script', 'assets/main.js', 'fetch("https://cdn.example/x.js")'],
-    ['an absolute image', 'assets/main.js', 'img.src = "http://img.example/a.png"'],
+    [
+      'an absolute image',
+      'assets/main.js',
+      'img.src = "http://img.example/a.png"',
+    ],
   ])('reports %s', (_label, file, body) => {
     const dir = bundleWith({ 'index.html': CLEAN_HTML, [file]: body });
     expect(auditBundle(dir).map((v) => v.rule)).toContain('absolute-url');
@@ -82,8 +86,10 @@ describe('auditBundle', () => {
 
   it('reports a second link element', () => {
     const dir = bundleWith({
-      'index.html':
-        CLEAN_HTML.replace('</head>', '<link rel="stylesheet" href="/a.css"></head>'),
+      'index.html': CLEAN_HTML.replace(
+        '</head>',
+        '<link rel="stylesheet" href="/a.css"></head>',
+      ),
       'assets/main.js': '',
     });
     expect(auditBundle(dir).map((v) => v.rule)).toContain('one-link-only');
@@ -93,7 +99,8 @@ describe('auditBundle', () => {
   it('reports a remote font face', () => {
     const dir = bundleWith({
       'index.html': CLEAN_HTML,
-      'assets/main.css': '@font-face{font-family:X;src:url(https://f.example/x.woff2)}',
+      'assets/main.css':
+        '@font-face{font-family:X;src:url(https://f.example/x.woff2)}',
     });
     const rules = auditBundle(dir).map((v) => v.rule);
     expect(rules).toContain('absolute-url');
