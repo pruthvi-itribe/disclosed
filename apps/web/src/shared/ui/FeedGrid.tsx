@@ -141,7 +141,12 @@ export function FeedGrid({
       )
     : 0;
 
-  const empty = items.length === 0;
+  // "Nothing was found" and "nothing was looked for" must not render the
+  // same: before the first answer (meta === null) the grid draws nothing,
+  // the way the old page's #feed started empty — never the empty-state
+  // prose, which would be a false statement about a question not yet asked
+  // and would STAY up if the first request failed.
+  const empty = items.length === 0 && meta !== null;
 
   let lastBucket: string | null = null;
   const children: JSX.Element[] = [];

@@ -15,7 +15,8 @@ export function BriefCover({
   companies,
 }: {
   readonly summary: SummaryView | null;
-  readonly seen: number;
+  /** Null before the first filings answer: the rule line stays blank. */
+  readonly seen: number | null;
   readonly companies: number;
 }): JSX.Element {
   const byGroup: Readonly<Record<string, number>> = summary?.todayByGroup ?? {};
@@ -52,7 +53,12 @@ export function BriefCover({
             : `${groupInt(summary.todayCount)} filings arrived today; ${groupInt(summary.todayVerified)} carry something a document verified.`}
       </div>
       <div id="brief-cover-rule" className="bcoverrule">
-        {`Drawn from the ${groupInt(seen)} most recent verified filings, from ${groupInt(companies)} companies. ${BRIEF_RULE}`}
+        {/* Blank until the window has actually been asked for — the old
+            page's served cover — because "the 0 most recent" is a claim
+            about a request that never happened. */}
+        {seen === null
+          ? ''
+          : `Drawn from the ${groupInt(seen)} most recent verified filings, from ${groupInt(companies)} companies. ${BRIEF_RULE}`}
       </div>
       {/* The gesture, named for the device holding it: two spans and a media
           query rather than a branch in the script — the stylesheet already
