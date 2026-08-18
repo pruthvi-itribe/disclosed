@@ -53,7 +53,7 @@ export class SessionService {
     userId: string,
     request: Request,
     response: Response,
-  ): Promise<void> {
+  ): Promise<{ readonly token: string }> {
     const at = this.now();
     const minted = mintSessionToken();
 
@@ -71,6 +71,12 @@ export class SessionService {
         ttlDays: this.ttlDays,
       }),
     );
+
+    // RETURNED FOR THE ONE TRANSPORT A COOKIE CANNOT SERVE. The controller
+    // includes it in a body only when the caller explicitly asked for
+    // bearer — a browser never does, so the web's HttpOnly property (no
+    // response ever hands the session to JavaScript) is intact there.
+    return { token: minted.token };
   }
 
   /**

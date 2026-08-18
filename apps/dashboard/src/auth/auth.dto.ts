@@ -1,4 +1,4 @@
-import { IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { MAX_EMAIL_LENGTH, MAX_PASSWORD_LENGTH } from '@app/accounts';
 
 /**
@@ -25,6 +25,16 @@ export class CredentialsDto {
   @IsString()
   @MaxLength(MAX_PASSWORD_LENGTH)
   password!: string;
+
+  /**
+   * 'bearer' asks for the session token in the response body — the one
+   * transport a WebView shell can use, because SameSite=Lax rightly keeps
+   * the cookie from crossing capacitor:// to the API origin. Allowlisted
+   * to the single value; anything else is a 400, not a silent cookie.
+   */
+  @IsOptional()
+  @IsIn(['bearer'])
+  transport?: 'bearer';
 }
 
 /**
@@ -47,6 +57,11 @@ export class FirebaseTokenDto {
   @IsString()
   @MaxLength(MAX_ID_TOKEN_LENGTH)
   idToken!: string;
+
+  /** See CredentialsDto.transport — the shell's door asks the same way. */
+  @IsOptional()
+  @IsIn(['bearer'])
+  transport?: 'bearer';
 }
 
 export class ChangePasswordDto {

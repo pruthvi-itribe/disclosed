@@ -60,6 +60,13 @@ export interface SignInViewProps {
    * itself instead of doing nothing.
    */
   readonly signInWithGoogle: (() => Promise<string>) | null;
+  /**
+   * Where the session lands. Non-null makes both exchanges ask for bearer
+   * transport and hands the issued token here before onSignedIn — the
+   * shell's path, because its cookie is inert (SameSite=Lax never crosses
+   * capacitor:// to the API origin). Null keeps the cookie flow.
+   */
+  readonly bearerSink: ((token: string) => void) | null;
 }
 
 export function SignInView({
@@ -68,6 +75,7 @@ export function SignInView({
   apiSend,
   onSignedIn,
   signInWithGoogle,
+  bearerSink,
 }: SignInViewProps): JSX.Element {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -80,6 +88,16 @@ export function SignInView({
     );
   };
 
+  // Bearer-on-request: the body names the transport only when a sink is
+  // wired, and the issued token lands there before the reboot.
+  const settle = (data: { sessionToken?: string }): void => {
+    if (bearerSink !== null && typeof data.sessionToken === 'string') {
+      bearerSink(data.sessionToken);
+    }
+    onSignedIn();
+  };
+  const transport = bearerSink === null ? {} : { transport: 'bearer' };
+
   const google = (): void => {
     if (signInWithGoogle === null) {
       setFailure(
@@ -88,8 +106,13 @@ export function SignInView({
       return;
     }
     signInWithGoogle()
-      .then((idToken) => apiSend('/api/auth/firebase', 'POST', { idToken }))
-      .then(onSignedIn, fail);
+      .then((idToken) =>
+        apiSend<{ sessionToken?: string }>('/api/auth/firebase', 'POST', {
+          idToken,
+          ...transport,
+        }),
+      )
+      .then((body) => settle(body.data), fail);
   };
 
   return (
@@ -97,27 +120,29 @@ export function SignInView({
       <div className="doorbrand" data-ui="shell-brand">
         {brand}
       </div>
-      <div
-        className="slides"
-        data-ui="shell-slides"
-        onScroll={(event) => {
-          const box = event.currentTarget;
-          if (box.clientWidth > 0) {
-            setAt(Math.round(box.scrollLeft / box.clientWidth));
-          }
-        }}
-      >
-        {SLIDES.map((slide) => (
-          <section key={slide.head} className="slide">
-            <h2>{slide.head}</h2>
-            <p>{slide.body}</p>
-          </section>
-        ))}
-      </div>
-      <div className="slidedots" aria-hidden="true">
-        {SLIDES.map((slide, i) => (
-          <span key={slide.head} className={`dot${i === at ? ' on' : ''}`} />
-        ))}
+      <div className="doorstory">
+        <div
+          className="slides"
+          data-ui="shell-slides"
+          onScroll={(event) => {
+            const box = event.currentTarget;
+            if (box.clientWidth > 0) {
+              setAt(Math.round(box.scrollLeft / box.clientWidth));
+            }
+          }}
+        >
+          {SLIDES.map((slide) => (
+            <section key={slide.head} className="slide">
+              <h2>{slide.head}</h2>
+              <p>{slide.body}</p>
+            </section>
+          ))}
+        </div>
+        <div className="slidedots" aria-hidden="true">
+          {SLIDES.map((slide, i) => (
+            <span key={slide.head} className={`dot${i === at ? ' on' : ''}`} />
+          ))}
+        </div>
       </div>
 
       <div className="doorcard" data-ui="shell-door">
@@ -129,10 +154,11 @@ export function SignInView({
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              apiSend('/api/auth/login', 'POST', { email, password }).then(
-                onSignedIn,
-                fail,
-              );
+              apiSend<{ sessionToken?: string }>('/api/auth/login', 'POST', {
+                email,
+                password,
+                ...transport,
+              }).then((body) => settle(body.data), fail);
             }}
           >
             <input

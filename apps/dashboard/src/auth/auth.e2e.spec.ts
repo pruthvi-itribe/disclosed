@@ -430,6 +430,47 @@ describe('the Origin guard', () => {
     expect(response.body.error?.code).toBe('BAD_ORIGIN');
   });
 
+  // THE SHELL'S TRANSPORT. SameSite=Lax rightly never crosses from the
+  // WebView's scheme to the API origin, so a cookie minted at sign-in is
+  // inert there — the shell asks for the bearer the guards already honour.
+  // The token appears in a body ONLY when explicitly asked: the web's
+  // HttpOnly defence is that no browser response ever hands the session to
+  // JavaScript, and a browser client never asks.
+  it('hands the session token to a caller that asks for bearer transport', async () => {
+    const email = freshEmail();
+    await call('POST', '/api/auth/register', {
+      body: { email, password: PASSWORD },
+    });
+
+    const response = await call('POST', '/api/auth/login', {
+      body: { email, password: PASSWORD, transport: 'bearer' },
+      origin: 'capacitor://localhost',
+    });
+    expect(response.status).toBe(200);
+    const token = (response.body.data as { sessionToken?: string })
+      .sessionToken;
+    expect(typeof token).toBe('string');
+
+    // The token IS a session: an Origin-less read answers with the account.
+    const me = await call('GET', '/api/me', { bearer: token, origin: null });
+    expect(me.status).toBe(200);
+    expect((me.body.data as { email?: string }).email).toBe(email);
+  });
+
+  it('never volunteers the token to a caller that did not ask', async () => {
+    const email = freshEmail();
+    await call('POST', '/api/auth/register', {
+      body: { email, password: PASSWORD },
+    });
+    const response = await call('POST', '/api/auth/login', {
+      body: { email, password: PASSWORD },
+    });
+    expect(response.status).toBe(200);
+    expect(
+      (response.body.data as { sessionToken?: string }).sessionToken,
+    ).toBeUndefined();
+  });
+
   // The shell's WebView asks from a fixed origin the operator listed for
   // credentialed CORS. Refusing its sign-in here while CORS accepts its
   // credentials would be two rules disagreeing about one trust decision.

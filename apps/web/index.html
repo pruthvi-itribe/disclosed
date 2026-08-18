@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- viewport-fit=cover so env(safe-area-inset-*) is real from the FIRST
+         paint: the shell sets its island/notch clearances with it, and a
+         runtime meta swap proved unreliable for the first layout. In a
+         browser the page keeps its own padding, so nothing hugs a notch. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="referrer" content="no-referrer" />
     <title>Disclosed — what Indian companies disclosed today</title>
     <!-- The favicon loads nothing: the SVG rides in the attribute as a data:

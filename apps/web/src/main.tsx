@@ -5,6 +5,12 @@ import { createApiGet } from './shared/api/api-get';
 import { createOriginFetcher } from './shared/api/api-origin';
 import { createApiSend } from './shared/api/api-send';
 import { createEtagStore } from './shared/api/etag-store';
+import {
+  clearShellToken,
+  readShellToken,
+  withBearer,
+  writeShellToken,
+} from './shared/api/shell-token';
 import { SignInView } from './features/shell-auth/SignInView';
 import { BrandLogo } from './app/BrandLogo';
 // The four stylesheets the server concatenated into one <style> element,
@@ -40,19 +46,18 @@ const capacitor = (
 const isNativeShell = capacitor?.isNativePlatform?.() === true;
 if (isNativeShell) {
   document.documentElement.classList.add('native-shell');
-  document
-    .querySelector('meta[name="viewport"]')
-    ?.setAttribute(
-      'content',
-      'width=device-width, initial-scale=1, viewport-fit=cover',
-    );
 }
 
 // '' in the browser (same origin, no absolute URL in the bundle); the
 // mobile shell's build injects the production origin here — see api-origin.ts.
-const apiFetch = createOriginFetcher(
+const originFetch = createOriginFetcher(
   (import.meta.env.VITE_API_ORIGIN as string | undefined) ?? '',
 );
+// The shell rides bearer transport — its cookie is inert cross-scheme
+// (shell-token.ts) — and the browser build never touches the token store.
+const apiFetch = isNativeShell
+  ? withBearer(originFetch, readShellToken)
+  : originFetch;
 const apiGet = createApiGet(createEtagStore(), apiFetch);
 const apiSend = createApiSend(apiFetch);
 const reactRoot = createRoot(root);
@@ -96,9 +101,8 @@ const nativeGoogle = (): (() => Promise<string>) | null => {
       Capacitor?: {
         Plugins?: {
           FirebaseAuthentication?: {
-            signInWithGoogle: () => Promise<{
-              credential?: { idToken?: string } | null;
-            }>;
+            signInWithGoogle: () => Promise<unknown>;
+            getIdToken: () => Promise<{ token?: string }>;
           };
         };
       };
@@ -106,12 +110,19 @@ const nativeGoogle = (): (() => Promise<string>) | null => {
   ).Capacitor?.Plugins?.FirebaseAuthentication;
   if (plugin === undefined) return null;
   return async () => {
-    const result = await plugin.signInWithGoogle();
-    const idToken = result.credential?.idToken;
-    if (typeof idToken !== 'string' || idToken === '') {
+    // TWO TOKENS COME OUT OF THE SHEET AND ONLY ONE IS OURS. The sign-in
+    // result's credential.idToken is GOOGLE's (aud = the iOS OAuth client),
+    // and the server's verifier checks aud against the FIREBASE project —
+    // exchanging Google's answered "That sign-in could not be verified" on
+    // the simulator (2026-08-18, 'incorrect aud' in the server log). The
+    // FIREBASE ID token is what getIdToken() returns after the native
+    // sign-in completes: the same token the web's user.getIdToken() sends.
+    await plugin.signInWithGoogle();
+    const { token } = await plugin.getIdToken();
+    if (typeof token !== 'string' || token === '') {
       throw new Error('Google returned no token to exchange.');
     }
-    return idToken;
+    return token;
   };
 };
 
@@ -123,6 +134,9 @@ const nativeGoogle = (): (() => Promise<string>) | null => {
  * reloading. Signing in reboots the shell, which comes up signed in.
  */
 const showShellSignIn = (): void => {
+  // A boot that landed here holds no living session, so whatever bearer is
+  // stored is dead — dropped before the reader tries again.
+  clearShellToken();
   reactRoot.render(
     <StrictMode>
       <SignInView
@@ -135,9 +149,14 @@ const showShellSignIn = (): void => {
         apiSend={apiSend}
         onSignedIn={() => window.location.reload()}
         signInWithGoogle={nativeGoogle()}
+        bearerSink={writeShellToken}
       />
     </StrictMode>,
   );
+  // The door owns the viewport (body.shelldoor in shell-auth.css). Set
+  // AFTER the render call: App's body-class effect clears className in its
+  // unmount cleanup, which runs inside that call.
+  document.body.className = 'shelldoor';
 };
 
 reactRoot.render(
