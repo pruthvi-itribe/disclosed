@@ -414,6 +414,19 @@ describe('a poll that changed nothing', () => {
     expect(touch).not.toContain('items');
   });
 
+  // The company page's "last filed" stat is the same browser-clock relative
+  // time the cards carry, and it froze while they aged: a quiet company
+  // page left open 30 minutes showed cards saying "34 min ago" under a
+  // header still saying "3 min ago". The stat carries its timestamp the way
+  // every card does, and the same touch-up rewrites it.
+  it('keeps the company header stat aging with the cards beneath it', () => {
+    const touch = cutFunction(SCRIPT, 'function touchFeedTimes(');
+    expect(touch).toContain("querySelector('#co-last[data-at]')");
+    expect(SCRIPT).toContain(
+      "setAttribute('data-at', items[0].disseminatedAt)",
+    );
+  });
+
   it('refreshes the clock on the branch that skips the render', () => {
     const branch = SCRIPT.indexOf('if (b === NOT_MODIFIED)');
     expect(branch).toBeGreaterThan(-1);

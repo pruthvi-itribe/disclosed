@@ -587,6 +587,15 @@ export const SCRIPT_FEED = `
       var text = relativeTime(at);
       if (when.textContent !== text) when.textContent = text;
     }
+    // The company header's "last filed" is the same browser-clock relative
+    // time the cards carry, read off the same attribute - 'renderCompany'
+    // writes it and removes it when there is nothing to date. Without this
+    // the stat froze while the cards beneath it kept aging.
+    var last = root.querySelector('#co-last[data-at]');
+    if (last) {
+      var lastText = relativeTime(last.getAttribute('data-at'));
+      if (last.textContent !== lastText) last.textContent = lastText;
+    }
   }
 
   /**
