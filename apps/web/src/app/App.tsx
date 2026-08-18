@@ -184,7 +184,7 @@ export function App({
         aria-labelledby="tab-feed"
         hidden={viewState.view !== 'feed'}
       >
-        <Hero summary={summary} />
+        <Hero summary={summary} compact={shell} />
         {!shell && controls}
         <FeedGrid
           items={viewState.view === 'feed' ? items : []}

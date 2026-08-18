@@ -46,6 +46,19 @@ const capacitor = (
 const isNativeShell = capacitor?.isNativePlatform?.() === true;
 if (isNativeShell) {
   document.documentElement.classList.add('native-shell');
+  // THE LOUDEST WEBVIEW TELL: focusing an input whose font is under 16px
+  // makes iOS zoom the page and STAY zoomed (found live in the search
+  // sheet, 2026-08-18). Native app UI does not pinch-zoom, so the shell
+  // pins the scale; shell-chrome.css also raises inputs to 16px, killing
+  // the trigger as well as the policy. Interaction policy reads the meta
+  // at gesture time, so a runtime write is reliable here — unlike the
+  // env() geometry, which needed the static viewport-fit in index.html.
+  document
+    .querySelector('meta[name="viewport"]')
+    ?.setAttribute(
+      'content',
+      'width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1',
+    );
 }
 
 // '' in the browser (same origin, no absolute URL in the bundle); the

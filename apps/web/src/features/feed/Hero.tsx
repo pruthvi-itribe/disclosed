@@ -13,9 +13,38 @@ import type { SummaryView } from '../../shared/types/api';
  */
 export function Hero({
   summary,
+  compact = false,
 }: {
   readonly summary: SummaryView | null;
+  /**
+   * The shell's one-line form: three stats stacked large pushed the first
+   * card below a phone's fold. Same three server-owned numbers, same
+   * order; only the furniture shrinks. The web never passes it.
+   */
+  readonly compact?: boolean;
 }): JSX.Element {
+  if (compact) {
+    return (
+      <div className="hero herocompact" data-ui="feed-hero">
+        <span id="hero-today" className="herovalue">
+          {summary === null ? '—' : groupInt(summary.todayCount)}
+        </span>
+        <span>today ·</span>
+        <span id="hero-insights" className="herovalue accent">
+          {summary === null ? '—' : groupInt(summary.todayVerified)}
+        </span>
+        <span>verified ·</span>
+        <span
+          id="hero-lag"
+          className={`herovalue ${summary === null ? '' : lagClass(summary.feedLagMs)}`}
+        >
+          {summary === null ? '—' : duration(summary.feedLagMs)}
+        </span>
+        <span>since the last filing</span>
+      </div>
+    );
+  }
+
   return (
     <div className="hero" data-ui="feed-hero">
       <div

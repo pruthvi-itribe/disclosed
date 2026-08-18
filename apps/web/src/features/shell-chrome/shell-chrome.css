@@ -145,3 +145,41 @@ html.native-shell body {
   font: inherit;
   font-weight: 600;
 }
+
+/* ------------------------------------------------- shell-only tuning ---- */
+
+/* Inputs at 16px kill iOS's focus auto-zoom at the CAUSE; the pinned
+   viewport scale in main.tsx is the policy half of the same fix. */
+html.native-shell input,
+html.native-shell select,
+html.native-shell textarea {
+  font-size: 16px;
+}
+
+/* The hero as one quiet line: three stats stacked large were pushing the
+   first card below the fold on a phone. */
+html.native-shell .herocompact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 2px 0 10px;
+}
+html.native-shell .herocompact .herovalue {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text);
+}
+html.native-shell .herocompact .herovalue.accent {
+  color: var(--accent);
+}
+
+/* The direction legend kept its sentence but stops blocking the view. */
+html.native-shell #dir-legend {
+  font-size: 10.5px;
+  line-height: 1.35;
+  opacity: 0.75;
+  margin: 0 0 8px;
+}
