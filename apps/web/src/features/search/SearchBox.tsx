@@ -1,4 +1,10 @@
-import { useEffect, useRef } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import type { ApiResult } from '../../shared/api/api-get';
 import type { PickedSuggestion } from '../../app/filter-state';
 import { groupInt } from '../../shared/format/group-int';
@@ -10,6 +16,11 @@ const HEADINGS: Readonly<Record<SuggestItem['kind'], string>> = {
   group: 'Groups',
 };
 
+/** What the one external writer — the note's Clear control — may do. */
+export interface SearchBoxHandle {
+  readonly clear: () => void;
+}
+
 /**
  * The combobox, spelled out in ARIA. DOM focus stays on the input the whole
  * time — the reader is still typing — and the highlight is announced via
@@ -17,25 +28,31 @@ const HEADINGS: Readonly<Record<SuggestItem['kind'], string>> = {
  * SIBLING of the input (an input cannot contain elements), and its
  * onMouseDown calls preventDefault so a click on a row lands before the
  * input's blur closes the list — it must be mousedown, not click.
+ *
+ * THE DRAFT IS THE BOX'S OWN STATE. It lived in App once, and every
+ * character re-rendered the whole shell while the reader typed (review
+ * finding #10); nothing outside the box needs the draft until Enter or a
+ * pick turns it into a filter. The one external write — Clear emptying the
+ * input — comes through the imperative handle, which is a ref precisely so
+ * it costs the shell nothing; deriving the reset from filter state instead
+ * cannot work, because "the pick was just undone by typing" and "Clear was
+ * pressed" leave the same filters and must treat the draft oppositely.
  */
-export function SearchBox({
-  text,
-  onTextChange,
-  onTyped,
-  apiGet,
-  onApply,
-  onSubmit,
-}: {
-  readonly text: string;
-  readonly onTextChange: (text: string) => void;
-  /** Typing invalidates a pick: the parent undoes exactly what it did. */
-  readonly onTyped: () => void;
-  readonly apiGet: <T>(path: string) => Promise<ApiResult<T>>;
-  readonly onApply: (item: PickedSuggestion) => void;
-  readonly onSubmit: (q: string) => void;
-}): JSX.Element {
+export const SearchBox = forwardRef<
+  SearchBoxHandle,
+  {
+    /** Typing invalidates a pick: the parent undoes exactly what it did. */
+    readonly onTyped: () => void;
+    readonly apiGet: <T>(path: string) => Promise<ApiResult<T>>;
+    readonly onApply: (item: PickedSuggestion) => void;
+    readonly onSubmit: (q: string) => void;
+  }
+>(function SearchBox({ onTyped, apiGet, onApply, onSubmit }, handle) {
+  const [text, setText] = useState('');
   const suggest = useSuggest({ apiGet });
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useImperativeHandle(handle, () => ({ clear: () => setText('') }), []);
 
   // `/` focuses the box from anywhere that is not already a field.
   useEffect(() => {
@@ -54,7 +71,7 @@ export function SearchBox({
     const item = suggest.items[index];
     if (item === undefined) return;
     onApply(item);
-    onTextChange(item.head);
+    setText(item.head);
     suggest.close();
   };
 
@@ -109,7 +126,7 @@ export function SearchBox({
         }
         value={text}
         onChange={(event) => {
-          onTextChange(event.target.value);
+          setText(event.target.value);
           onTyped();
           suggest.onInput(event.target.value);
         }}
@@ -158,4 +175,4 @@ export function SearchBox({
       </ul>
     </div>
   );
-}
+});
