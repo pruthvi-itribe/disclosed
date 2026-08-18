@@ -224,10 +224,20 @@ export class TelegramService {
     }
   }
 
-  /** Holds until the pacing interval since the previous send has elapsed. */
+  /**
+   * Holds until the pacing interval since the previous send has elapsed.
+   *
+   * A LOOP, NOT ONE SLEEP: Node truncates timers to whole milliseconds and a
+   * setTimeout can resolve up to a millisecond EARLY, so a single sleep let a
+   * 40ms gap measure 39ms of wall clock — "at least the configured gap" was a
+   * contract the code did not quite keep, and its spec failed on exactly that
+   * (once on PR #14's runner, again on PR #27's). Re-sleeping the remainder
+   * makes the guarantee true rather than loosening the spec to match the bug.
+   */
   private async waitForSlot(): Promise<void> {
-    const waitMs = this.nextSendAtMs - Date.now();
-    if (waitMs > 0) await delay(waitMs);
+    while (Date.now() < this.nextSendAtMs) {
+      await delay(this.nextSendAtMs - Date.now());
+    }
     this.nextSendAtMs = Date.now() + this.minSendIntervalMs;
   }
 
