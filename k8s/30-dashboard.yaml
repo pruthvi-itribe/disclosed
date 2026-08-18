@@ -247,6 +247,14 @@ spec:
             # argument.
             - name: ADMIN_ENABLED
               value: 'false'
+            # THE CUTOVER FLAG, deliberately absent-by-default: add
+            #   - name: WEB_CLIENT
+            #     value: react
+            # to serve the React bundle already inside the image to signed-in
+            # readers (signed-out visitors see the same landing page either
+            # way). The rollback is deleting the entry again — a rollout,
+            # never an image build. The startup line prints `web=react|server`
+            # so the pod says which side of the flag it is on.
             # Which identity provider signs people in. Here rather than in
             # the Secret beside its keys, so `kubectl get deploy dashboard`
             # answers "which mode is prod in" without reading a Secret.

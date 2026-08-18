@@ -155,10 +155,14 @@ CMD ["node", "dist/apps/ingest/src/enrichment.main"]
 # why `docker-compose.yml` puts Caddy in the SAME namespace rather than
 # publishing a port here. Nothing about that is worked around in this file.
 FROM runtime AS dashboard
-# The built React bundle, placed where Plan 4's Caddy change will serve it.
-# NOTHING READS IT YET: the dashboard still renders its own UI, and putting
-# the files here now is what makes the cutover a Caddy change alone.
+# The built React bundle. The dashboard itself serves it — to signed-in
+# readers only, and only when WEB_CLIENT=react (see the Plan 4 doc for why
+# the server and not the Caddy sidecar makes that branch: Caddy can see
+# cookie presence, not session validity). WEB_DIST_DIR names the copy for
+# the config, so a deployment sets nothing but the flag — which is what
+# keeps the cutover and its rollback one environment variable, no rebuild.
 COPY --from=web-build /web/dist /srv/web
+ENV WEB_DIST_DIR=/srv/web
 EXPOSE 7717
 # Asks the app the same question a monitor would, over the loopback it actually
 # binds. `/api/health` is one of the four routes outside the session guard.
