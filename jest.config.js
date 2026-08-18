@@ -11,9 +11,23 @@ module.exports = {
   // and vanish mid-session. Without the ignore, jest runs the WHOLE SUITE
   // TWICE (5,5xx tests became 11,069) and the copy fails on untracked
   // fixtures (data/corpus) that exist only in the main tree.
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/e2e/', '/.claude/'],
+  // 'apps/web/' is the React client, and it is Vitest's. Its specs use the
+  // same `.spec.ts` suffix, so without this jest transforms them with ts-jest
+  // against the SERVER's tsconfig and runs them in `testEnvironment: 'node'`,
+  // where `document` does not exist — a red build for a suite that passes
+  // under the runner that owns it (`npm --prefix apps/web test`).
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '<rootDir>/e2e/',
+    '/.claude/',
+    '<rootDir>/apps/web/',
+  ],
   transform: { '^.+\\.(t|j)s$': 'ts-jest' },
-  collectCoverageFrom: ['apps/**/*.(t|j)s', 'libs/**/*.(t|j)s'],
+  // The negation matters as much as the two globs. `apps/**` would otherwise
+  // sweep the React client in as uncovered source — jest never runs its tests,
+  // so every line of it would count against the thresholds below and drag a
+  // healthy server suite under the bar.
+  collectCoverageFrom: ['apps/**/*.(t|j)s', 'libs/**/*.(t|j)s', '!apps/web/**'],
   coverageDirectory: './coverage',
   // The 80% bar from the project standards, enforced rather than aspirational.
   // Set just below what the suite currently measures, so it fails on a

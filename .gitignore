@@ -1,6 +1,12 @@
 node_modules/
 dist/
 coverage/
+# The web client's own tree and build output. The two lines above already match
+# at any depth, so these are redundant to git and deliberate to a reader: this
+# repository holds TWO dependency trees, and the second one is not an accident
+# somebody should be tempted to commit.
+apps/web/node_modules/
+apps/web/dist/
 .env
 # The droplet's environment file, which holds the Anthropic key, the Telegram
 # token and the Firebase pair. `docker-compose.deploy.yml` reads it; its layout

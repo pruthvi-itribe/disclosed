@@ -15,7 +15,14 @@ module.exports = {
     node: true,
     jest: true,
   },
-  ignorePatterns: ['.eslintrc.js'],
+  // `apps/web/` is linted by its OWN config (`apps/web/.eslintrc.cjs`, run by
+  // `npm --prefix apps/web run lint:ci`), which extends this file and adds the
+  // React rules. It is ignored here because the root `lint:ci` glob is
+  // `{apps,libs,tools}/**/*.ts` and would otherwise hand the client's files to
+  // a parser pointed at the root tsconfig — which excludes them, so every one
+  // would fail as "not found by the project" before a single rule ran. The
+  // rules are not relaxed; the ownership is moved.
+  ignorePatterns: ['.eslintrc.js', 'apps/web/'],
   rules: {
     '@typescript-eslint/interface-name-prefix': 'off',
     '@typescript-eslint/explicit-function-return-type': 'off',

@@ -1,0 +1,36 @@
+/*
+ * The palette and type stacks, ported verbatim from the server-rendered
+ * dashboard's `page-style.ts`.
+ *
+ * A DIFFERENT VALUE HERE IS A VISUAL CHANGE, and this rewrite has excluded
+ * those: if the React client looks different from the one it replaces, that is
+ * a bug rather than an improvement. `tokens.spec.ts` asserts the set is
+ * complete, matches the source value for value, and that nothing here reaches
+ * off-origin. The reasoning behind each value — the contrast sweep that placed
+ * --accent, the brand family from the logo tile — stays in `page-style.ts`,
+ * which is where a change would have to start.
+ *
+ * PLAIN CSS RATHER THAN A CSS MODULE, measured: a `.module.css` imported for
+ * side effects alone is treeshaken by Vite (the 2026-08-18 build emitted no
+ * CSS at all), and `:root` custom properties are global by nature — a module,
+ * whose whole job is scoping, is the wrong vehicle for them.
+ */
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #1c2430;
+  --line: #2a323d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #a78bfa;
+  --brand-1: #4338ca;
+  --brand-2: #7c3aed;
+  --brand-gradient: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+  --brand-ink: #ffffff;
+  --flash: #22d3ee;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}

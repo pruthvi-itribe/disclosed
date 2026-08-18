@@ -116,3 +116,21 @@ jobs:
       # it.
       - name: Build
         run: npm run build
+
+      # The web client is its own npm project with its own dependency tree —
+      # React and Vite never enter the server images. That costs a second
+      # install and buys a server image that does not carry a UI toolchain.
+      - name: Install web dependencies
+        run: npm --prefix apps/web ci
+
+      - name: Web lint, types, tests
+        run: |
+          npm --prefix apps/web run lint:ci
+          npm --prefix apps/web test
+
+      # BUILD THEN AUDIT, in that order: the audit reads what the build
+      # emitted, and reading a stale dist/ would pass on a bundle nobody ships.
+      - name: Web build and bundle audit
+        run: |
+          npm --prefix apps/web run build
+          npm --prefix apps/web run audit
