@@ -22,6 +22,16 @@ export interface WatchingViewProps {
    * printed 'N of 50' with a number no server sent.
    */
   readonly watchCap: number | null;
+  /**
+   * What the server LAST SAID about the whole list — the sign-in read and
+   * every toggle answer. The count line reads this rather than the roster,
+   * because this section sits in the document from sign-in (hidden, the way
+   * the old page kept it) and the count must be right before this view has
+   * ever polled: e2e stars a company on the FEED and reads #watch-count.
+   * Structurally WatchCounts; not imported, because no feature imports a
+   * feature.
+   */
+  readonly counts: { readonly used: number; readonly cap: number } | null;
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
@@ -52,6 +62,7 @@ export function WatchingView({
   watchCap,
   onOpenCompany,
   onOpenFocus,
+  counts,
   onPickGroup,
   onRoster,
   onSeen,
@@ -76,9 +87,9 @@ export function WatchingView({
       <div className="watchhead" data-ui="watching-head">
         <h2>Companies you watch</h2>
         <span id="watch-count" className="watchcount">
-          {meta === null || watchCap === null
+          {counts === null
             ? ''
-            : `${groupInt(rows.length)} of ${groupInt(watchCap)} companies watched`}
+            : `${groupInt(counts.used)} of ${groupInt(counts.cap)} companies watched`}
         </span>
       </div>
       <p
@@ -143,6 +154,7 @@ export function WatchingView({
           items={items}
           meta={meta}
           chrome={false}
+          id="watch-feed"
           filters={filters}
           todayIstDay={todayIstDay}
           previousIstDay={previousIstDay}

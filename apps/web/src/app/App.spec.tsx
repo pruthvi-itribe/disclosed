@@ -211,6 +211,20 @@ describe('App', () => {
 });
 
 describe('the Watching tab', () => {
+  // The old page kept the whole Watching section in the document from
+  // sign-in — hidden, not absent — and #watch-count updated on every toggle
+  // and on the sign-in read, before the tab was ever opened. e2e pins
+  // exactly that: star a company on the FEED, read '#watch-count'.
+  it('keeps #watch-count in the document from sign-in, fed by the reads', async () => {
+    const { container } = await renderApp();
+    const count = container.querySelector('#watch-count');
+    expect(count).not.toBeNull();
+    expect(count?.textContent).toBe('0 of 50 companies watched');
+    expect(
+      (container.querySelector('#view-watching') as HTMLElement).hidden,
+    ).toBe(true);
+  });
+
   it('survives the switch while the feed meta is still current', async () => {
     // The regression: opening Watching hands the view the FEED's meta —
     // which carries no roster — until the watchlist response lands. The

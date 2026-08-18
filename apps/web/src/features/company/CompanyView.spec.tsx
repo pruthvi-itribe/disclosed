@@ -153,10 +153,10 @@ describe('CompanyView', () => {
 
   it('lists the filings through the shared grid, without chrome', () => {
     const { container } = renderView([filing()]);
+    // The old page's container id, which e2e pins — a hedged selector here
+    // let its absence slip through to the browser suite once.
     expect(
-      container.querySelectorAll(
-        '[data-ui="company-feed"], .feed [data-ui="card"]',
-      ).length,
+      container.querySelectorAll('#company-feed [data-ui="card"]').length,
     ).toBeGreaterThan(0);
     expect(container.querySelector('#feed-info')).toBeNull();
     expect(container.querySelector('#feed-more')).toBeNull();

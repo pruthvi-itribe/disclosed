@@ -3,6 +3,7 @@ import { safeHref } from '../../shared/format/safe-href';
 import { groupInt } from '../../shared/format/group-int';
 import { TIER_TITLE, TOPIC_LABEL } from '../../shared/format/vocab';
 import { MarkedText } from '../../shared/ui/MarkedText';
+import { BriefCopyButton } from './BriefCopyButton';
 import {
   briefLede,
   BRIEF_REST_CLAIMS,
@@ -21,10 +22,7 @@ export interface BriefCardProps {
   readonly onPickTopic: (topic: string) => void;
 }
 
-/**
- * One company's day, one viewport tall. The Copy control joins the foot in
- * Plan 3 with the other clipboard surfaces.
- */
+/** One company's day, one viewport tall. */
 export function BriefCard({
   entry,
   index,
@@ -121,6 +119,10 @@ export function BriefCard({
           {f.category}
         </span>
         <span className="grow" />
+        <BriefCopyButton
+          symbol={entry.symbol}
+          texts={entry.claims.map((each) => each.claim.text)}
+        />
         {source !== null && (
           <a
             className="srclink"

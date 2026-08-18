@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   GUARDS_METADATA,
+  HEADERS_METADATA,
   METHOD_METADATA,
   PATH_METADATA,
 } from '@nestjs/common/constants';
@@ -25,6 +26,7 @@ import type { CompanyDirectory } from '../search/company-directory';
 import type { DirectorySnapshot } from '../search/directory.types';
 import { companyTerms, searchTerms } from '../search/search-terms';
 import type { EnrichmentSummaryView, SummaryView } from './dashboard.types';
+import type { WebBundle } from '../ui/web-bundle';
 
 /** Flipped by the front-door tests to choose which document `GET /` returns. */
 let signedIn = true;
@@ -37,7 +39,10 @@ let signedIn = true;
  * ask for their own, which is why this is a function rather than a flag: a flag
  * read by `beforeEach` cannot be set from inside the test that needs it.
  */
-let makeController: (admin: boolean) => DashboardController;
+let makeController: (
+  admin: boolean,
+  webBundle?: WebBundle | null,
+) => DashboardController;
 
 const SIGNED_IN: Signedin = {
   userId: 'u1',
@@ -55,6 +60,17 @@ const SIGNED_IN: Signedin = {
  * unit test that calls the method directly proves nothing about whether the
  * route is protected — it would pass just as happily on an unguarded one.
  */
+/** The value a `@Header` decorator stamped on a handler, or undefined. */
+const headerOn = (handler: string, name: string): string | undefined =>
+  (
+    Reflect.getMetadata(
+      HEADERS_METADATA,
+      (DashboardController.prototype as unknown as Record<string, object>)[
+        handler
+      ],
+    ) as readonly { name: string; value: string }[] | undefined
+  )?.find((header) => header.name === name)?.value;
+
 const guardsOn = (handler: string): unknown[] =>
   (Reflect.getMetadata(
     GUARDS_METADATA,
@@ -251,13 +267,14 @@ beforeEach(() => {
     resolve: async () => (signedIn ? SIGNED_IN : null),
   } as unknown as SessionService;
 
-  makeController = (admin: boolean) =>
+  makeController = (admin: boolean, webBundle: WebBundle | null = null) =>
     new DashboardController(
       service,
       directory,
       sessions,
       { mode: 'local', firebase: null, missing: [] },
       admin,
+      webBundle,
     );
 
   controller = makeController(true);
@@ -379,6 +396,66 @@ describe('DashboardController — the front door', () => {
     // here would make an anonymous visitor's first impression of this product a
     // JSON error body.
     expect(guardsOn('getPage')).toEqual([]);
+  });
+});
+
+describe('DashboardController — the cutover front door', () => {
+  // A hand-built bundle, not a real dist: this file is about the HTTP layer's
+  // branching, and the loader has its own suite against a real directory.
+  const BUNDLE: WebBundle = {
+    indexHtml: '<!doctype html>\n<div id="root"></div>',
+    assets: new Map([
+      [
+        'index-B_3N9wRR.js',
+        {
+          content: Buffer.from('js;'),
+          type: 'text/javascript; charset=utf-8',
+        },
+      ],
+    ]),
+  };
+
+  it('serves the React document to somebody signed in, verbatim', async () => {
+    signedIn = true;
+    const html = await makeController(true, BUNDLE).getPage({} as Request);
+
+    expect(html).toBe(BUNDLE.indexHtml);
+  });
+
+  it('the signed-out answer is byte-identical in both modes', async () => {
+    // The cutover changes what a SIGNED-IN reader is served and nothing
+    // else: the landing page is the same document either side of the flag.
+    signedIn = false;
+    const react = await makeController(true, BUNDLE).getPage({} as Request);
+    const server = await makeController(true, null).getPage({} as Request);
+
+    expect(react).toBe(server);
+    expect(react).toContain('These are examples, not filings.');
+  });
+
+  it('serves a bundle asset with its type and the immutable header', () => {
+    const file = makeController(true, BUNDLE).getWebAsset('index-B_3N9wRR.js');
+
+    expect(file.getHeaders().type).toBe('text/javascript; charset=utf-8');
+    // The name carries the content hash — a new deploy is a new name — so
+    // the asset may be held privately for a year where the JSON routes
+    // cannot be held at all.
+    expect(headerOn('getWebAsset', 'Cache-Control')).toBe(
+      'private, max-age=31536000, immutable',
+    );
+  });
+
+  it('puts the assets behind the session, like every other read', () => {
+    expect(guardsOn('getWebAsset')).toEqual([SessionGuard]);
+  });
+
+  it('answers 404 for a name outside the boot-time map, in either mode', () => {
+    expect(() =>
+      makeController(true, BUNDLE).getWebAsset('../../etc/passwd'),
+    ).toThrow(NotFoundException);
+    expect(() => makeController(true, null).getWebAsset('anything.js')).toThrow(
+      NotFoundException,
+    );
   });
 });
 
