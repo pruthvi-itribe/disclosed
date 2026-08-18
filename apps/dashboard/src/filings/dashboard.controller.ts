@@ -4,6 +4,7 @@ import {
   Header,
   Inject,
   NotFoundException,
+  Param,
   Query,
   Req,
   Res,
@@ -27,6 +28,7 @@ import {
   type RawQuery,
 } from '../http/query-params';
 import { BRAND_RASTER } from '../ui/brand-raster';
+import { WEB_BUNDLE, type WebBundle } from '../ui/web-bundle';
 import { renderAuthPage } from '../ui/auth-page';
 import { renderLandingPage } from '../ui/landing';
 import { renderDashboardPage } from '../ui/page';
@@ -133,6 +135,12 @@ export class DashboardController {
      * routes still answered would be the surface removed and the data left.
      */
     @Inject(ADMIN_ENABLED) private readonly adminEnabled: boolean,
+    /**
+     * The React bundle when `WEB_CLIENT=react`, `null` in server mode — one
+     * signal for both the front door's branch and the assets route, so the
+     * two cannot disagree. Loaded once at boot; see `ui/web-bundle.ts`.
+     */
+    @Inject(WEB_BUNDLE) private readonly webBundle: WebBundle | null,
   ) {}
 
   /**
@@ -165,9 +173,35 @@ export class DashboardController {
   @Header('Cache-Control', 'no-store')
   async getPage(@Req() request: Request): Promise<string> {
     const who = await this.sessions.resolve(request);
-    return who === null
-      ? renderLandingPage(this.authConfig)
+    if (who === null) return renderLandingPage(this.authConfig);
+    // THE CUTOVER: a signed-in reader gets the React document when the
+    // bundle was loaded (WEB_CLIENT=react), the server-rendered page
+    // otherwise. The signed-out branch above is identical in both modes —
+    // the flag changes what a reader is served, never what a visitor sees.
+    return this.webBundle !== null
+      ? this.webBundle.indexHtml
       : renderDashboardPage(this.adminEnabled);
+  }
+
+  /**
+   * The React bundle's two hashed assets, from the boot-time map and nowhere
+   * else — a name outside it is a 404, which is what makes path traversal a
+   * non-question. Session-guarded like `brand/logo.png`: the only document
+   * that references these is served to somebody already signed in.
+   *
+   * CACHED FOR A YEAR, WHICH NOTHING ELSE HERE IS: the filename carries the
+   * content hash, so a new deploy is a new name and a held copy can never be
+   * stale. `private` keeps shared caches out, same as the logo.
+   */
+  @Get('assets/:file')
+  @Header('Cache-Control', 'private, max-age=31536000, immutable')
+  @UseGuards(SessionGuard)
+  getWebAsset(@Param('file') file: string): StreamableFile {
+    const asset = this.webBundle?.assets.get(file);
+    if (asset === undefined) {
+      throw new NotFoundException('No such asset in the web bundle.');
+    }
+    return new StreamableFile(asset.content, { type: asset.type });
   }
 
   /**

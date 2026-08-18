@@ -27,6 +27,7 @@ import {
 } from '@app/accounts';
 import { FilingSchema, type FilingDocument } from '@app/filings';
 import { ApiErrorFilter } from './auth/api-error';
+import { WEB_BUNDLE, loadWebBundle } from './ui/web-bundle';
 import { AuthController } from './auth/auth.controller';
 import { clientKey, type ClientAddressed } from './auth/client-key';
 import { AuthService } from './auth/auth.service';
@@ -310,6 +311,22 @@ export const FILING_MODEL = 'Filing';
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
         config.getOrThrow<boolean>('adminEnabled'),
+    },
+    {
+      /**
+       * THE REACT BUNDLE, OR NOTHING AT ALL — the cutover's one signal.
+       *
+       * Loaded eagerly at boot in react mode, so a flag flipped against a
+       * missing dist stops the process with a sentence in the startup log
+       * rather than 500ing the first reader. `null` is the configured server
+       * mode, in which the loader never touches disk. See `ui/web-bundle.ts`.
+       */
+      provide: WEB_BUNDLE,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        config.getOrThrow<'server' | 'react'>('webClient') === 'react'
+          ? loadWebBundle(config.getOrThrow<string>('webDistDir'))
+          : null,
     },
     {
       /**
