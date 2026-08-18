@@ -27,6 +27,15 @@ const emptyHint = (filters: FilterState): string => {
     );
   }
   if (filters.onlyInsights) {
+    // Named with its NUMBER: the picked company is the one case where the
+    // page can say exactly what the toggle is hiding.
+    if (filters.picked !== null && filters.picked.kind === 'company') {
+      return (
+        `${filters.picked.head} has ${groupInt(filters.picked.filings)} filing(s),` +
+        ' and none of them carries a claim matched against the source document.' +
+        ' Untick the filter above to see them.'
+      );
+    }
     return (
       'Only filings with a claim matched against the source document are shown.' +
       ' Untick the filter above to see everything that arrived.'

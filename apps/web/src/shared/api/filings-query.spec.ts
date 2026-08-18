@@ -83,3 +83,16 @@ describe('the group filter', () => {
     );
   });
 });
+
+describe('the category filter', () => {
+  it('serialises category between symbol and group, as query() did', () => {
+    const picked = {
+      ...INITIAL_FILTERS,
+      category: 'Stock Split',
+      group: 'results',
+    };
+    expect(filingsQuery(picked, 'feed', null)).toBe(
+      '/api/filings?limit=25&offset=0&tier=verified&category=Stock%20Split&group=results',
+    );
+  });
+});

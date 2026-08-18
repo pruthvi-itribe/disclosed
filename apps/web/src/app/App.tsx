@@ -16,6 +16,8 @@ import { BriefView } from '../features/brief/BriefView';
 import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
+import { SearchBox } from '../features/search/SearchBox';
+import { SearchNote } from '../features/search/SearchNote';
 import type { WatchlistFeedMeta } from '../shared/types/account';
 
 export interface AppProps {
@@ -51,6 +53,9 @@ export function App({
     initialViewState,
   );
   const [focused, setFocused] = useState<FilingView | null>(null);
+  // What the search input SHOWS — not yet a filter: q becomes one on Enter,
+  // and a pick writes the head here the way the old page wrote the input.
+  const [searchText, setSearchText] = useState('');
 
   const { filings, meta, summary, live, failure, refresh } = usePoll({
     apiGet,
@@ -163,6 +168,28 @@ export function App({
         <Hero summary={summary} />
         <FeedControls
           filters={filters}
+          search={
+            <SearchBox
+              text={searchText}
+              onTextChange={setSearchText}
+              onTyped={() => dispatchFilters({ type: 'undoPick' })}
+              apiGet={apiGet}
+              onApply={(item) =>
+                dispatchFilters({ type: 'applySuggestion', item })
+              }
+              onSubmit={(q) => dispatchFilters({ type: 'submitSearch', q })}
+            />
+          }
+          note={
+            <SearchNote
+              picked={filters.picked}
+              q={filters.q}
+              onClear={() => {
+                dispatchFilters({ type: 'clearSearch' });
+                setSearchText('');
+              }}
+            />
+          }
           onChip={(topic, plans) =>
             dispatchFilters({ type: 'chip', topic, plans })
           }

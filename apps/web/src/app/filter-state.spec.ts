@@ -9,6 +9,8 @@ describe('the filter reducer', () => {
       offset: 0,
       q: '',
       symbol: '',
+      category: '',
+      picked: null,
       topic: '',
       group: '',
       plans: false,
@@ -91,5 +93,103 @@ describe('the group tag', () => {
       group: 'results',
     });
     expect(next.group).toBe('');
+  });
+});
+
+describe('search and the picked suggestion', () => {
+  it('starts with no query, no category, no pick', () => {
+    expect(INITIAL_FILTERS.q).toBe('');
+    expect(INITIAL_FILTERS.category).toBe('');
+    expect(INITIAL_FILTERS.picked).toBeNull();
+  });
+
+  it('applying a company suggestion sets the exact symbol', () => {
+    const next = filterReducer(
+      { ...INITIAL_FILTERS, q: 'brit', offset: 25 },
+      {
+        type: 'applySuggestion',
+        item: {
+          kind: 'company',
+          value: 'BRITANNIA',
+          head: 'BRITANNIA',
+          name: 'Britannia Industries',
+          filings: 120,
+        },
+      },
+    );
+    expect(next.symbol).toBe('BRITANNIA');
+    expect(next.q).toBe('');
+    expect(next.offset).toBe(0);
+    expect(next.picked?.kind).toBe('company');
+  });
+
+  it('applying a category suggestion sets the category', () => {
+    const next = filterReducer(INITIAL_FILTERS, {
+      type: 'applySuggestion',
+      item: {
+        kind: 'category',
+        value: 'Stock Split',
+        head: 'Stock Split',
+        name: '',
+        filings: 8,
+      },
+    });
+    expect(next.category).toBe('Stock Split');
+  });
+
+  // undoPicked reverses ONLY what a pick did — a blanket reset would clear
+  // a group set from the card's tag.
+  it('a new pick undoes exactly the previous one', () => {
+    const company = filterReducer(INITIAL_FILTERS, {
+      type: 'applySuggestion',
+      item: {
+        kind: 'company',
+        value: 'TCS',
+        head: 'TCS',
+        name: 'TCS',
+        filings: 9,
+      },
+    });
+    const grouped = { ...company, group: 'results' };
+    const next = filterReducer(grouped, {
+      type: 'applySuggestion',
+      item: {
+        kind: 'group',
+        value: 'capital',
+        head: 'Capital',
+        name: '',
+        filings: 30,
+      },
+    });
+    expect(next.symbol).toBe('');
+    expect(next.group).toBe('capital');
+  });
+
+  it('typing a free-text search undoes the pick and sets q', () => {
+    const picked = filterReducer(INITIAL_FILTERS, {
+      type: 'applySuggestion',
+      item: {
+        kind: 'company',
+        value: 'TCS',
+        head: 'TCS',
+        name: 'TCS',
+        filings: 9,
+      },
+    });
+    const next = filterReducer(picked, { type: 'submitSearch', q: 'dividend' });
+    expect(next.symbol).toBe('');
+    expect(next.picked).toBeNull();
+    expect(next.q).toBe('dividend');
+    expect(next.offset).toBe(0);
+  });
+
+  it('clearing the search resets query and pick together', () => {
+    const searched = filterReducer(INITIAL_FILTERS, {
+      type: 'submitSearch',
+      q: 'dividend',
+    });
+    const next = filterReducer(searched, { type: 'clearSearch' });
+    expect(next.q).toBe('');
+    expect(next.picked).toBeNull();
   });
 });

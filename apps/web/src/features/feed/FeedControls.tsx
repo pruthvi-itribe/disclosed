@@ -27,16 +27,23 @@ const TOPIC_CHIPS: readonly (readonly [string, string])[] = [
 
 export function FeedControls({
   filters,
+  search,
+  note,
   onChip,
   onOnlyInsights,
 }: {
   readonly filters: FilterState;
+  /** The search box, slotted in so this file owns no fetch. */
+  readonly search?: JSX.Element;
+  /** The search note, under the row the way the old page places it. */
+  readonly note?: JSX.Element;
   readonly onChip: (topic: string, plans: boolean) => void;
   readonly onOnlyInsights: (value: boolean) => void;
 }): JSX.Element {
   return (
     <div className="feedbar" data-ui="feed-controls">
       <div className="feedtop">
+        {search}
         <label className="onlyinsights">
           <input
             id="only-insights"
@@ -71,6 +78,7 @@ export function FeedControls({
           Plans
         </button>
       </div>
+      {note}
     </div>
   );
 }
