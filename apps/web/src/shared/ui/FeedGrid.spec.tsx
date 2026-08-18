@@ -134,6 +134,18 @@ describe('FeedGrid', () => {
     );
   });
 
+  // "Nothing was found" and "nothing was looked for" are different facts
+  // and must not render the same. Before the first answer (meta === null)
+  // the grid draws nothing, the way the old page's #feed started empty.
+  // Found 2026-08-18: a cold load flashed 'Nothing verifiable yet' before
+  // anything was asked — and kept it up as a false statement whenever the
+  // first request failed.
+  it('draws no empty-state prose before the first answer', () => {
+    const { container } = renderGrid([], null);
+    expect(container.querySelector('.emptyfeed')).toBeNull();
+    expect(container.querySelector('#feed')?.textContent).toBe('');
+  });
+
   it('the two empty states are two different sentences', () => {
     const { container } = renderGrid([], meta({ total: 0, returned: 0 }));
     expect(container.querySelector('.emptytitle')?.textContent).toBe(

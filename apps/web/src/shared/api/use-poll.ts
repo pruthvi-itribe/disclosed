@@ -230,7 +230,20 @@ export const usePoll = ({
         ? 'down'
         : 'stale';
 
-  const shown = pages[company !== null ? 'company' : view];
+  // THE COMPANY CONTAINER IS THE ONE WHOSE CHROME COMES FROM STATE: the
+  // header prints the symbol the reader just opened while the slot still
+  // holds the PREVIOUS company's answer — RELIANCE's name, industry and
+  // filings under TCS's symbol, an attribution mismatch. Until the slot
+  // answers the current ask it is withheld. The other containers keep
+  // stale data on purpose: a filter change leaves the old rows visible
+  // until the answer lands, which is the old client's behavior and is
+  // self-consistent.
+  const shown =
+    company !== null
+      ? heldRef.current.company === query
+        ? pages.company
+        : undefined
+      : pages[view];
   return {
     filings: shown?.data ?? null,
     meta: shown?.meta ?? null,

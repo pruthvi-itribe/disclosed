@@ -716,7 +716,12 @@ const openDeck = async (page: Page): Promise<void> => {
   await expect(page.locator('#live-text')).not.toHaveText('connecting');
   await page.locator('#tab-brief').click();
   await expect(page.locator('#brief-deck')).toBeVisible();
-  await expect(page.locator('#brief-deck .bcard').first()).toBeVisible();
+  // A COMPANY card, not any .bcard: both clients show the deck with its
+  // blank cover while the window is still being fetched, so the cover
+  // satisfies a bare .bcard wait before the rail or the counts exist.
+  await expect(
+    page.locator('#brief-deck [data-ui="brief-card"]').first(),
+  ).toBeVisible();
 };
 
 test.describe('the deck above 900px', () => {

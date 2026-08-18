@@ -40,6 +40,12 @@ export const useMe = ({ apiSend, onReload }: UseMeArgs): MeState => {
   const [unread, setUnread] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   const reloadedRef = useRef(false);
+  // Responses do not arrive in the order requests were sent: the mount read
+  // and a sign-out-failure refreshMe can be in flight together, and the
+  // slower first ask landing last would overwrite the fresher me and unread
+  // with stale ones. Same shape as usePoll's seq — claimed before dispatch,
+  // a superseded answer is discarded whole.
+  const seqRef = useRef(0);
 
   const reloadOnce = useCallback(() => {
     if (reloadedRef.current) return;
@@ -48,8 +54,10 @@ export const useMe = ({ apiSend, onReload }: UseMeArgs): MeState => {
   }, [onReload]);
 
   const refreshMe = useCallback(() => {
+    const seq = ++seqRef.current;
     apiSend<MeView>('/api/me', 'GET').then(
       (body) => {
+        if (seq !== seqRef.current) return;
         setMe(body.data);
         if (!body.data.signedIn) {
           reloadOnce();
@@ -61,6 +69,7 @@ export const useMe = ({ apiSend, onReload }: UseMeArgs): MeState => {
         setUnread(body.data.unread ?? 0);
       },
       (error: unknown) => {
+        if (seq !== seqRef.current) return;
         // Deliberately not swallowed — the reader is told.
         const text = error instanceof Error ? error.message : String(error);
         setFailure(`Could not read your account: ${text}`);

@@ -192,6 +192,25 @@ describe('BriefView', () => {
     expect(rail.querySelectorAll('[data-ui="brief-rail-seg"]')).toHaveLength(3);
   });
 
+  // "Nothing was found" and "nothing was looked for" are different facts.
+  // Before the first answer the deck shows its blank cover — the old page's
+  // served DOM — never the empty sentence, whose 'last 0 filings' would be
+  // a false claim about a window nobody has asked for yet.
+  it('draws neither a zero window nor the empty sentence before the first answer', () => {
+    const h = handlers();
+    const { container } = render(
+      <BriefView items={[]} meta={null} summary={null} {...h} />,
+    );
+    expect(
+      (container.querySelector('#brief-empty') as HTMLElement).hidden,
+    ).toBe(true);
+    expect((container.querySelector('#brief-deck') as HTMLElement).hidden).toBe(
+      false,
+    );
+    expect(container.querySelector('#brief-cover-rule')?.textContent).toBe('');
+    expect(container.querySelector('#brief-end-line')?.textContent).toBe('');
+  });
+
   it('shows the empty sentence with the real window instead of an empty deck', () => {
     const { container } = renderBrief([]);
     const empty = container.querySelector('#brief-empty') as HTMLElement;

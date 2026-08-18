@@ -44,6 +44,37 @@ describe('useMe', () => {
     expect(result.current.unread).toBe(5);
   });
 
+  // Responses do not arrive in the order requests were sent: the mount read
+  // and a sign-out-failure refreshMe can be in flight together, and the
+  // slower FIRST ask landing last would overwrite the fresher answer with a
+  // stale me and a stale unread count.
+  it('discards an out-of-order me answer', async () => {
+    let releaseFirst: (() => void) | null = null;
+    const STALE = { ...SIGNED_IN, unread: 9, watchCount: 1 };
+    const apiSend = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseFirst = () => resolve(envelope(STALE));
+          }),
+      )
+      .mockResolvedValue(envelope(SIGNED_IN));
+    const { result } = renderMe(apiSend);
+    act(() => {
+      result.current.refreshMe();
+    });
+    await flush();
+    expect(result.current.me).toEqual(SIGNED_IN);
+
+    await act(async () => {
+      releaseFirst?.();
+      await Promise.resolve();
+    });
+    expect(result.current.me).toEqual(SIGNED_IN);
+    expect(result.current.unread).toBe(5);
+  });
+
   // api/me answers 200 signed-out, never 401 — and signed-out is a reload,
   // not a repaint: there is no repaint-to-signed-out path at all.
   it('a signed-out answer reloads once, latched', async () => {

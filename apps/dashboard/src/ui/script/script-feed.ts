@@ -450,7 +450,12 @@ export const SCRIPT_FEED = `
     }
 
     if (state.onlyInsights) {
-      if (picked && picked.kind === 'company') {
+      // Named with its NUMBER - but ONLY while the toggle is the sole other
+      // narrowing. With a group or topic ANDed in, that filter may be what
+      // emptied the feed, and stating 'none of them carries a matched claim'
+      // would be printing a false claim of our own about a company that may
+      // have plenty.
+      if (picked && picked.kind === 'company' && !state.group && !state.topic) {
         return picked.head + ' has ' + groupInt(picked.filings)
           + ' filing(s), and none of them carries a claim matched against the source document.'
           + ' Untick the filter above to see them.';
@@ -581,6 +586,15 @@ export const SCRIPT_FEED = `
       if (!when) continue;
       var text = relativeTime(at);
       if (when.textContent !== text) when.textContent = text;
+    }
+    // The company header's "last filed" is the same browser-clock relative
+    // time the cards carry, read off the same attribute - 'renderCompany'
+    // writes it and removes it when there is nothing to date. Without this
+    // the stat froze while the cards beneath it kept aging.
+    var last = root.querySelector('#co-last[data-at]');
+    if (last) {
+      var lastText = relativeTime(last.getAttribute('data-at'));
+      if (last.textContent !== lastText) last.textContent = lastText;
     }
   }
 

@@ -32,7 +32,8 @@ const emptyHint = (filters: FilterState): string => {
     // toggle is the sole other narrowing. With a group or topic ANDed in,
     // that filter may be what emptied the feed, and stating 'none of them
     // carries a matched claim' would be printing a false claim of our own.
-    // (The old client's emptyHint has the same defect; not ported.)
+    // (The old client's emptyHint had the same defect until 2026-08-18;
+    // both now carry this gate.)
     if (
       filters.picked !== null &&
       filters.picked.kind === 'company' &&
@@ -141,7 +142,12 @@ export function FeedGrid({
       )
     : 0;
 
-  const empty = items.length === 0;
+  // "Nothing was found" and "nothing was looked for" must not render the
+  // same: before the first answer (meta === null) the grid draws nothing,
+  // the way the old page's #feed started empty — never the empty-state
+  // prose, which would be a false statement about a question not yet asked
+  // and would STAY up if the first request failed.
+  const empty = items.length === 0 && meta !== null;
 
   let lastBucket: string | null = null;
   const children: JSX.Element[] = [];

@@ -213,18 +213,24 @@ export const SCRIPT_SUGGEST = `
     }, SUGGEST_DEBOUNCE_MS);
   }
 
-  // Undoes exactly what picking a suggestion did, and nothing else. A blanket
-  // reset here would clear a category the reader had chosen from the Admin
-  // panel, which the search box has no business touching.
+  // Undoes exactly what picking a suggestion did, and nothing else - which
+  // needs a VALUE check, not just a kind check: Admin's selects write the
+  // same fields, so after a pick was overwritten there the field no longer
+  // holds what the pick set and clearing it would wipe a filter the reader
+  // chose elsewhere. Each field is cleared only while it still holds the
+  // picked value. The React client's undoPicked carries the same rule;
+  // script-suggest.spec.ts runs this function against both cases.
   function undoPicked() {
     var picked = state.picked;
     if (!picked) return;
-    if (picked.kind === 'company') state.symbol = '';
-    if (picked.kind === 'category') {
+    if (picked.kind === 'company' && state.symbol === picked.value) {
+      state.symbol = '';
+    }
+    if (picked.kind === 'category' && state.category === picked.value) {
       state.category = '';
       setControl('category', '');
     }
-    if (picked.kind === 'group') {
+    if (picked.kind === 'group' && state.group === picked.value) {
       state.group = '';
       syncChips();
     }

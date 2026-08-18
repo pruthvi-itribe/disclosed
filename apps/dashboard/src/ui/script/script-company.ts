@@ -607,7 +607,18 @@ export const SCRIPT_COMPANY = `
     }
     setText('co-filings', groupInt(meta.total));
     setText('co-verified', groupInt(verified));
-    setText('co-last', items.length > 0 ? relativeTime(items[0].disseminatedAt) : '—');
+    // The timestamp is written onto the stat the way every card carries its
+    // 'data-at', so 'touchFeedTimes' can keep it aging on the 304 ticks that
+    // skip this render - without it the cards below said "34 min ago" under
+    // a header still saying "3 min ago" after half an hour on a quiet page.
+    var lastEl = el('co-last');
+    if (items.length > 0) {
+      lastEl.setAttribute('data-at', items[0].disseminatedAt);
+      lastEl.textContent = relativeTime(items[0].disseminatedAt);
+    } else {
+      lastEl.removeAttribute('data-at');
+      lastEl.textContent = '—';
+    }
 
     // THE COVERAGE LINE, and it is the first thing that tells a reader whether
     // anything below it means anything. It is also the ONLY thing left on this

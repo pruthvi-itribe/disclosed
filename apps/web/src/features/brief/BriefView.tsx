@@ -89,7 +89,11 @@ export function BriefView({
   const shown = candidates.slice(0, BRIEF_MAX_CARDS);
   const rest = candidates.length - shown.length;
   const signature = briefSignature(shown);
-  const empty = candidates.length === 0;
+  // Only a real zero-row ANSWER is empty. Before the first answer the deck
+  // shows its blank cover — the old page's served DOM — never the empty
+  // sentence, whose "last 0 filings" would be a false claim about a window
+  // nobody has asked for yet.
+  const empty = candidates.length === 0 && meta !== null;
 
   /**
    * THE PAGER'S STATE COMES FROM THE SCROLL POSITION, not from the rail: the
@@ -204,7 +208,7 @@ export function BriefView({
       >
         <BriefCover
           summary={summary}
-          seen={seen}
+          seen={meta === null ? null : seen}
           companies={candidates.length}
         />
         {shown.map((entry, i) => (
@@ -220,7 +224,7 @@ export function BriefView({
         <article id="brief-end" className="bcard bend">
           <h2 className="btitle">That is the day.</h2>
           <div id="brief-end-line" className="bendline">
-            {empty
+            {meta === null || empty
               ? ''
               : rest === 0
                 ? `${groupInt(shown.length)} of the ${groupInt(candidates.length)} companies in this window filed something a document verified, and every one of them is in this deck.`

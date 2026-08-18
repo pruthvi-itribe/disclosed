@@ -236,7 +236,13 @@ export const SCRIPT_ACCOUNT = `
   // open, and only while it is open - the Feed and Company tabs poll
   // anonymously and touch no session.
   function refreshWatching(fresh) {
-    return postJson('api/watchlist/feed?limit=' + state.limit + '&offset=0', 'GET', undefined)
+    // CLAMPED TO THE SERVER'S OWN CAP. The watchlist feed's bounds reader
+    // THROWS a 400 above 200 rather than clamping, and the feed's limit
+    // grows through 500 just by scrolling - sent raw, the first Watching
+    // poll after that growth answered 400 every four seconds and the view
+    // was dead for the rest of the session. 200 restates MAX_WATCH_LIMIT in
+    // watchlist.controller.ts; script-account.spec.ts pins both sides.
+    return postJson('api/watchlist/feed?limit=' + Math.min(state.limit, 200) + '&offset=0', 'GET', undefined)
       .then(function (b) {
         if (!fresh()) return;
         renderWatching(b.data, b.meta);
