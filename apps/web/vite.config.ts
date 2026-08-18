@@ -31,7 +31,17 @@ export default defineConfig({
     // per-host rather than per-port, so the session cookie set by the
     // server-rendered sign-in rides along.
     proxy: {
-      '/api': 'http://127.0.0.1:7717',
+      // The Origin header is REWRITTEN to the dashboard's own, and that is
+      // dev telling the truth rather than spoofing: the OriginGuard is a
+      // CSRF control comparing against the server's origin, the browser
+      // stamps the Vite port, and by the time the request leaves this proxy
+      // it genuinely is same-origin traffic. In production the bundle is
+      // served from the dashboard's origin and no rewrite exists. Found
+      // live on 2026-08-18: every watch toggle 403'd BAD_ORIGIN in dev.
+      '/api': {
+        target: 'http://127.0.0.1:7717',
+        headers: { origin: 'http://127.0.0.1:7717' },
+      },
       // The share card's raster mark — same-origin in production, and
       // without this dev always falls back to the favicon branch.
       '/brand': 'http://127.0.0.1:7717',
