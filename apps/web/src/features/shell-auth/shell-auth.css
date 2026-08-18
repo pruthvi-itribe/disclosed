@@ -4,26 +4,47 @@
  * come from tokens.css like every other surface; nothing here is a port,
  * because the web has no equivalent page — that is the point of it.
  */
+/* The door owns the viewport, the way body.briefing does for the deck:
+   the feed page's body padding (16px 20px 32px) otherwise adds to the
+   full-height box below and the door scrolls by exactly that much.
+   main.tsx sets the class when it mounts the door. */
+body.shelldoor {
+  padding: 0;
+}
+
 .shellauth {
   /* The insets are already spent as html's padding in the shell, so a bare
-     100dvh here overflowed by exactly the notch heights and the door
-     scrolled for nothing. In a browser both env() values are 0 and this is
-     100dvh unchanged. */
+     100dvh here overflowed by exactly the island/notch heights and the
+     door scrolled for nothing. In a browser both env() values are 0 and
+     this is 100dvh unchanged. */
   min-height: calc(
     100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)
   );
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 18px;
-  padding: 24px;
+  padding: 12px 24px 8px;
   background: var(--bg);
   color: var(--text);
+}
+
+/* ISLAND-FIRST, NOT CENTER-FLOATED. The brand pins below the island with
+   its own clearance (html's inset padding handles the island itself), the
+   story centers in whatever height remains, and the door anchors at the
+   bottom where a thumb already is — so no element can slide under the
+   island, with or without the keyboard. */
+.shellauth .doorstory {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  min-height: 0;
 }
 
 .shellauth .doorbrand {
   display: flex;
   justify-content: center;
+  padding-top: 18px;
 }
 
 .shellauth .slides {
@@ -75,7 +96,7 @@
   gap: 10px;
   max-width: 340px;
   width: 100%;
-  margin: 8px auto 0;
+  margin: 12px auto 16px;
 }
 .shellauth .doorcard form {
   display: flex;

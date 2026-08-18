@@ -16,6 +16,7 @@ describe('SignInView', () => {
         apiSend={vi.fn() as never}
         onSignedIn={vi.fn()}
         signInWithGoogle={null}
+        bearerSink={null}
       />,
     );
     const slides = container.querySelectorAll('.slide');
@@ -39,6 +40,7 @@ describe('SignInView', () => {
         apiSend={apiSend as never}
         onSignedIn={onSignedIn}
         signInWithGoogle={null}
+        bearerSink={null}
       />,
     );
 
@@ -73,6 +75,7 @@ describe('SignInView', () => {
         apiSend={apiSend as never}
         onSignedIn={vi.fn()}
         signInWithGoogle={null}
+        bearerSink={null}
       />,
     );
 
@@ -96,6 +99,7 @@ describe('SignInView', () => {
         apiSend={apiSend as never}
         onSignedIn={onSignedIn}
         signInWithGoogle={() => Promise.resolve('id-token-1')}
+        bearerSink={null}
       />,
     );
 
@@ -105,6 +109,37 @@ describe('SignInView', () => {
     expect(apiSend).toHaveBeenCalledWith('/api/auth/firebase', 'POST', {
       idToken: 'id-token-1',
     });
+    expect(onSignedIn).toHaveBeenCalledOnce();
+  });
+
+  // The shell's transport: with a sink wired, both exchanges name bearer
+  // in the body and the issued token lands in the sink before the reboot —
+  // the cookie is inert cross-scheme (shell-token.ts records why).
+  it('asks for bearer and hands the token to the sink', async () => {
+    const apiSend = vi
+      .fn()
+      .mockResolvedValue({ data: { sessionToken: 'tok-9' } });
+    const onSignedIn = vi.fn();
+    const bearerSink = vi.fn();
+    const { container } = render(
+      <SignInView
+        brand={<span data-ui="brand-stub" />}
+        authMode="firebase"
+        apiSend={apiSend as never}
+        onSignedIn={onSignedIn}
+        signInWithGoogle={() => Promise.resolve('id-token-1')}
+        bearerSink={bearerSink}
+      />,
+    );
+
+    fireEvent.click(container.querySelector('#shell-google') as Element);
+    await flush();
+
+    expect(apiSend).toHaveBeenCalledWith('/api/auth/firebase', 'POST', {
+      idToken: 'id-token-1',
+      transport: 'bearer',
+    });
+    expect(bearerSink).toHaveBeenCalledWith('tok-9');
     expect(onSignedIn).toHaveBeenCalledOnce();
   });
 
@@ -118,6 +153,7 @@ describe('SignInView', () => {
         apiSend={vi.fn() as never}
         onSignedIn={vi.fn()}
         signInWithGoogle={null}
+        bearerSink={null}
       />,
     );
     fireEvent.click(container.querySelector('#shell-google') as Element);

@@ -134,7 +134,9 @@ export class AuthController {
     @Body() body: FirebaseTokenDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<ApiEnvelope<{ signedIn: true; email: string }>> {
+  ): Promise<
+    ApiEnvelope<{ signedIn: true; email: string; sessionToken?: string }>
+  > {
     if (this.firebase === null) {
       // Two different situations, and the message distinguishes them because
       // both are operator-facing rather than attacker-facing: the keys are
@@ -149,8 +151,16 @@ export class AuthController {
     }
 
     const user = await this.firebase.signIn(body.idToken);
-    await this.sessions.open(user.id, request, response);
-    return ok({ signedIn: true as const, email: user.email });
+    const opened = await this.sessions.open(user.id, request, response);
+    // The token rides the body ONLY when bearer was asked for — the shell's
+    // transport, because SameSite=Lax rightly keeps the cookie from crossing
+    // capacitor:// to this origin. A browser client never asks, so no
+    // browser response ever hands the session to JavaScript.
+    return ok({
+      signedIn: true as const,
+      email: user.email,
+      ...(body.transport === 'bearer' ? { sessionToken: opened.token } : {}),
+    });
   }
 
   /**
@@ -188,11 +198,18 @@ export class AuthController {
     @Body() body: CredentialsDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<ApiEnvelope<{ signedIn: true; email: string }>> {
+  ): Promise<
+    ApiEnvelope<{ signedIn: true; email: string; sessionToken?: string }>
+  > {
     this.requireLocalMode();
     const user = await this.auth.signIn(body.email, body.password);
-    await this.sessions.open(user.id, request, response);
-    return ok({ signedIn: true as const, email: user.email });
+    const opened = await this.sessions.open(user.id, request, response);
+    // See the firebase route: bearer-on-request, never volunteered.
+    return ok({
+      signedIn: true as const,
+      email: user.email,
+      ...(body.transport === 'bearer' ? { sessionToken: opened.token } : {}),
+    });
   }
 
   /**

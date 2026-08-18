@@ -54,6 +54,14 @@ WORKDIR /web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY apps/web ./
+# The client's API types are MIRRORED BY IMPORT from the server's own type
+# file (type-only-imports.spec.ts holds that rule), so the type check needs
+# that one file where the relative import resolves. It is 602 lines of pure
+# type declarations with no imports of its own, and nothing of it survives
+# into the bundle. Without this line the first dispatched deploy failed:
+# every API type collapsed to any and tsc reported the cascade, not the
+# cause (2026-08-18).
+COPY apps/dashboard/src/filings/dashboard.types.ts /dashboard/src/filings/dashboard.types.ts
 # `tsc --noEmit && vite build` — the same two passes CI runs, then the same
 # audit CI runs, so an image cannot carry a bundle CI never cleared.
 RUN npm run build && npm run audit
