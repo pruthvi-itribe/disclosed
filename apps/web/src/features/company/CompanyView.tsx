@@ -3,6 +3,7 @@ import type { FilterState } from '../../app/filter-state';
 import { groupInt } from '../../shared/format/group-int';
 import { relativeTime } from '../../shared/format/relative-time';
 import { FeedGrid } from '../../shared/ui/FeedGrid';
+import { WatchButton, type WatchControls } from '../../shared/ui/WatchButton';
 import { coverageLine } from './company-model';
 import { Figures } from './Figures';
 import { NextUp } from './NextUp';
@@ -21,6 +22,8 @@ export interface CompanyViewProps {
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
+  /** Null when signed out: the head's star is absent, not disabled. */
+  readonly watch?: WatchControls | null;
 }
 
 /**
@@ -38,6 +41,7 @@ export function CompanyView({
   onOpenCompany,
   onOpenFocus,
   onPickGroup,
+  watch = null,
 }: CompanyViewProps): JSX.Element {
   const first = items[0];
   const industry = first?.industry ?? null;
@@ -80,6 +84,9 @@ export function CompanyView({
                 </span>
               )}
             </span>
+          )}
+          {watch !== null && (
+            <WatchButton id="co-watch" symbol={symbol} controls={watch} />
           )}
         </div>
         <div id="co-coverage" className="cocoverage">
@@ -126,6 +133,7 @@ export function CompanyView({
         onOpenFocus={onOpenFocus}
         onPickGroup={onPickGroup}
         onGrow={() => undefined}
+        watch={watch}
       />
     </section>
   );

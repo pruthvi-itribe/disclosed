@@ -7,6 +7,7 @@ import { TIER_TITLE } from '../../shared/format/vocab';
 import { Insight } from '../../shared/ui/Insight';
 import { IconLink } from '../../shared/ui/IconLink';
 import { ICON_SOURCE, SOURCE_LABEL } from '../../shared/ui/icons';
+import { WatchButton, type WatchControls } from '../../shared/ui/WatchButton';
 import { focusLines, type FocusLine } from './focus-lines';
 
 const SPAN_SHOW = 'Show source line';
@@ -82,9 +83,12 @@ function ClaimLine({ line }: { readonly line: FocusLine }): JSX.Element {
 export function FocusDialog({
   filing,
   onClose,
+  watch = null,
 }: {
   readonly filing: FilingView;
   readonly onClose: () => void;
+  /** Null when signed out: the star is absent, not disabled. */
+  readonly watch?: WatchControls | null;
 }): JSX.Element {
   const backRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -213,6 +217,9 @@ export function FocusDialog({
           <span className="cardcat" data-ui="focus-category">
             {filing.category}
           </span>
+          {watch !== null && (
+            <WatchButton symbol={filing.symbol} controls={watch} />
+          )}
           {source !== null && (
             <IconLink
               shapes={ICON_SOURCE}

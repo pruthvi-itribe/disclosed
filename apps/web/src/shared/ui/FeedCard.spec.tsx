@@ -182,3 +182,52 @@ describe('FeedCard', () => {
     expect(h.onOpenFocus).toHaveBeenCalledWith(f);
   });
 });
+
+describe('the watch star', () => {
+  const controls = (over: Record<string, unknown> = {}) => ({
+    watched: new Set<string>(),
+    pending: new Set<string>(),
+    onToggle: vi.fn(),
+    ...over,
+  });
+
+  // Absent, not disabled: a control that is permanently greyed out and
+  // never explains itself reads as a broken page.
+  it('is absent when signed out', () => {
+    const { container } = renderCard(filing());
+    expect(container.querySelector('[data-ui="watch"]')).toBeNull();
+  });
+
+  it('carries both names, the pressed state and the symbol', () => {
+    const c = controls({ watched: new Set(['ESAF']) });
+    const { container } = render(
+      <FeedCard filing={filing()} {...handlers()} watch={c} />,
+    );
+    const star = container.querySelector('[data-ui="watch"]');
+    expect(star?.className).toBe('iconbtn watch on');
+    expect(star?.getAttribute('data-symbol')).toBe('ESAF');
+    expect(star?.getAttribute('aria-label')).toBe('Stop watching ESAF');
+    expect(star?.getAttribute('title')).toBe('Stop watching ESAF');
+    expect(star?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('toggles without opening the card, and disables while pending', () => {
+    const c = controls({ pending: new Set(['ESAF']) });
+    const h = handlers();
+    const { container } = render(
+      <FeedCard filing={filing()} {...h} watch={c} />,
+    );
+    const star = container.querySelector(
+      '[data-ui="watch"]',
+    ) as HTMLButtonElement;
+    expect(star.disabled).toBe(true);
+
+    const enabled = controls();
+    const again = render(<FeedCard filing={filing()} {...h} watch={enabled} />);
+    fireEvent.click(
+      again.container.querySelector('[data-ui="watch"]') as Element,
+    );
+    expect(enabled.onToggle).toHaveBeenCalledWith('ESAF');
+    expect(h.onOpenFocus).not.toHaveBeenCalled();
+  });
+});

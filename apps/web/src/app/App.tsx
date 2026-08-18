@@ -3,6 +3,8 @@ import type { ApiEnvelope, ApiResult } from '../shared/api/api-get';
 import type { SendMethod } from '../shared/api/api-send';
 import { usePoll } from '../shared/api/use-poll';
 import { useMe } from '../shared/api/use-me';
+import { useWatch } from '../features/watch/use-watch';
+import type { WatchControls } from '../shared/ui/WatchButton';
 import type { FilingView } from '../shared/types/api';
 import { filterReducer, INITIAL_FILTERS } from './filter-state';
 import { initialViewState, viewReducer } from './view-state';
@@ -57,6 +59,27 @@ export function App({
   });
 
   const account = useMe({ apiSend, onReload: onSessionEnded });
+  const watch = useWatch({
+    apiSend,
+    enabled: account.me?.signedIn === true,
+  });
+
+  // Null when signed out, so every star-drawing surface draws nothing. A
+  // toggle from inside the Watching view asks for an immediate poll — the
+  // poll owns that list, and an unwatched row must not sit there for four
+  // seconds.
+  const watchControls: WatchControls | null =
+    account.me?.signedIn === true
+      ? {
+          watched: watch.watched,
+          pending: watch.pending,
+          onToggle: (symbol) => {
+            void watch.toggle(symbol).then(() => {
+              if (viewState.view === 'watching') refresh();
+            });
+          },
+        }
+      : null;
 
   // ONE CLASS ON THE BODY, so exactly one view is ever in scroll-lock: the
   // deck is a scroll container sized to the window, and the page behind it
@@ -96,9 +119,11 @@ export function App({
       <div
         id="alert"
         className="alert"
-        hidden={failure === null && account.failure === null}
+        hidden={
+          failure === null && account.failure === null && watch.failure === null
+        }
       >
-        {failure ?? account.failure ?? ''}
+        {failure ?? account.failure ?? watch.failure ?? ''}
       </div>
 
       <section
@@ -154,6 +179,7 @@ export function App({
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}
           onGrow={() => dispatchFilters({ type: 'grow' })}
+          watch={watchControls}
         />
       </section>
 
@@ -184,11 +210,16 @@ export function App({
           onOpenCompany={openCompany}
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}
+          watch={watchControls}
         />
       )}
 
       {focused !== null && (
-        <FocusDialog filing={focused} onClose={() => setFocused(null)} />
+        <FocusDialog
+          filing={focused}
+          onClose={() => setFocused(null)}
+          watch={watchControls}
+        />
       )}
     </>
   );

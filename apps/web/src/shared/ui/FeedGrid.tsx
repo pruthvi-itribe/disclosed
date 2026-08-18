@@ -6,6 +6,7 @@ import { DIRECTION_GLYPH } from '../format/vocab';
 import { feedBucket } from './feed-bucket';
 import { insightLines } from './insight-lines';
 import { FeedCard } from './FeedCard';
+import type { WatchControls } from './WatchButton';
 
 /** The server's MAX_LIMIT, restated for the at-cap note. */
 const LIMIT_MAX = 500;
@@ -52,6 +53,8 @@ export interface FeedGridProps {
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
   readonly onGrow: () => void;
+  /** Null when signed out: the star is absent, not disabled. */
+  readonly watch?: WatchControls | null;
 }
 
 /**
@@ -72,6 +75,7 @@ export function FeedGrid({
   onOpenFocus,
   onPickGroup,
   onGrow,
+  watch = null,
 }: FeedGridProps): JSX.Element {
   const moreRef = useRef<HTMLButtonElement | null>(null);
 
@@ -136,6 +140,7 @@ export function FeedGrid({
         onOpenCompany={onOpenCompany}
         onOpenFocus={onOpenFocus}
         onPickGroup={onPickGroup}
+        watch={watch}
       />,
     );
   }

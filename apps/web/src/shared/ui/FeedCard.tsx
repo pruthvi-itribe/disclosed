@@ -8,6 +8,7 @@ import { Insight } from './Insight';
 import { IconLink } from './IconLink';
 import { ICON_SOURCE, SOURCE_LABEL } from './icons';
 import { insightLines } from './insight-lines';
+import { WatchButton, type WatchControls } from './WatchButton';
 
 /**
  * Claims a card leads with, measured at 1440px over the live feed: three
@@ -24,6 +25,8 @@ export interface FeedCardProps {
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
+  /** Null when signed out: the star is absent, not disabled. */
+  readonly watch?: WatchControls | null;
 }
 
 /**
@@ -37,6 +40,7 @@ export function FeedCard({
   onOpenCompany,
   onOpenFocus,
   onPickGroup,
+  watch = null,
 }: FeedCardProps): JSX.Element {
   const lines = insightLines(filing.enrichment);
   const quiet = lines.length === 0;
@@ -150,6 +154,9 @@ export function FeedCard({
           {filing.category}
         </span>
         <span className="grow" />
+        {watch !== null && (
+          <WatchButton symbol={filing.symbol} controls={watch} />
+        )}
         {source !== null && (
           <IconLink
             shapes={ICON_SOURCE}
