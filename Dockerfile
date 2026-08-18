@@ -42,6 +42,22 @@ COPY apps ./apps
 # (see `nest-cli.json`), so the two share this one output directory.
 RUN npm run build
 
+# ------------------------------------------------------------ the web bundle ---
+#
+# The React client, built in its own stage from its own lockfile — React and
+# Vite never touch the server's dependency tree, which is the whole reason
+# `apps/web` is its own npm project. Only the `dashboard` target copies the
+# result; `ingest` and `enrichment` never see this stage, so a UI change
+# rebuilds nothing of theirs.
+FROM node:20-alpine AS web-build
+WORKDIR /web
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY apps/web ./
+# `tsc --noEmit && vite build` — the same two passes CI runs, then the same
+# audit CI runs, so an image cannot carry a bundle CI never cleared.
+RUN npm run build && npm run audit
+
 # ------------------------------------------------- the production modules ---
 #
 # A SEPARATE INSTALL RATHER THAN `npm prune`. Pruning mutates the build stage's
@@ -139,6 +155,10 @@ CMD ["node", "dist/apps/ingest/src/enrichment.main"]
 # why `docker-compose.yml` puts Caddy in the SAME namespace rather than
 # publishing a port here. Nothing about that is worked around in this file.
 FROM runtime AS dashboard
+# The built React bundle, placed where Plan 4's Caddy change will serve it.
+# NOTHING READS IT YET: the dashboard still renders its own UI, and putting
+# the files here now is what makes the cutover a Caddy change alone.
+COPY --from=web-build /web/dist /srv/web
 EXPOSE 7717
 # Asks the app the same question a monitor would, over the loopback it actually
 # binds. `/api/health` is one of the four routes outside the session guard.

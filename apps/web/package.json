@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "audit": "vite-node tools/run-audit.ts",
     "lint:ci": "eslint \"src/**/*.{ts,tsx}\" \"tools/**/*.ts\" --no-error-on-unmatched-pattern"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.8",
     "@testing-library/react": "^16.0.0",
+    "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
@@ -24,6 +26,7 @@
     "jsdom": "^24.1.1",
     "typescript": "^5.5.4",
     "vite": "^5.4.0",
+    "vite-node": "^2.0.5",
     "vitest": "^2.0.5"
   }
 }
