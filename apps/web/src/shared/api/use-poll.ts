@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SessionEndedError, type ApiResult } from './api-get';
+import { SessionEndedError, type ApiEnvelope, type ApiResult } from './api-get';
+import { ApiSendError, type SendMethod } from './api-send';
 import { filingsQuery, type ViewName } from './filings-query';
 import type { FilterState } from '../../app/filter-state';
 import type { FilingView, PageMeta, SummaryView } from '../types/api';
@@ -19,6 +20,17 @@ export interface PollArgs {
     path: string,
     current?: () => boolean,
   ) => Promise<ApiResult<T>>;
+  /**
+   * The ETag-free read, for the Watching view alone: one authenticated
+   * request per poll answers both halves of that view, and its renderer
+   * must always receive a real body — never a NOT_MODIFIED sentinel.
+   * Optional so the reading surfaces need no write path.
+   */
+  readonly apiSend?: <T>(
+    path: string,
+    method: SendMethod,
+    body?: unknown,
+  ) => Promise<ApiEnvelope<T>>;
   readonly view: ViewName;
   readonly company: string | null;
   readonly filters: FilterState;
@@ -49,6 +61,7 @@ interface Health {
  */
 export const usePoll = ({
   apiGet,
+  apiSend,
   view,
   company,
   filters,
@@ -73,16 +86,29 @@ export const usePoll = ({
     const seq = ++seqRef.current;
     const current = (): boolean => seq === seqRef.current;
 
+    const watching = view === 'watching' && company === null;
+    const filingsJob =
+      watching && apiSend !== undefined
+        ? apiSend<readonly FilingView[]>(
+            `/api/watchlist/feed?limit=${filters.limit}&offset=0`,
+            'GET',
+          ).then((body) => {
+            if (!current()) return;
+            setFilings(body.data);
+            setMeta(body.meta as PageMeta);
+          })
+        : apiGet<readonly FilingView[]>(query, current).then((result) => {
+            if (result.status === 'ok') {
+              setFilings(result.body.data);
+              setMeta(result.body.meta as PageMeta);
+            }
+          });
+
     const jobs = [
       apiGet<SummaryView>('/api/summary', current).then((result) => {
         if (result.status === 'ok') setSummary(result.body.data);
       }),
-      apiGet<readonly FilingView[]>(query, current).then((result) => {
-        if (result.status === 'ok') {
-          setFilings(result.body.data);
-          setMeta(result.body.meta as PageMeta);
-        }
-      }),
+      filingsJob,
     ];
 
     Promise.all(jobs).then(
@@ -92,7 +118,12 @@ export const usePoll = ({
       },
       (error: unknown) => {
         if (!current()) return;
-        if (error instanceof SessionEndedError) {
+        // The watching feed 401s through ApiSendError rather than the
+        // ETag path's SessionEndedError; both mean the same ended session.
+        if (
+          error instanceof SessionEndedError ||
+          (error instanceof ApiSendError && error.status === 401)
+        ) {
           if (!endedRef.current) {
             endedRef.current = true;
             onSessionEnded();
@@ -107,7 +138,7 @@ export const usePoll = ({
         }));
       },
     );
-  }, [apiGet, query, onSessionEnded]);
+  }, [apiGet, apiSend, query, view, company, filters.limit, onSessionEnded]);
 
   // The query is in refresh's identity, so a filter, view or company change
   // refetches immediately — the old client's refresh(true) on every writer.

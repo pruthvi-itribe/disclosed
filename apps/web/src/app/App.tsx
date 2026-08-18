@@ -15,6 +15,8 @@ import { FeedGrid } from '../shared/ui/FeedGrid';
 import { BriefView } from '../features/brief/BriefView';
 import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
+import { WatchingView } from '../features/watching/WatchingView';
+import type { WatchlistFeedMeta } from '../shared/types/account';
 
 export interface AppProps {
   /** Injected, so a test needs no network. */
@@ -191,8 +193,23 @@ export function App({
         aria-labelledby="tab-watching"
         hidden={viewState.view !== 'watching'}
       >
-        {/* The watchlist first, then what it said — filled by the Watching
-            task; the section exists so the tab has a panel to control. */}
+        {viewState.view === 'watching' && (
+          <WatchingView
+            items={items}
+            // The poll fed this view, so its meta carries the roster half.
+            meta={meta as WatchlistFeedMeta | null}
+            filters={filters}
+            todayIstDay={summary?.todayIstDay ?? null}
+            previousIstDay={summary?.previousIstDay ?? null}
+            watch={watchControls}
+            watchCap={account.me?.watchCap ?? 50}
+            onOpenCompany={openCompany}
+            onOpenFocus={openFocus}
+            onPickGroup={pickGroup}
+            onRoster={watch.setFromRoster}
+            onSeen={account.clearUnread}
+          />
+        )}
       </section>
 
       {viewState.company !== null && (
