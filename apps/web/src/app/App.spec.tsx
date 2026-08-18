@@ -1,5 +1,6 @@
 import { act, fireEvent, render } from '@testing-library/react';
 import { App } from './App';
+import { FAST_MS } from '../shared/api/use-poll';
 import type { ApiResult } from '../shared/api/api-get';
 import type { FilingView } from '../shared/types/api';
 
@@ -182,6 +183,30 @@ describe('App', () => {
     const alert = container.querySelector('#alert') as HTMLElement;
     expect(alert.hidden).toBe(false);
     expect(alert.textContent).toBe('Refresh failed (1 in a row): 502');
+  });
+
+  // use-me.ts promises the failed sign-out's sentence is "cleared by the
+  // next successful poll" — this is the wiring that keeps that promise.
+  // Without it one transient 502 stayed red all session.
+  it('a healthy poll clears a stale account failure', async () => {
+    vi.useFakeTimers();
+    try {
+      const apiSend = okApiSend();
+      const { container } = await renderApp(okApiGet(), apiSend);
+
+      apiSend.mockRejectedValueOnce(new Error('Something went wrong.'));
+      fireEvent.click(container.querySelector('#signout') as Element);
+      await flush();
+      const alert = container.querySelector('#alert') as HTMLElement;
+      expect(alert.textContent).toBe('Something went wrong.');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FAST_MS);
+      });
+      expect(alert.hidden).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

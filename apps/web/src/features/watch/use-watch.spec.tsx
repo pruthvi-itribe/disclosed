@@ -142,6 +142,20 @@ describe('useWatch', () => {
     expect(result.current.pending.has('TCS')).toBe(false);
   });
 
+  // The poll clears the shared banner on every healthy cycle, the way the
+  // old page's clearError() did — this is the hook-side half.
+  it('clearFailure wipes the sentence', async () => {
+    const apiSend = vi.fn().mockRejectedValue(new Error('boom'));
+    const { result } = renderWatch(apiSend);
+    await flush();
+    expect(result.current.failure).not.toBeNull();
+
+    act(() => {
+      result.current.clearFailure();
+    });
+    expect(result.current.failure).toBeNull();
+  });
+
   // Every Watching poll overwrites the set wholesale — the response is the
   // single source of truth, which is what fixes a second tab's changes.
   it('setFromRoster replaces the set and the counts', async () => {

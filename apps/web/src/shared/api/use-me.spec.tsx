@@ -105,6 +105,21 @@ describe('useMe', () => {
     );
   });
 
+  // The old page cleared the shared banner on every successful poll
+  // (script-poll.ts clearError()); this is the hook-side half of that
+  // wiring. Without it one 502 during a deploy stays red all session.
+  it('clearFailure wipes the sentence', async () => {
+    const apiSend = vi.fn().mockRejectedValue(new Error('boom'));
+    const { result } = renderMe(apiSend);
+    await flush();
+    expect(result.current.failure).not.toBeNull();
+
+    act(() => {
+      result.current.clearFailure();
+    });
+    expect(result.current.failure).toBeNull();
+  });
+
   it('clears the unread count on demand', async () => {
     const apiSend = vi.fn().mockResolvedValue(envelope(SIGNED_IN));
     const { result } = renderMe(apiSend);

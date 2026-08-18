@@ -58,6 +58,22 @@ export function App({
   // and a pick writes the head here the way the old page wrote the input.
   const [searchText, setSearchText] = useState('');
 
+  const account = useMe({ apiSend, onReload: onSessionEnded });
+  const watch = useWatch({
+    apiSend,
+    enabled: account.me?.signedIn === true,
+  });
+
+  // Every healthy cycle wipes the account and watchlist sentences — the
+  // old page's clearError() on a successful poll. Without this a transient
+  // 502 on api/me stayed red all session while the live dot said 'live'.
+  const accountClearFailure = account.clearFailure;
+  const watchClearFailure = watch.clearFailure;
+  const onHealthy = useCallback(() => {
+    accountClearFailure();
+    watchClearFailure();
+  }, [accountClearFailure, watchClearFailure]);
+
   const { filings, meta, summary, live, failure, refresh } = usePoll({
     apiGet,
     apiSend,
@@ -65,12 +81,7 @@ export function App({
     company: viewState.company,
     filters,
     onSessionEnded,
-  });
-
-  const account = useMe({ apiSend, onReload: onSessionEnded });
-  const watch = useWatch({
-    apiSend,
-    enabled: account.me?.signedIn === true,
+    onHealthy,
   });
 
   // Null when signed out, so every star-drawing surface draws nothing. A

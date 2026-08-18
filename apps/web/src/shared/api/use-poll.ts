@@ -44,6 +44,13 @@ export interface PollArgs {
   readonly company: string | null;
   readonly filters: FilterState;
   readonly onSessionEnded: () => void;
+  /**
+   * Fired on every successful cycle — the old page's clearError() on a
+   * healthy poll, restated. The account and watchlist hooks own failure
+   * sentences this signal is what clears; without it a transient 502
+   * stays red all session while the live dot says 'live'.
+   */
+  readonly onHealthy?: () => void;
 }
 
 export interface PollState {
@@ -90,6 +97,7 @@ export const usePoll = ({
   company,
   filters,
   onSessionEnded,
+  onHealthy,
 }: PollArgs): PollState => {
   const [pages, setPages] = useState<Partial<Record<Container, PageSlot>>>({});
   const [summary, setSummary] = useState<SummaryView | null>(null);
@@ -139,6 +147,7 @@ export const usePoll = ({
       () => {
         if (!current()) return;
         setHealth({ failures: 0, everLive: true, message: null });
+        onHealthy?.();
       },
       (error: unknown) => {
         if (!current()) return;
@@ -162,7 +171,16 @@ export const usePoll = ({
         }));
       },
     );
-  }, [apiGet, apiSend, query, view, company, filters.limit, onSessionEnded]);
+  }, [
+    apiGet,
+    apiSend,
+    query,
+    view,
+    company,
+    filters.limit,
+    onSessionEnded,
+    onHealthy,
+  ]);
 
   // The query is in refresh's identity, so a filter, view or company change
   // refetches immediately — the old client's refresh(true) on every writer.

@@ -22,6 +22,8 @@ export interface WatchState {
     rows: readonly Pick<WatchedCompany, 'symbol'>[],
     cap: number,
   ) => void;
+  /** The poll's clearError(): every healthy cycle wipes the sentence. */
+  readonly clearFailure: () => void;
 }
 
 /**
@@ -104,5 +106,15 @@ export const useWatch = ({
     [],
   );
 
-  return { watched, pending, counts, failure, toggle, setFromRoster };
+  const clearFailure = useCallback(() => setFailure(null), []);
+
+  return {
+    watched,
+    pending,
+    counts,
+    failure,
+    toggle,
+    setFromRoster,
+    clearFailure,
+  };
 };

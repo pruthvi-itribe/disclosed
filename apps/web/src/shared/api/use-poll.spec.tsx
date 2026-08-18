@@ -196,4 +196,32 @@ describe('usePoll', () => {
 
     expect(onSessionEnded).toHaveBeenCalledOnce();
   });
+
+  // The old page cleared the shared #alert on every successful cycle
+  // (script-poll.ts clearError()); onHealthy is that signal restated, so
+  // the account and watchlist sentences stop outliving their causes.
+  it('reports each healthy cycle, and never a failed one', async () => {
+    const onHealthy = vi.fn();
+    const onSessionEnded = vi.fn();
+    const failing = vi.fn((): AnyResult => Promise.reject(new Error('502')));
+    const good = okApiGet();
+    const { rerender } = renderHook(
+      (props: { apiGet: unknown }) =>
+        usePoll({
+          apiGet: props.apiGet as never,
+          view: 'feed',
+          company: null,
+          filters: INITIAL_FILTERS,
+          onSessionEnded,
+          onHealthy,
+        }),
+      { initialProps: { apiGet: failing } },
+    );
+    await flush();
+    expect(onHealthy).not.toHaveBeenCalled();
+
+    rerender({ apiGet: good });
+    await flush();
+    expect(onHealthy).toHaveBeenCalledOnce();
+  });
 });
