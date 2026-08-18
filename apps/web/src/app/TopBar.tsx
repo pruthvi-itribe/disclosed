@@ -26,7 +26,14 @@ export function TopBar({
   unread,
   onShowView,
   onSignOut,
+  compact = false,
 }: {
+  /**
+   * The shell's slim header: brand and the live dot only — the tabs live
+   * in the bottom bar there and the account moved to the Profile sheet.
+   * The web never passes it.
+   */
+  readonly compact?: boolean;
   readonly viewState: ViewState;
   readonly live: LiveKind;
   readonly summary: SummaryView | null;
@@ -59,6 +66,20 @@ export function TopBar({
       </button>
     );
   };
+
+  if (compact) {
+    return (
+      <header className="topbar" data-ui="top-bar">
+        <div className="brand">
+          <BrandLogo />
+        </div>
+        <LiveIndicator
+          live={live}
+          generatedAtIst={summary?.generatedAtIst ?? null}
+        />
+      </header>
+    );
+  }
 
   return (
     <header className="topbar" data-ui="top-bar">

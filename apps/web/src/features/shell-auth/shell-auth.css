@@ -8,7 +8,10 @@
    the feed page's body padding (16px 20px 32px) otherwise adds to the
    full-height box below and the door scrolls by exactly that much.
    main.tsx sets the class when it mounts the door. */
+html.native-shell body.shelldoor,
 body.shelldoor {
+  /* Doubled selector so the door also beats the shell's between-the-bars
+     body padding (shell-chrome.css) — no bars exist on the door. */
   padding: 0;
 }
 
@@ -17,9 +20,7 @@ body.shelldoor {
      100dvh here overflowed by exactly the island/notch heights and the
      door scrolled for nothing. In a browser both env() values are 0 and
      this is 100dvh unchanged. */
-  min-height: calc(
-    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)
-  );
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   padding: 12px 24px 8px;
@@ -44,7 +45,8 @@ body.shelldoor {
 .shellauth .doorbrand {
   display: flex;
   justify-content: center;
-  padding-top: 18px;
+  /* The door owns its island clearance — html no longer pads the top. */
+  padding-top: calc(env(safe-area-inset-top) + 18px);
 }
 
 .shellauth .slides {
@@ -96,7 +98,7 @@ body.shelldoor {
   gap: 10px;
   max-width: 340px;
   width: 100%;
-  margin: 12px auto 16px;
+  margin: 12px auto calc(env(safe-area-inset-bottom) + 16px);
 }
 .shellauth .doorcard form {
   display: flex;

@@ -20,14 +20,17 @@ const shapeAttrs = (shape: IconShape): Record<string, string> => {
  */
 export function IconSvg({
   shapes,
+  size = ICON_SIZE,
 }: {
   readonly shapes: readonly IconShape[];
+  /** The card controls keep the default; the bottom bar draws larger. */
+  readonly size?: number;
 }): JSX.Element {
   return (
     <svg
       viewBox={`0 0 ${ICON_BOX} ${ICON_BOX}`}
-      width={ICON_SIZE}
-      height={ICON_SIZE}
+      width={size}
+      height={size}
       fill="none"
       stroke="currentColor"
       strokeWidth={ICON_STROKE}
