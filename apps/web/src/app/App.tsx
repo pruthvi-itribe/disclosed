@@ -251,7 +251,10 @@ export function App({
             todayIstDay={summary?.todayIstDay ?? null}
             previousIstDay={summary?.previousIstDay ?? null}
             watch={watchControls}
-            watchCap={account.me?.watchCap ?? 50}
+            // Server-owned, on two channels (api/me, the watchlist read's
+            // meta) — never invented: a hardcoded 50 here would print a
+            // denominator no server sent.
+            watchCap={account.me?.watchCap ?? watch.counts?.cap ?? null}
             onOpenCompany={openCompany}
             onOpenFocus={openFocus}
             onPickGroup={pickGroup}

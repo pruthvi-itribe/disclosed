@@ -20,7 +20,7 @@ export interface WatchState {
   readonly toggle: (symbol: string) => Promise<void>;
   readonly setFromRoster: (
     rows: readonly Pick<WatchedCompany, 'symbol'>[],
-    cap: number,
+    cap: number | null,
   ) => void;
   /** The poll's clearError(): every healthy cycle wipes the sentence. */
   readonly clearFailure: () => void;
@@ -107,10 +107,13 @@ export const useWatch = ({
   );
 
   const setFromRoster = useCallback(
-    (rows: readonly Pick<WatchedCompany, 'symbol'>[], cap: number) => {
+    (rows: readonly Pick<WatchedCompany, 'symbol'>[], cap: number | null) => {
       writesRef.current += 1;
       setWatched(new Set(rows.map((row) => row.symbol)));
-      setCounts({ used: rows.length, cap });
+      // Cap null means no server channel has answered yet; the roster is
+      // still the newer set, but the counts keep whatever the server last
+      // said rather than taking an invented denominator.
+      setCounts((prev) => (cap !== null ? { used: rows.length, cap } : prev));
     },
     [],
   );

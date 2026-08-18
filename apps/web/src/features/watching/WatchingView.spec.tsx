@@ -85,6 +85,17 @@ const renderView = (
 };
 
 describe('WatchingView', () => {
+  // The cap is server-owned (MAX_WATCHED_SYMBOLS, delivered on api/me and
+  // as meta on every watchlist response). Until one of those channels has
+  // answered, the count stays blank the way the old page's element did —
+  // never a number no server sent.
+  it('renders no cap it has not been told', () => {
+    const { container } = renderView([filing()], meta([row()]), {
+      watchCap: null,
+    });
+    expect(container.querySelector('#watch-count')?.textContent).toBe('');
+  });
+
   it('draws the roster first, with the count and the fixed note', () => {
     const { container } = renderView([filing()], meta([row()]));
     expect(container.querySelector('#watch-count')?.textContent).toBe(

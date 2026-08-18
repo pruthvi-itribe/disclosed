@@ -15,12 +15,21 @@ export interface WatchingViewProps {
   readonly previousIstDay: string | null;
   readonly watch: WatchControls | null;
   readonly share?: ((filing: FilingView) => JSX.Element) | null;
-  readonly watchCap: number;
+  /**
+   * Server-owned (MAX_WATCHED_SYMBOLS, on api/me and every watchlist
+   * response's meta); null until one of those channels has answered.
+   * Never invented client-side — a hardcoded denominator here once
+   * printed 'N of 50' with a number no server sent.
+   */
+  readonly watchCap: number | null;
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
   /** The roster half of every response, handed up to overwrite the set. */
-  readonly onRoster: (rows: WatchlistFeedMeta['watching'], cap: number) => void;
+  readonly onRoster: (
+    rows: WatchlistFeedMeta['watching'],
+    cap: number | null,
+  ) => void;
   /** Looking at the tab IS reading it; the server has already stamped. */
   readonly onSeen: () => void;
 }
@@ -67,7 +76,7 @@ export function WatchingView({
       <div className="watchhead" data-ui="watching-head">
         <h2>Companies you watch</h2>
         <span id="watch-count" className="watchcount">
-          {meta === null
+          {meta === null || watchCap === null
             ? ''
             : `${groupInt(rows.length)} of ${groupInt(watchCap)} companies watched`}
         </span>
