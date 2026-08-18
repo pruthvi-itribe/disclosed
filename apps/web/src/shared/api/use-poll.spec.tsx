@@ -1,32 +1,16 @@
 import { act, renderHook } from '@testing-library/react';
 import { usePoll, FAST_MS } from './use-poll';
-import { SessionEndedError, type ApiResult } from './api-get';
-import { ApiSendError } from './api-send';
+import { SessionEndedError } from './api-get';
 import { INITIAL_FILTERS } from '../../app/filter-state';
-
-const envelope = <T,>(data: T, meta: unknown = null) => ({
-  success: true,
-  data,
-  error: null,
-  meta,
-});
-
-const SUMMARY = { totalFilings: 11918, todayIstDay: '2026-08-18' };
-const FILINGS = [{ seqId: 1 }, { seqId: 2 }];
-const META = { total: 2, offset: 0, returned: 2, hasMore: false };
-
-type AnyResult = Promise<ApiResult<unknown>>;
-
-// The unused `current` parameter widens the mock's call tuple so the
-// currency-check test can read calls[n][1].
-const okApiGet = () =>
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  vi.fn((path: string, _current?: () => boolean): AnyResult => {
-    if (path === '/api/summary') {
-      return Promise.resolve({ status: 'ok', body: envelope(SUMMARY) });
-    }
-    return Promise.resolve({ status: 'ok', body: envelope(FILINGS, META) });
-  });
+import {
+  envelope,
+  okApiGet,
+  flush,
+  SUMMARY,
+  FILINGS,
+  META,
+  type AnyResult,
+} from './use-poll.fixtures';
 
 const renderPoll = (
   apiGet: ReturnType<typeof okApiGet>,
@@ -43,12 +27,6 @@ const renderPoll = (
       }),
     { initialProps: { filters: INITIAL_FILTERS } },
   );
-
-const flush = async () => {
-  await act(async () => {
-    await Promise.resolve();
-  });
-};
 
 describe('usePoll', () => {
   beforeEach(() => {
@@ -211,80 +189,6 @@ describe('usePoll', () => {
       Promise.reject(new SessionEndedError()),
     );
     renderPoll(apiGet as ReturnType<typeof okApiGet>, onSessionEnded);
-    await flush();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(FAST_MS);
-    });
-
-    expect(onSessionEnded).toHaveBeenCalledOnce();
-  });
-});
-
-describe('the watching branch', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('polls the watchlist feed through the ETag-free path while open', async () => {
-    const apiGet = okApiGet();
-    const apiSend = vi.fn().mockResolvedValue({
-      success: true,
-      data: FILINGS,
-      error: null,
-      meta: { ...META, unread: 0, watching: [{ symbol: 'TCS' }] },
-    });
-    // Hoisted: an inline vi.fn() would be a NEW function on every render,
-    // churning refresh's identity and looping the mount effect forever.
-    const onSessionEnded = vi.fn();
-    const { result } = renderHook(() =>
-      usePoll({
-        apiGet: apiGet as never,
-        apiSend: apiSend as never,
-        view: 'watching',
-        company: null,
-        filters: INITIAL_FILTERS,
-        onSessionEnded,
-      }),
-    );
-    await flush();
-
-    // One authenticated read per poll, both halves from one response — and
-    // the summary still rides the same cycle.
-    expect(apiSend).toHaveBeenCalledWith(
-      '/api/watchlist/feed?limit=25&offset=0',
-      'GET',
-    );
-    expect(apiGet.mock.calls.map((c) => c[0])).toContain('/api/summary');
-    expect(
-      apiGet.mock.calls.some((c) => String(c[0]).startsWith('/api/filings')),
-    ).toBe(false);
-    expect(result.current.filings).toEqual(FILINGS);
-    expect((result.current.meta as { watching?: unknown }).watching).toEqual([
-      { symbol: 'TCS' },
-    ]);
-  });
-
-  it('a 401 from the watching feed ends the session once', async () => {
-    const onSessionEnded = vi.fn();
-    const apiGet = okApiGet();
-    const apiSend = vi
-      .fn()
-      .mockRejectedValue(
-        new ApiSendError('Sign in to use this.', 401, 'UNAUTHENTICATED', null),
-      );
-    renderHook(() =>
-      usePoll({
-        apiGet: apiGet as never,
-        apiSend: apiSend as never,
-        view: 'watching',
-        company: null,
-        filters: INITIAL_FILTERS,
-        onSessionEnded,
-      }),
-    );
     await flush();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(FAST_MS);

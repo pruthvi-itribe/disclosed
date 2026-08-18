@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- DEV-ONLY viewport harness — never committed, never shipped. Frames the
+     app at exact CSS dimensions so media queries and dvh answer to the
+     frame: /devices.html?w=390&h=844&path=/ -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>device harness</title>
+    <style>
+      html, body { margin: 0; background: #333; }
+      iframe { display: block; border: 0; background: #0d1117; }
+      #label { position: fixed; right: 8px; top: 8px; color: #fff;
+               font: 14px monospace; background: #000a; padding: 4px 8px; }
+    </style>
+  </head>
+  <body>
+    <iframe id="frame" title="app"></iframe>
+    <div id="label"></div>
+    <script>
+      const q = new URLSearchParams(location.search);
+      const w = Number(q.get('w') || 390);
+      const h = Number(q.get('h') || 844);
+      const path = q.get('path') || '/';
+      const frame = document.getElementById('frame');
+      frame.style.width = w + 'px';
+      frame.style.height = h + 'px';
+      frame.src = path;
+      document.getElementById('label').textContent = w + 'x' + h;
+    </script>
+  </body>
+</html>
