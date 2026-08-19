@@ -47,6 +47,8 @@ export interface MeView {
   readonly watchCap?: number;
   readonly unread?: number;
   readonly channels?: ReadonlyArray<{ kind: string; enabled: boolean }>;
+  /** Topic-wide alert subscriptions — CLAIM_TOPICS members. */
+  readonly alertTopics?: readonly string[];
 }
 
 /**
@@ -331,6 +333,7 @@ export class AuthController {
       channels: parseChannels(await this.users.channelsFor(who.userId)).map(
         (channel) => ({ kind: channel.kind, enabled: channel.enabled }),
       ),
+      alertTopics: await this.users.alertTopicsFor(who.userId),
     });
   }
 }

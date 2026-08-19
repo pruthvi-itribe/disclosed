@@ -16,7 +16,7 @@ import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
 import { useShareSlots } from '../features/share/share-slots';
-import { AlertsToggle } from '../features/alerts/AlertsToggle';
+import { accountPrefs } from './AccountPrefs';
 import { useAccountSurfaces } from './use-account-surfaces';
 import { ShellChrome } from './ShellChrome';
 import { FilterControls } from './FilterControls';
@@ -60,8 +60,7 @@ export function App({
   // here it re-rendered the whole shell per keystroke. This ref is the one
   // external write the box allows: Clear emptying the input.
   const searchBox = useRef<SearchBoxHandle>(null);
-  // The shell's boot mark (set by main.tsx before React runs; a browser
-  // never carries it, so every shell branch below is dead code there).
+  // The shell's boot mark, set by main.tsx; a browser never carries it.
   const shell = document.documentElement.classList.contains('native-shell');
   const [sheet, setSheet] = useState<'explore' | 'profile' | null>(null);
   const { account, watch, alerts, onHealthy } = useAccountSurfaces({
@@ -129,6 +128,8 @@ export function App({
       dispatch={filterDispatch}
     />
   );
+  const watchedCount = watch.counts?.used ?? 0;
+  const prefs = accountPrefs({ me: account.me, alerts, watchedCount, apiSend });
 
   return (
     <>
@@ -235,12 +236,7 @@ export function App({
           // denominator no server sent.
           watchCap={account.me?.watchCap ?? watch.counts?.cap ?? null}
           counts={watch.counts}
-          alerts={
-            <AlertsToggle
-              permission={alerts.permission}
-              onRequest={alerts.request}
-            />
-          }
+          prefs={shell ? null : prefs}
           onOpenCompany={openCompany}
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}
@@ -290,6 +286,7 @@ export function App({
           dispatch={filterDispatch}
           onSearchCleared={() => searchBox.current?.clear()}
           controls={controls}
+          prefs={prefs}
           onShowView={(view) => dispatchView({ type: 'show', view })}
           onSheet={setSheet}
           onSignOut={account.signOut}

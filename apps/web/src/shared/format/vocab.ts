@@ -95,3 +95,26 @@ export const METRIC_LABEL: ReadonlyMap<string, string> = new Map([
  */
 export const FIGURE =
   /((?:₹|Rs\.?|INR|USD|\$)?\s?\d[\d,]*(?:\.\d+)?\s?(?:%|bps|crore|cr|lakh|lakhs|million|mn|billion|bn|MW|MTPA|x)?)/gi;
+
+/**
+ * The topic chips, value and label — the feed's filter row and the
+ * notifications panel draw from this ONE list, so a topic cannot exist in
+ * one and be unnameable in the other. Values are the server's CLAIM_TOPICS
+ * members; '' is the feed's own "Everything" and is not a topic.
+ */
+export const TOPIC_CHIPS: readonly (readonly [string, string])[] = [
+  ['', 'Everything'],
+  ['financial', 'Financials'],
+  ['dividend', 'Dividends'],
+  ['orders', 'Order wins'],
+  ['acquisition', 'Deals'],
+  ['capacity', 'Capacity'],
+  ['product', 'Product'],
+  ['ratings', 'Ratings'],
+];
+
+/** A topic's reader-facing name; the value itself when the list lacks it. */
+export const topicLabel = (topic: string): string => {
+  const found = TOPIC_CHIPS.find(([value]) => value === topic);
+  return found === undefined ? topic : found[1];
+};

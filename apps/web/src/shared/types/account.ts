@@ -15,7 +15,12 @@ export interface MeView {
   readonly watchCount?: number;
   readonly watchCap?: number;
   readonly unread?: number;
-  readonly channels?: ReadonlyArray<{ kind: string; enabled: boolean }>;
+  readonly channels?: ReadonlyArray<{
+    kind: string;
+    enabled: boolean;
+  }>;
+  /** Topic-wide alert subscriptions — CLAIM_TOPICS members. */
+  readonly alertTopics?: readonly string[];
 }
 
 /** One row of the watchlist — watchlist.controller.ts. */

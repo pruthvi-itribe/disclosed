@@ -16,18 +16,29 @@ class FakeNotification {
   }
 }
 
-const feed = (rows: unknown[]) => ({
+const feed = (
+  rows: unknown[],
+  meta: { watched?: string[]; topics?: string[] } = {
+    watched: ['TCS', 'RELIANCE'],
+  },
+) => ({
   success: true,
   data: rows,
   error: null,
-  meta: null,
+  meta,
 });
 
-const row = (seqId: number, symbol: string, tier = 'verified') => ({
+const row = (
+  seqId: number,
+  symbol: string,
+  tier = 'verified',
+  topics: string[] = [],
+) => ({
   seqId,
   symbol,
   confidenceTier: tier,
   outcome: `${symbol} said something.`,
+  enrichment: { claims: topics.map((topic) => ({ text: 'c', topic })) },
 });
 
 const renderAlerts = (apiSend: ReturnType<typeof vi.fn>, enabled = true) =>
@@ -57,7 +68,7 @@ describe('useDesktopAlerts', () => {
     await flush();
 
     expect(apiSend).toHaveBeenCalledWith(
-      '/api/watchlist/feed?limit=25&offset=0',
+      '/api/alerts/feed?limit=25&offset=0',
       'GET',
     );
     expect(raised).toEqual([]);
@@ -93,6 +104,35 @@ describe('useDesktopAlerts', () => {
       await vi.advanceTimersByTimeAsync(ALERT_POLL_MS);
     });
     expect(raised).toHaveLength(1);
+  });
+
+  // The topic arm leads with the TOPIC: that is why the reader is told.
+  it('titles a topic-only match by its topic', async () => {
+    const apiSend = vi
+      .fn()
+      .mockResolvedValue(
+        feed([row(5, 'TCS')], { watched: ['TCS'], topics: ['dividend'] }),
+      );
+    renderAlerts(apiSend);
+    await flush();
+
+    apiSend.mockResolvedValue(
+      feed([row(9, 'DIVCO', 'verified', ['dividend']), row(5, 'TCS')], {
+        watched: ['TCS'],
+        topics: ['dividend'],
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ALERT_POLL_MS);
+    });
+
+    expect(raised).toEqual([
+      {
+        title: 'Dividends: DIVCO',
+        body: 'DIVCO said something.',
+        tag: 'DIVCO',
+      },
+    ]);
   });
 
   it('does not ask at all without permission or a session', async () => {

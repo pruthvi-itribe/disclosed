@@ -242,6 +242,97 @@ afterAll(async () => {
   else process.env.AUTH_MODE = priorAuthMode;
 }, 60_000);
 
+describe('alert topics and the alerts feed', () => {
+  it('refuses a topic outside the vocabulary', async () => {
+    // The fail-open rule's oldest prohibition, at the door: subscriptions
+    // name OUR closed list, never an exchange-controlled category name — and
+    // an unknown value is a 400, not a stored string that never matches.
+    const { cookie } = await registerFresh();
+    const response = await call(
+      'POST',
+      '/api/alerts/topics?topic=Company%20Update',
+      {
+        cookie,
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(response.body.error?.code).toBe('UNKNOWN_TOPIC');
+  });
+
+  it('subscribes, surfaces on api/me, and unsubscribes clean', async () => {
+    const { cookie } = await registerFresh();
+
+    const added = await call('POST', '/api/alerts/topics?topic=dividend', {
+      cookie,
+    });
+    expect(added.status).toBe(200);
+    expect((added.body.data as { topics: string[] }).topics).toEqual([
+      'dividend',
+    ]);
+
+    const me = await call('GET', '/api/me', { cookie });
+    expect((me.body.data as { alertTopics?: string[] }).alertTopics).toEqual([
+      'dividend',
+    ]);
+
+    const removed = await call('DELETE', '/api/alerts/topics/dividend', {
+      cookie,
+    });
+    expect((removed.body.data as { topics: string[] }).topics).toEqual([]);
+  });
+
+  it('feeds the union of watched and subscribed, verified only', async () => {
+    await filings.insertMany([
+      {
+        ...filing(301, 'DIVCO', '2026-08-05T07:00:00.000Z'),
+        enrichment: {
+          claims: [
+            {
+              text: 'Dividend declared',
+              span: 'Dividend declared',
+              topic: 'dividend',
+            },
+          ],
+        },
+      },
+      {
+        ...filing(302, 'TCS', '2026-08-05T07:05:00.000Z'),
+        enrichment: {
+          claims: [{ text: 'Order won', span: 'Order won', topic: 'orders' }],
+        },
+      },
+      // Neither watched nor subscribed — and 303 carries no verified claim,
+      // so even a subscription could not surface it.
+      { ...filing(303, 'PLAINCO', '2026-08-05T07:10:00.000Z') },
+    ] as never);
+
+    const { cookie } = await registerFresh();
+    await call('POST', '/api/watchlist?symbol=TCS', { cookie });
+    await call('POST', '/api/alerts/topics?topic=dividend', { cookie });
+
+    const feed = await call('GET', '/api/alerts/feed', { cookie });
+    expect(feed.status).toBe(200);
+    const symbols = (feed.body.data as Array<{ symbol: string }>).map(
+      (row) => row.symbol,
+    );
+    expect(symbols).toContain('DIVCO');
+    expect(symbols).toContain('TCS');
+    expect(symbols).not.toContain('PLAINCO');
+    const meta = feed.body.meta as { topics: string[]; watched: string[] };
+    expect(meta.topics).toEqual(['dividend']);
+    expect(meta.watched).toEqual(['TCS']);
+  });
+
+  // BOTH ARMS EMPTY IS AN EMPTY PAGE, never the whole feed: "nothing was
+  // asked for" must not render as "everything qualified".
+  it('a reader who asked for nothing is fed nothing', async () => {
+    const { cookie } = await registerFresh();
+    const feed = await call('GET', '/api/alerts/feed', { cookie });
+    expect(feed.status).toBe(200);
+    expect(feed.body.data).toEqual([]);
+  });
+});
+
 describe('register', () => {
   it('creates an account and signs the browser straight in', async () => {
     const email = freshEmail();

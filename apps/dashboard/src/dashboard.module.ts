@@ -42,6 +42,7 @@ import { JsonOnlyGuard } from './auth/json-only.guard';
 import { OriginGuard, SessionGuard } from './auth/session.guard';
 import { SessionService } from './auth/session.service';
 import { WatchlistController } from './auth/watchlist.controller';
+import { AlertsController } from './auth/alerts.controller';
 import type { AuthConfig } from './config/auth-config';
 import { loadDashboardConfig } from './config/configuration';
 import { DashboardController } from './filings/dashboard.controller';
@@ -213,7 +214,12 @@ export const FILING_MODEL = 'Filing';
       getTracker: (request) => clientKey(request as ClientAddressed),
     }),
   ],
-  controllers: [DashboardController, AuthController, WatchlistController],
+  controllers: [
+    DashboardController,
+    AuthController,
+    WatchlistController,
+    AlertsController,
+  ],
   providers: [
     {
       // The type-ahead's data source, and a SINGLETON on purpose: it holds one

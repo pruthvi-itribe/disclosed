@@ -1,4 +1,5 @@
 import type { FilterState } from '../../app/filter-state';
+import { TOPIC_CHIPS } from '../../shared/format/vocab';
 
 /**
  * The chip row and the insight toggle. The search box that shares the old
@@ -14,16 +15,6 @@ import type { FilterState } from '../../app/filter-state';
  * shares the row because a reader uses it the same way — one lens at a time
  * — and the price is the rule the reducer keeps: exactly one chip is lit.
  */
-const TOPIC_CHIPS: readonly (readonly [string, string])[] = [
-  ['', 'Everything'],
-  ['financial', 'Financials'],
-  ['dividend', 'Dividends'],
-  ['orders', 'Order wins'],
-  ['acquisition', 'Deals'],
-  ['capacity', 'Capacity'],
-  ['product', 'Product'],
-  ['ratings', 'Ratings'],
-];
 
 export function FeedControls({
   filters,

@@ -249,6 +249,28 @@ export class UserRepository {
     return found?.alerts?.channels ?? [];
   }
 
+  /** The topic-wide alert subscriptions — CLAIM_TOPICS members, route-allowlisted. */
+  async alertTopicsFor(id: string): Promise<readonly string[]> {
+    const found = await this.users
+      .findById(id, { 'alerts.topics': 1 })
+      .lean<UserDocument>()
+      .exec();
+    return found?.alerts?.topics ?? [];
+  }
+
+  /** Idempotent: $addToSet, because a double-tap is not an error. */
+  async addAlertTopic(id: string, topic: string): Promise<void> {
+    await this.users
+      .updateOne({ _id: id }, { $addToSet: { 'alerts.topics': topic } })
+      .exec();
+  }
+
+  async removeAlertTopic(id: string, topic: string): Promise<void> {
+    await this.users
+      .updateOne({ _id: id }, { $pull: { 'alerts.topics': topic } })
+      .exec();
+  }
+
   /** Stamps the Watching tab as read, which is what the unread count counts from. */
   async markWatchlistSeen(id: string, now: Date): Promise<void> {
     await this.users

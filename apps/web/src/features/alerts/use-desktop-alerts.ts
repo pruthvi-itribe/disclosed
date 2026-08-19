@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiEnvelope } from '../../shared/api/api-get';
 import type { SendMethod } from '../../shared/api/api-send';
 import type { FilingView } from '../../shared/types/api';
+import { topicLabel } from '../../shared/format/vocab';
 
 /**
  * The notifier's own cadence, and it deliberately IGNORES document.hidden —
@@ -78,13 +79,23 @@ export const useDesktopAlerts = ({
 
     const read = (): void => {
       if (stoppedRef.current) return;
+      // The ONE predicate, served by the server (plan C2): verified
+      // filings from watched companies OR subscribed topics. Which arm
+      // matched decides the words below — that part is presentation, and
+      // the meta carries both lists so no second read is needed.
       apiSend<readonly FilingView[]>(
-        '/api/watchlist/feed?limit=25&offset=0',
+        '/api/alerts/feed?limit=25&offset=0',
         'GET',
       ).then(
         (body) => {
           if (stoppedRef.current) return;
           const rows = body.data;
+          const fromMeta = body.meta as {
+            watched?: readonly string[];
+            topics?: readonly string[];
+          } | null;
+          const watched = new Set(fromMeta?.watched ?? []);
+          const subscribed = new Set(fromMeta?.topics ?? []);
           const seed = highestSeenRef.current === null;
           let highest = highestSeenRef.current ?? 0;
           for (const filing of rows) {
@@ -93,8 +104,16 @@ export const useDesktopAlerts = ({
             if (filing.seqId <= (highestSeenRef.current ?? 0)) continue;
             if (filing.confidenceTier !== 'verified') continue;
             // One banner per company (`tag` collapses), replaced in place
-            // when the same company files again within a burst.
-            const shown = new Notification(`${filing.symbol} filed`, {
+            // when the same company files again within a burst. A watched
+            // company leads with its name; a topic-only match leads with
+            // the topic, because that is why the reader is being told.
+            const matchedTopic = (filing.enrichment?.claims ?? []).find(
+              (claim) => claim.topic !== null && subscribed.has(claim.topic),
+            )?.topic;
+            const title = watched.has(filing.symbol)
+              ? `${filing.symbol} filed`
+              : `${topicLabel(matchedTopic ?? '')}: ${filing.symbol}`;
+            const shown = new Notification(title, {
               body: filing.outcome,
               tag: filing.symbol,
             });
