@@ -323,6 +323,38 @@ describe('alert topics and the alerts feed', () => {
     expect(meta.watched).toEqual(['TCS']);
   });
 
+  // The watchlist switch silences the ARM at the predicate, not the
+  // banner: an off watchlist contributes no symbols at all, while topic
+  // subscriptions keep flowing.
+  it('the watchlist switch removes that arm from the feed', async () => {
+    const { cookie } = await registerFresh();
+    await call('POST', '/api/watchlist?symbol=TCS', { cookie });
+    await call('POST', '/api/alerts/topics?topic=dividend', { cookie });
+
+    const off = await call('DELETE', '/api/alerts/watchlist', { cookie });
+    expect(off.status).toBe(200);
+    expect((off.body.data as { watchlist: boolean }).watchlist).toBe(false);
+
+    const me = await call('GET', '/api/me', { cookie });
+    expect((me.body.data as { alertWatchlist?: boolean }).alertWatchlist).toBe(
+      false,
+    );
+
+    const feed = await call('GET', '/api/alerts/feed', { cookie });
+    const symbols = (feed.body.data as Array<{ symbol: string }>).map(
+      (row) => row.symbol,
+    );
+    expect(symbols).not.toContain('TCS');
+    expect(symbols).toContain('DIVCO');
+
+    const on = await call('POST', '/api/alerts/watchlist', { cookie });
+    expect((on.body.data as { watchlist: boolean }).watchlist).toBe(true);
+    const back = await call('GET', '/api/alerts/feed', { cookie });
+    expect(
+      (back.body.data as Array<{ symbol: string }>).map((row) => row.symbol),
+    ).toContain('TCS');
+  });
+
   // BOTH ARMS EMPTY IS AN EMPTY PAGE, never the whole feed: "nothing was
   // asked for" must not render as "everything qualified".
   it('a reader who asked for nothing is fed nothing', async () => {

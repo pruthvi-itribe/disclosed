@@ -81,13 +81,19 @@ html.native-shell body {
 /* --------------------------------------------------------- the sheets ---- */
 .sheet {
   position: fixed;
-  inset: 0;
-  z-index: 50;
+  left: 0;
+  right: 0;
+  top: 0;
+  /* STOPS ABOVE THE BAR: a native tab bar never leaves (called out
+     2026-08-19 — "why is bottom bar moving out?"). The sheet covers the
+     content, the bar stays visible and tappable beneath it, and picking
+     any tab closes the sheet through ShellChrome's own pick(). */
+  bottom: calc(env(safe-area-inset-bottom) + 64px);
+  z-index: 45;
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  padding: calc(env(safe-area-inset-top) + 10px) 20px
-    calc(env(safe-area-inset-bottom) + 12px);
+  padding: calc(env(safe-area-inset-top) + 10px) 20px 12px;
 }
 .sheet .sheethead {
   display: flex;

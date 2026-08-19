@@ -49,6 +49,8 @@ export interface MeView {
   readonly channels?: ReadonlyArray<{ kind: string; enabled: boolean }>;
   /** Topic-wide alert subscriptions — CLAIM_TOPICS members. */
   readonly alertTopics?: readonly string[];
+  /** Whether the watched-companies alert arm is on. */
+  readonly alertWatchlist?: boolean;
 }
 
 /**
@@ -334,6 +336,7 @@ export class AuthController {
         (channel) => ({ kind: channel.kind, enabled: channel.enabled }),
       ),
       alertTopics: await this.users.alertTopicsFor(who.userId),
+      alertWatchlist: await this.users.alertWatchlistFor(who.userId),
     });
   }
 }

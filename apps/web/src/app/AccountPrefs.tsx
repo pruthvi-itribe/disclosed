@@ -65,6 +65,7 @@ export function accountSurfacesUi({
         onRequest={alerts.request}
         apiSend={apiSend}
         initialTopics={me.alertTopics ?? []}
+        initialWatchlist={me.alertWatchlist ?? true}
         watchedCount={watchedCount}
       />
     ),

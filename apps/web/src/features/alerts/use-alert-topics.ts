@@ -11,6 +11,7 @@ import type { SendMethod } from '../../shared/api/api-send';
 export const useAlertTopics = ({
   apiSend,
   initialTopics,
+  initialWatchlist = true,
 }: {
   readonly apiSend: <T>(
     path: string,
@@ -18,12 +19,16 @@ export const useAlertTopics = ({
     body?: unknown,
   ) => Promise<ApiEnvelope<T>>;
   readonly initialTopics: readonly string[];
+  readonly initialWatchlist?: boolean;
 }): {
   readonly topics: readonly string[];
   readonly toggle: (topic: string, on: boolean) => void;
+  readonly watchlistOn: boolean;
+  readonly toggleWatchlist: (on: boolean) => void;
   readonly failure: string | null;
 } => {
   const [topics, setTopics] = useState<readonly string[]>(initialTopics);
+  const [watchlistOn, setWatchlistOn] = useState(initialWatchlist);
   const [failure, setFailure] = useState<string | null>(null);
 
   const toggle = useCallback(
@@ -54,5 +59,28 @@ export const useAlertTopics = ({
     [apiSend],
   );
 
-  return { topics, toggle, failure };
+  // The watched-companies ARM's switch, in the topics' own idiom.
+  const toggleWatchlist = useCallback(
+    (on: boolean) => {
+      apiSend<{ watchlist: boolean }>(
+        '/api/alerts/watchlist',
+        on ? 'POST' : 'DELETE',
+      ).then(
+        (body) => {
+          setWatchlistOn(body.data.watchlist);
+          setFailure(null);
+        },
+        (error: unknown) => {
+          setFailure(
+            error instanceof Error
+              ? error.message
+              : 'That change did not save.',
+          );
+        },
+      );
+    },
+    [apiSend],
+  );
+
+  return { topics, toggle, watchlistOn, toggleWatchlist, failure };
 };

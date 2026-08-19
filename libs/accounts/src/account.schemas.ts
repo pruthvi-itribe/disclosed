@@ -78,6 +78,13 @@ export interface UserRecord {
      * route; the schema stores what the route admitted.
      */
     readonly topics: readonly string[];
+    /**
+     * Whether the watched-companies arm of the alerts feed is on. Default
+     * true — watching a company has always meant caring when it files —
+     * and turning it off silences that arm at the PREDICATE, not at the
+     * banner: the feed itself stops carrying those rows.
+     */
+    readonly watchlist: boolean;
     /** Drives the unread badge on the Watching tab. */
     readonly lastSeenWatchlistAt: Date | null;
   };
@@ -124,6 +131,7 @@ export const UserSchema = new Schema<UserDocument>(
       minTier: { type: String, default: null },
       mutedTopics: { type: [String], default: [] },
       topics: { type: [String], default: [] },
+      watchlist: { type: Boolean, default: true },
       lastSeenWatchlistAt: { type: Date, default: null },
     },
   },

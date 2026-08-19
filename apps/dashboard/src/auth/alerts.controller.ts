@@ -106,6 +106,33 @@ export class AlertsController {
   }
 
   /**
+   * The watched-companies arm's switch, in the topics' own idiom: POST is
+   * on, DELETE is off, both idempotent, both answering the stored state.
+   */
+  @Post('watchlist')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(200)
+  @UseGuards(JsonOnlyGuard, OriginGuard)
+  async watchlistOn(
+    @Req() request: AuthedRequest,
+  ): Promise<ApiEnvelope<{ watchlist: boolean }>> {
+    const userId = request.signedin!.userId;
+    await this.users.setAlertWatchlist(userId, true);
+    return ok({ watchlist: true });
+  }
+
+  @Delete('watchlist')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(JsonOnlyGuard, OriginGuard)
+  async watchlistOff(
+    @Req() request: AuthedRequest,
+  ): Promise<ApiEnvelope<{ watchlist: boolean }>> {
+    const userId = request.signedin!.userId;
+    await this.users.setAlertWatchlist(userId, false);
+    return ok({ watchlist: false });
+  }
+
+  /**
    * What deserves this reader's attention, newest first. Meta carries the
    * subscriptions the union was computed from, so a caller can attribute
    * each row without a second read.
@@ -126,11 +153,16 @@ export class AlertsController {
     >
   > {
     const userId = request.signedin!.userId;
-    const [entries, topics] = await Promise.all([
+    const [entries, topics, watchlistOn] = await Promise.all([
       this.watchlists.entriesFor(userId),
       this.users.alertTopicsFor(userId),
+      this.users.alertWatchlistFor(userId),
     ]);
-    const symbols = entries.map((entry) => entry.symbol);
+    // The switch silences the ARM, not the banner: an off watchlist
+    // contributes no symbols to the predicate at all.
+    const symbols = watchlistOn
+      ? entries.map((entry) => entry.symbol)
+      : [];
 
     const page = await this.filings.getAlertPage(
       symbols,

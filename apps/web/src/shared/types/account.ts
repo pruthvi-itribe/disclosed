@@ -21,6 +21,8 @@ export interface MeView {
   }>;
   /** Topic-wide alert subscriptions — CLAIM_TOPICS members. */
   readonly alertTopics?: readonly string[];
+  /** Whether the watched-companies alert arm is on. */
+  readonly alertWatchlist?: boolean;
 }
 
 /** One row of the watchlist — watchlist.controller.ts. */

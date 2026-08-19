@@ -24,29 +24,52 @@ const renderPrefs = (
 });
 
 describe('NotificationPrefs', () => {
-  it('states the channels honestly and lists the chip vocabulary', () => {
+  it('one real channel row, the watchlist switch, and the pill vocabulary', () => {
     const { container } = renderPrefs();
-    // Desktop is a real control; mobile push is a stated fact, never a
-    // dead toggle.
     expect(container.textContent).toContain('Desktop, this browser');
-    expect(container.textContent).toContain('Arrives with the app release');
-    // Watched companies are the always-on fact, with their count.
+    // An absent feature earns no row: the mobile-push placeholder read as
+    // nonsense inside the app (called out 2026-08-19) and is gone.
+    expect(container.textContent).not.toContain('Mobile push');
+    // The watchlist arm is a real switch, on by default, with its count.
     expect(
       container.querySelector('[data-ui="prefs-watched"]')?.textContent,
-    ).toBe('Always on · 3 watched');
-    // The chip vocabulary minus its 'Everything' — that is a feed filter,
-    // not a subscription.
-    const boxes = container.querySelectorAll('.notiftopic input');
-    expect(boxes.length).toBe(7);
+    ).toBe(' · 3 watched');
+    expect(
+      container
+        .querySelector('[data-ui="prefs-watchlist"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    // The chip vocabulary minus its 'Everything', as pills — the same
+    // language the Watching screen follows with.
+    const pills = container.querySelectorAll(
+      '[data-ui="prefs-topics"] .followpill',
+    );
+    expect(pills.length).toBe(7);
     expect(container.textContent).toContain(
       'Only claims verified against the source document are ever sent.',
     );
   });
 
+  // Off silences the ARM at the server's predicate, not at the banner.
+  it('the watchlist switch rides its own routes', async () => {
+    const apiSend = vi.fn().mockResolvedValue({ data: { watchlist: false } });
+    const { container } = renderPrefs(apiSend);
+    fireEvent.click(
+      container.querySelector('[data-ui="prefs-watchlist"]') as Element,
+    );
+    await flush();
+    expect(apiSend).toHaveBeenCalledWith('/api/alerts/watchlist', 'DELETE');
+    expect(
+      container
+        .querySelector('[data-ui="prefs-watchlist"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('false');
+  });
+
   it('subscribes through the route and takes the server echo', async () => {
     const { container, apiSend } = renderPrefs();
     fireEvent.click(
-      container.querySelector('input[data-topic="dividend"]') as Element,
+      container.querySelector('.followpill[data-topic="dividend"]') as Element,
     );
     await flush();
 
@@ -55,19 +78,17 @@ describe('NotificationPrefs', () => {
       'POST',
     );
     expect(
-      (
-        container.querySelector(
-          'input[data-topic="dividend"]',
-        ) as HTMLInputElement | null
-      )?.checked,
-    ).toBe(true);
+      container
+        .querySelector('.followpill[data-topic="dividend"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('true');
   });
 
   it('unsubscribes through the delete route', async () => {
     const apiSend = vi.fn().mockResolvedValue({ data: { topics: [] } });
     const { container } = renderPrefs(apiSend, ['orders']);
     fireEvent.click(
-      container.querySelector('input[data-topic="orders"]') as Element,
+      container.querySelector('.followpill[data-topic="orders"]') as Element,
     );
     await flush();
     expect(apiSend).toHaveBeenCalledWith('/api/alerts/topics/orders', 'DELETE');
@@ -81,17 +102,15 @@ describe('NotificationPrefs', () => {
       .mockRejectedValue(new Error('That change did not save.'));
     const { container } = renderPrefs(apiSend);
     fireEvent.click(
-      container.querySelector('input[data-topic="capacity"]') as Element,
+      container.querySelector('.followpill[data-topic="capacity"]') as Element,
     );
     await flush();
 
     expect(container.textContent).toContain('That change did not save.');
     expect(
-      (
-        container.querySelector(
-          'input[data-topic="capacity"]',
-        ) as HTMLInputElement | null
-      )?.checked,
-    ).toBe(false);
+      container
+        .querySelector('.followpill[data-topic="capacity"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('false');
   });
 });
