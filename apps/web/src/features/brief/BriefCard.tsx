@@ -6,6 +6,7 @@ import { groupInt } from '../../shared/format/group-int';
 import { TIER_TITLE, TOPIC_LABEL } from '../../shared/format/vocab';
 import { BriefCopyButton } from './BriefCopyButton';
 import { GlossedText } from './GlossedText';
+import { briefGist } from './gist';
 import type { Jargon } from './jargon';
 import {
   briefLede,
@@ -41,6 +42,9 @@ export function BriefCard({
   } | null>(null);
   const ask = (term: Jargon, matched: string): void =>
     setAsked((was) => (was?.matched === matched ? null : { term, matched }));
+  // The lede is cut at a boundary the claim printed when it is too long
+  // to be a headline; the rest is one tap away and nothing is rewritten.
+  const [whole, setWhole] = useState(false);
   const lede = briefLede(entry);
   if (lede === null) return null;
   const f = lede.filing;
@@ -49,6 +53,7 @@ export function BriefCard({
     .slice(0, BRIEF_REST_CLAIMS);
   const over = entry.claims.length - 1 - BRIEF_REST_CLAIMS;
   const topic = lede.claim.topic;
+  const gist = briefGist(lede.claim.text);
   const source = safeHref(f.attachmentUrl);
 
   return (
@@ -100,7 +105,18 @@ export function BriefCard({
         </button>
       )}
       <p className="blede" data-ui="brief-lede">
-        <GlossedText text={lede.claim.text} onAsk={ask} />
+        <GlossedText text={whole ? lede.claim.text : gist.line} onAsk={ask} />
+        {gist.cut && !whole && (
+          <button
+            type="button"
+            className="bwhole"
+            data-ui="brief-lede-more"
+            aria-label="Show the rest of this sentence"
+            onClick={() => setWhole(true)}
+          >
+            …
+          </button>
+        )}
       </p>
       {/* NULL RATHER THAN AN EMPTY LIST: "nothing was found" and "nothing
           was looked for" are different facts. Echoes are kept here — skipped

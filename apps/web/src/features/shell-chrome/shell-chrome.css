@@ -487,6 +487,18 @@ html.native-shell .brest {
   padding: 0;
 }
 
+/* THE REST OF THE SENTENCE, one tap away. The lede is cut only at a
+   boundary the claim itself printed, so this reveals the tail rather
+   than a different line — and the ellipsis is a control, not
+   punctuation, which is why it carries a label. */
+.bwhole {
+  background: transparent;
+  border: 0;
+  padding: 0 0 0 2px;
+  font: inherit;
+  color: var(--brand-1);
+}
+
 /* ASKABLE TERMS. 40% of claims carry an abbreviation a reader may not
    know (measured over 3,461 claims — jargon.ts). A dotted underline is
    the whole of the invitation: the reader who knows what EBITDA is loses
