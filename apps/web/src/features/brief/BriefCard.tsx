@@ -6,7 +6,7 @@ import { groupInt } from '../../shared/format/group-int';
 import { TIER_TITLE, TOPIC_LABEL } from '../../shared/format/vocab';
 import { BriefCopyButton } from './BriefCopyButton';
 import { GlossedText } from './GlossedText';
-import { briefGist } from './gist';
+import { briefGist } from '../../shared/format/gist';
 import type { Jargon } from './jargon';
 import {
   briefLede,

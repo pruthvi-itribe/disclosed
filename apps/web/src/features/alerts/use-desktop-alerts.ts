@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiEnvelope } from '../../shared/api/api-get';
 import type { SendMethod } from '../../shared/api/api-send';
 import type { FilingView } from '../../shared/types/api';
+import { alertLine } from './alert-line';
 import { topicLabel } from '../../shared/format/vocab';
 
 /**
@@ -114,16 +115,12 @@ export const useDesktopAlerts = ({
             const title = watched.has(filing.symbol)
               ? `${filing.symbol} filed`
               : `${topicLabel(matched?.topic ?? '')}: ${filing.symbol}`;
-            // A notification is a glance, not a card: the claim TEXT is the
-            // extractor's verified-span-backed one-liner and is already
-            // notification-sized; the outcome sentence is the card-length
-            // fallback for the rare verified filing with no claim line. A
-            // dedicated model-written alert line is plan C5 — measured
-            // there before it is built.
-            const line = matched?.text ?? claims[0]?.text ?? filing.outcome;
-            const body = line.length > 140 ? `${line.slice(0, 139)}…` : line;
+            // ONE CLAIM, IN ITS SHORTEST VERIFIED FORM, and never cut by
+            // this file — see alert-line.ts for why a blind
+            // `slice(0, 139)` on a claim whose p90 is 162 characters was
+            // a correctness problem and not a formatting one.
             const shown = new Notification(title, {
-              body,
+              body: alertLine(filing, matched ?? null),
               tag: filing.symbol,
             });
             shown.onclick = () => window.focus();
