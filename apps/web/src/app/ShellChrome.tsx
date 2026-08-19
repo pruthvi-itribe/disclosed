@@ -1,5 +1,6 @@
 import { BottomNav, type NavPick } from '../features/shell-chrome/BottomNav';
 import { ActiveFilters } from '../features/shell-chrome/ActiveFilters';
+import { FilterFab } from '../features/shell-chrome/FilterFab';
 import type { FilterAction, FilterState } from './filter-state';
 import type { ViewState } from './view-state';
 import { groupInt } from '../shared/format/group-int';
@@ -23,7 +24,6 @@ export function ShellChrome({
   dispatch,
   onSearchCleared,
   controls,
-  prefs,
   onShowView,
   onSheet,
   onSignOut,
@@ -37,7 +37,6 @@ export function ShellChrome({
   readonly dispatch: (action: FilterAction) => void;
   readonly onSearchCleared: () => void;
   readonly controls: JSX.Element;
-  readonly prefs: JSX.Element | null;
   readonly onShowView: (view: 'brief' | 'feed' | 'watching') => void;
   readonly onSheet: (sheet: 'explore' | 'profile' | null) => void;
   readonly onSignOut: () => void;
@@ -55,30 +54,46 @@ export function ShellChrome({
       : `${groupInt(counts.used)} of ${groupInt(counts.cap)} companies`;
 
   const pick = (picked: NavPick): void => {
-    if (picked === 'explore' || picked === 'profile') {
-      onSheet(sheet === picked ? null : picked);
+    if (picked === 'profile') {
+      onSheet(sheet === 'profile' ? null : 'profile');
       return;
     }
     onSheet(null);
     onShowView(picked);
   };
 
+  // Applied narrowing, in the same terms the strip announces — the
+  // floating control carries the fact where the thumb already is.
+  const narrowed =
+    filters.q !== '' ||
+    filters.symbol !== '' ||
+    filters.group !== '' ||
+    filters.topic !== '' ||
+    filters.plans;
+
   return (
     <>
       {sheet === 'explore' && (
         <Sheet title="Search and filters">{controls}</Sheet>
       )}
+      {navView === 'feed' && (
+        <FilterFab
+          open={sheet === 'explore'}
+          narrowed={narrowed}
+          onToggle={() => onSheet(sheet === 'explore' ? null : 'explore')}
+        />
+      )}
       {sheet === 'profile' && (
         <Sheet title="Profile">
-          {/* Preferences BETWEEN the identity rows and the way out: sign
-              out is the last thing on the screen, not a wall in it. */}
+          {/* WHO, WHAT, AND THE WAY OUT — nothing else. The alert
+              preferences moved to the Watching screen on 2026-08-19,
+              where the following they describe actually happens; two
+              copies of one stored list is what they were here. */}
           <ProfileContent
             email={email}
             countsLine={countsLine}
             onSignOut={onSignOut}
-          >
-            {prefs}
-          </ProfileContent>
+          />
         </Sheet>
       )}
       {navView === 'feed' && sheet === null && (
@@ -88,7 +103,14 @@ export function ShellChrome({
           onSearchCleared={onSearchCleared}
         />
       )}
-      <BottomNav active={sheet ?? navView} unread={unread} onPick={pick} />
+      {/* The filter sheet does not move the reader: they are still on the
+          feed, narrowing it, so Feed stays lit under it. Only Profile is
+          a destination of its own. */}
+      <BottomNav
+        active={sheet === 'profile' ? 'profile' : navView}
+        unread={unread}
+        onPick={pick}
+      />
     </>
   );
 }

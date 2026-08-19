@@ -111,7 +111,7 @@ export function App({
     />
   );
   const watchedCount = watch.counts?.used ?? 0;
-  const { prefs, addWatch, topics, watchControls } = accountSurfacesUi({
+  const { prefs, addWatch, watchControls } = accountSurfacesUi({
     me: account.me,
     alerts,
     watchedCount,
@@ -229,10 +229,9 @@ export function App({
           // denominator no server sent.
           watchCap={account.me?.watchCap ?? watch.counts?.cap ?? null}
           counts={watch.counts}
-          prefs={shell ? null : prefs}
+          prefs={prefs}
           manage={shell}
           addWatch={addWatch}
-          topics={topics}
           onOpenCompany={openCompany}
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}
@@ -282,7 +281,6 @@ export function App({
           dispatch={filterDispatch}
           onSearchCleared={() => searchBox.current?.clear()}
           controls={controls}
-          prefs={prefs}
           onShowView={(view) => dispatchView({ type: 'show', view })}
           onSheet={setSheet}
           onSignOut={account.signOut}

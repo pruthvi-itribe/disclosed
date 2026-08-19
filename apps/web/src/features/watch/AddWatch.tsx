@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { ApiResult } from '../../shared/api/api-get';
 import { useSuggest } from '../../shared/api/use-suggest';
+import { IconSvg } from '../../shared/ui/IconSvg';
+import { ICON_CLOSE, ICON_NAV_SEARCH } from '../../shared/ui/nav-icons';
 import type { WatchControls } from '../../shared/ui/WatchButton';
 import './add-watch.css';
 
@@ -28,20 +30,43 @@ export function AddWatch({
 
   return (
     <div className="addwatch" data-ui="add-watch">
-      <input
-        id="add-watch-input"
-        type="search"
-        placeholder="Add a company…"
-        autoComplete="off"
-        spellCheck={false}
-        aria-label="Add a company to your watchlist"
-        value={text}
-        onChange={(event) => {
-          setText(event.target.value);
-          suggest.onInput(event.target.value);
-        }}
-        onBlur={suggest.close}
-      />
+      {/* The field says what it is with a mark rather than a label above
+          it: a search row on a phone is an icon, a box and a way to empty
+          it (design pass 2026-08-19). */}
+      <div className={`addwatchbox${text === '' ? '' : ' filled'}`}>
+        <IconSvg shapes={ICON_NAV_SEARCH} size={17} />
+        <input
+          id="add-watch-input"
+          type="search"
+          placeholder="Add a company to watch"
+          autoComplete="off"
+          spellCheck={false}
+          aria-label="Add a company to your watchlist"
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+            suggest.onInput(event.target.value);
+          }}
+          onBlur={suggest.close}
+        />
+        {text !== '' && (
+          <button
+            type="button"
+            className="addwatchclear"
+            data-ui="add-watch-clear"
+            aria-label="Clear"
+            // Mousedown, for the reason the row below gives: a click
+            // lands after the input's blur has already closed the list.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              setText('');
+              suggest.onInput('');
+            }}
+          >
+            <IconSvg shapes={ICON_CLOSE} size={14} />
+          </button>
+        )}
+      </div>
       {suggest.open && companies.length > 0 && (
         <ul
           className="addwatchlist"

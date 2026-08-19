@@ -31,22 +31,20 @@ export function Sheet({
 
 /**
  * The profile surface the top bar's small controls never gave a phone:
- * who is signed in, what they watch, the preferences composed in, and —
- * LAST, under all of it — the door out. Sign out sat directly under the
- * identity rows and pushed the notification preferences below the fold
- * (called out 2026-08-19); a destructive control belongs at the end of a
- * screen, not in the middle of it.
+ * who is signed in, what they watch, and — LAST — the door out. A
+ * destructive control belongs at the end of a screen, not in the middle
+ * of it (called out 2026-08-19, when sign out sat above everything). The
+ * alert preferences it briefly held moved to the Watching screen, which
+ * is where the following they describe happens.
  */
 export function ProfileContent({
   email,
   countsLine,
   onSignOut,
-  children,
 }: {
   readonly email: string;
   readonly countsLine: string;
   readonly onSignOut: () => void;
-  readonly children: React.ReactNode;
 }): JSX.Element {
   return (
     <div className="profile" data-ui="profile">
@@ -62,7 +60,6 @@ export function ProfileContent({
           {countsLine}
         </span>
       </div>
-      {children}
       <button
         type="button"
         className="profilesignout"
