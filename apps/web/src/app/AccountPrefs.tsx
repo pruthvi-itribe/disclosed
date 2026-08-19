@@ -6,6 +6,7 @@ import type { WatchControls } from '../shared/ui/WatchButton';
 import type { useWatch } from '../features/watch/use-watch';
 import { AddWatch } from '../features/watch/AddWatch';
 import { TopicFollows } from '../features/alerts/TopicFollows';
+import { AlertsToggle } from '../features/alerts/AlertsToggle';
 import { NotificationPrefs } from '../features/alerts/NotificationPrefs';
 import type { DesktopAlertsState } from '../features/alerts/use-desktop-alerts';
 
@@ -61,8 +62,17 @@ export function accountSurfacesUi({
     watchControls,
     prefs: (
       <NotificationPrefs
-        permission={alerts.permission}
-        onRequest={alerts.request}
+        // The desktop-permission control belongs to the browser alone:
+        // inside the native shell there is no "this browser" to speak of,
+        // and Phase B's push is the row that will stand here instead.
+        channel={
+          shell ? null : (
+            <AlertsToggle
+              permission={alerts.permission}
+              onRequest={alerts.request}
+            />
+          )
+        }
         apiSend={apiSend}
         initialTopics={me.alertTopics ?? []}
         initialWatchlist={me.alertWatchlist ?? true}

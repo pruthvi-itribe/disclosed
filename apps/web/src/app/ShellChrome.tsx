@@ -66,18 +66,19 @@ export function ShellChrome({
   return (
     <>
       {sheet === 'explore' && (
-        <Sheet title="Search and filters" onClose={() => onSheet(null)}>
-          {controls}
-        </Sheet>
+        <Sheet title="Search and filters">{controls}</Sheet>
       )}
       {sheet === 'profile' && (
-        <Sheet title="Profile" onClose={() => onSheet(null)}>
+        <Sheet title="Profile">
+          {/* Preferences BETWEEN the identity rows and the way out: sign
+              out is the last thing on the screen, not a wall in it. */}
           <ProfileContent
             email={email}
             countsLine={countsLine}
             onSignOut={onSignOut}
-          />
-          {prefs}
+          >
+            {prefs}
+          </ProfileContent>
         </Sheet>
       )}
       {navView === 'feed' && sheet === null && (

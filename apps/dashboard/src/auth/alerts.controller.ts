@@ -160,9 +160,7 @@ export class AlertsController {
     ]);
     // The switch silences the ARM, not the banner: an off watchlist
     // contributes no symbols to the predicate at all.
-    const symbols = watchlistOn
-      ? entries.map((entry) => entry.symbol)
-      : [];
+    const symbols = watchlistOn ? entries.map((entry) => entry.symbol) : [];
 
     const page = await this.filings.getAlertPage(
       symbols,

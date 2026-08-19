@@ -1,33 +1,35 @@
 import type { ApiEnvelope } from '../../shared/api/api-get';
 import type { SendMethod } from '../../shared/api/api-send';
 import { TOPIC_CHIPS } from '../../shared/format/vocab';
-import { AlertsToggle } from './AlertsToggle';
 import { useAlertTopics } from './use-alert-topics';
-import type { AlertPermission } from './use-desktop-alerts';
 import './alerts.css';
 
 /**
  * The notifications section, one component with two homes — the app's
- * Profile sheet and the web's Watching view (plan C3). The desktop
- * channel row is the one real channel control; a mobile-push row used to
- * sit beside it saying "arrives with the app release" and read as
- * nonsense INSIDE the app (called out 2026-08-19) — an absent feature
- * earns no row, and the row returns when Phase B makes it a control.
- * Below: what to be alerted about, all of it in the pill language the
- * rest of the product speaks — the watchlist arm as a real switch (off
- * silences it at the server's predicate, not at the banner), topics as
- * the same pills the Watching screen follows with.
+ * Profile sheet and the web's Watching view (plan C3).
+ *
+ * CHANNELS ARE THE CALLER'S, because they differ per home: the browser
+ * gets the desktop-permission control, the native shell gets NONE and so
+ * the whole row is absent there — "Desktop, this browser" is a sentence
+ * about a surface the app is not (called out 2026-08-19), and a
+ * mobile-push placeholder saying "arrives with the app release" read as
+ * nonsense inside the app for the same reason. An absent feature earns
+ * no row; the shell's row returns when Phase B makes it a control.
+ *
+ * Below the channels, what to be alerted about, all of it in the pill
+ * language the rest of the product speaks — the watchlist arm as a real
+ * switch (off silences it at the server's predicate, not at the banner),
+ * topics as the same pills the Watching screen follows with.
  */
 export function NotificationPrefs({
-  permission,
-  onRequest,
+  channel,
   apiSend,
   initialTopics,
   initialWatchlist = true,
   watchedCount,
 }: {
-  readonly permission: AlertPermission;
-  readonly onRequest: () => void;
+  /** The delivery control for THIS home, or null where none exists. */
+  readonly channel: JSX.Element | null;
   readonly apiSend: <T>(
     path: string,
     method: SendMethod,
@@ -43,10 +45,12 @@ export function NotificationPrefs({
   return (
     <div className="notifprefs" data-ui="notification-prefs">
       <h3>Notifications</h3>
-      <div className="notifrow">
-        <span>Desktop, this browser</span>
-        <AlertsToggle permission={permission} onRequest={onRequest} />
-      </div>
+      {channel !== null && (
+        <div className="notifrow" data-ui="prefs-channel">
+          <span>Desktop, this browser</span>
+          {channel}
+        </div>
+      )}
 
       <h4>Alert me about</h4>
       <div className="notifrow">

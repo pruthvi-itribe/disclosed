@@ -10,12 +10,12 @@ const flush = async () => {
 const renderPrefs = (
   apiSend = vi.fn().mockResolvedValue({ data: { topics: ['dividend'] } }),
   initialTopics: string[] = [],
+  channel: JSX.Element | null = <span data-ui="alerts">Desktop alerts on</span>,
 ) => ({
   apiSend,
   ...render(
     <NotificationPrefs
-      permission="granted"
-      onRequest={vi.fn()}
+      channel={channel}
       apiSend={apiSend as never}
       initialTopics={initialTopics}
       watchedCount={3}
@@ -48,6 +48,19 @@ describe('NotificationPrefs', () => {
     expect(container.textContent).toContain(
       'Only claims verified against the source document are ever sent.',
     );
+  });
+
+  // The app is not a browser tab, so it must not be told about one
+  // (called out 2026-08-19): with no channel the whole row is absent,
+  // and what remains is only what the reader can actually decide.
+  it('drops the channel row entirely where no channel exists', () => {
+    const { container } = renderPrefs(undefined, [], null);
+    expect(container.textContent).not.toContain('Desktop');
+    expect(container.querySelector('[data-ui="prefs-channel"]')).toBeNull();
+    expect(container.textContent).toContain('Alert me about');
+    expect(
+      container.querySelectorAll('[data-ui="prefs-topics"] .followpill').length,
+    ).toBe(7);
   });
 
   // Off silences the ARM at the server's predicate, not at the banner.

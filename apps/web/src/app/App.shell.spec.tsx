@@ -43,7 +43,12 @@ describe('the shell chrome', () => {
     expect(sheet?.querySelector('#symbol')).not.toBeNull();
     expect(sheet?.querySelector('#only-insights')).not.toBeNull();
 
-    fireEvent.click(sheet?.querySelector('.sheetclose') as Element);
+    // No "Done": the bar never left, so the lit tab is the way out
+    // (direction 2026-08-19 — one way out of one screen).
+    expect(sheet?.querySelector('.sheetclose')).toBeNull();
+    fireEvent.click(
+      container.querySelector('[data-ui="nav-explore"]') as Element,
+    );
     expect(container.querySelector('[data-ui="sheet"]')).toBeNull();
   });
 
@@ -109,10 +114,17 @@ describe('the shell chrome', () => {
     expect(
       container.querySelector('[data-ui="profile-watching"]')?.textContent,
     ).toBe('0 of 50 companies');
-    // The notifications panel lives here in the shell (plan C3).
+    // The notifications panel lives here in the shell (plan C3) — and
+    // says nothing about "this browser", which the app is not.
     expect(
       container.querySelector('[data-ui="notification-prefs"]'),
     ).not.toBeNull();
+    expect(container.querySelector('[data-ui="prefs-channel"]')).toBeNull();
+    // The way out is the LAST thing on the screen, under the prefs.
+    const profile = container.querySelector('[data-ui="profile"]') as Element;
+    expect(profile.lastElementChild?.getAttribute('data-ui')).toBe(
+      'profile-sign-out',
+    );
 
     fireEvent.click(
       container.querySelector('[data-ui="profile-sign-out"]') as Element,

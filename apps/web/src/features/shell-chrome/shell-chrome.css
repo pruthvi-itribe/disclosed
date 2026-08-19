@@ -98,7 +98,6 @@ html.native-shell body {
 .sheet .sheethead {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 14px;
@@ -106,14 +105,6 @@ html.native-shell body {
 .sheet .sheethead h2 {
   margin: 0;
   font-size: 19px;
-}
-.sheet .sheetclose {
-  background: transparent;
-  border: 0;
-  color: var(--brand-1);
-  font: inherit;
-  font-weight: 600;
-  padding: 6px 2px;
 }
 .sheet .sheetbody {
   flex: 1;
@@ -142,7 +133,10 @@ html.native-shell body {
   font-size: 15.5px;
 }
 .profile .profilesignout {
-  margin-top: 14px;
+  /* Last on the screen, with air above it: the preferences end, and the
+     destructive control is deliberately far from the pills. */
+  margin-top: 26px;
+  margin-bottom: 10px;
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 10px;

@@ -1,32 +1,28 @@
 import './shell-chrome.css';
 
 /**
- * The shell's two full-screen sheets, as one dumb frame: a title, a close
- * control, and whatever App composes in — the search-and-filters cluster
- * (the SAME FeedControls the web feed renders, relocated) or the profile.
- * Slots rather than imports, because features do not import features.
+ * The shell's two full-screen sheets, as one dumb frame: a title and
+ * whatever App composes in — the search-and-filters cluster (the SAME
+ * FeedControls the web feed renders, relocated) or the profile. Slots
+ * rather than imports, because features do not import features.
+ *
+ * NO CLOSE BUTTON. It carried a "Done" that duplicated a control the
+ * screen already has (called out 2026-08-19): the bottom bar stays
+ * visible beneath the sheet, so tapping the lit tab closes it and
+ * tapping any other tab leaves for that view — both through
+ * ShellChrome's pick(). A second way out of one screen is one too many.
  */
 export function Sheet({
   title,
-  onClose,
   children,
 }: {
   readonly title: string;
-  readonly onClose: () => void;
   readonly children: React.ReactNode;
 }): JSX.Element {
   return (
     <div className="sheet" role="dialog" aria-label={title} data-ui="sheet">
       <div className="sheethead">
         <h2>{title}</h2>
-        <button
-          type="button"
-          className="sheetclose"
-          aria-label={`Close ${title}`}
-          onClick={onClose}
-        >
-          Done
-        </button>
       </div>
       <div className="sheetbody">{children}</div>
     </div>
@@ -35,16 +31,22 @@ export function Sheet({
 
 /**
  * The profile surface the top bar's small controls never gave a phone:
- * who is signed in, what they watch, and the door out.
+ * who is signed in, what they watch, the preferences composed in, and —
+ * LAST, under all of it — the door out. Sign out sat directly under the
+ * identity rows and pushed the notification preferences below the fold
+ * (called out 2026-08-19); a destructive control belongs at the end of a
+ * screen, not in the middle of it.
  */
 export function ProfileContent({
   email,
   countsLine,
   onSignOut,
+  children,
 }: {
   readonly email: string;
   readonly countsLine: string;
   readonly onSignOut: () => void;
+  readonly children: React.ReactNode;
 }): JSX.Element {
   return (
     <div className="profile" data-ui="profile">
@@ -60,6 +62,7 @@ export function ProfileContent({
           {countsLine}
         </span>
       </div>
+      {children}
       <button
         type="button"
         className="profilesignout"
