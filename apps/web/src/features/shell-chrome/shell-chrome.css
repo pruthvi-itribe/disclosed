@@ -128,6 +128,54 @@ html.native-shell #view-company {
   border-top: 1px solid var(--line);
 }
 
+/* THE STARS WERE A RAGGED COLUMN. The row is ticker, time, star with a
+   12px gap, and the phone rule hides the name — so each star landed
+   wherever its row's text ended and nine rows made a zigzag down the
+   screen (sweep capture, 2026-08-19). One auto margin puts them in a
+   column, and the row's own hairline then reads as a list rather than as
+   nine unrelated lines.
+   Quieter, too: on THIS list every row is already watched, so the boxed
+   button drew a control's chrome nine times to say one thing. The star
+   keeps its 44px target and loses the box. */
+html.native-shell .rosterrow .watch {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+}
+
+/* THE WAY OUT SITS AT THE FOOT OF THE SHEET. With the preferences gone
+   to Watching, Profile is two rows and a button, and the button floated
+   in the middle of an empty screen (sweep capture, 2026-08-19). The
+   panel fills the sheet and the auto margin drops the control to the
+   bottom, where a destructive action belongs. */
+html.native-shell .sheet .profile {
+  min-height: 100%;
+}
+html.native-shell .sheet .profilesignout {
+  margin-top: auto;
+  margin-bottom: 4px;
+}
+
+/* THE FILTER SHEET STACKS. Its row is search-then-toggle with the toggle
+   pushed to the far end by `margin-left: auto` — right for a wide feed
+   bar, wrong in a one-column sheet, where it stranded "Only filings with
+   verified claims" against the right edge with nothing opposite it. The
+   box and the toggle are the same 16px-tall search idiom the Watching
+   screen uses, so they read as one family. */
+html.native-shell .sheet .feedtop {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+html.native-shell .sheet .feedtop .onlyinsights {
+  margin-left: 0;
+}
+html.native-shell .sheet #symbol {
+  height: 44px;
+  border-radius: 12px;
+  font-size: 16px;
+}
+
 /* ------------------------------------------- the feed's filter control ---- */
 
 /* Bottom right, above the bar, over the feed it narrows. z-index 46 puts
@@ -331,10 +379,20 @@ html.native-shell #brief-mix {
    notch" (2026-08-19). Everything now begins at the card's own edge and
    only the MEASURE is capped; the composition runs top-down instead of
    floating in the middle, with the gesture line parked at the bottom. */
+/* TWO AUTO MARGINS, DELIBERATELY. brief.css records the opposite lesson
+   for a company card — one auto margin per card, because the topic and
+   the foot both wanting the bottom splits the space between them. Here
+   the split IS the composition: the block takes half the free space
+   above it and the gesture line keeps the other half below, so the cover
+   reads as centred with its hint at the foot instead of top-heavy over a
+   void (sweep capture, 2026-08-19). */
 html.native-shell .bcover {
   justify-content: flex-start;
-  padding-top: 7vh;
+  padding-top: 0;
   gap: 0;
+}
+html.native-shell .bcover .bday {
+  margin-top: auto;
 }
 html.native-shell .bcover .bday {
   font-size: 12.5px;
