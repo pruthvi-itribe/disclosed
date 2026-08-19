@@ -33,10 +33,11 @@ export interface WatchingViewProps {
    */
   readonly counts: { readonly used: number; readonly cap: number } | null;
   /**
-   * The desktop-alerts control, composed in by App the way FeedControls
-   * takes the search box — features do not import features.
+   * The notifications panel (plan C3), composed in by App the way
+   * FeedControls takes the search box — features do not import features.
+   * Null in the shell, where the panel's home is the Profile sheet.
    */
-  readonly alerts?: JSX.Element | null;
+  readonly prefs?: JSX.Element | null;
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
@@ -68,7 +69,7 @@ export function WatchingView({
   onOpenCompany,
   onOpenFocus,
   counts,
-  alerts = null,
+  prefs = null,
   onPickGroup,
   onRoster,
   onSeen,
@@ -97,8 +98,8 @@ export function WatchingView({
             ? ''
             : `${groupInt(counts.used)} of ${groupInt(counts.cap)} companies watched`}
         </span>
-        {alerts}
       </div>
+      {prefs}
       <p
         id="watch-roster-note"
         className="sectionnote"

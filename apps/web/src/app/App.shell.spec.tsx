@@ -109,6 +109,10 @@ describe('the shell chrome', () => {
     expect(
       container.querySelector('[data-ui="profile-watching"]')?.textContent,
     ).toBe('0 of 50 companies');
+    // The notifications panel lives here in the shell (plan C3).
+    expect(
+      container.querySelector('[data-ui="notification-prefs"]'),
+    ).not.toBeNull();
 
     fireEvent.click(
       container.querySelector('[data-ui="profile-sign-out"]') as Element,

@@ -23,6 +23,7 @@ export function ShellChrome({
   dispatch,
   onSearchCleared,
   controls,
+  prefs,
   onShowView,
   onSheet,
   onSignOut,
@@ -36,6 +37,7 @@ export function ShellChrome({
   readonly dispatch: (action: FilterAction) => void;
   readonly onSearchCleared: () => void;
   readonly controls: JSX.Element;
+  readonly prefs: JSX.Element | null;
   readonly onShowView: (view: 'brief' | 'feed' | 'watching') => void;
   readonly onSheet: (sheet: 'explore' | 'profile' | null) => void;
   readonly onSignOut: () => void;
@@ -75,6 +77,7 @@ export function ShellChrome({
             countsLine={countsLine}
             onSignOut={onSignOut}
           />
+          {prefs}
         </Sheet>
       )}
       {navView === 'feed' && sheet === null && (
