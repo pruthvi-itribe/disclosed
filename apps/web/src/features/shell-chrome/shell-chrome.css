@@ -476,6 +476,61 @@ html.native-shell .brest {
   font-size: 14px;
   margin-top: 16px;
 }
+
+/* THE TOPIC, AS AN EYEBROW. It sat under the claims, so a reader met the
+   sentence before knowing what kind of news it was and read the card
+   twice (persona review, 2026-08-19). Above the claim it orients in one
+   glance, and it is the same chip: tapping still filters the feed. */
+.btopic.beyebrow {
+  margin: 18px 0 0;
+  min-height: 0;
+  padding: 0;
+}
+
+/* ASKABLE TERMS. 40% of claims carry an abbreviation a reader may not
+   know (measured over 3,461 claims — jargon.ts). A dotted underline is
+   the whole of the invitation: the reader who knows what EBITDA is loses
+   nothing, and the document's words are not touched. */
+.gloss {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--muted);
+}
+.gloss:active {
+  color: var(--brand-1);
+}
+
+/* OUR ANSWER, MARKED AS OURS. It sits above the card's foot and says so
+   in its own line, because a definition beside a verbatim claim must not
+   be mistakable for part of it. */
+.bgloss {
+  margin-top: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bgloss .bglossterm {
+  font-weight: 700;
+  font-size: 13px;
+}
+.bgloss .bglossplain {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.bgloss .bglossours {
+  font-size: 11px;
+  color: var(--muted);
+}
 html.native-shell .brest li {
   display: -webkit-box;
   -webkit-box-orient: vertical;
