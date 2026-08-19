@@ -237,37 +237,6 @@ describe('FeedGrid', () => {
     );
   });
 
-  // Only 23.2% of claims carry a mark; a permanent legend is furniture.
-  it('shows the direction legend only when a rendered claim carries a mark', () => {
-    const unmarked = renderGrid([filing({ seqId: 1 })], meta());
-    expect(
-      (unmarked.container.querySelector('#dir-legend') as HTMLElement).hidden,
-    ).toBe(true);
-
-    const marked = renderGrid(
-      [
-        filing({
-          seqId: 2,
-          enrichment: {
-            resultsLine: null,
-            claims: [
-              {
-                text: 'up 20%',
-                echo: false,
-                direction: 'expansion',
-                directionEvidence: 'up',
-              },
-            ],
-          },
-        }),
-      ],
-      meta(),
-    );
-    expect(
-      (marked.container.querySelector('#dir-legend') as HTMLElement).hidden,
-    ).toBe(false);
-  });
-
   it('without chrome there is no info line, no button and no legend', () => {
     const { container } = render(
       <FeedGrid

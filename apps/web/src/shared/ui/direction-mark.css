@@ -1,32 +1,70 @@
 /*
- * The mark is a drawing sitting inside a line of prose, so it is aligned to
- * the TEXT baseline rather than to the box: an inline SVG's own baseline is
- * its bottom edge, which hangs the whole glyph one stroke too low beside
- * 13.5px type. Measured against the claim line at 13.5px and the company
- * page's mark rows at 12px — -0.22em sits the shaft's centre on the x-height
- * in both.
+ * The mark is a drawing sitting inside a line of prose, and an inline SVG's
+ * own baseline is its BOTTOM EDGE — so left alone it hangs a whole glyph
+ * below the words. `middle` instead: the box's centre against the baseline
+ * plus half the x-height, which is where the ink already is (every mark is
+ * drawn centred in its 24-unit box).
+ *
+ * MEASURED, not guessed: -0.22em, -0.18em, -0.28em and `middle` rendered
+ * side by side at 3.2x against the claim line's 13.5px type on 2026-08-19,
+ * after "alignment is also bad with icons vertically and text". The em
+ * offsets all sat the mark low, across the baseline rather than on the
+ * x-height band; `middle` lands it on the band and needs no number that a
+ * later font change would invalidate.
  *
  * Colour is inherited on purpose and set nowhere: page.css's own block
  * argues it at length, and the drawing is stroked in currentColor so no
  * later rule can paint a fall red without painting the sentence red too.
  */
 .dir svg {
-  vertical-align: -0.22em;
+  vertical-align: middle;
 }
 
 /* The legend teaches the three drawings by standing each beside its word.
    Wrapping is per PAIR, so a narrow phone never breaks a mark from the word
-   it names. */
+   it names. The gap between pairs is twice the gap inside one, so the eye
+   groups mark-with-word rather than word-with-next-mark — at equal gaps the
+   row read as six loose items. */
 .dirkeys {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  margin-right: 4px;
+  align-items: center;
+  gap: 4px 12px;
+  margin-right: 10px;
 }
 .dirkey {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   color: var(--text);
   white-space: nowrap;
+}
+
+/* The dismissal. Quiet — it is an exit from a teaching aid, not an action
+   on the feed — and beside the thing it dismisses rather than floated
+   away from it. */
+.dirgot {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.dirgot:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* The standing statement, under the feed with the count: one line, in the
+   quietest register on the page, always there. */
+.dirstance {
+  flex-basis: 100%;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+  max-width: 92ch;
 }

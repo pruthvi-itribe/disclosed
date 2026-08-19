@@ -6,10 +6,18 @@ import { DIRECTION_MARK, DirectionMark } from './DirectionMark';
 import { feedBucket } from './feed-bucket';
 import { insightLines } from './insight-lines';
 import { FeedCard } from './FeedCard';
+import { useLearned } from './use-learned';
 import type { WatchControls } from './WatchButton';
 
 /** The server's MAX_LIMIT, restated for the at-cap note. */
 const LIMIT_MAX = 500;
+
+/** One reader, one dismissal, remembered — see useLearned. */
+const MARK_KEY = 'learned-direction-marks';
+
+/** The whole argument, for the reader who stops on the standing line. */
+const MARK_NOTE =
+  'The direction and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and Disclosed publishes none. A fall is not bad news and a rise is not good news: these marks follow the figure, not the company. In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions — a decrease every reader would call an improvement. Read the claim, not the mark. Where a filing did not print both a direction and a size, no mark appears: an absent mark means the filing was silent, not that nothing happened. Disclosed does not rate companies or securities. It reports what documents say and shows you where they say it.';
 
 /**
  * Why the feed is empty, in the most specific words the page can honestly
@@ -128,6 +136,10 @@ export function FeedGrid({
     return () => observer.disconnect();
   }, [chrome, onGrow, moreHidden]);
 
+  // The key shows to a reader who has not dismissed it, and stops for good
+  // once they have — a legend is a teaching aid, not chrome (2026-08-19).
+  const { learned, learn } = useLearned(MARK_KEY);
+
   // The ONE count still done in the browser: whether any rendered claim
   // carries a movement mark. Only 23.2% of claims do, so a permanent legend
   // is furniture.
@@ -186,8 +198,7 @@ export function FeedGrid({
           id="dir-legend"
           className="dirlegend"
           data-ui="direction-legend"
-          hidden={marks === 0}
-          title="The direction word and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and Disclosed publishes none. A fall is not bad news and a rise is not good news: these marks follow the figure, not the company. In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions — a decrease every reader would call an improvement. Read the claim, not the arrow. Where a filing did not print both a direction and a size, no mark appears: an absent mark means the filing was silent, not that nothing happened. Disclosed does not rate companies or securities. It reports what documents say and shows you where they say it."
+          hidden={marks === 0 || learned}
         >
           {/* The legend draws the marks it names, so the key and the thing
               keyed cannot drift apart — and a reader meets the drawing here
@@ -203,8 +214,14 @@ export function FeedGrid({
               <DirectionMark direction="mixed" /> mixed
             </span>
           </span>
-          — the change the filing&apos;s own numbers show. From the document,
-          not our view, and not about the share price.
+          <button
+            type="button"
+            className="dirgot"
+            data-ui="direction-legend-learned"
+            onClick={learn}
+          >
+            Got it
+          </button>
         </div>
       )}
       <div
@@ -249,6 +266,17 @@ export function FeedGrid({
           >
             Load more
           </button>
+          {/* THE STANCE OUTLIVES THE KEY, and lives where a standing
+              statement belongs: under the feed, not above it. The key
+              above teaches three drawings and can be dismissed once it
+              has; that Disclosed is reporting a document rather than
+              rating a company is not a thing a reader dismisses, so it
+              stays — one quiet line, out of the reading path, carrying
+              the full argument in its title. */}
+          <p className="dirstance" data-ui="direction-stance" title={MARK_NOTE}>
+            The marks show the change the filing&apos;s own numbers show — from
+            the document, not our view, and not about the share price.
+          </p>
         </div>
       )}
     </>
