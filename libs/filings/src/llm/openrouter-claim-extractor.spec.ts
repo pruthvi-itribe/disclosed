@@ -738,9 +738,7 @@ describe('OpenRouterClaimExtractor — the headline lane', () => {
       },
     ],
   };
-  const ITEMS = [
-    { id: 'a:0', claim: 'a claim', span: 'a copy of a span here' },
-  ];
+  const ITEMS = [{ id: 'a:0', claim: 'a claim' }];
 
   it('sends the gist prompt and its own schema name', async () => {
     const chat = new RecordingChat(GIST_REPLY);

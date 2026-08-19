@@ -15,7 +15,7 @@
  * told the same thing again.
  *
  * Usage:
- *   npm run claims:gist -- [--limit N] [--today] [--write]
+ *   npm run claims:gist -- [--limit N] [--today] [--effort low] [--write]
  *
  * Without `--write` it reports and changes nothing, which is how a run
  * should always start: the report names every refusal by reason and
@@ -76,7 +76,17 @@ async function main(): Promise<void> {
   // for the Anthropic key alone and refused to run on a pipeline
   // configured for OpenRouter, which is every pipeline this repo ships.
   const apiKey = claimApiKeyOf(config);
-  const options = { model: config.claimModel, effort: config.claimEffort };
+  // LOW EFFORT BY DEFAULT, AND THAT IS MEASURED. A 20-claim dry run at
+  // the claim lane's `medium` burned 41,668 output tokens against 2,020
+  // in — roughly 2,000 tokens of reasoning to choose a substring, which
+  // is the whole of the cost at this scale. The task is bounded by a
+  // gate that rejects everything outside one line, so depth buys
+  // refusals rather than risk. `--effort` overrides it for a sweep.
+  const effortAt = process.argv.indexOf('--effort');
+  const effort = (
+    effortAt === -1 ? 'low' : process.argv[effortAt + 1]
+  ) as typeof config.claimEffort;
+  const options = { model: config.claimModel, effort };
   const extractor =
     config.claimProvider === 'openrouter'
       ? OpenRouterClaimExtractor.fromApiKey(apiKey, options)
@@ -89,7 +99,7 @@ async function main(): Promise<void> {
     );
   }
   process.stdout.write(
-    `provider ${config.claimProvider}, model ${config.claimModel}, effort ${config.claimEffort}\n`,
+    `provider ${config.claimProvider}, model ${config.claimModel}, effort ${effort}\n`,
   );
 
   await mongoose.connect(config.mongoUri);
@@ -111,10 +121,22 @@ async function main(): Promise<void> {
   };
 
   const targets: Target[] = [];
-  const cursor = filings.find(scope, {
-    projection: { 'enrichment.claims': 1 },
-  });
+  // NEWEST FIRST, AND THE LIMIT BOUNDS THE SCAN. The first version built
+  // the whole target list before it asked anything, so `--limit 50` still
+  // walked every filing in the collection — ten minutes of nothing, which
+  // is indistinguishable from a hang. `disseminatedAt` is the index the
+  // feed already sorts on, so a bounded run now stops as soon as it has
+  // enough, and it looks at the filings a reader is most likely to open.
+  const cursor = filings
+    .find(scope, { projection: { 'enrichment.claims': 1 } })
+    .sort({ disseminatedAt: -1 });
+  let scanned = 0;
   for await (const doc of cursor) {
+    scanned += 1;
+    if (scanned % 500 === 0) {
+      process.stdout.write(`  scanned ${scanned}, found ${targets.length}\r`);
+    }
+    if (targets.length >= limit) break;
     const claims = (doc as { enrichment?: { claims?: StoredClaim[] } })
       .enrichment?.claims;
     if (!Array.isArray(claims)) continue;
@@ -142,8 +164,9 @@ async function main(): Promise<void> {
 
   const work = targets.slice(0, Number.isFinite(limit) ? limit : undefined);
   process.stdout.write(
-    `claims over ${GIST_MAX_CHARS} chars awaiting a headline: ${targets.length}` +
-      `${work.length === targets.length ? '' : ` (running ${work.length})`}\n`,
+    `\nscanned ${scanned} filing(s); claims over ${GIST_MAX_CHARS} chars` +
+      ` awaiting a headline: ${work.length}` +
+      `${Number.isFinite(limit) ? ` (limit ${limit})` : ' (whole collection)'}\n`,
   );
 
   const byId = new Map(work.map((target) => [target.id, target]));
@@ -159,7 +182,6 @@ async function main(): Promise<void> {
     const items: GistRequestItem[] = batch.map((target) => ({
       id: target.id,
       claim: target.text,
-      span: target.span,
     }));
     const reply = await extractor.proposeGists(items);
     if (reply.outcome === 'failed') {
@@ -179,7 +201,6 @@ async function main(): Promise<void> {
       answered.add(answer.id);
       const verdict = verifyGist({
         candidate: answer.gist,
-        span: target.span,
         claimText: target.text,
       });
       if (verdict.ok) {

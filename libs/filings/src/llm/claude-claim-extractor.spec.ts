@@ -491,9 +491,7 @@ describe('ClaudeClaimExtractor — the headline lane', () => {
     ],
     usage: { input_tokens: 200, output_tokens: 30 },
   };
-  const ITEMS = [
-    { id: 'a:0', claim: 'a claim', span: 'a copy of a span here' },
-  ];
+  const ITEMS = [{ id: 'a:0', claim: 'a claim' }];
 
   it('sends the gist prompt cached, its schema, and the batch as the turn', async () => {
     const messages = new RecordingMessages(GIST_REPLY);
