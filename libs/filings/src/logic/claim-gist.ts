@@ -177,7 +177,16 @@ export const verifyGist = ({
   // "allotted 26,60,700 ... equity shares" — true, contiguous, and
   // reading like a fragment torn out of a page. A headline begins on a
   // word the claim itself began or a boundary printed one after.
-  if (at !== 0 && !/[.;:]\s+$|,\s+$/.test(flat.slice(0, at))) {
+  //
+  // A COMMA IS NOT THAT BOUNDARY, and the first --write run published the
+  // proof: for "Expanding presence in Saudi Arabia, Kenya and other
+  // African markets…" it took the line from "Kenya" — a headline that
+  // drops the country listed first and reads as the whole of what was
+  // said. The capital letter below cannot tell a sentence's first word
+  // from a proper noun mid-list, so the comma admitted exactly the case
+  // it cannot judge. Strong punctuation only; the comma branch's other
+  // survivors were all list items of the same shape.
+  if (at !== 0 && !/[.;:]\s+$/.test(flat.slice(0, at))) {
     return { ok: false, refused: 'mid-sentence' };
   }
   if (!/^[A-Z0-9₹]/.test(gist)) return { ok: false, refused: 'mid-sentence' };
