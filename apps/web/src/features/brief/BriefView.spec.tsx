@@ -102,6 +102,13 @@ describe('BriefView', () => {
     expect(container.querySelector('#brief-cover-line')?.textContent).toBe(
       '42 filings arrived today; 7 carry something a document verified.',
     );
+    // The sentence is unchanged to the character; its two figures carry
+    // the weight, which is the whole reason the cover exists.
+    expect(
+      [...container.querySelectorAll('#brief-cover-line .bcovernum')].map(
+        (n) => n.textContent,
+      ),
+    ).toEqual(['42', '7']);
     const rule = container.querySelector('#brief-cover-rule')?.textContent;
     expect(rule).toContain('Drawn from the 3 most recent verified filings');
     expect(rule).toContain('That judgement is yours.');

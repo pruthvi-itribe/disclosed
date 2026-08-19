@@ -45,12 +45,24 @@ export function BriefCover({
           />
         ))}
       </div>
+      {/* THE SAME SENTENCE, with its two numbers wearing the weight — the
+          cover's whole job is those two figures and the reader met them
+          set in the same grey as the words around them. The characters
+          are unchanged (BriefView.spec compares the line whole); only
+          the numerals are wrapped. */}
       <div id="brief-cover-line" className="bcoverline">
-        {summary === null
-          ? ''
-          : summary.todayCount === 0
-            ? 'No filings yet today. The deck below is drawn from the window the cover states.'
-            : `${groupInt(summary.todayCount)} filings arrived today; ${groupInt(summary.todayVerified)} carry something a document verified.`}
+        {summary === null ? (
+          ''
+        ) : summary.todayCount === 0 ? (
+          'No filings yet today. The deck below is drawn from the window the cover states.'
+        ) : (
+          <>
+            <b className="bcovernum">{groupInt(summary.todayCount)}</b>
+            {' filings arrived today; '}
+            <b className="bcovernum">{groupInt(summary.todayVerified)}</b>
+            {' carry something a document verified.'}
+          </>
+        )}
       </div>
       <div id="brief-cover-rule" className="bcoverrule">
         {/* Blank until the window has actually been asked for — the old

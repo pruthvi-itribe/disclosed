@@ -282,26 +282,54 @@ html.native-shell #dir-legend {
 html.native-shell #brief-mix {
   display: none;
 }
+/* ONE LEFT RAIL. The title was flush left while both paragraphs were
+   centred boxes (margin: 0 auto) holding left-aligned text, so three
+   blocks started at three different x — "text alignments are not top
+   notch" (2026-08-19). Everything now begins at the card's own edge and
+   only the MEASURE is capped; the composition runs top-down instead of
+   floating in the middle, with the gesture line parked at the bottom. */
+html.native-shell .bcover {
+  justify-content: flex-start;
+  padding-top: 7vh;
+  gap: 0;
+}
 html.native-shell .bcover .bday {
-  font-size: 14px;
-  letter-spacing: 0.4px;
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 html.native-shell .bcover .btitle {
-  font-size: 30px;
-  margin: 6px 0 12px;
+  font-size: 32px;
+  line-height: 1.08;
+  margin: 10px 0 18px;
+  max-width: 14ch;
 }
 html.native-shell #brief-cover-line {
   font-size: 17px;
-  line-height: 1.55;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 32ch;
+  margin: 0;
+}
+/* The two figures the cover exists to state, in the page's own weight
+   against the muted sentence carrying them. */
+html.native-shell #brief-cover-line .bcovernum {
   color: var(--text);
-  max-width: 30ch;
-  margin: 0 auto;
+  font-weight: 700;
 }
 html.native-shell #brief-cover-rule {
   font-size: 12px;
-  line-height: 1.45;
-  max-width: 34ch;
-  margin: 10px auto 0;
+  line-height: 1.5;
+  max-width: 36ch;
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+/* Pinned to the bottom of the cage: the gesture belongs at the thumb, not
+   trailing the paragraph. */
+html.native-shell .bcover .bhint {
+  margin-top: auto;
+  padding-top: 20px;
 }
 /* The card's own bottom inset padding double-counted inside the framed
    cage — the bar below already owns that space. */
