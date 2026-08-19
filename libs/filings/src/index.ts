@@ -52,6 +52,7 @@ export * from './logic/results-prompt';
 export * from './llm/results-extractor';
 export * from './llm/claim-provider';
 export * from './llm/claim-extractor';
+export * from './llm/gist-extractor';
 export * from './logic/html-entities';
 export * from './logic/legal-block';
 export * from './logic/safe-echo';
