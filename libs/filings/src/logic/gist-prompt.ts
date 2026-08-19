@@ -36,7 +36,22 @@ Rules:
 4. KEEP THE FIGURE. If the claim prints an amount, a percentage, a share count or a rating, the gist must contain it. A gist that keeps the action and drops the number is rejected.
 5. KEEP THE CONDITION. If the claim says something is subject to approval, pending, proposed, conditional, revised, withdrawn or not the case, the gist must keep that word. Dropping it states as done something the filing did not.
 6. Between ${GIST_MIN_CHARS} and ${GIST_MAX_CHARS} characters, and meaningfully shorter than the claim. Shorter than the floor is a fragment, not a headline.
-7. If no run of the claim satisfies every rule above, return an empty string for that item. An empty answer is correct and costs nothing; a rule-breaking one is discarded anyway.
+7. KEEP THE FIGURE means keep ONE the claim printed, not all of them. Dropping a second amount, a comparison or a date that follows a join is exactly what this task is for.
+8. PREFER A SHORT TRUE CLAUSE TO NOTHING. Return an empty string only when no run of the claim satisfies the rules at all — not when the best one is short, and not when it leaves out detail the claim goes on to give. Most claims have a good gist.
+
+Worked examples:
+
+  claim: "Interim dividend of Rs. 7.50 per equity share confirmed as final dividend for the financial year ended 31st March, 2026."
+  gist:  "Interim dividend of Rs. 7.50 per equity share confirmed as final dividend"
+  why:   the next word is "for", which opens a phrase the sentence does not need.
+
+  claim: "Became standalone net debt free as of 31 March 2026, after early redemption of ₹423 crore of Non-Convertible Debentures."
+  gist:  "Became standalone net debt free as of 31 March 2026"
+  why:   the next character is a comma. Cutting at "₹423 crore" instead would strand the amount from what it was paid on.
+
+  claim: "ICRA reaffirmed the facility of Rs 25.00 crore at [ICRA]A1+"
+  gist:  ""
+  why:   every run either drops the amount or the rating, and both are the point.
 
 Return one entry per input id, in the same order, and nothing else.`;
 

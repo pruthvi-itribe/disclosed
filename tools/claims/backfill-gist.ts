@@ -172,6 +172,15 @@ async function main(): Promise<void> {
   const byId = new Map(work.map((target) => [target.id, target]));
   const refusals = new Map<GistRefusal | 'no-answer', number>();
   const accepted: Array<{ target: Target; gist: string }> = [];
+  // WHAT WAS REFUSED, NOT JUST HOW MANY. The first report counted
+  // refusals and printed only what passed, so "what failed?" could not be
+  // answered from it — which is the question a reader of a gate's report
+  // asks first.
+  const rejected: Array<{
+    target: Target;
+    reason: GistRefusal;
+    candidate: string;
+  }> = [];
   const writes: AnyBulkWriteOperation[] = [];
   let input = 0;
   let output = 0;
@@ -217,6 +226,11 @@ async function main(): Promise<void> {
         });
       } else {
         refusals.set(verdict.refused, (refusals.get(verdict.refused) ?? 0) + 1);
+        rejected.push({
+          target,
+          reason: verdict.refused,
+          candidate: answer.gist,
+        });
         writes.push({
           updateOne: {
             filter: { _id: target.filingId },
@@ -249,7 +263,17 @@ async function main(): Promise<void> {
     `tokens: ${input} in, ${output} out over ${Math.ceil(work.length / GIST_BATCH)} request(s)\n`,
   );
 
-  process.stdout.write('\nsample, claim then headline:\n');
+  process.stdout.write('\nrefused, claim then what was proposed:\n');
+  for (const { target, reason, candidate } of rejected.slice(0, 10)) {
+    process.stdout.write(
+      `  (${reason}) [${target.text.length}] ${target.text}\n`,
+    );
+    process.stdout.write(
+      `      -> ${candidate === '' ? '(nothing returned)' : candidate}\n\n`,
+    );
+  }
+
+  process.stdout.write('\naccepted, claim then headline:\n');
   for (const { target, gist } of accepted.slice(0, 12)) {
     process.stdout.write(`  [${target.text.length}] ${target.text}\n`);
     process.stdout.write(`  [${gist.length}] ${gist}\n\n`);
