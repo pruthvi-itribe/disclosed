@@ -294,3 +294,46 @@ describe('a cut has to land where the claim printed a join', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * The rule a live run forced, and the one whose absence would have put a
+ * wrong NUMBER on a card rather than merely a clumsy sentence.
+ */
+describe('an "and" that joins objects, not clauses', () => {
+  it('refuses a cut that takes half of a compound object', () => {
+    expect(
+      verifyGist({
+        candidate:
+          'Buyback size is 7.20% and 6.63% of aggregate paid-up equity share capital',
+        claimText:
+          'Buyback size is 7.20% and 6.63% of aggregate paid-up equity share capital and free reserves as at March 31, 2026 on standalone basis',
+      }),
+    ).toEqual({ ok: false, refused: 'splits-a-list' });
+  });
+
+  it('refuses dropping the second of two dividends the claim announced', () => {
+    expect(
+      refusalOf(
+        verifyGist({
+          candidate:
+            'Shareholders confirmed payment of First Interim Dividend of ₹4.00',
+          claimText:
+            'Shareholders confirmed payment of First Interim Dividend of ₹4.00 and Second Interim Dividend of ₹1.00 per equity share for FY ended March 31, 2026',
+        }),
+      ),
+    ).toBe('splits-a-list');
+  });
+
+  // Outside a prepositional phrase the conjunction joins statements, and
+  // cutting before it is exactly what this feature is for.
+  it('keeps a cut at an "and" that joins two statements', () => {
+    expect(
+      verifyGist({
+        candidate:
+          'Operationalized BESS manufacturing facilities with 5 GWh installed capacity',
+        claimText:
+          'Operationalized BESS manufacturing facilities with 5 GWh installed capacity and delivered over 300 grid-scale BESS containers.',
+      }).ok,
+    ).toBe(true);
+  });
+});

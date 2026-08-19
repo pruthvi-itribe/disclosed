@@ -103,7 +103,9 @@ export type GistRefusal =
   /** A table row the extractor read as text, not a sentence. */
   | 'not-prose'
   /** Cut where the claim printed no join, so a phrase lost its object. */
-  | 'mid-phrase';
+  | 'mid-phrase'
+  /** Cut at an "and" that was joining one phrase's object, not clauses. */
+  | 'splits-a-list';
 
 export type GistVerdict =
   | { readonly ok: true; readonly gist: string }
@@ -218,6 +220,32 @@ export const verifyGist = ({
     /^\s*(?:[,;:.)\]]|and\b|or\b|but\b|of\b|for\b|to\b|at\b|on\b|in\b|by\b|with\b|from\b|through\b|across\b|during\b|under\b|upon\b|within\b|after\b|before\b|against\b)/i;
   if (tail !== '' && !JOIN.test(tail)) {
     return { ok: false, refused: 'mid-phrase' };
+  }
+  // "and" JOINS CLAUSES SOMETIMES AND OBJECTS THE REST OF THE TIME, and
+  // the difference is a number's meaning. A run accepted:
+  //
+  //   claim: "Buyback size is 7.20% and 6.63% of aggregate paid-up
+  //           equity share capital and free reserves as at 31 March"
+  //   gist:  "Buyback size is 7.20% and 6.63% of aggregate paid-up
+  //           equity share capital"
+  //
+  // 7.20% OF CAPITAL PLUS RESERVES IS NOT 7.20% OF CAPITAL. The same cut
+  // dropped a second interim dividend from a claim announcing both.
+  //
+  // The test: if the slice is still inside a prepositional phrase — an
+  // "of" after its last punctuation — then the "and" is joining that
+  // phrase's object and the cut takes half of it. Outside one ("…5 GWh
+  // installed capacity | and delivered 300 containers") the conjunction
+  // joins clauses and the cut is sound.
+  if (/^\s*(?:and|or)\b/i.test(tail)) {
+    const lastBreak = Math.max(
+      gist.lastIndexOf(','),
+      gist.lastIndexOf(';'),
+      gist.lastIndexOf(':'),
+    );
+    if (/\bof\b/i.test(gist.slice(lastBreak + 1))) {
+      return { ok: false, refused: 'splits-a-list' };
+    }
   }
   const endsOnFigure =
     /[\d,.]+\s*(?:%|crore|cr|lakh|lakhs|mn|bn|million|billion)?\s*$/i.test(
