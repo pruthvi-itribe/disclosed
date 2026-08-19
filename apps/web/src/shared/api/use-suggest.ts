@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ApiResult } from '../../shared/api/api-get';
+import type { ApiResult } from './api-get';
 import type { SuggestionsView } from '../../shared/types/api';
 import type { PickedSuggestion } from '../../app/filter-state';
 

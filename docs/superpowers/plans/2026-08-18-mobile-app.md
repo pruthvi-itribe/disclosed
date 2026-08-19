@@ -220,6 +220,19 @@ one server-side decision. The design, and why each piece is shaped so:
 - [ ] **C3. The panel:** one component, both homes; the desktop notifier
   switches from the watchlist feed to the alerts feed unchanged in
   cadence.
+- [x] **C3.5. The Watching manager** (direction 2026-08-19): in the
+  shell, Watching IS the list — search-to-add (company suggestions only,
+  a tap adds), the roster with its stars, and followed topics as pills
+  writing the same stored subscriptions the Profile checkboxes do; the
+  watched-filings feed leaves the screen (the Feed tab and the alerts
+  are where filings live there). Web layout unchanged.
+- [ ] **C5. The alert line from the model loop** (direction 2026-08-19:
+  notifications must be a glance, not a card): today's body is the claim
+  TEXT — the extractor's verified-span-backed one-liner, already
+  notification-sized — with the outcome sentence as the no-claim
+  fallback. If real notifications show that reading long, enrichment
+  gains a dedicated `alertLine` (prompt + schema + backfill, costed and
+  measured first — a second model output per filing is not free).
 - [ ] **C4. Push consumes it:** Phase B's fan-out reads the same
   predicate server-side; nothing channel-specific in the rule.
 

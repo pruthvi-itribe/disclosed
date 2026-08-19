@@ -38,6 +38,15 @@ export interface WatchingViewProps {
    * Null in the shell, where the panel's home is the Profile sheet.
    */
   readonly prefs?: JSX.Element | null;
+  /**
+   * MANAGE MODE — the shell's Watching screen (direction 2026-08-19): the
+   * list itself is the surface. Adding rides the addWatch slot, followed
+   * topics the topics slot, and the watched-filings feed stays off this
+   * screen — the Feed tab and the alerts are where filings live there.
+   */
+  readonly manage?: boolean;
+  readonly addWatch?: JSX.Element | null;
+  readonly topics?: JSX.Element | null;
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
@@ -70,6 +79,9 @@ export function WatchingView({
   onOpenFocus,
   counts,
   prefs = null,
+  manage = false,
+  addWatch = null,
+  topics = null,
   onPickGroup,
   onRoster,
   onSeen,
@@ -85,9 +97,12 @@ export function WatchingView({
     if (meta !== null) onRoster(meta.watching, watchCap);
   }, [meta, watchCap, onRoster]);
 
+  // Looking at the tab is reading it. In manage mode there are no filings
+  // on this screen to "populate", so the roster's answer is the visit.
+  const seen = populated || (manage && meta !== null);
   useEffect(() => {
-    if (populated) onSeen();
-  }, [populated, onSeen]);
+    if (seen) onSeen();
+  }, [seen, onSeen]);
 
   return (
     <>
@@ -99,6 +114,7 @@ export function WatchingView({
             : `${groupInt(counts.used)} of ${groupInt(counts.cap)} companies watched`}
         </span>
       </div>
+      {addWatch}
       {prefs}
       <p
         id="watch-roster-note"
@@ -113,32 +129,36 @@ export function WatchingView({
       {rows.length > 0 && (
         <Roster rows={rows} watch={watch} onOpenCompany={onOpenCompany} />
       )}
-      <div
-        id="watch-feed-head"
-        className="watchhead"
-        data-ui="watching-feed-head"
-        hidden={rows.length === 0}
-      >
-        <h2>What they have said</h2>
-      </div>
-      {/* WHAT THE FEED BELOW IS LEAVING OUT, IN NUMBERS. A view that
+      {!manage && (
+        <>
+          <div
+            id="watch-feed-head"
+            className="watchhead"
+            data-ui="watching-feed-head"
+            hidden={rows.length === 0}
+          >
+            <h2>What they have said</h2>
+          </div>
+          {/* WHAT THE FEED BELOW IS LEAVING OUT, IN NUMBERS. A view that
           silently shows a short list is the bug this sentence closes. */}
-      <p
-        id="watch-feed-note"
-        className="sectionnote"
-        data-ui="watching-feed-note"
-        hidden={!populated}
-      >
-        {meta === null
-          ? ''
-          : meta.hasMore
-            ? `The newest ${groupInt(meta.returned)} of ${groupInt(meta.total)} filings from these companies. The list above is complete; this one is not.`
-            : `All ${groupInt(meta.total)} filings from these companies.`}
-      </p>
+          <p
+            id="watch-feed-note"
+            className="sectionnote"
+            data-ui="watching-feed-note"
+            hidden={!populated}
+          >
+            {meta === null
+              ? ''
+              : meta.hasMore
+                ? `The newest ${groupInt(meta.returned)} of ${groupInt(meta.total)} filings from these companies. The list above is complete; this one is not.`
+                : `All ${groupInt(meta.total)} filings from these companies.`}
+          </p>
+        </>
+      )}
       <div
         id="watch-empty"
         className="watchempty"
-        hidden={!noWatches && !nothingFiled}
+        hidden={!noWatches && !(nothingFiled && !manage)}
       >
         {noWatches && (
           <>
@@ -148,7 +168,7 @@ export function WatchingView({
             }
           </>
         )}
-        {nothingFiled && (
+        {nothingFiled && !manage && (
           <>
             <strong>{`None of the ${rows.length} companies above has filed anything we hold`}</strong>
             {
@@ -157,7 +177,7 @@ export function WatchingView({
           </>
         )}
       </div>
-      {populated && (
+      {populated && !manage && (
         <FeedGrid
           items={items}
           meta={meta}
@@ -174,6 +194,7 @@ export function WatchingView({
           share={share}
         />
       )}
+      {topics}
     </>
   );
 }

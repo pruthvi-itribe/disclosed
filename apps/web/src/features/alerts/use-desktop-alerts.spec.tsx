@@ -129,7 +129,8 @@ describe('useDesktopAlerts', () => {
     expect(raised).toEqual([
       {
         title: 'Dividends: DIVCO',
-        body: 'DIVCO said something.',
+        // The claim's own one-liner, not the card-length outcome.
+        body: 'c',
         tag: 'DIVCO',
       },
     ]);

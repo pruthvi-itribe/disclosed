@@ -59,3 +59,41 @@
   color: var(--warn);
   font-size: 12.5px;
 }
+
+/* Topics-as-follows, on the Watching screen. */
+.topicfollows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 18px 0 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.topicfollows h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.topicfollows .followsnote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.topicfollows .followpills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.topicfollows .followpill {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+}
+.topicfollows .followpill.on {
+  border-color: var(--brand-1);
+  background: color-mix(in srgb, var(--brand-1) 18%, transparent);
+  color: var(--text);
+}

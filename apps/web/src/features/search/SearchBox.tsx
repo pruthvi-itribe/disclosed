@@ -8,7 +8,7 @@ import {
 import type { ApiResult } from '../../shared/api/api-get';
 import type { PickedSuggestion } from '../../app/filter-state';
 import { groupInt } from '../../shared/format/group-int';
-import { useSuggest, type SuggestItem } from './use-suggest';
+import { useSuggest, type SuggestItem } from '../../shared/api/use-suggest';
 
 const HEADINGS: Readonly<Record<SuggestItem['kind'], string>> = {
   company: 'Companies',

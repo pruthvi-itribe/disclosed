@@ -1,0 +1,51 @@
+/* Search-to-add on the Watching screen. Shell-first sizing; the web never
+   renders this yet (manage mode is the shell's). */
+.addwatch {
+  position: relative;
+  margin: 4px 0 10px;
+}
+.addwatch input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+.addwatch .addwatchlist {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.addwatch .addwatchlist button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 10px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.addwatch .addname {
+  flex: 1;
+  color: var(--muted);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.addwatch .addstate {
+  color: var(--brand-1);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.addwatch button:disabled .addstate {
+  color: var(--muted);
+  font-weight: 400;
+}

@@ -2,7 +2,6 @@ import { useCallback, useReducer, useRef, useState } from 'react';
 import type { ApiEnvelope, ApiResult } from '../shared/api/api-get';
 import type { SendMethod } from '../shared/api/api-send';
 import { usePoll } from '../shared/api/use-poll';
-import type { WatchControls } from '../shared/ui/WatchButton';
 import type { FilingView } from '../shared/types/api';
 import { filterReducer, INITIAL_FILTERS } from './filter-state';
 import { useFilterDispatch } from './use-filter-dispatch';
@@ -16,7 +15,7 @@ import { CompanyView } from '../features/company/CompanyView';
 import { FocusDialog } from '../features/focus/FocusDialog';
 import { WatchingView } from '../features/watching/WatchingView';
 import { useShareSlots } from '../features/share/share-slots';
-import { accountPrefs } from './AccountPrefs';
+import { accountSurfacesUi } from './AccountPrefs';
 import { useAccountSurfaces } from './use-account-surfaces';
 import { ShellChrome } from './ShellChrome';
 import { FilterControls } from './FilterControls';
@@ -78,23 +77,6 @@ export function App({
     onHealthy,
   });
 
-  // Null when signed out, so every star-drawing surface draws nothing. A
-  // toggle from inside the Watching view asks for an immediate poll — the
-  // poll owns that list, and an unwatched row must not sit there for four
-  // seconds.
-  const watchControls: WatchControls | null =
-    account.me?.signedIn === true
-      ? {
-          watched: watch.watched,
-          pending: watch.pending,
-          onToggle: (symbol) => {
-            void watch.toggle(symbol).then(() => {
-              if (viewState.view === 'watching') refresh();
-            });
-          },
-        }
-      : null;
-
   useBriefBodyClass(viewState.view);
 
   const openCompany = useCallback((symbol: string) => {
@@ -129,7 +111,18 @@ export function App({
     />
   );
   const watchedCount = watch.counts?.used ?? 0;
-  const prefs = accountPrefs({ me: account.me, alerts, watchedCount, apiSend });
+  const { prefs, addWatch, topics, watchControls } = accountSurfacesUi({
+    me: account.me,
+    alerts,
+    watchedCount,
+    apiSend,
+    shell,
+    apiGet,
+    watch,
+    onToggled: () => {
+      if (viewState.view === 'watching') refresh();
+    },
+  });
 
   return (
     <>
@@ -237,6 +230,9 @@ export function App({
           watchCap={account.me?.watchCap ?? watch.counts?.cap ?? null}
           counts={watch.counts}
           prefs={shell ? null : prefs}
+          manage={shell}
+          addWatch={addWatch}
+          topics={topics}
           onOpenCompany={openCompany}
           onOpenFocus={openFocus}
           onPickGroup={pickGroup}
