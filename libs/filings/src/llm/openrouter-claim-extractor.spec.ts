@@ -1,5 +1,6 @@
 import { CLAIM_SYSTEM_PROMPT } from '../logic/claim-prompt';
 import { RESULTS_SYSTEM_PROMPT } from '../logic/results-prompt';
+import { GIST_SYSTEM_PROMPT } from '../logic/gist-prompt';
 import { CLAIM_MAX_TOKENS, DEFAULT_CLAIM_MODEL } from './claim-provider';
 import {
   CLAIM_SCHEMA_NAME,
@@ -718,5 +719,62 @@ describe('OpenRouterClaimExtractor — provider routing', () => {
   it('offers enough fallbacks to survive a host outage', async () => {
     const provider = (await bodyOf()).provider as { order?: readonly string[] };
     expect(provider.order?.length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+/**
+ * The third lane, on the transport whose routing flags the other two
+ * depend on. What may be published is `verifyGist`'s, not this file's.
+ */
+describe('OpenRouterClaimExtractor — the headline lane', () => {
+  const GIST_REPLY = {
+    choices: [
+      {
+        message: {
+          content: JSON.stringify({
+            gists: [{ id: 'a:0', gist: 'a copy of a span' }],
+          }),
+        },
+      },
+    ],
+  };
+  const ITEMS = [
+    { id: 'a:0', claim: 'a claim', span: 'a copy of a span here' },
+  ];
+
+  it('sends the gist prompt and its own schema name', async () => {
+    const chat = new RecordingChat(GIST_REPLY);
+    await extractorWith(chat).proposeGists(ITEMS);
+    const body = chat.bodies[0];
+    const turns = body.messages as { role: string; content: string }[];
+    expect(turns[0].content).toBe(GIST_SYSTEM_PROMPT);
+    expect(JSON.parse(turns[1].content)).toEqual(ITEMS);
+    expect(
+      (body.response_format as { json_schema: { name: string } }).json_schema
+        .name,
+    ).toBe('claim_gists');
+  });
+
+  // The flags that keep a request off a host which ignores the schema —
+  // shared with the other two lanes precisely so they cannot drift.
+  it('keeps the routing constraints the other lanes rely on', async () => {
+    const chat = new RecordingChat(GIST_REPLY);
+    await extractorWith(chat).proposeGists(ITEMS);
+    const provider = chat.bodies[0].provider as Record<string, unknown>;
+    expect(provider.require_parameters).toBe(true);
+    expect(provider.quantizations).toEqual(['fp8']);
+  });
+
+  it('reads the answers, and reports a failure as a verdict', async () => {
+    expect(
+      await extractorWith(new RecordingChat(GIST_REPLY)).proposeGists(ITEMS),
+    ).toMatchObject({
+      outcome: 'ok',
+      answers: [{ id: 'a:0', gist: 'a copy of a span' }],
+    });
+    const broken = new RecordingChat(GIST_REPLY, new Error('down'));
+    expect((await extractorWith(broken).proposeGists(ITEMS)).outcome).toBe(
+      'failed',
+    );
   });
 });

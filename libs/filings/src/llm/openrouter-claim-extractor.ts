@@ -9,6 +9,13 @@ import {
   RESULTS_OUTPUT_SCHEMA,
   RESULTS_SYSTEM_PROMPT,
 } from '../logic/results-prompt';
+import {
+  buildGistRequest,
+  GIST_OUTPUT_SCHEMA,
+  GIST_SYSTEM_PROMPT,
+  parseGistResponse,
+  type GistRequestItem,
+} from '../logic/gist-prompt';
 import type {
   ClaimExtractionRequest,
   ClaimExtractionResult,
@@ -18,6 +25,7 @@ import type {
   ResultsExtractionResult,
   ResultsExtractor,
 } from './results-extractor';
+import type { GistExtractionResult, GistExtractor } from './gist-extractor';
 import {
   CLAIM_MAX_TOKENS,
   CLAIM_TIMEOUT_MS,
@@ -102,6 +110,7 @@ export const CLAIM_SCHEMA_NAME = 'notable_claims';
 
 /** The results schema's name in the same envelope. */
 export const RESULTS_SCHEMA_NAME = 'financial_results';
+export const GIST_SCHEMA_NAME = 'claim_gists';
 
 /** The subset of the API this adapter uses, so a test can stand in for it. */
 export interface OpenRouterChatApi {
@@ -171,7 +180,7 @@ type RawReply =
   | { readonly outcome: 'failed'; readonly message: string };
 
 export class OpenRouterClaimExtractor
-  implements ClaimExtractor, ResultsExtractor
+  implements ClaimExtractor, ResultsExtractor, GistExtractor
 {
   constructor(
     private readonly chat: OpenRouterChatApi,
@@ -246,6 +255,39 @@ export class OpenRouterClaimExtractor
       return resultsFromText(reply.text, reply.usage);
     } catch (error) {
       return { outcome: 'failed', message: describeHttpFailure(error) };
+    }
+  }
+
+  /**
+   * The headline lane: a batch of claims, and a slice of each one's span.
+   *
+   * A THIRD LANE ON THE SAME TRANSPORT, for the reason the results lane
+   * gave for being the second — the routing flag, the error-in-a-200
+   * check, the refusal handling and the truncation message are shared so
+   * they cannot drift between jobs. No document is sent: the spans are
+   * stored and already matched, so this call is small enough to batch.
+   */
+  async proposeGists(
+    items: readonly GistRequestItem[],
+  ): Promise<GistExtractionResult> {
+    if (items.length === 0) return { outcome: 'ok', answers: [] };
+    const reply = await this.ask(
+      GIST_SYSTEM_PROMPT,
+      GIST_SCHEMA_NAME,
+      GIST_OUTPUT_SCHEMA,
+      buildGistRequest(items),
+    );
+    if (reply.outcome === 'failed') {
+      return { outcome: 'failed', reason: reply.message };
+    }
+    try {
+      return {
+        outcome: 'ok',
+        answers: parseGistResponse(JSON.parse(reply.text)),
+        usage: reply.usage,
+      };
+    } catch (error) {
+      return { outcome: 'failed', reason: describeProviderFailure(error) };
     }
   }
 

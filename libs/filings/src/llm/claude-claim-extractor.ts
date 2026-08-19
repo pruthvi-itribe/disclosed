@@ -9,6 +9,13 @@ import {
   RESULTS_OUTPUT_SCHEMA,
   RESULTS_SYSTEM_PROMPT,
 } from '../logic/results-prompt';
+import {
+  buildGistRequest,
+  GIST_OUTPUT_SCHEMA,
+  GIST_SYSTEM_PROMPT,
+  parseGistResponse,
+  type GistRequestItem,
+} from '../logic/gist-prompt';
 import type {
   ClaimExtractionRequest,
   ClaimExtractionResult,
@@ -18,6 +25,7 @@ import type {
   ResultsExtractionResult,
   ResultsExtractor,
 } from './results-extractor';
+import type { GistExtractionResult, GistExtractor } from './gist-extractor';
 import {
   CLAIM_MAX_TOKENS,
   CLAIM_TIMEOUT_MS,
@@ -131,7 +139,9 @@ type RawReply =
     }
   | { readonly outcome: 'failed'; readonly message: string };
 
-export class ClaudeClaimExtractor implements ClaimExtractor, ResultsExtractor {
+export class ClaudeClaimExtractor
+  implements ClaimExtractor, ResultsExtractor, GistExtractor
+{
   constructor(
     private readonly messages: ClaudeMessagesApi,
     private readonly options: ClaimProviderOptions,
@@ -203,6 +213,41 @@ export class ClaudeClaimExtractor implements ClaimExtractor, ResultsExtractor {
       return resultsFromText(reply.text, reply.usage);
     } catch (error) {
       return { outcome: 'failed', message: describeProviderFailure(error) };
+    }
+  }
+
+  /**
+   * The headline lane: a batch of claims, and a slice of each one's span.
+   *
+   * A THIRD LANE ON THE SAME TRANSPORT, for the reason the results lane
+   * gave for being the second — the routing, the refusal check and the
+   * never-throws contract are shared so they cannot drift between jobs.
+   * What differs is the cached prompt, the schema and the user turn.
+   *
+   * NO DOCUMENT IS SENT. The span is already stored and already matched
+   * character for character, so this call is small enough to batch and
+   * `verifyGist` rejects everything outside it.
+   */
+  async proposeGists(
+    items: readonly GistRequestItem[],
+  ): Promise<GistExtractionResult> {
+    if (items.length === 0) return { outcome: 'ok', answers: [] };
+    const reply = await this.ask(
+      GIST_SYSTEM_PROMPT,
+      GIST_OUTPUT_SCHEMA,
+      buildGistRequest(items),
+    );
+    if (reply.outcome === 'failed') {
+      return { outcome: 'failed', reason: reply.message };
+    }
+    try {
+      return {
+        outcome: 'ok',
+        answers: parseGistResponse(JSON.parse(reply.text)),
+        usage: reply.usage,
+      };
+    } catch (error) {
+      return { outcome: 'failed', reason: describeProviderFailure(error) };
     }
   }
 
