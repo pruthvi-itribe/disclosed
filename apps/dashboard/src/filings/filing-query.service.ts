@@ -652,6 +652,42 @@ export class FilingQueryService {
    * An empty symbol list is answered WITHOUT A READ. `{$in: []}` matches
    * nothing, so the round trip is knowable in advance.
    */
+  /**
+   * THE ALERTS PREDICATE, in one place for every channel: VERIFIED filings
+   * from watched companies OR carrying subscribed topics. The desktop
+   * notifier reads it today and Phase B's push fan-out reads the same
+   * method, so the two can never drift. Which ARM matched is presentation
+   * (the notification's own copy) and is decided by the caller from the
+   * row's own symbol and topics — the row shape stays FilingView.
+   *
+   * BOTH ARMS EMPTY IS AN EMPTY PAGE, never the whole feed: a reader who
+   * subscribed to nothing has asked for nothing, and "nothing was asked
+   * for" must not render as "everything qualified".
+   */
+  async getAlertPage(
+    symbols: readonly string[],
+    topics: readonly string[],
+    limit: number,
+    offset: number,
+  ): Promise<RecentPage> {
+    const arms: Record<string, unknown>[] = [];
+    if (symbols.length > 0) arms.push({ symbol: { $in: [...symbols] } });
+    if (topics.length > 0) {
+      arms.push({ 'enrichment.claims.topic': { $in: [...topics] } });
+    }
+    if (arms.length === 0) {
+      return {
+        items: [],
+        meta: { total: 0, limit, offset, returned: 0, hasMore: false },
+      };
+    }
+    return this.filterPage(
+      { limit, offset },
+      { $and: [{ $or: arms }, { $or: [...VERIFIED_PREDICATE] }] },
+      null,
+    );
+  }
+
   async getWatchedPage(
     symbols: readonly string[],
     limit: number,

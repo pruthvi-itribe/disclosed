@@ -69,6 +69,15 @@ export interface UserRecord {
     readonly channels: readonly AlertChannel[];
     readonly minTier: string | null;
     readonly mutedTopics: readonly string[];
+    /**
+     * Topic-wide subscriptions, OPT-IN: a reader who subscribes to
+     * 'dividend' is alerted to every verified dividend claim, watched or
+     * not. Distinct from `mutedTopics`, the dormant per-watchlist opt-out
+     * floor (F3) — the two answer different questions and neither reads
+     * the other. Values are CLAIM_TOPICS members, allowlisted at the
+     * route; the schema stores what the route admitted.
+     */
+    readonly topics: readonly string[];
     /** Drives the unread badge on the Watching tab. */
     readonly lastSeenWatchlistAt: Date | null;
   };
@@ -114,6 +123,7 @@ export const UserSchema = new Schema<UserDocument>(
       /** Account default. Null means no floor. Per-entry overrides are F3. */
       minTier: { type: String, default: null },
       mutedTopics: { type: [String], default: [] },
+      topics: { type: [String], default: [] },
       lastSeenWatchlistAt: { type: Date, default: null },
     },
   },
