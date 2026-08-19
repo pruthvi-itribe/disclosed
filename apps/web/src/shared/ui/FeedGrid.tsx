@@ -189,8 +189,8 @@ export function FeedGrid({
           hidden={marks === 0}
           title="The direction word and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and Disclosed publishes none. A fall is not bad news and a rise is not good news: these marks follow the figure, not the company. In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions — a decrease every reader would call an improvement. Read the claim, not the arrow. Where a filing did not print both a direction and a size, no mark appears: an absent mark means the filing was silent, not that nothing happened. Disclosed does not rate companies or securities. It reports what documents say and shows you where they say it."
         >
-          ▲ ▼ ◆ mark movement the document itself printed — not a view on the
-          company or its shares.
+          ▲ rose · ▼ fell · ◆ mixed — the change the filing&apos;s own numbers
+          show. From the document, not our view, and not about the share price.
         </div>
       )}
       <div
