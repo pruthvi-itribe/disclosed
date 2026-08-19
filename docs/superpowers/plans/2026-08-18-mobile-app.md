@@ -188,6 +188,41 @@ suite that binds it — is untouched.
 - [ ] **B5. Docs tick:** boxes above ticked with the measured numbers, and
   the deploy doc gains the new manual acts (APNs key, FCM key rotation).
 
+## Phase C — the notifications section (designed 2026-08-19)
+
+Readers subscribe by TOPIC as well as by company, and every channel obeys
+one server-side decision. The design, and why each piece is shaped so:
+
+- **Topics, never NSE's categories.** The subscription vocabulary is the
+  chip row's own closed list (CLAIM_TOPICS) — ours, verified, allowlisted.
+  Keying alerts on exchange-controlled category names is the fail-open
+  rule's oldest prohibition.
+- **One predicate, every channel.** "What deserves this reader's
+  attention" = VERIFIED filings from watched companies OR subscribed
+  topics, computed by the server in one place (`/api/alerts/feed`,
+  session-guarded, bounded) — so desktop alerts today and push in Phase B
+  send identical decisions instead of two drifting rules. The response
+  says WHICH rule matched, for the notification's own copy.
+- **One preferences panel, two homes**: the app's Profile sheet and the
+  web's Watching view render the same component — channel status rows
+  (Desktop: enable/on/blocked · Mobile push: "arrives with the app
+  release", an honest placeholder, never a dead toggle), then "Alert me
+  about": watched companies stated as the always-on fact with its count,
+  and the topic checklist. The product's promise printed where it
+  matters: only claims verified against the source document are ever
+  sent.
+
+- [ ] **C1. The model:** `alertTopics` on the account (allowlisted,
+  bounded), read on `api/me`, written by one session-guarded PUT.
+- [ ] **C2. The predicate:** `/api/alerts/feed` returning the union with
+  the matched rule in each row; unit-specced against both arms and the
+  verified gate.
+- [ ] **C3. The panel:** one component, both homes; the desktop notifier
+  switches from the watchlist feed to the alerts feed unchanged in
+  cadence.
+- [ ] **C4. Push consumes it:** Phase B's fan-out reads the same
+  predicate server-side; nothing channel-specific in the rule.
+
 ## Out of scope, named so it stays out
 
 - React Native / Flutter (a second client; argued against above).
