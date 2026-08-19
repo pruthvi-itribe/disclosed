@@ -36,8 +36,9 @@ Rules:
 4. KEEP THE FIGURE. If the claim prints an amount, a percentage, a share count or a rating, the gist must contain it. A gist that keeps the action and drops the number is rejected.
 5. KEEP THE CONDITION. If the claim says something is subject to approval, pending, proposed, conditional, revised, withdrawn or not the case, the gist must keep that word. Dropping it states as done something the filing did not.
 6. Between ${GIST_MIN_CHARS} and ${GIST_MAX_CHARS} characters, and meaningfully shorter than the claim. Shorter than the floor is a fragment, not a headline.
-7. KEEP THE FIGURE means keep ONE the claim printed, not all of them. Dropping a second amount, a comparison or a date that follows a join is exactly what this task is for.
-8. PREFER A SHORT TRUE CLAUSE TO NOTHING. Return an empty string only when no run of the claim satisfies the rules at all — not when the best one is short, and not when it leaves out detail the claim goes on to give. Most claims have a good gist.
+7. NEVER CUT AT AN "and" THAT JOINS ONE PHRASE'S OBJECTS. "7.20% of paid-up equity share capital and free reserves" cut before "and" says 7.20% of the capital alone, which is a different number. Cutting at an "and" that joins two whole statements is fine.
+8. KEEP THE FIGURE means keep ONE the claim printed, not all of them. Dropping a second amount, a comparison or a date that follows a join is exactly what this task is for.
+9. PREFER A SHORT TRUE CLAUSE TO NOTHING. Return an empty string only when no run of the claim satisfies the rules at all — not when the best one is short, and not when it leaves out detail the claim goes on to give. Most claims have a good gist.
 
 Worked examples:
 
