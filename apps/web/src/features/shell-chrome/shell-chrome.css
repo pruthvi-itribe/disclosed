@@ -25,11 +25,52 @@ html.native-shell .topbar {
   border-bottom: 1px solid var(--line);
 }
 
+/* A SPECIFICITY TIE THE DECK WAS WINNING. brief.css restates the bar's
+   metrics for the deck — `body.briefing .topbar`, (0,2,1) — and the rule
+   above is `html.native-shell .topbar`, also (0,2,1), so on the Brief tab
+   the later stylesheet took the padding and with it the safe-area inset:
+   the brand and the live dot drew UNDER the status bar and the Dynamic
+   Island, on the one screen the app opens on. Seen in a simulator capture
+   2026-08-19. The deck's own reason for restating them holds (it removes
+   the body padding the web bar sits in), so this states them again for the
+   shell at (0,3,2) rather than deleting anything. */
+html.native-shell body.briefing .topbar {
+  padding: calc(env(safe-area-inset-top) + 8px) 20px 10px;
+  margin: 0;
+  gap: 16px;
+}
+
 html.native-shell body {
   /* Between the bars: header ~54px of content plus the island, bar ~58px
-     plus the home indicator. */
+     plus the home indicator. Still here for the Brief, whose deck owns
+     the body cage; the three scrolling views below take their own. */
   padding-top: calc(env(safe-area-inset-top) + 62px);
   padding-bottom: calc(env(safe-area-inset-bottom) + 66px);
+}
+
+/* EACH SCREEN SCROLLS IN ITS OWN BOX, BETWEEN THE BARS. The document was
+   the scroller, so iOS drew its indicator down the whole window — past
+   the header and under the tab bar, which is not what a native screen
+   does ("shouldn't it contain within the space between topbar and
+   bottombar?", 2026-08-19). A view pinned between the two bars makes the
+   scroller exactly the region the reader is reading, so the indicator
+   spans that and nothing else. Two things fall out of it, both wanted: a
+   tab keeps its own scroll position instead of sharing one with the
+   others, and an overscroll stops at the view instead of bouncing the
+   whole page under the chrome.
+   NOT the Brief: its deck is already a viewport-sized cage of its own
+   (body.briefing), and giving it a second one would nest two scrollers. */
+html.native-shell #view-feed:not([hidden]),
+html.native-shell #view-watching:not([hidden]),
+html.native-shell #view-company {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 62px);
+  bottom: calc(env(safe-area-inset-bottom) + 66px);
+  left: 0;
+  right: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 0 20px 24px;
 }
 
 .bottomnav {
@@ -241,7 +282,9 @@ html.native-shell #dir-legend {
    scrolls. The bleed puts it edge to edge inside the body's 20px. */
 .activefilters {
   position: sticky;
-  top: calc(env(safe-area-inset-top) + 62px);
+  /* 0, because the feed view IS the scroller now and its top edge is
+     already the header's bottom edge. */
+  top: 0;
   z-index: 39;
   display: flex;
   flex-wrap: wrap;
@@ -304,11 +347,16 @@ html.native-shell .bcover .btitle {
   margin: 10px 0 18px;
   max-width: 14ch;
 }
+/* NO MEASURE CAP ON A PHONE. A 320px-wide column at 12px is already only
+   ~50 characters a line — inside the readable range — so a 36ch cap only
+   stopped the paragraph, and the hairline above it, short of the right
+   edge: it read as a mistake rather than as typography (asked directly,
+   2026-08-19). The title keeps its cap, because a 32px line wants to
+   break where the words break, not where the box ends. */
 html.native-shell #brief-cover-line {
   font-size: 17px;
   line-height: 1.5;
   color: var(--muted);
-  max-width: 32ch;
   margin: 0;
 }
 /* The two figures the cover exists to state, in the page's own weight
@@ -320,7 +368,6 @@ html.native-shell #brief-cover-line .bcovernum {
 html.native-shell #brief-cover-rule {
   font-size: 12px;
   line-height: 1.5;
-  max-width: 36ch;
   margin: 18px 0 0;
   padding-top: 14px;
   border-top: 1px solid var(--line);
@@ -335,4 +382,45 @@ html.native-shell .bcover .bhint {
    cage — the bar below already owns that space. */
 html.native-shell .bcard {
   padding-bottom: 20px;
+}
+
+/* ONE COMPANY'S DAY, ONE VIEWPORT — MEASURED ON THE RENDERED PAGE, which
+   is what brief.css's own note asks for: it records that the 25px lede
+   lost its fit guarantee when MAX_CLAIM_CHARS went 120 → 200, and leaves
+   the question to whoever looks. Looked, on a 6.1" simulator, 2026-08-19:
+   EFCIL's 157-character lede ran six lines at 25px and pushed the topic,
+   the "+23 more" and the whole footer below the fold, so the card's own
+   controls were invisible until it was scrolled — on the view whose one
+   promise is that a card IS a screen.
+   21px holds the same claim in five lines and leaves the foot on screen.
+   The clamps are a backstop for the longest tail only; nothing is
+   rewritten, the full text stays in the document, selectable and
+   copyable, and the card still scrolls if a claim outruns even this. */
+html.native-shell .blede {
+  font-size: 21px;
+  line-height: 1.32;
+  margin-top: 18px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 7;
+  overflow: hidden;
+}
+/* THE MARK STOPS RESIZING THE LINE. In the deck a figure was set 1.12em
+   and #fff inside a 21px headline, so any marked number stood a step
+   taller than the words around it and the line rippled — "this text
+   highlighting in brief card also looks weird" (2026-08-19). Same size,
+   same rhythm; brighter and a little heavier is enough to find it. */
+html.native-shell .blede .fig {
+  font-size: inherit;
+  font-weight: 600;
+}
+html.native-shell .brest {
+  font-size: 14px;
+  margin-top: 16px;
+}
+html.native-shell .brest li {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }

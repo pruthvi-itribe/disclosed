@@ -54,3 +54,34 @@ describe('MarkedText', () => {
     expect(container.textContent).toBe('');
   });
 });
+
+// A DATE IS NOT A FIGURE: "Agreement dated August 13, 2026" came back with
+// "13," and "2026" wearing a rupee amount's emphasis, mid-headline.
+describe('dates are not marked', () => {
+  const marked = (text: string): string[] => {
+    const { container } = render(<MarkedText text={text} />);
+    // Trimmed: the regex keeps a leading space on some matches and this
+    // suite is about WHICH tokens are marked, not their whitespace.
+    return [...container.querySelectorAll('.fig')].map((n) =>
+      (n.textContent ?? '').trim(),
+    );
+  };
+
+  it('leaves a printed date alone', () => {
+    expect(
+      marked('Share Acquisition Agreement dated August 13, 2026.'),
+    ).toEqual([]);
+  });
+
+  it('still marks the quantities in the same sentence', () => {
+    expect(
+      marked('Acquisition of 100% stake approved on 13 August 2026.'),
+    ).toEqual(['100%']);
+  });
+
+  it('marks a number that carries a unit even when it looks like a year', () => {
+    expect(marked('Order of Rs. 2026 crore received.')).toEqual([
+      'Rs. 2026 crore',
+    ]);
+  });
+});

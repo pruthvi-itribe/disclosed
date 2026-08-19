@@ -1,4 +1,5 @@
 import { describeKey } from '../../shared/format/describe';
+import { relativeTime } from '../../shared/format/relative-time';
 import { safeHref } from '../../shared/format/safe-href';
 import { groupInt } from '../../shared/format/group-int';
 import { TIER_TITLE, TOPIC_LABEL } from '../../shared/format/vocab';
@@ -62,10 +63,16 @@ export function BriefCard({
         </button>
         <div className="bmeta">
           <span className="bname">{entry.companyName}</span>
-          {/* THE SERVER'S IST STRING, PRINTED WHOLE — slicing a time of day
-              out of it means formatting a timestamp, which this page never
-              does. */}
-          <span className="bwhen">{`${f.disseminatedAtIst} IST`}</span>
+          {/* HOW LONG AGO, with the server's IST string on the title —
+              the feed card's and the focus dialog's rule, arriving here
+              on 2026-08-19 ("lets add human readable timestamp instead
+              of IST"). This is NOT the browser formatting a timestamp:
+              relativeTime is a difference between two instants, the same
+              number in every timezone, and the absolute time a reader
+              cites is still the one the server computed. */}
+          <span className="bwhen" title={`${f.disseminatedAtIst} IST`}>
+            {relativeTime(f.disseminatedAt)}
+          </span>
         </div>
       </div>
       <p className="blede" data-ui="brief-lede">

@@ -109,6 +109,14 @@ describe('BriefView', () => {
         (n) => n.textContent,
       ),
     ).toEqual(['42', '7']);
+    // A CARD'S TIME IS HOW LONG AGO, with the server's IST string kept on
+    // the title — "human readable timestamp instead of IST" (2026-08-19).
+    // The absolute time a reader would cite is still the server's.
+    const when = container.querySelector('.bwhen');
+    expect(when?.getAttribute('title')).toBe('2026-08-18 09:30:00 IST');
+    expect(when?.textContent).not.toContain('2026-08-18');
+    expect(when?.textContent).toMatch(/ago|yesterday|just now|—/);
+
     const rule = container.querySelector('#brief-cover-rule')?.textContent;
     expect(rule).toContain('Drawn from the 3 most recent verified filings');
     expect(rule).toContain('That judgement is yours.');
