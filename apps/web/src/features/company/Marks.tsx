@@ -1,4 +1,5 @@
-import { DIRECTION_GLYPH, DIRECTION_LABEL } from '../../shared/format/vocab';
+import { DIRECTION_LABEL } from '../../shared/format/vocab';
+import { DirectionMark } from '../../shared/ui/DirectionMark';
 import { markDays } from './company-model';
 import type { FilingView } from '../../shared/types/api';
 
@@ -41,7 +42,7 @@ export function Marks({
                       : undefined
                   }
                 >
-                  {DIRECTION_GLYPH.get(claim.direction ?? '')}
+                  <DirectionMark direction={claim.direction ?? ''} size={13} />
                 </span>
               ))}
             </span>

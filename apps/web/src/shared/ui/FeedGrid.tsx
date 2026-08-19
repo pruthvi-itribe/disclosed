@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { FilingView, PageMeta } from '../types/api';
 import type { FilterState } from '../../app/filter-state';
 import { groupInt } from '../format/group-int';
-import { DIRECTION_GLYPH } from '../format/vocab';
+import { DIRECTION_MARK, DirectionMark } from './DirectionMark';
 import { feedBucket } from './feed-bucket';
 import { insightLines } from './insight-lines';
 import { FeedCard } from './FeedCard';
@@ -136,7 +136,7 @@ export function FeedGrid({
         (n, f) =>
           n +
           insightLines(f.enrichment).filter((l) =>
-            DIRECTION_GLYPH.has(l.direction),
+            DIRECTION_MARK.has(l.direction),
           ).length,
         0,
       )
@@ -189,8 +189,22 @@ export function FeedGrid({
           hidden={marks === 0}
           title="The direction word and the figure the document printed beside it. They describe what the filing said about its own numbers — not a recommendation, and Disclosed publishes none. A fall is not bad news and a rise is not good news: these marks follow the figure, not the company. In the current collection, 13 of 45 marked decreases are falling bad loans, debt, borrowing costs or emissions — a decrease every reader would call an improvement. Read the claim, not the arrow. Where a filing did not print both a direction and a size, no mark appears: an absent mark means the filing was silent, not that nothing happened. Disclosed does not rate companies or securities. It reports what documents say and shows you where they say it."
         >
-          ▲ rose · ▼ fell · ◆ mixed — the change the filing&apos;s own numbers
-          show. From the document, not our view, and not about the share price.
+          {/* The legend draws the marks it names, so the key and the thing
+              keyed cannot drift apart — and a reader meets the drawing here
+              at the size it appears on a card. */}
+          <span className="dirkeys">
+            <span className="dirkey">
+              <DirectionMark direction="expansion" /> rose
+            </span>
+            <span className="dirkey">
+              <DirectionMark direction="contraction" /> fell
+            </span>
+            <span className="dirkey">
+              <DirectionMark direction="mixed" /> mixed
+            </span>
+          </span>
+          — the change the filing&apos;s own numbers show. From the document,
+          not our view, and not about the share price.
         </div>
       )}
       <div

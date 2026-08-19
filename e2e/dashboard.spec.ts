@@ -314,7 +314,10 @@ test.describe('the card', () => {
       .locator('#feed .card[data-seq="' + seq + '"] [data-ui="claim-direction"]')
       .first();
 
-    await expect(pinned).toHaveText(/[▲▼◆]/);
+    // The mark is a CHARACTER in the server-rendered client and a DRAWING in
+    // the React one (ui/DirectionMark.tsx), so what is asserted here is that
+    // the mark rendered something and said what it means — not which.
+    await expect(pinned).not.toBeEmpty();
     await expect(pinned).toHaveAttribute(
       'aria-label',
       /(increase|decrease|both) printed/,

@@ -1,4 +1,5 @@
-import { DIRECTION_GLYPH, DIRECTION_LABEL } from '../format/vocab';
+import { DIRECTION_LABEL } from '../format/vocab';
+import { DIRECTION_MARK, DirectionMark } from './DirectionMark';
 import { MarkedText } from './MarkedText';
 
 /**
@@ -12,8 +13,8 @@ import { MarkedText } from './MarkedText';
  * bad loans, debt, borrowing costs or emissions. The mark is admissible
  * because it is derived, so the characters it was derived from travel with
  * it in the title for a reader to check without opening the PDF. A direction
- * with no glyph entry (unrated, never classified) draws nothing, which
- * already means what it means.
+ * with no drawing (unrated, never classified) draws nothing, which already
+ * means what it means.
  */
 export function Insight({
   text,
@@ -24,10 +25,9 @@ export function Insight({
   readonly direction: string;
   readonly evidence: string;
 }): JSX.Element {
-  const glyph = DIRECTION_GLYPH.get(direction);
   return (
     <>
-      {glyph !== undefined && (
+      {DIRECTION_MARK.has(direction) && (
         <span
           className="dir"
           data-ui="claim-direction"
@@ -37,7 +37,7 @@ export function Insight({
             evidence ? `Printed in the document: "${evidence}"` : undefined
           }
         >
-          {glyph}
+          <DirectionMark direction={direction} />
         </span>
       )}
       <MarkedText text={text} />
