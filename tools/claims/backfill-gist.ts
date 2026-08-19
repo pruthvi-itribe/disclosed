@@ -26,10 +26,19 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import type { AnyBulkWriteOperation, ObjectId } from 'mongodb';
 import { IST_DAY_MS, startOfIstDay } from '@app/common';
-import { GIST_MAX_CHARS, verifyGist, type GistRefusal } from '@app/filings';
-import { GIST_BATCH, type GistRequestItem } from '@app/filings';
-import { ClaudeGistExtractor } from '../../libs/filings/src/llm/claude-gist-extractor';
-import { loadConfig } from '../../apps/ingest/src/config/configuration';
+import {
+  GIST_BATCH,
+  GIST_MAX_CHARS,
+  verifyGist,
+  type GistRefusal,
+  type GistRequestItem,
+} from '@app/filings';
+import { ClaudeClaimExtractor } from '../../libs/filings/src/llm/claude-claim-extractor';
+import { OpenRouterClaimExtractor } from '../../libs/filings/src/llm/openrouter-claim-extractor';
+import {
+  claimApiKeyOf,
+  loadConfig,
+} from '../../apps/ingest/src/config/configuration';
 
 interface StoredClaim {
   readonly text?: unknown;
@@ -61,14 +70,27 @@ async function main(): Promise<void> {
       ? Number.POSITIVE_INFINITY
       : Number(process.argv[limitAt + 1]);
 
-  const extractor = ClaudeGistExtractor.fromApiKey(config.anthropicApiKey, {
-    model: config.claimModel,
-    effort: config.claimEffort,
-  });
+  // THE PROVIDER THE OPERATOR CONFIGURED, not a hardcoded one. Both
+  // adapters carry the gist lane, so this tool asks whichever the claim
+  // lane already uses and with the same key — the first version reached
+  // for the Anthropic key alone and refused to run on a pipeline
+  // configured for OpenRouter, which is every pipeline this repo ships.
+  const apiKey = claimApiKeyOf(config);
+  const options = { model: config.claimModel, effort: config.claimEffort };
+  const extractor =
+    config.claimProvider === 'openrouter'
+      ? OpenRouterClaimExtractor.fromApiKey(apiKey, options)
+      : ClaudeClaimExtractor.fromApiKey(apiKey, options);
   if (extractor === null) {
-    // Said once, at the start, rather than discovered per batch.
-    throw new Error('no model API key is configured; nothing can be proposed');
+    // Said once, at the start, rather than discovered per batch, and it
+    // names the key the configured provider actually needs.
+    throw new Error(
+      `no API key for provider "${config.claimProvider}"; nothing can be proposed`,
+    );
   }
+  process.stdout.write(
+    `provider ${config.claimProvider}, model ${config.claimModel}, effort ${config.claimEffort}\n`,
+  );
 
   await mongoose.connect(config.mongoUri);
   const db = mongoose.connection.db;

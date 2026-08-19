@@ -1,4 +1,5 @@
 import { CLAIM_SYSTEM_PROMPT } from '../logic/claim-prompt';
+import { GIST_OUTPUT_SCHEMA, GIST_SYSTEM_PROMPT } from '../logic/gist-prompt';
 import {
   RESULTS_OUTPUT_SCHEMA,
   RESULTS_SYSTEM_PROMPT,
@@ -472,5 +473,68 @@ describe('ClaudeClaimExtractor — the results lane', () => {
     }).extractResults({ ...REQUEST, documentText: 'x'.repeat(100) });
     const turns = messages.bodies[0].messages as { content: string }[];
     expect(turns[0].content).toContain('first 12 characters of 100');
+  });
+});
+
+/**
+ * The third lane on the same transport. What may be PUBLISHED is
+ * `verifyGist`'s and is deliberately not asserted here — this is only
+ * about what the adapter sends and what it makes of a reply.
+ */
+describe('ClaudeClaimExtractor — the headline lane', () => {
+  const GIST_REPLY = {
+    content: [
+      {
+        type: 'text',
+        text: '{"gists":[{"id":"a:0","gist":"a copy of a span"}]}',
+      },
+    ],
+    usage: { input_tokens: 200, output_tokens: 30 },
+  };
+  const ITEMS = [
+    { id: 'a:0', claim: 'a claim', span: 'a copy of a span here' },
+  ];
+
+  it('sends the gist prompt cached, its schema, and the batch as the turn', async () => {
+    const messages = new RecordingMessages(GIST_REPLY);
+    await extractorWith(messages).proposeGists(ITEMS);
+    const body = messages.bodies[0];
+    const system = body.system as { text: string; cache_control: unknown }[];
+    expect(system[0].text).toBe(GIST_SYSTEM_PROMPT);
+    expect(system[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(
+      (body.output_config as { format: { schema: unknown } }).format.schema,
+    ).toBe(GIST_OUTPUT_SCHEMA);
+    const turns = body.messages as { content: string }[];
+    expect(JSON.parse(turns[0].content)).toEqual(ITEMS);
+  });
+
+  it('reads the answers and what the call cost', async () => {
+    expect(
+      await extractorWith(new RecordingMessages(GIST_REPLY)).proposeGists(
+        ITEMS,
+      ),
+    ).toMatchObject({
+      outcome: 'ok',
+      answers: [{ id: 'a:0', gist: 'a copy of a span' }],
+      usage: { inputTokens: 200, outputTokens: 30 },
+    });
+  });
+
+  // A verdict rather than an exception: inside the backfill's loop a
+  // thrown API error is indistinguishable from a bug in the loop.
+  it('returns a reason when the call fails', async () => {
+    const messages = new RecordingMessages(GIST_REPLY, new Error('down'));
+    const result = await extractorWith(messages).proposeGists(ITEMS);
+    expect(result.outcome).toBe('failed');
+  });
+
+  it('asks nothing when there is nothing to ask about', async () => {
+    const messages = new RecordingMessages(GIST_REPLY);
+    expect(await extractorWith(messages).proposeGists([])).toEqual({
+      outcome: 'ok',
+      answers: [],
+    });
+    expect(messages.bodies).toHaveLength(0);
   });
 });
