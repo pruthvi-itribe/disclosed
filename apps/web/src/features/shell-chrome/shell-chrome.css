@@ -218,3 +218,42 @@ html.native-shell #dir-legend {
   font-size: 14px;
   color: var(--muted);
 }
+
+/* ------------------------------------------- the Brief, between the bars ---
+   The deck was built to own the whole viewport; in the shell the fixed
+   header and bottom bar frame it instead, and the between-the-bars body
+   padding already sizes body.briefing's cage to fit. What needed fixing
+   was the COVER (direction 2026-08-19: "half purple and half greyish, and
+   I don't know"): the category-mix bar's only labels are hover tooltips,
+   which do not exist on touch — colored stripes with no legend are
+   furniture, so the shell drops the bar and lets the cover say its two
+   numbers in words. The web keeps it; pointers can ask. */
+html.native-shell #brief-mix {
+  display: none;
+}
+html.native-shell .bcover .bday {
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+html.native-shell .bcover .btitle {
+  font-size: 30px;
+  margin: 6px 0 12px;
+}
+html.native-shell #brief-cover-line {
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--text);
+  max-width: 30ch;
+  margin: 0 auto;
+}
+html.native-shell #brief-cover-rule {
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: 34ch;
+  margin: 10px auto 0;
+}
+/* The card's own bottom inset padding double-counted inside the framed
+   cage — the bar below already owns that space. */
+html.native-shell .bcard {
+  padding-bottom: 20px;
+}
