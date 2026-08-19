@@ -1318,6 +1318,11 @@ function toEnrichmentView(
       // derived tag is allowed on this page is that they can.
       direction: claim.direction ?? null,
       directionEvidence: claim.directionEvidence ?? null,
+      // The headline slice, when the gate admitted one. Null carries both
+      // "refused" and "never asked" to the client on purpose: the card's
+      // fallback is the same either way — the full claim — and the reason
+      // is a pipeline fact, not a reader's.
+      gist: claim.gist ?? null,
       // Computed here rather than stored, because it is a pure function of the
       // span and the kind — so the whole collection has it without a backfill,
       // and a change to the word list takes effect on the next response rather

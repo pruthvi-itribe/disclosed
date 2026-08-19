@@ -230,6 +230,17 @@ export interface ClaimView {
    */
   readonly directionEvidence: string | null;
   /**
+   * The claim in headline length — a contiguous slice of `span`, verified
+   * by the same matcher that admits the claim. Null when the gate refused
+   * one or none has been proposed; the reader then gets `text`, which is
+   * what the card did before this field existed.
+   *
+   * NOT A SUMMARY, and the distinction is the whole design: this is the
+   * document's own characters in the document's own order, so it is
+   * checkable against `span` by eye. See `claim-gist.ts`.
+   */
+  readonly gist: string | null;
+  /**
    * The company's own forward-looking words in this claim's span — `expect`,
    * `on track`, `guidance`, `by FY28` — or null.
    *

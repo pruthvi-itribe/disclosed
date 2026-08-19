@@ -53,7 +53,15 @@ export function BriefCard({
     .slice(0, BRIEF_REST_CLAIMS);
   const over = entry.claims.length - 1 - BRIEF_REST_CLAIMS;
   const topic = lede.claim.topic;
-  const gist = briefGist(lede.claim.text);
+  // THE SERVER'S HEADLINE FIRST, when the gate admitted one: a slice of
+  // the document's own sentence, verified character for character. The
+  // client's own cutter is the fallback for everything not yet asked
+  // about or refused, and the full claim is the fallback for that.
+  const stored = lede.claim.gist ?? null;
+  const gist =
+    stored === null || stored === ''
+      ? briefGist(lede.claim.text)
+      : { line: stored, cut: stored.length < lede.claim.text.length };
   const source = safeHref(f.attachmentUrl);
 
   return (
