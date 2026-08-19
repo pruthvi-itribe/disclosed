@@ -8,24 +8,15 @@
  * and a plain object's prototype makes 'constructor' a key too.
  */
 
-/**
- * The movement the DOCUMENT printed, one glyph each. There is deliberately
- * no entry for 'unrated': three-quarters of claims are unrated, an explicit
- * badge on three-quarters of a feed is noise, and the absence of a mark
- * already means what it means — the filing printed no direction beside a
- * figure. A missing key draws nothing, which is the same thing.
- *
- * NO COLOUR ON THE MARK, ever. Red and green ARE a view about the company,
- * and the collection says the view would be wrong: 13 of the 45 marked
- * decreases are falling bad loans, debt, borrowing costs or emissions —
- * ESAF's gross NPA down from 7.5% to 5.4% is a triangle pointing down and is
- * the best news in that filing.
+/*
+ * THE MOVEMENT MARK IS NO LONGER A CHARACTER, so no glyph table stands
+ * here. ▲ ▼ ◆ are the server fragment's, and this client draws the mark
+ * instead — see ui/DirectionMark.tsx for why the triangles had to go (they
+ * are the market's gain/loss costume on the one mark this product refuses
+ * to colour) and what replaced them. The DIRECTIONS themselves are still a
+ * shared vocabulary and vocab-mirror.spec.ts still holds the two clients to
+ * the same three, in the labels below and in the drawings' keys.
  */
-export const DIRECTION_GLYPH: ReadonlyMap<string, string> = new Map([
-  ['expansion', '▲'],
-  ['contraction', '▼'],
-  ['mixed', '◆'],
-]);
 
 /**
  * Spelled out for a reader who cannot see the glyph. The words describe the

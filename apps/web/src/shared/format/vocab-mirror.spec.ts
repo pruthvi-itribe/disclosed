@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { DIRECTION_MARK } from '../ui/DirectionMark';
 import {
-  DIRECTION_GLYPH,
   DIRECTION_LABEL,
   TIER_TITLE,
   TOPIC_LABEL,
@@ -50,12 +50,17 @@ const entriesAppearIn = (
 };
 
 describe('the vocabulary mirrors the server fragments', () => {
-  it('DIRECTION_GLYPH matches script-feed.ts and has no unrated key', () => {
-    entriesAppearIn(DIRECTION_GLYPH, feedSource);
-    expect(DIRECTION_GLYPH.size).toBe(3);
+  // The GLYPHS are the server fragment's alone — this client draws the mark
+  // (ui/DirectionMark.tsx). What must still match is which directions exist:
+  // a fourth one added to the extractor and rendered by only one client is
+  // the same two-vocabularies bug this file exists to catch.
+  it('DIRECTION_MARK draws the three directions script-feed.ts knows', () => {
+    for (const key of DIRECTION_MARK.keys()) expect(feedSource).toContain(key);
+    expect([...DIRECTION_MARK.keys()]).toEqual([...DIRECTION_LABEL.keys()]);
+    expect(DIRECTION_MARK.size).toBe(3);
     // Deliberately absent: three-quarters of claims are unrated and a missing
     // key draws nothing, which is the same statement.
-    expect(DIRECTION_GLYPH.has('unrated')).toBe(false);
+    expect(DIRECTION_MARK.has('unrated')).toBe(false);
   });
 
   it('DIRECTION_LABEL matches script-feed.ts', () => {

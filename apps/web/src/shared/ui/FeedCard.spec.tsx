@@ -81,7 +81,12 @@ describe('FeedCard', () => {
     const claims = container.querySelector('[data-ui="card-claims"]');
     const mark = claims?.querySelector('[data-ui="claim-direction"]');
     expect(mark?.getAttribute('data-direction')).toBe('contraction');
-    expect(mark?.textContent).toBe('▼');
+    // A DRAWING, not a character: stroked in currentColor so no stylesheet
+    // can paint a fall red, and aria-hidden because the span says the words.
+    const drawing = mark?.querySelector('svg');
+    expect(drawing?.getAttribute('stroke')).toBe('currentColor');
+    expect(drawing?.getAttribute('aria-hidden')).toBe('true');
+    expect(mark?.textContent).toBe('');
     expect(mark?.getAttribute('aria-label')).toBe('decrease printed');
     expect(mark?.getAttribute('title')).toBe(
       'Printed in the document: "declined to 5.4%"',

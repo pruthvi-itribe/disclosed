@@ -1,0 +1,32 @@
+/*
+ * The mark is a drawing sitting inside a line of prose, so it is aligned to
+ * the TEXT baseline rather than to the box: an inline SVG's own baseline is
+ * its bottom edge, which hangs the whole glyph one stroke too low beside
+ * 13.5px type. Measured against the claim line at 13.5px and the company
+ * page's mark rows at 12px — -0.22em sits the shaft's centre on the x-height
+ * in both.
+ *
+ * Colour is inherited on purpose and set nowhere: page.css's own block
+ * argues it at length, and the drawing is stroked in currentColor so no
+ * later rule can paint a fall red without painting the sentence red too.
+ */
+.dir svg {
+  vertical-align: -0.22em;
+}
+
+/* The legend teaches the three drawings by standing each beside its word.
+   Wrapping is per PAIR, so a narrow phone never breaks a mark from the word
+   it names. */
+.dirkeys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-right: 4px;
+}
+.dirkey {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  white-space: nowrap;
+}
