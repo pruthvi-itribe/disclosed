@@ -9,11 +9,10 @@ import { GIST_MAX_CHARS, GIST_MIN_CHARS } from './claim-gist';
  * admits claims, so a paraphrase — however good — is refused and the
  * filing keeps its full claim.
  *
- * BATCHED BECAUSE THE INSTRUCTION IS THE COST. Measured at these sizes,
- * one claim's span is ~150 tokens against ~300 for the rules; packing
- * GIST_BATCH of them into a request cuts the per-claim input roughly
- * fourfold. The backfill is ~855 claims over the collection, which is
- * ~86 requests.
+ * BATCHED BECAUSE THE INSTRUCTION IS THE COST. A claim is ~40 tokens
+ * against ~350 for the rules, so packing GIST_BATCH of them into one
+ * request turns the instruction from the dominant cost into a fifth of
+ * it, and the cached prefix turns the rest into a read.
  */
 
 /**
@@ -25,18 +24,19 @@ export const GIST_BATCH = 10;
 
 export const GIST_SYSTEM_PROMPT = `You shorten claims from Indian stock-exchange filings into a headline a phone can show in three lines.
 
-You are given a list of items. Each has an "id", a "claim" (a wire line this service has already published) and a "span" (the sentence from the filing that the claim was read from, in the filing's own words).
+You are given a list of items. Each has an "id" and a "claim": one line this service has already published about a filing.
 
-For each item return "gist": THE LONGEST CONTIGUOUS RUN OF WORDS COPIED FROM THAT ITEM'S "span" that still states the point of the claim, and that is at most ${GIST_MAX_CHARS} characters.
+For each item return "gist": THE LONGEST CONTIGUOUS RUN OF WORDS COPIED FROM THAT ITEM'S "claim" that still states its point, and that is at most ${GIST_MAX_CHARS} characters.
 
 Rules:
 
-1. COPY, DO NOT WRITE. The gist must appear inside the span exactly as the span writes it, as one unbroken run. Do not join two parts of the span, do not reorder, do not change a word, a number, a unit or a spelling, and do not fix the document's punctuation. A gist that is not a contiguous copy is rejected and wasted.
-2. Start and end at a sensible point. A gist may start mid-sentence if that is where the point starts, but it must not end on a word that needs the next one ("of", "for", "to", "and"), nor in the middle of a date or a number.
-3. KEEP THE FIGURE. If the span prints an amount, a percentage, a share count or a rating, the gist must contain it. A gist that keeps the action and drops the number is rejected.
-4. KEEP THE CONDITION. If the span says something is subject to approval, pending, proposed, conditional, revised, withdrawn or not the case, the gist must keep that word. Dropping it states as done something the filing did not.
-5. Between ${GIST_MIN_CHARS} and ${GIST_MAX_CHARS} characters. Shorter than that is a fragment, not a headline.
-6. If no run of the span satisfies every rule above, return an empty string for that item. An empty answer is correct and costs nothing; a rule-breaking one is discarded anyway.
+1. COPY, DO NOT WRITE. The gist must appear inside the claim exactly as the claim writes it, as one unbroken run. Do not join two parts, do not reorder, do not change a word, a number, a unit or a spelling. A gist that is not a contiguous copy is rejected and wasted.
+2. START WHERE A SENTENCE COULD. Begin at the claim's first word, or at the first word after a comma, semicolon or full stop inside it. Never begin in the middle of a phrase.
+3. END WHERE THE CLAIM PRINTED A JOIN. The word after your gist must be a comma, a semicolon, a colon, a full stop, or "and"/"or"/"but" — or your gist must end the claim. Never stop in the middle of a phrase: "confirmed as final" is wrong when the claim goes on to say "dividend", and "at least 1.10 times" is wrong when it goes on to say "the entire secured obligations".
+4. KEEP THE FIGURE. If the claim prints an amount, a percentage, a share count or a rating, the gist must contain it. A gist that keeps the action and drops the number is rejected.
+5. KEEP THE CONDITION. If the claim says something is subject to approval, pending, proposed, conditional, revised, withdrawn or not the case, the gist must keep that word. Dropping it states as done something the filing did not.
+6. Between ${GIST_MIN_CHARS} and ${GIST_MAX_CHARS} characters, and meaningfully shorter than the claim. Shorter than the floor is a fragment, not a headline.
+7. If no run of the claim satisfies every rule above, return an empty string for that item. An empty answer is correct and costs nothing; a rule-breaking one is discarded anyway.
 
 Return one entry per input id, in the same order, and nothing else.`;
 
@@ -69,18 +69,18 @@ export const GIST_OUTPUT_SCHEMA = {
 export interface GistRequestItem {
   readonly id: string;
   readonly claim: string;
-  readonly span: string;
 }
 
-/** The user turn: the items, as JSON, and nothing else. */
+/**
+ * The user turn: the items, as JSON, and nothing else.
+ *
+ * THE SPAN IS NOT SENT ANY MORE. It was, until a dry run showed what
+ * slicing raw extracted text produces — a hyphen-split word and a table
+ * row, both honest — see `claim-gist.ts`. Dropping it also halves the
+ * request: the claim is a wire line, the span is a PDF paragraph.
+ */
 export const buildGistRequest = (items: readonly GistRequestItem[]): string =>
-  JSON.stringify(
-    items.map((item) => ({
-      id: item.id,
-      claim: item.claim,
-      span: item.span,
-    })),
-  );
+  JSON.stringify(items.map((item) => ({ id: item.id, claim: item.claim })));
 
 export interface GistAnswer {
   readonly id: string;
