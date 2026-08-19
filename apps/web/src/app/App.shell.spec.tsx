@@ -32,7 +32,7 @@ describe('the shell chrome', () => {
   it('opens search and filters as a sheet, the same controls relocated', async () => {
     const { container } = await renderApp();
     fireEvent.click(
-      container.querySelector('[data-ui="nav-explore"]') as Element,
+      container.querySelector('[data-ui="filter-fab"]') as Element,
     );
     await flush();
 
@@ -43,11 +43,16 @@ describe('the shell chrome', () => {
     expect(sheet?.querySelector('#symbol')).not.toBeNull();
     expect(sheet?.querySelector('#only-insights')).not.toBeNull();
 
-    // No "Done": the bar never left, so the lit tab is the way out
-    // (direction 2026-08-19 — one way out of one screen).
+    // No "Done": the control that opened the filters closes them, and
+    // the bar under the sheet still names four DESTINATIONS — filters
+    // are an action on the feed, not a place (direction 2026-08-19).
     expect(sheet?.querySelector('.sheetclose')).toBeNull();
+    expect(container.querySelector('[data-ui="nav-explore"]')).toBeNull();
+    expect(
+      container.querySelectorAll('[data-ui="bottom-nav"] .navitem').length,
+    ).toBe(4);
     fireEvent.click(
-      container.querySelector('[data-ui="nav-explore"]') as Element,
+      container.querySelector('[data-ui="filter-fab"]') as Element,
     );
     expect(container.querySelector('[data-ui="sheet"]')).toBeNull();
   });
@@ -57,7 +62,7 @@ describe('the shell chrome', () => {
   it('closes the sheet onto the results when a search commits', async () => {
     const { container } = await renderApp();
     fireEvent.click(
-      container.querySelector('[data-ui="nav-explore"]') as Element,
+      container.querySelector('[data-ui="filter-fab"]') as Element,
     );
     await flush();
 
@@ -78,7 +83,7 @@ describe('the shell chrome', () => {
   it('announces an applied search on the feed and clears it from there', async () => {
     const { container } = await renderApp();
     fireEvent.click(
-      container.querySelector('[data-ui="nav-explore"]') as Element,
+      container.querySelector('[data-ui="filter-fab"]') as Element,
     );
     await flush();
     const input = container.querySelector('#symbol') as HTMLInputElement;
@@ -94,7 +99,7 @@ describe('the shell chrome', () => {
     expect(container.querySelector('[data-ui="active-filters"]')).toBeNull();
     // Reopening the filter view finds the box empty, not haunted.
     fireEvent.click(
-      container.querySelector('[data-ui="nav-explore"]') as Element,
+      container.querySelector('[data-ui="filter-fab"]') as Element,
     );
     expect((container.querySelector('#symbol') as HTMLInputElement).value).toBe(
       '',
@@ -114,13 +119,16 @@ describe('the shell chrome', () => {
     expect(
       container.querySelector('[data-ui="profile-watching"]')?.textContent,
     ).toBe('0 of 50 companies');
-    // The notifications panel lives here in the shell (plan C3) — and
-    // says nothing about "this browser", which the app is not.
+    // WHO, WHAT, AND THE WAY OUT. The alert preferences moved to the
+    // Watching screen on 2026-08-19: one stored list, one surface.
+    // Scoped to the SHEET: every view stays mounted in the shell, so the
+    // panel is in the document — on the Watching screen, where it lives.
     expect(
-      container.querySelector('[data-ui="notification-prefs"]'),
-    ).not.toBeNull();
-    expect(container.querySelector('[data-ui="prefs-channel"]')).toBeNull();
-    // The way out is the LAST thing on the screen, under the prefs.
+      container.querySelector(
+        '[data-ui="sheet"] [data-ui="notification-prefs"]',
+      ),
+    ).toBeNull();
+    // The way out is the LAST thing on the screen.
     const profile = container.querySelector('[data-ui="profile"]') as Element;
     expect(profile.lastElementChild?.getAttribute('data-ui')).toBe(
       'profile-sign-out',
@@ -134,9 +142,9 @@ describe('the shell chrome', () => {
   });
 
   // The Watching screen is the manager in the shell (direction
-  // 2026-08-19): add by search, follow topics, and no filings feed —
-  // that is what the Feed tab and the alerts are for there.
-  it('makes Watching the manager: add, follow, no feed', async () => {
+  // 2026-08-19): what I am alerted about, then add by search, then the
+  // list — and no filings feed, which is what the Feed tab is for.
+  it('makes Watching the manager: alerts, add, no feed', async () => {
     const { container } = await renderApp();
     fireEvent.click(
       container.querySelector('[data-ui="nav-watching"]') as Element,
@@ -144,8 +152,23 @@ describe('the shell chrome', () => {
     await flush();
     await flush();
 
-    expect(container.querySelector('[data-ui="add-watch"]')).not.toBeNull();
-    expect(container.querySelector('[data-ui="topic-follows"]')).not.toBeNull();
+    const prefs = container.querySelector('[data-ui="notification-prefs"]');
+    const add = container.querySelector('[data-ui="add-watch"]');
+    expect(prefs).not.toBeNull();
+    expect(add).not.toBeNull();
+    // The panel is ABOVE the search box: three taps that never grow, over
+    // a roster that does.
+    const order = (prefs as Element).compareDocumentPosition(add as Node);
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // One home for the topics — the duplicate follow block is deleted.
+    expect(container.querySelector('[data-ui="topic-follows"]')).toBeNull();
+    expect(container.querySelectorAll('[data-ui="prefs-topics"]').length).toBe(
+      1,
+    );
+    // The standing prose is gone from the phone's manager screen.
+    expect(
+      container.querySelector('[data-ui="watching-roster-note"]'),
+    ).toBeNull();
     expect(container.querySelector('#watch-feed')).toBeNull();
     expect(container.querySelector('#watch-feed-head')).toBeNull();
   });

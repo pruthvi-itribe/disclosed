@@ -3,19 +3,20 @@ import { ICON_STAR } from '../../shared/ui/icons';
 import {
   ICON_NAV_BRIEF,
   ICON_NAV_FEED,
-  ICON_NAV_FILTER,
   ICON_NAV_PROFILE,
-} from './nav-icons';
+} from '../../shared/ui/nav-icons';
 import './shell-chrome.css';
 
-export type NavPick = 'brief' | 'feed' | 'watching' | 'explore' | 'profile';
+export type NavPick = 'brief' | 'feed' | 'watching' | 'profile';
 
 /**
  * The shell's bottom bar — the tabs moved to where thumbs are (direction
- * set 2026-08-18 after the first hands-on build). Three views plus the two
- * sheets; the active mark follows whichever is on top, so an open sheet
- * unlights the view behind it. The unread badge is the top bar's rule
- * restated: absent at zero, capped at 99+.
+ * set 2026-08-18 after the first hands-on build). FOUR DESTINATIONS: the
+ * three views and the profile sheet, the active mark following whichever
+ * is on top so an open sheet unlights the view behind it. Filters left
+ * this bar on 2026-08-19 for a floating control on the feed — a bar names
+ * places, and a filter is an action on one view, not a place. The unread
+ * badge is the top bar's rule restated: absent at zero, capped at 99+.
  */
 export function BottomNav({
   active,
@@ -60,11 +61,6 @@ export function BottomNav({
             {unread > 99 ? '99+' : String(unread)}
           </span>
         ) : null,
-      )}
-      {item(
-        'explore',
-        'Filters',
-        <IconSvg shapes={ICON_NAV_FILTER} size={22} />,
       )}
       {item(
         'profile',

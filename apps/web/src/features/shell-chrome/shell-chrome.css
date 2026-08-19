@@ -78,6 +78,40 @@ html.native-shell body {
   text-align: center;
 }
 
+/* ------------------------------------------- the feed's filter control ---- */
+
+/* Bottom right, above the bar, over the feed it narrows. z-index 46 puts
+   it ABOVE the sheet (45): the control that opened the filters is the
+   control that closes them, and the sheet has no close button of its own. */
+.filterfab {
+  position: fixed;
+  right: calc(env(safe-area-inset-right) + 16px);
+  bottom: calc(env(safe-area-inset-bottom) + 64px + 14px);
+  z-index: 46;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  /* Lifted off the cards, which scroll under it. */
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+/* Something is applied: the control says so where the thumb already is,
+   and the strip under the header says WHAT. */
+.filterfab.narrowed {
+  border-color: var(--brand-1);
+  color: var(--brand-1);
+}
+.filterfab.open {
+  background: var(--brand-1);
+  border-color: var(--brand-1);
+  color: var(--bg);
+}
+
 /* --------------------------------------------------------- the sheets ---- */
 .sheet {
   position: fixed;

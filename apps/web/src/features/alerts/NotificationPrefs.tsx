@@ -44,15 +44,19 @@ export function NotificationPrefs({
 
   return (
     <div className="notifprefs" data-ui="notification-prefs">
-      <h3>Notifications</h3>
+      {/* Two headings where there is one section is chrome: with no
+          channel row (the app), "Notifications" and "Alert me about"
+          stack with nothing between them. */}
+      <h3>{channel === null ? 'Alert me about' : 'Notifications'}</h3>
       {channel !== null && (
-        <div className="notifrow" data-ui="prefs-channel">
-          <span>Desktop, this browser</span>
-          {channel}
-        </div>
+        <>
+          <div className="notifrow" data-ui="prefs-channel">
+            <span>Desktop, this browser</span>
+            {channel}
+          </div>
+          <h4>Alert me about</h4>
+        </>
       )}
-
-      <h4>Alert me about</h4>
       <div className="notifrow">
         <span>
           Companies I watch

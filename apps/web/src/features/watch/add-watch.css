@@ -2,22 +2,67 @@
    renders this yet (manage mode is the shell's). */
 .addwatch {
   position: relative;
-  margin: 4px 0 10px;
+  margin: 6px 0 12px;
 }
-.addwatch input {
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 10px;
+
+/* THE BOX IS THE ROW: mark, field, and the way to empty it, on one
+   rounded surface — a phone's search field, rather than a bare input with
+   a placeholder doing all the explaining (design pass 2026-08-19). */
+.addwatch .addwatchbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--panel);
+  color: var(--muted);
+}
+.addwatch .addwatchbox.filled,
+.addwatch .addwatchbox:focus-within {
+  border-color: var(--brand-1);
   color: var(--text);
 }
+.addwatch input {
+  flex: 1;
+  min-width: 0;
+  /* 44px tall and 16px type: the thumb target, and the size below which
+     iOS zooms the page on focus — the bug that stuck the app zoomed in. */
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+.addwatch input:focus {
+  outline: none;
+}
+/* The type's own clear control is a grey X in the wrong place on iOS. */
+.addwatch input::-webkit-search-cancel-button {
+  display: none;
+}
+.addwatch .addwatchclear {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--line);
+  color: var(--text);
+  padding: 0;
+}
+
 .addwatch .addwatchlist {
   list-style: none;
   margin: 6px 0 0;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--panel);
 }
 .addwatch .addwatchlist button {

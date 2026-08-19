@@ -5,16 +5,23 @@ import type { ApiResult } from '../shared/api/api-get';
 import type { WatchControls } from '../shared/ui/WatchButton';
 import type { useWatch } from '../features/watch/use-watch';
 import { AddWatch } from '../features/watch/AddWatch';
-import { TopicFollows } from '../features/alerts/TopicFollows';
 import { AlertsToggle } from '../features/alerts/AlertsToggle';
 import { NotificationPrefs } from '../features/alerts/NotificationPrefs';
 import type { DesktopAlertsState } from '../features/alerts/use-desktop-alerts';
 
 /**
  * The account's UI surfaces, built once (plan C3 + the Watching manager):
- * the notifications panel for its two homes, and the shell-only manage
- * slots — search-to-add and followed topics. Everything null signed out.
- * Split from App at the line cap.
+ * the notifications panel and the shell-only search-to-add. Everything
+ * null signed out. Split from App at the line cap.
+ *
+ * ONE PANEL, ONE HOME. The topic subscriptions were drawn twice in the
+ * shell — as follow pills on Watching and again as preference pills in
+ * Profile — which is one stored list behind two independent useStates: a
+ * toggle in one left the other stale until the next api/me. Called out
+ * 2026-08-19 ("its repeating in profile and here, we need to simplify
+ * it"), and the duplicate is deleted rather than synchronised. The panel
+ * lives where the following happens: the Watching screen in the app, the
+ * Watching view on the web.
  */
 export function accountSurfacesUi({
   me,
@@ -42,11 +49,10 @@ export function accountSurfacesUi({
 }): {
   readonly prefs: JSX.Element | null;
   readonly addWatch: JSX.Element | null;
-  readonly topics: JSX.Element | null;
   readonly watchControls: WatchControls | null;
 } {
   if (me === undefined || me.signedIn !== true) {
-    return { prefs: null, addWatch: null, topics: null, watchControls: null };
+    return { prefs: null, addWatch: null, watchControls: null };
   }
   // Null when signed out, so every star-drawing surface draws nothing. An
   // unwatched row must not sit in the Watching view for four seconds, so
@@ -82,9 +88,6 @@ export function accountSurfacesUi({
     // Manage-mode slots are the shell's alone; the web keeps its layout.
     addWatch: shell ? (
       <AddWatch apiGet={apiGet} controls={watchControls} />
-    ) : null,
-    topics: shell ? (
-      <TopicFollows apiSend={apiSend} initialTopics={me.alertTopics ?? []} />
     ) : null,
   };
 }

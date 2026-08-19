@@ -35,18 +35,18 @@ export interface WatchingViewProps {
   /**
    * The notifications panel (plan C3), composed in by App the way
    * FeedControls takes the search box — features do not import features.
-   * Null in the shell, where the panel's home is the Profile sheet.
+   * This is its ONE home in both clients; the Profile sheet drew a second
+   * copy of the same stored list until 2026-08-19.
    */
   readonly prefs?: JSX.Element | null;
   /**
    * MANAGE MODE — the shell's Watching screen (direction 2026-08-19): the
-   * list itself is the surface. Adding rides the addWatch slot, followed
-   * topics the topics slot, and the watched-filings feed stays off this
-   * screen — the Feed tab and the alerts are where filings live there.
+   * list itself is the surface. Adding rides the addWatch slot, and the
+   * watched-filings feed stays off this screen — the Feed tab and the
+   * alerts are where filings live there.
    */
   readonly manage?: boolean;
   readonly addWatch?: JSX.Element | null;
-  readonly topics?: JSX.Element | null;
   readonly onOpenCompany: (symbol: string) => void;
   readonly onOpenFocus: (filing: FilingView) => void;
   readonly onPickGroup: (group: string) => void;
@@ -81,7 +81,6 @@ export function WatchingView({
   prefs = null,
   manage = false,
   addWatch = null,
-  topics = null,
   onPickGroup,
   onRoster,
   onSeen,
@@ -114,18 +113,30 @@ export function WatchingView({
             : `${groupInt(counts.used)} of ${groupInt(counts.cap)} companies watched`}
         </span>
       </div>
-      {addWatch}
+      {/* WHAT I AM ALERTED ABOUT, then WHAT I WATCH, then the list —
+          the panel first because it is three taps and never grows, while
+          the roster below it is unbounded (direction 2026-08-19: topics
+          "can be on top"). On the web addWatch is null and this is the
+          order the view already had. */}
       {prefs}
-      <p
-        id="watch-roster-note"
-        className="sectionnote"
-        data-ui="watching-roster-note"
-        hidden={rows.length === 0}
-      >
-        Every company you watch is here, the quiet ones included, with when it
-        last filed anything held in this collection. The star takes one off the
-        list.
-      </p>
+      {addWatch}
+      {/* The prose is NOT RENDERED at all in manage mode: a phone screen
+          states what the list is by being the list, and the star that
+          removes a row is on the row (called out 2026-08-19 — "constant
+          text there"). The web keeps it, hidden until there is a roster
+          for it to describe. */}
+      {!manage && (
+        <p
+          id="watch-roster-note"
+          className="sectionnote"
+          data-ui="watching-roster-note"
+          hidden={rows.length === 0}
+        >
+          Every company you watch is here, the quiet ones included, with when it
+          last filed anything held in this collection. The star takes one off
+          the list.
+        </p>
+      )}
       {rows.length > 0 && (
         <Roster rows={rows} watch={watch} onOpenCompany={onOpenCompany} />
       )}
@@ -194,7 +205,6 @@ export function WatchingView({
           share={share}
         />
       )}
-      {topics}
     </>
   );
 }
