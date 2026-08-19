@@ -271,6 +271,21 @@ export class UserRepository {
       .exec();
   }
 
+  /** Whether the watched-companies alert arm is on. Absent reads as true. */
+  async alertWatchlistFor(id: string): Promise<boolean> {
+    const found = await this.users
+      .findById(id, { 'alerts.watchlist': 1 })
+      .lean<UserDocument>()
+      .exec();
+    return found?.alerts?.watchlist ?? true;
+  }
+
+  async setAlertWatchlist(id: string, on: boolean): Promise<void> {
+    await this.users
+      .updateOne({ _id: id }, { $set: { 'alerts.watchlist': on } })
+      .exec();
+  }
+
   /** Stamps the Watching tab as read, which is what the unread count counts from. */
   async markWatchlistSeen(id: string, now: Date): Promise<void> {
     await this.users
