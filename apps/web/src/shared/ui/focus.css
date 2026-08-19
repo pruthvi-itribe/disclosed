@@ -25,6 +25,13 @@
   opacity: 0;
   transition: opacity .16s ease;
   overflow-y: auto;
+  /* CONTAINED, so the wheel that reaches the end of this overlay stops
+     there. Without it the scroll CHAINS to the page underneath and the
+     feed slides behind a modal that claims aria-modal="true" — reported
+     2026-08-19 as "the scroll behind is also working, i can see
+     scrollbar moving". Contain, not none: the overlay's own scroll is
+     the point when a long filing does not fit. */
+  overscroll-behavior: contain;
 }
 .focusback[hidden] { display: none; }
 .focusback.open { opacity: 1; }

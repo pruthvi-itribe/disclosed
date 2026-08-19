@@ -110,6 +110,10 @@ html.native-shell body {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  /* The sheet's list is the only thing that scrolls while it is open:
+     a flick past its end must not drag the view behind it (the focus
+     dialog carries the same rule, for the same report). */
+  overscroll-behavior: contain;
 }
 
 .profile {
