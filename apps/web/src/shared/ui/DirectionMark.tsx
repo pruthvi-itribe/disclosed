@@ -37,11 +37,18 @@ const MARK_FALL: readonly IconShape[] = [
   ['polyline', 'points', '16 17 22 17 22 11'],
 ];
 
-/** Both were printed: one shaft, a head at each end. */
+/**
+ * Both were printed: one shaft, a head at each end.
+ *
+ * Its ink is 12 units tall against the trend lines' 10, not the 17 it was
+ * drawn at first — a taller third mark read as a bigger, louder statement
+ * standing beside the other two in the legend, when all three are the same
+ * kind of fact.
+ */
 const MARK_BOTH: readonly IconShape[] = [
-  ['line', 'x1', '12', 'y1', '3.5', 'x2', '12', 'y2', '20.5'],
-  ['polyline', 'points', '7.5 8 12 3.5 16.5 8'],
-  ['polyline', 'points', '7.5 16 12 20.5 16.5 16'],
+  ['line', 'x1', '12', 'y1', '6', 'x2', '12', 'y2', '18'],
+  ['polyline', 'points', '8.6 9.4 12 6 15.4 9.4'],
+  ['polyline', 'points', '8.6 14.6 12 18 15.4 14.6'],
 ];
 
 /**
