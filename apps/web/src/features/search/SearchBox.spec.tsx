@@ -2,7 +2,7 @@ import { fireEvent, render } from '@testing-library/react';
 import { act } from '@testing-library/react';
 import { SearchBox } from './SearchBox';
 import { SearchNote } from './SearchNote';
-import { SUGGEST_DEBOUNCE_MS } from './use-suggest';
+import { SUGGEST_DEBOUNCE_MS } from '../../shared/api/use-suggest';
 
 const answer = {
   status: 'ok' as const,

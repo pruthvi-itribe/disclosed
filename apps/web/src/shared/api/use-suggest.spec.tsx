@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { useSuggest, SUGGEST_DEBOUNCE_MS } from './use-suggest';
-import type { ApiResult } from '../../shared/api/api-get';
+import type { ApiResult } from './api-get';
 
 const answer = (
   companies: unknown[] = [],
