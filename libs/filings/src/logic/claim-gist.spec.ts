@@ -58,6 +58,23 @@ describe('verifyGist', () => {
     ).toBe('mid-sentence');
   });
 
+  // Written to production by the first --write run. A comma counted as a
+  // boundary, so the second item of a list read as the start of a
+  // sentence — and the headline dropped the country listed first.
+  it('refuses a slice that starts at a comma, mid-list', () => {
+    const listed =
+      'Expanding presence in Saudi Arabia, Kenya and other African markets for telecom infrastructure and BESS solutions';
+    expect(
+      refusalOf(
+        verifyGist({
+          candidate:
+            'Kenya and other African markets for telecom infrastructure and BESS solutions',
+          claimText: listed,
+        }),
+      ),
+    ).toBe('mid-sentence');
+  });
+
   it('accepts a slice that starts after a boundary the claim printed', () => {
     const twoParts =
       'The scheme was approved by the board on 12 August; Godawari Power will issue 4,00,000 equity shares to the shareholders of the merging entity.';

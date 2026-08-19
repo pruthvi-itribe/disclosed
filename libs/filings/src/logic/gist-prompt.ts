@@ -31,7 +31,7 @@ For each item return "gist": THE LONGEST CONTIGUOUS RUN OF WORDS COPIED FROM THA
 Rules:
 
 1. COPY, DO NOT WRITE. The gist must appear inside the claim exactly as the claim writes it, as one unbroken run. Do not join two parts, do not reorder, do not change a word, a number, a unit or a spelling. A gist that is not a contiguous copy is rejected and wasted.
-2. START WHERE A SENTENCE COULD. Begin at the claim's first word, or at the first word after a comma, semicolon or full stop inside it. Never begin in the middle of a phrase.
+2. START WHERE A SENTENCE COULD. Begin at the claim's first word, or at the first word after a semicolon, colon or full stop inside it. Never begin after a comma, and never in the middle of a phrase.
 3. END WHERE THE CLAIM PRINTED A JOIN. The word after your gist must be a comma, a semicolon, a colon, a full stop, or "and"/"or"/"but" — or your gist must end the claim. Never stop in the middle of a phrase: "confirmed as final" is wrong when the claim goes on to say "dividend", and "at least 1.10 times" is wrong when it goes on to say "the entire secured obligations".
 4. KEEP THE FIGURE. If the claim prints an amount, a percentage, a share count or a rating, the gist must contain it. A gist that keeps the action and drops the number is rejected.
 5. KEEP THE CONDITION. If the claim says something is subject to approval, pending, proposed, conditional, revised, withdrawn or not the case, the gist must keep that word. Dropping it states as done something the filing did not.
