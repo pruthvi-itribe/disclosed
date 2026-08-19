@@ -79,6 +79,8 @@ export function accountSurfacesUi({
             />
           )
         }
+        // A phone screen owes its space to the list, not to the panel.
+        compact={shell}
         apiSend={apiSend}
         initialTopics={me.alertTopics ?? []}
         initialWatchlist={me.alertWatchlist ?? true}

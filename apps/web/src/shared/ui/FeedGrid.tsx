@@ -89,6 +89,14 @@ export interface FeedGridProps {
   /** Null when signed out: the star is absent, not disabled. */
   readonly watch?: WatchControls | null;
   readonly share?: ((filing: FilingView) => JSX.Element) | null;
+  /**
+   * What is narrowing this feed, drawn IN THE FLOW above it (the shell
+   * only). It was a fixed bar under the header and covered whatever the
+   * feed's first rows were — "when filters are applied some text behind
+   * is hidden" (2026-08-19). In flow it pushes the feed down instead,
+   * and sticks to the header when the feed scrolls under it.
+   */
+  readonly strip?: JSX.Element | null;
 }
 
 /**
@@ -112,6 +120,7 @@ export function FeedGrid({
   onGrow,
   watch = null,
   share = null,
+  strip = null,
 }: FeedGridProps): JSX.Element {
   const moreRef = useRef<HTMLButtonElement | null>(null);
 
@@ -193,6 +202,7 @@ export function FeedGrid({
 
   return (
     <>
+      {strip}
       {chrome && (
         <div
           id="dir-legend"

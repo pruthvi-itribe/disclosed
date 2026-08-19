@@ -60,6 +60,36 @@
   font-size: 12.5px;
 }
 
+/* THE COMPACT FORM, on a screen that has a list to show: a caption and
+   one sideways-scrolling row of choices, about 60px against the full
+   panel's 260 ("half the screen space is gone until the search bar",
+   2026-08-19). The row bleeds to both screen edges — a pill cut off at
+   the margin is what tells a thumb there is more to the right. */
+.notifprefs.compact {
+  gap: 6px;
+  max-width: none;
+  padding: 0 0 4px;
+}
+.notifprefs.compact .prefscaption {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.notifprefs.compact .followpills {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  margin: 0 -20px;
+  padding: 1px 20px 3px;
+}
+.notifprefs.compact .followpills::-webkit-scrollbar {
+  display: none;
+}
+.notifprefs.compact .followpill {
+  flex: 0 0 auto;
+  padding: 7px 13px;
+}
+
 /* Topics-as-follows, on the Watching screen. */
 .topicfollows {
   display: flex;

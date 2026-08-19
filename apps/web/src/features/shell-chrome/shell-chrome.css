@@ -78,6 +78,15 @@ html.native-shell body {
   text-align: center;
 }
 
+/* The manager's list header: the count IS the heading — "3 of 50 watched"
+   says what the rows below are, where a second h2 would only repeat the
+   lit tab. The rule above it is what separates it from the alert row. */
+.watchhead.compact {
+  margin: 16px 0 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
 /* ------------------------------------------- the feed's filter control ---- */
 
 /* Bottom right, above the bar, over the feed it narrows. z-index 46 puts
@@ -225,15 +234,19 @@ html.native-shell #dir-legend {
 /* What narrows the feed, pinned under the header so it is clearable from
    the results themselves — the filter view is a curtain, and a filter set
    behind a curtain must announce itself in front of it. */
+/* STICKY, NOT FIXED. Fixed, it floated over the feed it described and hid
+   the first rows under it — "when filters are applied some text behind is
+   hidden" (2026-08-19). In the feed's flow it takes its own height, so
+   nothing is covered, and it still parks under the header when the feed
+   scrolls. The bleed puts it edge to edge inside the body's 20px. */
 .activefilters {
-  position: fixed;
-  top: calc(env(safe-area-inset-top) + 54px);
-  left: 0;
-  right: 0;
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + 62px);
   z-index: 39;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin: 0 -20px 12px;
   padding: 8px 20px 9px;
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   -webkit-backdrop-filter: blur(14px);

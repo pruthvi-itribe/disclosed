@@ -1,5 +1,6 @@
 import { forwardRef } from 'react';
 import type { ApiResult } from '../shared/api/api-get';
+import { ActiveFilters } from '../features/shell-chrome/ActiveFilters';
 import { FeedControls } from '../features/feed/FeedControls';
 import { SearchBox, type SearchBoxHandle } from '../features/search/SearchBox';
 import { SearchNote } from '../features/search/SearchNote';
@@ -47,3 +48,24 @@ export const FilterControls = forwardRef<
     />
   );
 });
+
+/**
+ * The OTHER filter surface: what is currently narrowing the feed, drawn
+ * in the feed's own flow in the shell. Built here beside the controls it
+ * mirrors — App is at its line cap, and these two are one subject.
+ */
+export const feedStrip = ({
+  filters,
+  dispatch,
+  searchBox,
+}: {
+  readonly filters: FilterState;
+  readonly dispatch: (action: FilterAction) => void;
+  readonly searchBox: React.RefObject<SearchBoxHandle>;
+}): JSX.Element => (
+  <ActiveFilters
+    filters={filters}
+    dispatch={dispatch}
+    onSearchCleared={() => searchBox.current?.clear()}
+  />
+);
