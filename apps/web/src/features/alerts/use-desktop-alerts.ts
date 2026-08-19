@@ -107,14 +107,23 @@ export const useDesktopAlerts = ({
             // when the same company files again within a burst. A watched
             // company leads with its name; a topic-only match leads with
             // the topic, because that is why the reader is being told.
-            const matchedTopic = (filing.enrichment?.claims ?? []).find(
+            const claims = filing.enrichment?.claims ?? [];
+            const matched = claims.find(
               (claim) => claim.topic !== null && subscribed.has(claim.topic),
-            )?.topic;
+            );
             const title = watched.has(filing.symbol)
               ? `${filing.symbol} filed`
-              : `${topicLabel(matchedTopic ?? '')}: ${filing.symbol}`;
+              : `${topicLabel(matched?.topic ?? '')}: ${filing.symbol}`;
+            // A notification is a glance, not a card: the claim TEXT is the
+            // extractor's verified-span-backed one-liner and is already
+            // notification-sized; the outcome sentence is the card-length
+            // fallback for the rare verified filing with no claim line. A
+            // dedicated model-written alert line is plan C5 — measured
+            // there before it is built.
+            const line = matched?.text ?? claims[0]?.text ?? filing.outcome;
+            const body = line.length > 140 ? `${line.slice(0, 139)}…` : line;
             const shown = new Notification(title, {
-              body: filing.outcome,
+              body,
               tag: filing.symbol,
             });
             shown.onclick = () => window.focus();

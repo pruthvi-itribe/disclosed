@@ -121,6 +121,23 @@ describe('the shell chrome', () => {
     expect(apiSend.mock.calls.map((c) => c[0])).toContain('/api/auth/logout');
   });
 
+  // The Watching screen is the manager in the shell (direction
+  // 2026-08-19): add by search, follow topics, and no filings feed —
+  // that is what the Feed tab and the alerts are for there.
+  it('makes Watching the manager: add, follow, no feed', async () => {
+    const { container } = await renderApp();
+    fireEvent.click(
+      container.querySelector('[data-ui="nav-watching"]') as Element,
+    );
+    await flush();
+    await flush();
+
+    expect(container.querySelector('[data-ui="add-watch"]')).not.toBeNull();
+    expect(container.querySelector('[data-ui="topic-follows"]')).not.toBeNull();
+    expect(container.querySelector('#watch-feed')).toBeNull();
+    expect(container.querySelector('#watch-feed-head')).toBeNull();
+  });
+
   it('the web layout is untouched without the boot mark', async () => {
     document.documentElement.classList.remove('native-shell');
     const { container } = await renderApp();

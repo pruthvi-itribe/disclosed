@@ -35,23 +35,21 @@ export function TopicFollows({
         Alerts for every verified claim on a topic, from any company.
       </p>
       <div className="followpills">
-        {TOPIC_CHIPS.filter(([value]) => value !== '').map(
-          ([value, label]) => {
-            const on = topics.includes(value);
-            return (
-              <button
-                key={value}
-                type="button"
-                className={`followpill${on ? ' on' : ''}`}
-                data-topic={value}
-                aria-pressed={on}
-                onClick={() => toggle(value, !on)}
-              >
-                {label}
-              </button>
-            );
-          },
-        )}
+        {TOPIC_CHIPS.filter(([value]) => value !== '').map(([value, label]) => {
+          const on = topics.includes(value);
+          return (
+            <button
+              key={value}
+              type="button"
+              className={`followpill${on ? ' on' : ''}`}
+              data-topic={value}
+              aria-pressed={on}
+              onClick={() => toggle(value, !on)}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
       <div className="doorfail" hidden={failure === null}>
         {failure ?? ''}
