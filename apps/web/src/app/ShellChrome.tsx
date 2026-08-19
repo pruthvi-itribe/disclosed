@@ -1,7 +1,6 @@
 import { BottomNav, type NavPick } from '../features/shell-chrome/BottomNav';
-import { ActiveFilters } from '../features/shell-chrome/ActiveFilters';
 import { FilterFab } from '../features/shell-chrome/FilterFab';
-import type { FilterAction, FilterState } from './filter-state';
+import type { FilterState } from './filter-state';
 import type { ViewState } from './view-state';
 import { groupInt } from '../shared/format/group-int';
 import { ProfileContent, Sheet } from '../features/shell-chrome/Sheets';
@@ -21,8 +20,6 @@ export function ShellChrome({
   email,
   counts,
   filters,
-  dispatch,
-  onSearchCleared,
   controls,
   onShowView,
   onSheet,
@@ -34,8 +31,6 @@ export function ShellChrome({
   readonly email: string;
   readonly counts: { readonly used: number; readonly cap: number } | null;
   readonly filters: FilterState;
-  readonly dispatch: (action: FilterAction) => void;
-  readonly onSearchCleared: () => void;
   readonly controls: JSX.Element;
   readonly onShowView: (view: 'brief' | 'feed' | 'watching') => void;
   readonly onSheet: (sheet: 'explore' | 'profile' | null) => void;
@@ -95,13 +90,6 @@ export function ShellChrome({
             onSignOut={onSignOut}
           />
         </Sheet>
-      )}
-      {navView === 'feed' && sheet === null && (
-        <ActiveFilters
-          filters={filters}
-          dispatch={dispatch}
-          onSearchCleared={onSearchCleared}
-        />
       )}
       {/* The filter sheet does not move the reader: they are still on the
           feed, narrowing it, so Feed stays lit under it. Only Profile is

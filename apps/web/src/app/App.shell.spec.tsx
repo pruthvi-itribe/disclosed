@@ -156,10 +156,25 @@ describe('the shell chrome', () => {
     const add = container.querySelector('[data-ui="add-watch"]');
     expect(prefs).not.toBeNull();
     expect(add).not.toBeNull();
-    // The panel is ABOVE the search box: three taps that never grow, over
-    // a roster that does.
-    const order = (prefs as Element).compareDocumentPosition(add as Node);
+    // THE SEARCH BOX IS FIRST — the screen opens on its one action, and
+    // the alert choices sit under it as one compact row rather than a
+    // panel that spent half the screen ("half the screen space is gone
+    // until the search bar", 2026-08-19).
+    const order = (add as Element).compareDocumentPosition(prefs as Node);
     expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(prefs?.className).toContain('compact');
+    // Nothing above the box: no heading repeating the lit tab.
+    expect(container.querySelector('#view-watching h2')).toBeNull();
+    // The promise line and the standalone switch row belong to the full
+    // panel; the watched-companies arm rides the pill row here.
+    expect(
+      container.querySelector('[data-ui="view-watching"]')?.textContent,
+    ).not.toContain('Only claims verified');
+    expect(
+      prefs?.querySelector(
+        '[data-ui="prefs-topics"] [data-ui="prefs-watchlist"]',
+      ),
+    ).not.toBeNull();
     // One home for the topics — the duplicate follow block is deleted.
     expect(container.querySelector('[data-ui="topic-follows"]')).toBeNull();
     expect(container.querySelectorAll('[data-ui="prefs-topics"]').length).toBe(

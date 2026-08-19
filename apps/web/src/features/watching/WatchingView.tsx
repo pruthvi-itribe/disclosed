@@ -105,21 +105,37 @@ export function WatchingView({
 
   return (
     <>
-      <div className="watchhead" data-ui="watching-head">
-        <h2>Companies you watch</h2>
-        <span id="watch-count" className="watchcount">
-          {counts === null
-            ? ''
-            : `${groupInt(counts.used)} of ${groupInt(counts.cap)} companies watched`}
-        </span>
-      </div>
-      {/* WHAT I AM ALERTED ABOUT, then WHAT I WATCH, then the list —
-          the panel first because it is three taps and never grows, while
-          the roster below it is unbounded (direction 2026-08-19: topics
-          "can be on top"). On the web addWatch is null and this is the
-          order the view already had. */}
-      {prefs}
-      {addWatch}
+      {/* THE SCREEN OPENS ON ITS ONE ACTION. A heading that repeats the
+          lit tab, and a panel in its full form, spent half a phone
+          screen before the search box (2026-08-19); the app puts the
+          box first, the alert choices under it as one scrolling row,
+          and the count where the list it counts begins. The web keeps
+          its heading and its full panel — it has the room. */}
+      {!manage && (
+        <div className="watchhead" data-ui="watching-head">
+          <h2>Companies you watch</h2>
+          <span id="watch-count" className="watchcount">
+            {counts === null
+              ? ''
+              : `${groupInt(counts.used)} of ${groupInt(counts.cap)} companies watched`}
+          </span>
+        </div>
+      )}
+      {manage ? (
+        <>
+          {addWatch}
+          {prefs}
+          <div className="watchhead compact" data-ui="watching-head">
+            <span id="watch-count" className="watchcount">
+              {counts === null
+                ? ''
+                : `${groupInt(counts.used)} of ${groupInt(counts.cap)} watched`}
+            </span>
+          </div>
+        </>
+      ) : (
+        prefs
+      )}
       {/* The prose is NOT RENDERED at all in manage mode: a phone screen
           states what the list is by being the list, and the star that
           removes a row is on the row (called out 2026-08-19 — "constant

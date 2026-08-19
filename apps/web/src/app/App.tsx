@@ -18,7 +18,7 @@ import { useShareSlots } from '../features/share/share-slots';
 import { accountSurfacesUi } from './AccountPrefs';
 import { useAccountSurfaces } from './use-account-surfaces';
 import { ShellChrome } from './ShellChrome';
-import { FilterControls } from './FilterControls';
+import { FilterControls, feedStrip } from './FilterControls';
 import type { SearchBoxHandle } from '../features/search/SearchBox';
 import type { WatchlistFeedMeta } from '../shared/types/account';
 
@@ -110,6 +110,12 @@ export function App({
       dispatch={filterDispatch}
     />
   );
+  // In the feed's FLOW, not over it: a fixed bar hid the rows it was
+  // describing (2026-08-19). Shell only — the web feed shows its filters
+  // in the controls that set them.
+  const strip = shell
+    ? feedStrip({ filters, dispatch: filterDispatch, searchBox })
+    : null;
   const watchedCount = watch.counts?.used ?? 0;
   const { prefs, addWatch, watchControls } = accountSurfacesUi({
     me: account.me,
@@ -195,6 +201,7 @@ export function App({
           onGrow={() => dispatchFilters({ type: 'grow' })}
           watch={watchControls}
           share={shareOnCard}
+          strip={strip}
         />
       </section>
 
@@ -278,8 +285,6 @@ export function App({
           email={account.me?.email ?? ''}
           counts={watch.counts}
           filters={filters}
-          dispatch={filterDispatch}
-          onSearchCleared={() => searchBox.current?.clear()}
           controls={controls}
           onShowView={(view) => dispatchView({ type: 'show', view })}
           onSheet={setSheet}
