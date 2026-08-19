@@ -459,17 +459,18 @@ export const SCRIPT_COMPANY = `
       seg.title = label + ': ' + counts[name] + ' claim(s)';
       bar.appendChild(seg);
 
-      if (j < 3) {
-        var item = document.createElement('span');
-        item.className = 'mixitem';
-        var swatch = document.createElement('span');
-        swatch.className = 'mixdot t-' + name;
-        item.appendChild(swatch);
-        var text = document.createElement('span');
-        text.textContent = label + ' ' + counts[name];
-        item.appendChild(text);
-        legend.appendChild(item);
-      }
+      // EVERY segment is named, not the first three. The titles above are
+      // hover tooltips and a phone has no hover, so a fourth colour was a
+      // stripe a reader could not decode - asked about on 2026-08-19.
+      var item = document.createElement('span');
+      item.className = 'mixitem';
+      var swatch = document.createElement('span');
+      swatch.className = 'mixdot t-' + name;
+      item.appendChild(swatch);
+      var text = document.createElement('span');
+      text.textContent = label + ' ' + counts[name];
+      item.appendChild(text);
+      legend.appendChild(item);
     }
     return true;
   }

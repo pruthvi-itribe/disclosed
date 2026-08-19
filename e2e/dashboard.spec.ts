@@ -694,11 +694,14 @@ test.describe('the company page', () => {
     if (!shown) return;
     const segments = page.locator('#co-topics .mixseg');
     await expect(segments).not.toHaveCount(0);
-    // Every segment names its topic and its count, so the colour never has to
-    // be decoded from the legend alone.
+    // Every segment names its topic and its count in a title, for a pointer.
     await expect(segments.first()).toHaveAttribute('title', /claim\(s\)/);
-    // At most three entries, because a legend the width of the bar is a table.
-    expect(await page.locator('#co-topics-legend .mixitem').count()).toBeLessThanOrEqual(3);
+    // AND in the legend, for everyone else: a title is a hover tooltip and a
+    // phone has no hover, so a legend that stopped at three left the fourth
+    // colour undecodable (asked about 2026-08-19). One entry per segment.
+    expect(await page.locator('#co-topics-legend .mixitem').count()).toBe(
+      await segments.count(),
+    );
   });
 
   test('drops a feed response that lands after a ticker click', async ({
