@@ -35,6 +35,17 @@ const ClaimSchema = new Schema(
     span: { type: String, default: '' },
     kind: { type: String, default: 'operational' },
     /**
+     * The headline slice of `span`, and why the last attempt failed.
+     *
+     * BOTH DEFAULT TO NULL AND MEAN DIFFERENT THINGS TOGETHER: null/null
+     * is "never attempted", null with a reason is "attempted, refused",
+     * a string is publishable. The backfill reads the pair to decide
+     * what to send, so collapsing them would make it re-ask the model
+     * every run for every claim the gate will refuse again.
+     */
+    gist: { type: String, default: null },
+    gistRefusal: { type: String, default: null },
+    /**
      * What the claim is ABOUT, derived from its own text by `claimTopic`.
      *
      * A SECOND AXIS, not a replacement for `kind`. `kind` is the shape the

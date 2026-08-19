@@ -58,3 +58,31 @@ describe('briefGist', () => {
     expect(g).toEqual({ line: claim, cut: false });
   });
 });
+
+/**
+ * The card's order of preference. The server's gist is a slice of the
+ * document verified by the same matcher that admits a claim; the client's
+ * cutter is a prefix of the claim; the claim itself is the floor.
+ */
+describe('what the card leads with', () => {
+  const claim =
+    'Company fixed 09-Sep-2026 as record date for final dividend of Rs. 2.00 per equity share (face value Rs. 10.00, @20%) for FY ended 31-Mar-2026.';
+
+  const lead = (stored: string | null) =>
+    stored === null || stored === ''
+      ? briefGist(claim)
+      : { line: stored, cut: stored.length < claim.length };
+
+  it('takes the server’s headline when there is one', () => {
+    const stored =
+      'fixed 09-Sep-2026 as record date for final dividend of Rs. 2.00 per equity share';
+    expect(lead(stored)).toEqual({ line: stored, cut: true });
+  });
+
+  it('falls back to its own cut when the gate refused or never ran', () => {
+    expect(lead(null).line).toBe(
+      'Company fixed 09-Sep-2026 as record date for final dividend of Rs. 2.00 per equity share',
+    );
+    expect(lead('').cut).toBe(true);
+  });
+});

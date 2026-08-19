@@ -436,6 +436,10 @@ describe('the claim lane', () => {
         topic: null,
         direction: null,
         directionEvidence: null,
+        // Null and not absent for the same reason `topic` is: this fixture
+        // stores no headline slice, which is what every claim written before
+        // the gist gate existed looks like. The card then leads with `text`.
+        gist: null,
         // Computed on read from the kind and the span: this one is a `target`
         // whose sentence names a year it is aiming at, so the company page may
         // quote it under "plans, in their words".

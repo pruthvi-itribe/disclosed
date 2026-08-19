@@ -155,6 +155,21 @@ export interface VerifiedClaim {
    * against a quote that actually mentions Q1 FY27. See `claim-period.ts`.
    */
   readonly periodSpan: string | null;
+  /**
+   * The headline form of this claim: a CONTIGUOUS SLICE OF `span`, chosen
+   * by a model and admitted by `verifyGist` through the same
+   * character-exact matcher that admitted the claim itself.
+   *
+   * THREE STATES, AND THEY ARE DIFFERENT FACTS. Absent means no attempt
+   * has been made. Null with `gistRefusal` set means one was made and the
+   * gate refused it — a paraphrase, a lost figure, a dropped condition.
+   * A string is publishable. Rendering "never tried" and "tried and
+   * refused" the same way is what this pipeline refuses to do everywhere
+   * else, and a backfill needs the difference to know what to skip.
+   */
+  readonly gist?: string | null;
+  /** Why the last proposal was refused, or null. See `GistRefusal`. */
+  readonly gistRefusal?: string | null;
 }
 
 /** Why a proposed claim will not be published. */
