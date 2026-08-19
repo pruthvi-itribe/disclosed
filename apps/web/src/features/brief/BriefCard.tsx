@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { describeKey } from '../../shared/format/describe';
 import { relativeTime } from '../../shared/format/relative-time';
 import { safeHref } from '../../shared/format/safe-href';
 import { groupInt } from '../../shared/format/group-int';
 import { TIER_TITLE, TOPIC_LABEL } from '../../shared/format/vocab';
-import { MarkedText } from '../../shared/ui/MarkedText';
 import { BriefCopyButton } from './BriefCopyButton';
+import { GlossedText } from './GlossedText';
+import type { Jargon } from './jargon';
 import {
   briefLede,
   BRIEF_REST_CLAIMS,
@@ -31,6 +33,14 @@ export function BriefCard({
   onOpenCompany,
   onPickTopic,
 }: BriefCardProps): JSX.Element | null {
+  // What the reader asked about, if anything. Per card and forgotten with
+  // it: a card unmounts whole, the way the focus dialog does.
+  const [asked, setAsked] = useState<{
+    readonly term: Jargon;
+    readonly matched: string;
+  } | null>(null);
+  const ask = (term: Jargon, matched: string): void =>
+    setAsked((was) => (was?.matched === matched ? null : { term, matched }));
   const lede = briefLede(entry);
   if (lede === null) return null;
   const f = lede.filing;
@@ -75,8 +85,22 @@ export function BriefCard({
           </span>
         </div>
       </div>
+      {/* Null on a null topic — NOT 'other': a single card has no sum to
+          keep, and "Everything else" is a verdict nobody made. */}
+      {topic !== null && topic !== undefined && (
+        <button
+          type="button"
+          className="btopic beyebrow"
+          data-ui="brief-topic"
+          data-topic={topic}
+          onClick={() => onPickTopic(topic)}
+        >
+          <span className={`mixdot t-${topic}`} />
+          <span>{describeKey(TOPIC_LABEL, topic)}</span>
+        </button>
+      )}
       <p className="blede" data-ui="brief-lede">
-        <MarkedText text={lede.claim.text} />
+        <GlossedText text={lede.claim.text} onAsk={ask} />
       </p>
       {/* NULL RATHER THAN AN EMPTY LIST: "nothing was found" and "nothing
           was looked for" are different facts. Echoes are kept here — skipped
@@ -85,7 +109,7 @@ export function BriefCard({
         <ul className="brest" data-ui="brief-rest">
           {rest.map((each, i) => (
             <li key={i}>
-              <MarkedText text={each.claim.text} />
+              <GlossedText text={each.claim.text} onAsk={ask} />
             </li>
           ))}
         </ul>
@@ -101,19 +125,17 @@ export function BriefCard({
           {`+ ${groupInt(over)} more from ${entry.symbol}`}
         </button>
       )}
-      {/* Null on a null topic — NOT 'other': a single card has no sum to
-          keep, and "Everything else" is a verdict nobody made. */}
-      {topic !== null && topic !== undefined && (
-        <button
-          type="button"
-          className="btopic"
-          data-ui="brief-topic"
-          data-topic={topic}
-          onClick={() => onPickTopic(topic)}
-        >
-          <span className={`mixdot t-${topic}`} />
-          <span>{describeKey(TOPIC_LABEL, topic)}</span>
-        </button>
+      {/* WHAT KIND OF NEWS THIS IS, said before the claim rather than
+          after it: a reader meeting a wall of a sentence wants the
+          category first (persona review 2026-08-19 — the card was read
+          twice to work out what it was about). Still the chip that
+          filters the feed by that topic; it has only moved. */}
+      {asked !== null && (
+        <div className="bgloss" data-ui="brief-gloss">
+          <span className="bglossterm">{asked.term.term(asked.matched)}</span>
+          <span className="bglossplain">{asked.term.plain}</span>
+          <span className="bglossours">our words, not the filing’s</span>
+        </div>
       )}
       <footer className="bfoot" data-ui="brief-foot">
         <span

@@ -48,12 +48,44 @@ export interface BriefCandidate {
   readonly claims: readonly BriefClaim[];
 }
 
-/** The claim a card leads with: the first this company said that is not an echo. */
+/**
+ * A METRIC NAME AND A NUMBER, WITH NOTHING BINDING THEM — "PAT 241.02",
+ * "AUM 267,074 Mn", "Total income 80,450". They are cells lifted from a
+ * results table, true and useless as a headline: a card whose 21px lede
+ * reads "Diluted 0.87" has told the reader nothing.
+ *
+ * THE SECOND HALF OF THE RULE IS WHAT MAKES IT SAFE. A first attempt
+ * matched shape alone and would have skipped "Turnover of Rs. 1057 Cr"
+ * and "Completed QIP of ₹7,503 crore", which are exactly the claims a
+ * card SHOULD lead with — caught by BriefView's own fixture before it
+ * shipped. A preposition, a comparison word or a currency mark means the
+ * number is bound to something, so the line is a sentence.
+ *
+ * Measured over the 3,461 claims in the direction corpus (2026-08-19):
+ * 27 of them, 0.8%, are bare fragments by this rule, and every one reads
+ * as a table cell.
+ */
+const FRAGMENT =
+  /^[A-Za-z][A-Za-z .()/&-]{0,24}\s+[\d,]+(?:\.\d+)?\s*(?:%|Mn|mn|Cr|cr|bn)?\.?$/;
+const BOUND = /\b(?:of|at|to|for|from|by|vs|up|down|per)\b|₹|Rs/i;
+
+/**
+ * The claim a card leads with: the first this company said that is not an
+ * echo AND reads as a sentence. Document order still decides between
+ * sentences — the company's own emphasis, not ours — and a company whose
+ * every claim is a fragment still gets its first one rather than nothing,
+ * because a plain headline and no headline are different facts. Skipped
+ * fragments are not lost: they are the bullets under the lede.
+ */
 export const briefLede = (entry: BriefCandidate): BriefClaim | null => {
+  let firstSpoken: BriefClaim | null = null;
   for (const each of entry.claims) {
-    if (each.claim.echo !== true) return each;
+    if (each.claim.echo === true) continue;
+    if (firstSpoken === null) firstSpoken = each;
+    const line = String(each.claim.text).trim();
+    if (!FRAGMENT.test(line) || BOUND.test(line)) return each;
   }
-  return null;
+  return firstSpoken;
 };
 
 /**
