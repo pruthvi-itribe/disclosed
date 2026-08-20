@@ -43,8 +43,9 @@ const currentPermission = (): AlertPermission =>
  * notification while the dashboard sits in a background tab.
  *
  * Verified only — "the only tier allowed near an alert" (TIER_TITLE), the
- * same gate every future channel carries. The body is the server-composed
- * outcome sentence the card shows; exchange text never reaches a
+ * same gate every future channel carries. The body is `alertLine` — the
+ * shortest verified form of ONE claim, and the outcome sentence only when
+ * the filing carries no claim at all; exchange text never reaches a
  * notification raw, and no time is formatted here (IST is server-owned).
  *
  * THE FIRST READ SEEDS AND SAYS NOTHING. Enabling alerts must not replay
