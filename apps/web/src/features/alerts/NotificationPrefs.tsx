@@ -23,6 +23,7 @@ import './alerts.css';
  */
 export function NotificationPrefs({
   channel,
+  channelNote = null,
   compact = false,
   apiSend,
   initialTopics,
@@ -31,6 +32,13 @@ export function NotificationPrefs({
 }: {
   /** The delivery control for THIS home, or null where none exists. */
   readonly channel: JSX.Element | null;
+  /**
+   * A block under the channel row, for what the control cannot say in a
+   * row's right-hand cell — today, whether a granted permission is
+   * actually reaching the screen (`DeliveryCheck`). The caller's, for the
+   * same reason the channel is.
+   */
+  readonly channelNote?: JSX.Element | null;
   /**
    * ONE LINE, on a screen that has a list to show. The panel's full form
    * spent ~260px above the Watching screen's search box — "half the
@@ -84,6 +92,7 @@ export function NotificationPrefs({
             <span>Desktop, this browser</span>
             {channel}
           </div>
+          {channelNote}
           <h4>Alert me about</h4>
         </>
       )}

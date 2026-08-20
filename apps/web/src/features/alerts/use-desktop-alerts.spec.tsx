@@ -203,11 +203,7 @@ describe('AlertsToggle', () => {
   it('is the user gesture the permission prompt requires', () => {
     const onRequest = vi.fn();
     const { container } = render(
-      <AlertsToggle
-        permission="default"
-        onRequest={onRequest}
-        onTest={vi.fn()}
-      />,
+      <AlertsToggle permission="default" onRequest={onRequest} />,
     );
     fireEvent.click(container.querySelector('#alerts-enable') as Element);
     expect(onRequest).toHaveBeenCalledOnce();
@@ -215,46 +211,18 @@ describe('AlertsToggle', () => {
 
   it('states each terminal state and renders nothing unsupported', () => {
     const granted = render(
-      <AlertsToggle
-        permission="granted"
-        onRequest={vi.fn()}
-        onTest={vi.fn()}
-      />,
+      <AlertsToggle permission="granted" onRequest={vi.fn()} />,
     );
-    expect(granted.container.textContent).toContain('Desktop alerts on');
+    expect(granted.container.textContent).toBe('Desktop alerts on');
 
     const denied = render(
-      <AlertsToggle permission="denied" onRequest={vi.fn()} onTest={vi.fn()} />,
+      <AlertsToggle permission="denied" onRequest={vi.fn()} />,
     );
     expect(denied.container.textContent).toContain('site settings');
 
     const unsupported = render(
-      <AlertsToggle
-        permission="unsupported"
-        onRequest={vi.fn()}
-        onTest={vi.fn()}
-      />,
+      <AlertsToggle permission="unsupported" onRequest={vi.fn()} />,
     );
     expect(unsupported.container.firstChild).toBeNull();
-  });
-
-  // GRANTED IS NOT DELIVERED. Chrome reported 'granted' and polled for two
-  // hours on 2026-08-19 while not one banner reached the screen, and
-  // nothing on the page could tell an armed-and-quiet notifier from one
-  // macOS was routing straight to Notification Center. This button is the
-  // difference, and it only appears once permission is granted — before
-  // that the enable button is the thing to press.
-  it('offers a test banner once permission is granted', () => {
-    const onTest = vi.fn();
-    const { container } = render(
-      <AlertsToggle permission="granted" onRequest={vi.fn()} onTest={onTest} />,
-    );
-    fireEvent.click(container.querySelector('#alerts-test') as Element);
-    expect(onTest).toHaveBeenCalledOnce();
-
-    const notYet = render(
-      <AlertsToggle permission="default" onRequest={vi.fn()} onTest={onTest} />,
-    );
-    expect(notYet.container.querySelector('#alerts-test')).toBeNull();
   });
 });
