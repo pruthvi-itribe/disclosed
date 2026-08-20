@@ -49,6 +49,18 @@
   gap: 8px;
   font-size: 13.5px;
 }
+/* Under the channel row, and wrapping: it holds a sentence and two
+   answers, which is why it is not in the row itself. */
+.notifprefs .deliverycheck {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
 .notifprefs .notifpromise {
   font-size: 11.5px;
   color: var(--muted);

@@ -6,6 +6,7 @@ import type { WatchControls } from '../shared/ui/WatchButton';
 import type { useWatch } from '../features/watch/use-watch';
 import { AddWatch } from '../features/watch/AddWatch';
 import { AlertsToggle } from '../features/alerts/AlertsToggle';
+import { DeliveryCheck } from '../features/alerts/DeliveryCheck';
 import { NotificationPrefs } from '../features/alerts/NotificationPrefs';
 import type { DesktopAlertsState } from '../features/alerts/use-desktop-alerts';
 
@@ -76,6 +77,16 @@ export function accountSurfacesUi({
             <AlertsToggle
               permission={alerts.permission}
               onRequest={alerts.request}
+            />
+          )
+        }
+        // A permission is not a delivery, and only the reader can see the
+        // screen — so the browser home asks them once. Absent in the
+        // shell, which has no desktop banner to check.
+        channelNote={
+          shell ? null : (
+            <DeliveryCheck
+              permission={alerts.permission}
               onTest={alerts.test}
             />
           )
