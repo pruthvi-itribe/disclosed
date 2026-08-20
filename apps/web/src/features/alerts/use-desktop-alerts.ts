@@ -17,6 +17,17 @@ import { topicLabel } from '../../shared/format/vocab';
  */
 export const ALERT_POLL_MS = 60_000;
 
+/**
+ * How many filing ids one tab remembers having seen on the page.
+ *
+ * The page is 25 rows and a subscribed reader's feed grew by 137 rows in
+ * 36 hours (measured 2026-08-20, seven topics and one watched company:
+ * 3.8 an hour). 500 is days of an open tab, and an id evicted from here
+ * fell off the bottom of a page sorted newest-first long ago — it cannot
+ * come back and be mistaken for new.
+ */
+export const ALERT_SEEN_CAP = 500;
+
 export type AlertPermission = NotificationPermission | 'unsupported';
 
 export interface DesktopAlertsArgs {
@@ -33,6 +44,8 @@ export interface DesktopAlertsState {
   readonly permission: AlertPermission;
   /** Must be called from a user gesture; browsers ignore it otherwise. */
   readonly request: () => void;
+  /** Raises one banner now, so a quiet notifier can be told from a mute one. */
+  readonly test: () => void;
 }
 
 const currentPermission = (): AlertPermission =>
@@ -65,7 +78,21 @@ export const useDesktopAlerts = ({
 }: DesktopAlertsArgs): DesktopAlertsState => {
   const [permission, setPermission] =
     useState<AlertPermission>(currentPermission);
-  const highestSeenRef = useRef<number | null>(null);
+  /**
+   * The ids this tab has already accounted for — a SET, not a high-water
+   * mark, and the difference dropped real alerts.
+   *
+   * A row enters this feed when its ENRICHMENT finishes; `seqId` is
+   * assigned at INGESTION. Enrichment does not complete in ingestion
+   * order (a long document takes longer to read), so a row routinely
+   * appears BELOW one already on the page — measured over one evening on
+   * production, 1 of 25. Against a high-water mark those rows are not
+   * late, they are invisible: skipped in silence and never retried.
+   *
+   * Null until the first read seeds it, which is what makes "this tab has
+   * seen nothing yet" different from "this tab has seen no filings".
+   */
+  const seenRef = useRef<Set<number> | null>(null);
   const stoppedRef = useRef(false);
 
   const request = useCallback(() => {
@@ -73,6 +100,29 @@ export const useDesktopAlerts = ({
     void Notification.requestPermission().then(() =>
       setPermission(currentPermission()),
     );
+  }, []);
+
+  /**
+   * GRANTED IS NOT DELIVERED, and the gap between them cost two hours of
+   * log reading on 2026-08-20. Chrome reported `granted`, polled this
+   * feed 130 times, and the reader saw nothing — and no evidence
+   * available to the page could say whether the feed was quiet, the fire
+   * loop was throwing, or macOS was routing banners to Notification
+   * Center with the alert style set to None. This button answers that in
+   * one click and forever: a banner appears, or the operating system is
+   * eating them.
+   *
+   * It says it is a test. A banner indistinguishable from a real alert
+   * would be this product inventing a filing, which is the one thing it
+   * exists not to do.
+   */
+  const test = useCallback(() => {
+    if (typeof Notification === 'undefined') return;
+    const shown = new Notification('Disclosed', {
+      body: 'This is a test alert. Notifications reach you here.',
+      tag: 'disclosed-test',
+    });
+    shown.onclick = () => window.focus();
   }, []);
 
   useEffect(() => {
@@ -98,12 +148,12 @@ export const useDesktopAlerts = ({
           } | null;
           const watched = new Set(fromMeta?.watched ?? []);
           const subscribed = new Set(fromMeta?.topics ?? []);
-          const seed = highestSeenRef.current === null;
-          let highest = highestSeenRef.current ?? 0;
+          const seed = seenRef.current === null;
+          const seen = seenRef.current ?? new Set<number>();
           for (const filing of rows) {
-            if (filing.seqId > highest) highest = filing.seqId;
-            if (seed) continue;
-            if (filing.seqId <= (highestSeenRef.current ?? 0)) continue;
+            const known = seen.has(filing.seqId);
+            seen.add(filing.seqId);
+            if (seed || known) continue;
             if (filing.confidenceTier !== 'verified') continue;
             // One banner per company (`tag` collapses), replaced in place
             // when the same company files again within a burst. A watched
@@ -126,7 +176,13 @@ export const useDesktopAlerts = ({
             });
             shown.onclick = () => window.focus();
           }
-          highestSeenRef.current = highest;
+          // Bounded by dropping the oldest ids INSERTED, which are the
+          // rows that left the page first. A Set keeps insertion order,
+          // so this needs no sort and no second structure.
+          seenRef.current =
+            seen.size <= ALERT_SEEN_CAP
+              ? seen
+              : new Set([...seen].slice(seen.size - ALERT_SEEN_CAP));
         },
         (error: unknown) => {
           if ((error as { status?: number }).status === 401) {
@@ -143,5 +199,5 @@ export const useDesktopAlerts = ({
     };
   }, [apiSend, enabled, permission]);
 
-  return { permission, request };
+  return { permission, request, test };
 };
