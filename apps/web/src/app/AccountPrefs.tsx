@@ -76,6 +76,7 @@ export function accountSurfacesUi({
             <AlertsToggle
               permission={alerts.permission}
               onRequest={alerts.request}
+              onTest={alerts.test}
             />
           )
         }

@@ -106,6 +106,27 @@ describe('useDesktopAlerts', () => {
     expect(raised).toHaveLength(1);
   });
 
+  // MEASURED ON PRODUCTION, 2026-08-20. A row enters this feed when its
+  // ENRICHMENT finishes, and `seqId` is assigned at INGESTION, so the two
+  // orders disagree: over one evening's window, 1 of 25 rows arrived with
+  // a seqId below one already on the page (THYROCARE 106750207 at
+  // 15:32:27, then GRAVITA 106750206 five seconds later). A high-water
+  // mark drops those silently and forever.
+  it('raises a banner for a row that arrives below one already seen', async () => {
+    const apiSend = vi.fn().mockResolvedValue(feed([row(207, 'THYROCARE')]));
+    renderAlerts(apiSend);
+    await flush();
+
+    apiSend.mockResolvedValue(
+      feed([row(207, 'THYROCARE'), row(206, 'GRAVITA')]),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ALERT_POLL_MS);
+    });
+
+    expect(raised.map((banner) => banner.tag)).toEqual(['GRAVITA']);
+  });
+
   // The topic arm leads with the TOPIC: that is why the reader is told.
   it('titles a topic-only match by its topic', async () => {
     const apiSend = vi
@@ -150,6 +171,19 @@ describe('useDesktopAlerts', () => {
     expect(signedOut).not.toHaveBeenCalled();
   });
 
+  it('raises a test banner on demand, saying it is one', async () => {
+    const apiSend = vi.fn().mockResolvedValue(feed([row(9, 'TCS')]));
+    const { result } = renderAlerts(apiSend);
+    await flush();
+
+    act(() => {
+      result.current.test();
+    });
+    expect(raised).toHaveLength(1);
+    expect(raised[0]?.title).toContain('Disclosed');
+    expect(raised[0]?.body).toContain('test');
+  });
+
   it('stops for the session after a 401 instead of hammering it', async () => {
     const apiSend = vi
       .fn()
@@ -169,7 +203,11 @@ describe('AlertsToggle', () => {
   it('is the user gesture the permission prompt requires', () => {
     const onRequest = vi.fn();
     const { container } = render(
-      <AlertsToggle permission="default" onRequest={onRequest} />,
+      <AlertsToggle
+        permission="default"
+        onRequest={onRequest}
+        onTest={vi.fn()}
+      />,
     );
     fireEvent.click(container.querySelector('#alerts-enable') as Element);
     expect(onRequest).toHaveBeenCalledOnce();
@@ -177,18 +215,46 @@ describe('AlertsToggle', () => {
 
   it('states each terminal state and renders nothing unsupported', () => {
     const granted = render(
-      <AlertsToggle permission="granted" onRequest={vi.fn()} />,
+      <AlertsToggle
+        permission="granted"
+        onRequest={vi.fn()}
+        onTest={vi.fn()}
+      />,
     );
-    expect(granted.container.textContent).toBe('Desktop alerts on');
+    expect(granted.container.textContent).toContain('Desktop alerts on');
 
     const denied = render(
-      <AlertsToggle permission="denied" onRequest={vi.fn()} />,
+      <AlertsToggle permission="denied" onRequest={vi.fn()} onTest={vi.fn()} />,
     );
     expect(denied.container.textContent).toContain('site settings');
 
     const unsupported = render(
-      <AlertsToggle permission="unsupported" onRequest={vi.fn()} />,
+      <AlertsToggle
+        permission="unsupported"
+        onRequest={vi.fn()}
+        onTest={vi.fn()}
+      />,
     );
     expect(unsupported.container.firstChild).toBeNull();
+  });
+
+  // GRANTED IS NOT DELIVERED. Chrome reported 'granted' and polled for two
+  // hours on 2026-08-19 while not one banner reached the screen, and
+  // nothing on the page could tell an armed-and-quiet notifier from one
+  // macOS was routing straight to Notification Center. This button is the
+  // difference, and it only appears once permission is granted — before
+  // that the enable button is the thing to press.
+  it('offers a test banner once permission is granted', () => {
+    const onTest = vi.fn();
+    const { container } = render(
+      <AlertsToggle permission="granted" onRequest={vi.fn()} onTest={onTest} />,
+    );
+    fireEvent.click(container.querySelector('#alerts-test') as Element);
+    expect(onTest).toHaveBeenCalledOnce();
+
+    const notYet = render(
+      <AlertsToggle permission="default" onRequest={vi.fn()} onTest={onTest} />,
+    );
+    expect(notYet.container.querySelector('#alerts-test')).toBeNull();
   });
 });
