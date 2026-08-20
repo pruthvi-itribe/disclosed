@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FilingView, PageMeta, SummaryView } from '../../shared/types/api';
 import { groupInt } from '../../shared/format/group-int';
 import {
-  briefCandidates,
+  briefDeck,
   briefSignature,
-  orderBrief,
   BRIEF_MAX_CARDS,
   BRIEF_MIN_CARDS,
   BRIEF_TAP_ZONE,
@@ -84,7 +83,13 @@ export function BriefView({
   const [railAt, setRailAt] = useState(0);
   const [ends, setEnds] = useState({ prev: true, next: false });
 
-  const candidates = orderBrief(briefCandidates(items));
+  // ONE DAY, ranked inside it — see `briefDeck`. The window the page polls
+  // spans more than a day, and ranking across all of it put yesterday's
+  // long documents on every card under a cover dated today.
+  const deck = briefDeck(items);
+  const candidates = deck.cards;
+  // The WINDOW, for the empty sentence only: an empty deck means no day in
+  // the window had anything, and the honest N for that is all of it.
   const seen = meta?.returned ? meta.returned : items.length;
   const shown = candidates.slice(0, BRIEF_MAX_CARDS);
   const rest = candidates.length - shown.length;
@@ -208,7 +213,8 @@ export function BriefView({
       >
         <BriefCover
           summary={summary}
-          seen={meta === null ? null : seen}
+          istDay={deck.istDay}
+          filings={meta === null ? null : deck.filings}
           companies={candidates.length}
         />
         {shown.map((entry, i) => (

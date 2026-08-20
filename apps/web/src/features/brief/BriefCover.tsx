@@ -1,5 +1,5 @@
 import { groupInt } from '../../shared/format/group-int';
-import { BRIEF_RULE } from './brief-model';
+import { BRIEF_RULE, briefDayLabel } from './brief-model';
 import type { SummaryView } from '../../shared/types/api';
 
 /**
@@ -11,14 +11,31 @@ import type { SummaryView } from '../../shared/types/api';
  */
 export function BriefCover({
   summary,
-  seen,
+  istDay,
+  filings,
   companies,
 }: {
   readonly summary: SummaryView | null;
+  /**
+   * The day the DECK holds, which is not always today — before the day's
+   * first verified filing it is the one before. The cover states the
+   * deck's day rather than the clock's, because a cover dated today over
+   * yesterday's cards is the view lying about the one thing it is for.
+   */
+  readonly istDay: string | null;
   /** Null before the first filings answer: the rule line stays blank. */
-  readonly seen: number | null;
+  readonly filings: number | null;
   readonly companies: number;
 }): JSX.Element {
+  const label =
+    istDay === null
+      ? null
+      : briefDayLabel(
+          istDay,
+          summary?.todayIstDay ?? null,
+          summary?.previousIstDay ?? null,
+        );
+  const isToday = label === 'Today';
   const byGroup: Readonly<Record<string, number>> = summary?.todayByGroup ?? {};
   const groups = Object.keys(byGroup)
     .sort((a, b) => {
@@ -32,7 +49,7 @@ export function BriefCover({
   return (
     <article id="brief-cover" className="bcard bcover">
       <div id="brief-day" className="bday">
-        {summary === null ? '—' : `${summary.todayIstDay} IST`}
+        {istDay === null ? '—' : `${istDay} IST`}
       </div>
       <h1 className="btitle">The day, card by card</h1>
       <div id="brief-mix" className="mix">
@@ -50,9 +67,15 @@ export function BriefCover({
           set in the same grey as the words around them. The characters
           are unchanged (BriefView.spec compares the line whole); only
           the numerals are wrapped. */}
+      {/* TODAY'S NUMBERS BELONG ON TODAY'S DECK AND NOWHERE ELSE. The
+          summary counts the current IST day; printing it over a deck of
+          yesterday's cards is two different days in one sentence. When
+          the deck has fallen back, the line says so instead. */}
       <div id="brief-cover-line" className="bcoverline">
         {summary === null ? (
           ''
+        ) : !isToday && label !== null ? (
+          `Nothing verified has arrived today yet. This is ${label}'s.`
         ) : summary.todayCount === 0 ? (
           'No filings yet today. The deck below is drawn from the window the cover states.'
         ) : (
@@ -68,9 +91,17 @@ export function BriefCover({
         {/* Blank until the window has actually been asked for — the old
             page's served cover — because "the 0 most recent" is a claim
             about a request that never happened. */}
-        {seen === null
+        {/* "the N most recent" described the whole 200-filing window,
+            which is no longer what the deck draws from: it is one day's
+            filings, and the sentence has to say the same thing the cards
+            do. */}
+        {filings === null || label === null
           ? ''
-          : `Drawn from the ${groupInt(seen)} most recent verified filings, from ${groupInt(companies)} companies. ${BRIEF_RULE}`}
+          : `Drawn from ${label}'s ${groupInt(filings)} verified filing${
+              filings === 1 ? '' : 's'
+            }, from ${groupInt(companies)} compan${
+              companies === 1 ? 'y' : 'ies'
+            }. ${BRIEF_RULE}`}
       </div>
       {/* The gesture, named for the device holding it: two spans and a media
           query rather than a branch in the script — the stylesheet already
