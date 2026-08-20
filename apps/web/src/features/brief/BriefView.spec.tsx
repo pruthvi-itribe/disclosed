@@ -12,6 +12,8 @@ const filing = (over: Record<string, unknown>): FilingView =>
     confidenceTierLabel: 'Verified',
     disseminatedAt: '2026-08-18T04:00:00.000Z',
     disseminatedAtIst: '2026-08-18 09:30:00',
+    // The deck is bounded to one IST day, and the server sends the key.
+    istDay: '2026-08-18',
     attachmentUrl: 'https://example.invalid/doc.pdf',
     enrichment: { results: null, claims: [] },
     ...over,
@@ -27,6 +29,9 @@ const claim = (text: string, over: Record<string, unknown> = {}) => ({
 
 const summary = {
   todayIstDay: '2026-08-18',
+  // Sent so the cover can say "Yesterday" without the browser subtracting
+  // a day — the IST boundary is the server's, not the reader's timezone.
+  previousIstDay: '2026-08-17',
   todayCount: 42,
   todayVerified: 7,
   todayByGroup: { narrative: 30, results: 12 },
@@ -94,6 +99,27 @@ describe('the brief card Copy control', () => {
 });
 
 describe('BriefView', () => {
+  // Today's counts over yesterday's cards was the state a reader caught on
+  // 2026-08-20: the cover said today's date while all twelve cards were
+  // from the 19th. When the deck falls back, the cover falls back with it.
+  it('names the day it fell back to, and drops today counts', () => {
+    const { container } = renderBrief([
+      {
+        ...withClaims('AAA', 1, ['claim ₹5 cr']),
+        istDay: '2026-08-17',
+      } as FilingView,
+    ]);
+    expect(container.querySelector('#brief-day')?.textContent).toBe(
+      '2026-08-17 IST',
+    );
+    expect(container.querySelector('#brief-cover-line')?.textContent).toBe(
+      "Nothing verified has arrived today yet. This is Yesterday's.",
+    );
+    expect(container.querySelector('#brief-cover-rule')?.textContent).toContain(
+      "Drawn from Yesterday's 1 verified filing",
+    );
+  });
+
   it('draws the cover from the summary, the rule verbatim', () => {
     const { container } = renderBrief([withClaims('AAA', 1, ['claim ₹5 cr'])]);
     expect(container.querySelector('#brief-day')?.textContent).toBe(
@@ -118,7 +144,13 @@ describe('BriefView', () => {
     expect(when?.textContent).toMatch(/ago|yesterday|just now|—/);
 
     const rule = container.querySelector('#brief-cover-rule')?.textContent;
-    expect(rule).toContain('Drawn from the 3 most recent verified filings');
+    // THE DECK'S DAY, NOT THE WINDOW: the cards are one IST day's, so the
+    // sentence counts that day's filings and names the day it drew them
+    // from. "The 3 most recent" described a 200-filing window the deck no
+    // longer ranks across.
+    expect(rule).toContain(
+      "Drawn from Today's 1 verified filing, from 1 company",
+    );
     expect(rule).toContain('That judgement is yours.');
     // The mix bar: count desc, zero groups skipped.
     const segs = [...container.querySelectorAll('#brief-mix .mixseg')];

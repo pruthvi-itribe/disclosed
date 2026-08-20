@@ -1,5 +1,7 @@
 import {
   briefCandidates,
+  briefDayLabel,
+  briefDeck,
   briefLede,
   orderBrief,
   briefSignature,
@@ -26,6 +28,114 @@ const claim = (text: string, over: Record<string, unknown> = {}) => ({
   topic: null,
   span: 's',
   ...over,
+});
+
+describe('briefDeck', () => {
+  // MEASURED ON PRODUCTION, 2026-08-20 at 10:46 IST. The window held 200
+  // verified filings over 37 hours, and every one of the twelve cards was
+  // from the 19th — GULFOILLUB with 21 claims, CEIGALL with 20 — because
+  // figures and claim count are really document LENGTH, and a filing
+  // published this morning carries three. Today could not win a key.
+  it('is one day: the newest that has anything to say', () => {
+    const today = filing({
+      seqId: 9,
+      symbol: 'TODAYCO',
+      istDay: '2026-08-20',
+      enrichment: { results: null, claims: [claim('Board approved a plan.')] },
+    });
+    const yesterday = filing({
+      seqId: 8,
+      symbol: 'LONGDOC',
+      istDay: '2026-08-19',
+      enrichment: {
+        results: null,
+        claims: [
+          claim('Revenue was 100.'),
+          claim('EBITDA was 20.'),
+          claim('PAT was 10.'),
+        ],
+      },
+    });
+
+    const deck = briefDeck([yesterday, today]);
+    expect(deck.istDay).toBe('2026-08-20');
+    expect(deck.cards.map((card) => card.symbol)).toEqual(['TODAYCO']);
+    expect(deck.filings).toBe(1);
+  });
+
+  // Before the day's first verified filing — 08:36 IST, say — an empty
+  // deck would be a lie about a quiet market. It falls back and the cover
+  // says which day it is showing.
+  it('falls back to the newest day that has one, not to nothing', () => {
+    const yesterday = filing({
+      seqId: 8,
+      symbol: 'LONGDOC',
+      istDay: '2026-08-19',
+      enrichment: { results: null, claims: [claim('Revenue was 100.')] },
+    });
+    const todayNoClaims = filing({
+      seqId: 9,
+      symbol: 'QUIETCO',
+      istDay: '2026-08-20',
+      enrichment: { results: null, claims: [] },
+    });
+
+    const deck = briefDeck([todayNoClaims, yesterday]);
+    expect(deck.istDay).toBe('2026-08-19');
+    expect(deck.cards.map((card) => card.symbol)).toEqual(['LONGDOC']);
+  });
+
+  it('is empty, and names no day, when nothing anywhere qualifies', () => {
+    const deck = briefDeck([
+      filing({
+        istDay: '2026-08-20',
+        enrichment: { results: null, claims: [] },
+      }),
+    ]);
+    expect(deck).toEqual({ istDay: null, cards: [], filings: 0 });
+  });
+
+  // Ranking is unchanged WITHIN the day: the deck still leads with what
+  // says the most, it just cannot reach back a day to find it.
+  it('still ranks by substance inside the day', () => {
+    const thin = filing({
+      seqId: 1,
+      symbol: 'THIN',
+      istDay: '2026-08-20',
+      enrichment: { results: null, claims: [claim('A thing happened.')] },
+    });
+    const thick = filing({
+      seqId: 2,
+      symbol: 'THICK',
+      istDay: '2026-08-20',
+      enrichment: {
+        results: null,
+        claims: [claim('Revenue was 100.'), claim('PAT was 10.')],
+      },
+    });
+    expect(briefDeck([thin, thick]).cards.map((c) => c.symbol)).toEqual([
+      'THICK',
+      'THIN',
+    ]);
+  });
+});
+
+describe('briefDayLabel', () => {
+  // STRING COMPARISON ONLY, like feed-bucket.ts: IST rolls at 18:30 UTC
+  // and the server owns that fact.
+  it('names the day against the server-sent anchors', () => {
+    expect(briefDayLabel('2026-08-20', '2026-08-20', '2026-08-19')).toBe(
+      'Today',
+    );
+    expect(briefDayLabel('2026-08-19', '2026-08-20', '2026-08-19')).toBe(
+      'Yesterday',
+    );
+    // Older, or before the first summary lands: plainer, never wrong.
+    expect(briefDayLabel('2026-08-17', '2026-08-20', '2026-08-19')).toBe(
+      '2026-08-17',
+    );
+    expect(briefDayLabel('2026-08-20', null, null)).toBe('2026-08-20');
+  });
 });
 
 describe('briefCandidates', () => {
