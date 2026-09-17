@@ -19,8 +19,12 @@
 # The guarantees broken one at a time:
 #
 #   1. THE ROUTE IS DECIDED AFTER THE CHEAP READ, AND THE DEGRADED PATH WINS.
-#      `!doclingAvailable` is stated first so nothing can shadow it; a machine
-#      with no Python must never route a filing to a parser it cannot run.
+#      The both-services-gone guard is stated first so nothing can shadow it; a
+#      machine with no Python must never route a filing to a parser it cannot
+#      run. Below it each route answers for ITS OWN service — `docling-ocr` and
+#      `docling-layout` are separate Deployments and fail separately, and the
+#      version of this file that asked one question for both is the version in
+#      which an OCR pod's OOM also stopped every results filing being aligned.
 #      Scanned must beat results, because without OCR there is no text for the
 #      layout pass to align. And the two page ceilings are DIFFERENT numbers for
 #      different reasons — 40 for OCR at 2.5-4 s a page, 150 for layout-only —
@@ -325,8 +329,17 @@ echo "=== the route: the degraded path is the branch nothing may shadow ==="
 # thing that must not be shadowed, so that is what is broken now — falsified
 # with a `pages` test rather than a literal, so the branch stays reachable to
 # the compiler and the mutation is a behaviour change rather than dead code.
-perl -0pi -e 's/if \(!doclingAvailable\) \{/if (!doclingAvailable \&\& pages < 0) {/' "$P"
+perl -0pi -e 's/if \(!doclingOcrAvailable \&\& !doclingLayoutAvailable\) \{/if (!doclingOcrAvailable \&\& !doclingLayoutAvailable \&\& pages < 0) {/' "$P"
 check "a service known to be down still gets the filing (no Python, no read)"
+
+# The per-route gates, which are what the split bought. Each one falsified on
+# its own: breaking them together would pass any test that only ever turns both
+# services off at once, which is exactly the coverage this file exists to deny.
+perl -0pi -e 's/    if \(!doclingOcrAvailable\) \{/    if (!doclingOcrAvailable \&\& pages < 0) {/g' "$P"
+check "a scan sent to an OCR service that is down (the split gate bypassed)"
+
+perl -0pi -e 's/    if \(!doclingLayoutAvailable\) \{/    if (!doclingLayoutAvailable \&\& pages < 0) {/' "$P"
+check "a results filing sent to a layout service that is down"
 
 perl -0pi -e 's/  if \(!hasTextLayer\) \{/  if (!hasTextLayer \&\& !looksLikeResultsStatement(text)) \{/' "$P"
 check "results beats scanned, so a raster results filing gets layout-only"
@@ -421,8 +434,15 @@ check "the two configurations swapped (OCR on where it buys under 1%)"
 perl -0pi -e 's/    maxPages: decision\.maxPages \?\? 1,/    maxPages: 1,/' "$R"
 check "every escalation truncated to its first page"
 
-perl -0pi -e 's/    doclingAvailable: converter !== null && converter\.isAvailable\(\),/    doclingAvailable: converter !== null,/' "$R"
+perl -0pi -e "s/    doclingOcrAvailable: converter !== null && converter\.isAvailable\('ocr'\),/    doclingOcrAvailable: converter !== null,/" "$R"
 check "the cooldown ignored when the route is decided (the latch bypassed)"
+
+# The two routes asked about each other's service. Nothing downstream can tell
+# these apart from the honest version while BOTH services answer alike, which is
+# every single-endpoint deployment — so this is the mutation that proves the
+# split is actually tested rather than merely written.
+perl -0pi -e "s/    doclingOcrAvailable: converter !== null && converter\.isAvailable\('ocr'\),/    doclingOcrAvailable: converter !== null && converter.isAvailable('layout'),/" "$R"
+check "the scanned route gated on the LAYOUT service's health"
 
 echo ""
 echo "=== the OCR decimal-to-comma hazard: a hundredfold error, silently ==="

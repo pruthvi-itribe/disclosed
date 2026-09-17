@@ -1,64 +1,85 @@
-# The layout-aware PDF reader, on its own node.
+# The layout-aware PDF reader, as TWO Deployments that fail independently.
 #
 # ================================================================
-# WHY IT GETS A WHOLE NODE, ARGUED WITH NUMBERS
+# WHY TWO, ARGUED WITH NUMBERS
 # ================================================================
 #
-# docling-serve holds 2.3-2.6 GB resident with OCR off and up to 7.4 GB on
-# large OCR jobs (measured, docs/deploy-digitalocean.md §7). The prod node
-# that runs the platform service has ~2.5 CPU / ~4.4 GB unrequested; on 2026-08-11 a
-# burst of heavy conversions OOM-killed the local container inside a shared
-# 7.65 GB pool — the exact failure a shared node invites at results-season
-# peak, when both products are busiest. So the pool was grown 1 -> 2 nodes
-# (2026-08-12) and this Deployment's REQUESTS are sized to be unschedulable
-# on the platform's node (3 CPU / 5 Gi against its ~2.5 / ~4.4 free): placement
-# on the new node is enforced by arithmetic, not by a selector a node
-# replacement would strand.
+# `docling-serve` has two configurations and they do not cost alike. Measured
+# (docs/deploy-digitalocean.md section 7):
 #
-# NOTE the pool is terraform-managed from the platform's infrastructure repository with count=1 in state;
-# until that var is bumped to 2, a `terraform apply` there would shrink the
-# pool and evict this. (Recorded 2026-08-12; remove this sentence when the
-# var is updated.)
+#   do_ocr=false  "docling-layout"   FLAT 2.3-2.6 GB, up to 15x faster
+#                                    (BOSCH-HCIL 24.7 s -> 3.96 s)
+#   do_ocr=true   "docling-ocr"      3.8-7.4 GB, 2.5-4 s a page
+#
+# And they do not serve alike either: 8.66% of filings carry a results table and
+# take the layout route, against 1.11% that are raster scans and need OCR. The
+# cheap configuration does 8x the work for a third of the memory, and the
+# expensive one is quality-identical on a text layer to within 1%.
+#
+# One Deployment sized for OCR therefore charged the common route the rare
+# route's price. Worse, one Deployment is one availability latch: measured on
+# the live cluster over 35 days the OCR pod was OOM-killed 14 times — its 6 Gi
+# limit sits INSIDE the 3.8-7.4 GB band, and PyTorch's allocator does not return
+# freed arenas, so RSS ratchets across conversions until it crosses — and every
+# one of those kills also stopped results filings from being aligned for the
+# next five minutes, having never asked the expensive configuration for
+# anything.
+#
+# Split, an OCR OOM costs the 1.11% and nothing else.
+#
+# ================================================================
+# WHAT IS STILL TRUE OF BOTH
+# ================================================================
 #
 # ONE conversion at a time (ENG_LOC_NUM_WORKERS=1): concurrency multiplies
 # resident memory here and nowhere else in the pipeline — several workers'
-# simultaneous conversions of 100-page results filings is what the local
-# OOM was made of. Excess requests queue inside the service, bounded by
-# MAX_SYNC_WAIT, which must cover the client's DOCLING_TIMEOUT_MS (300000):
-# the server's own default is 120 s and it answers 504 past that while
-# still finishing the work — a live run lost a 131 s scan exactly this way.
+# simultaneous conversions of 100-page results filings is what the 2026-08-11
+# local OOM was made of. Excess requests queue inside the service, bounded by
+# MAX_SYNC_WAIT, which must cover the client's DOCLING_TIMEOUT_MS (300000): the
+# server's own default is 120 s and it answers 504 past that while still
+# finishing the work — a live run lost a 131 s scan exactly this way.
 #
-# Workers reach it as http://docling:5001 (DOCLING_URL in the shared env
-# Secret). In-cluster the Service targets the pod directly, so the
-# 2026-08-11 wrong-tenant-on-the-port failure class (another app answering
-# /health convincingly) cannot recur; /health is honest here.
+# Workers reach them as DOCLING_LAYOUT_URL / DOCLING_OCR_URL in the shared env
+# Secret. BOTH DEFAULT TO DOCLING_URL when unset, so applying this file before
+# editing the Secret leaves the pipeline pointed at whichever service still
+# answers on that name — the rollout is not a flag day. See
+# `apps/ingest/src/enrichment/docling.factory.ts`.
+#
+# REPLACING THE OLD `docling` DEPLOYMENT IS NOT AN APPLY. The names changed, so
+# `kubectl apply` adds these two and leaves the old one running beside them:
+# `kubectl -n disclosed delete deploy/docling svc/docling` once the Secret names
+# the new addresses.
+---
+# ================================================================
+# THE CHEAP ROUTE. Runs beside the platform workload.
+# ================================================================
+#
+# At 2.6 Gi requested this fits the platform node's free allocatable (measured
+# 2328m CPU / 4095 Mi on 2026-09-17) instead of demanding a node of its own. That
+# is the whole saving: the route serving 8.66% of filings stops being the reason
+# a second $48/mo node exists.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: docling
+  name: docling-layout
   namespace: disclosed
-  labels: { app: docling }
+  labels: { app: docling-layout }
 spec:
-  # One replica: one engine worker per pod is the memory design, and one pod
-  # matches the measured need (a handful of layout reads per hour). More
-  # conversion throughput = more replicas, each with its own budget — scale
-  # horizontally, never by raising ENG_LOC_NUM_WORKERS alone.
   replicas: 1
-  # Recreate, not RollingUpdate: two pods cannot fit the node at these
-  # requests, so a rolling update would wedge Pending forever. A ~40 s gap
-  # during an image bump costs a few visible pdf-parse fallbacks, which the
-  # client's cooldown and parseFallbackReason already handle honestly.
+  # Recreate, like its sibling, but for a different reason: two 2.6 GB pods
+  # transiently on a node shared with the platform is 5.2 GB of an 8 GB box for
+  # the duration of an image bump. A ~40 s gap on an OPTIONAL parser is the
+  # cheaper failure, and the client's cooldown and parseFallbackReason already
+  # report it honestly.
   strategy: { type: Recreate }
   selector:
-    matchLabels: { app: docling }
+    matchLabels: { app: docling-layout }
   template:
     metadata:
-      labels: { app: docling }
+      labels: { app: docling-layout }
     spec:
       containers:
         - name: docling
-          # Pinned, same version the local compose runs. amd64 image on the
-          # cluster; the local arm64 pull proves nothing about this one.
           image: quay.io/docling-project/docling-serve:v1.30.0
           ports:
             - containerPort: 5001
@@ -68,12 +89,17 @@ spec:
             - name: DOCLING_SERVE_ENG_LOC_NUM_WORKERS
               value: "1"
           resources:
-            # Requests force new-node placement (see header). Limits leave
-            # ~0.4 CPU / ~1.4 Gi of allocatable for kube-system daemonsets.
-            requests: { cpu: "3", memory: 5Gi }
-            limits: { cpu: "3500m", memory: 6Gi }
-          # The model load takes ~40 s from a cold image; the startupProbe
-          # covers it so the liveness probe never kills a booting pod.
+            # 2.6 Gi is the TOP of the measured band, not the middle, because
+            # the band is flat: layout-only memory does not move with page
+            # count the way OCR's does, so the request is the working set
+            # rather than a guess at a peak.
+            #
+            # The limit is 1.35x rather than the 2x used elsewhere in k8s/ for
+            # the same reason — there is no page-driven spike to absorb — and
+            # because this pod now shares a node whose other tenant is the API
+            # everything else depends on.
+            requests: { cpu: "1", memory: 2600Mi }
+            limits: { cpu: "2", memory: 3500Mi }
           startupProbe:
             httpGet: { path: /health, port: 5001 }
             periodSeconds: 5
@@ -84,18 +110,86 @@ spec:
           livenessProbe:
             httpGet: { path: /health, port: 5001 }
             periodSeconds: 30
-            # A conversion saturating the CPU can slow the health answer;
-            # three misses half a minute apart is a hung process, not a busy
-            # one.
             failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: docling
+  name: docling-layout
   namespace: disclosed
 spec:
-  selector: { app: docling }
+  selector: { app: docling-layout }
+  ports:
+    - port: 5001
+      targetPort: 5001
+---
+# ================================================================
+# THE EXPENSIVE ROUTE. Still gets a node to itself.
+# ================================================================
+#
+# Requests unchanged at 3 CPU / 5 Gi, and still sized to be unschedulable
+# anywhere the platform workload lives: placement enforced by arithmetic rather
+# than by a selector a node replacement would strand. What changed is that it is
+# now the ONLY thing those numbers buy a node for — which is what makes scaling
+# it to zero a question about 1.11% of filings rather than about all of them.
+#
+# THE LIMIT IS KNOWINGLY BELOW THE MEASURED CEILING. 6 Gi against a 3.8-7.4 GB
+# band means the largest scans are OOM-killed rather than served, and raising it
+# is not available: the node allocates 6414 Mi and kube-system's daemonsets
+# already request ~505 Mi of it. The honest options are a bigger node or the
+# 40-page bound that DOCLING_OCR_MAX_PAGES already applies; the bound is the one
+# that costs nothing, and at 15 pages the largest live scan sits well inside it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docling-ocr
+  namespace: disclosed
+  labels: { app: docling-ocr }
+spec:
+  replicas: 1
+  # Two pods cannot fit the node at these requests, so a rolling update would
+  # wedge Pending forever.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: docling-ocr }
+  template:
+    metadata:
+      labels: { app: docling-ocr }
+    spec:
+      containers:
+        - name: docling
+          image: quay.io/docling-project/docling-serve:v1.30.0
+          ports:
+            - containerPort: 5001
+          env:
+            - name: DOCLING_SERVE_MAX_SYNC_WAIT
+              value: "300"
+            - name: DOCLING_SERVE_ENG_LOC_NUM_WORKERS
+              value: "1"
+          resources:
+            requests: { cpu: "3", memory: 5Gi }
+            limits: { cpu: "3500m", memory: 6Gi }
+          startupProbe:
+            httpGet: { path: /health, port: 5001 }
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /health, port: 5001 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 5001 }
+            periodSeconds: 30
+            # A conversion saturating the CPU can slow the health answer; three
+            # misses half a minute apart is a hung process, not a busy one.
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docling-ocr
+  namespace: disclosed
+spec:
+  selector: { app: docling-ocr }
   ports:
     - port: 5001
       targetPort: 5001

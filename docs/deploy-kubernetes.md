@@ -195,8 +195,22 @@ kubectl -n disclosed create secret generic disclosed-pipeline \
   --from-literal=ANTHROPIC_API_KEY='sk-ant-...' \
   --from-literal=OPENROUTER_API_KEY='' \
   --from-literal=TELEGRAM_BOT_TOKEN='' \
-  --from-literal=TELEGRAM_CHAT_ID=''
+  --from-literal=TELEGRAM_CHAT_ID='' \
+  --from-literal=DOCLING_LAYOUT_URL='http://docling-layout:5001' \
+  --from-literal=DOCLING_OCR_URL='http://docling-ocr:5001'
 ```
+
+**The Docling keys were missing from this command until 2026-09-17**, while the
+live Secret carried a `DOCLING_URL` nobody was told to create — which is how a
+cluster rebuilt from this runbook would have come up with the hybrid parser
+silently off and every scanned filing at `no-text-layer`. The boot line is the
+check: `docling=off` here means these keys, not a crashed pod.
+
+Either key may be left blank. Blank falls back to `DOCLING_URL` if that is set,
+and with all three blank the pipeline reads every document with `pdf-parse`,
+which is a supported deployment rather than a broken one. Setting only
+`DOCLING_LAYOUT_URL` is the cheap half: results filings get correct reading
+order for a flat 2.3-2.6 GB, and the 1.11% that are raster scans stay unread.
 
 **4. The dashboard's identity keys.** Neither is a service-account key —
 verifying an ID token is a signature check against Google's public
@@ -483,6 +497,38 @@ The first real deploy. Everything below was observed, not inferred:
   work, not a silent fallback to `pdf-parse`.
 - **End-to-end latency, in production**: median 93 seconds from dissemination
   to the document being read, against the product's stated ~2 minute target.
+
+### The Docling split, 2026-09-17
+
+`docling` became `docling-layout` and `docling-ocr`. What was measured on the
+live pod before the change, over 136 hours:
+
+| | |
+|---|---|
+| Conversions | 28, i.e. **4.9/day** |
+| Time per conversion | 36-105 s (avg 63 s) |
+| **Duty cycle** | **0.36%** — 29 minutes of work in 5.7 days |
+| Idle CPU | **2m**, against the 3000m it reserved |
+| Resident memory | 3.9 GiB held continuously |
+| Cold start | 29 s |
+| OOMKills | **14 in 35 days**, all exit 137 |
+
+The OOM cadence is the load-bearing number. 3.48 GiB of that 3.9 GiB RSS is
+anonymous heap: PyTorch's allocator does not return freed arenas, so an OCR run
+ratchets RSS up and it never comes back down, until it crosses the 6 Gi limit
+about every 2.5 days. **A larger limit does not fix this** — only recycling the
+process does, which is the strongest argument for eventually scaling
+`docling-ocr` to zero rather than sizing it up.
+
+The route split is what makes that a question about 1.11% of filings. The
+2026-08-13 figures above already show the shape: **549 filings by
+`docling-layout` against 37 by `docling-ocr`**, a 14.8:1 ratio, so the
+configuration holding 3.8-7.4 GB serves one filing in 74.
+
+`DOCLING_URL` still answers for both routes when the two new keys are unset, so
+applying the manifest is not a flag day. The old objects are not replaced by an
+apply — the names changed — so they are deleted by hand once the Secret names
+the new addresses.
 
 ### On a developer machine, no cluster involved
 

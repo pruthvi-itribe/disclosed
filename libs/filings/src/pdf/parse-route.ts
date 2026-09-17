@@ -156,8 +156,30 @@ export interface ParseRouteInput {
    * routing on one and recording another is how the two drift apart.
    */
   readonly textLayerCorrupt: boolean;
-  /** False when no Docling service is configured or it is known to be down. */
-  readonly doclingAvailable: boolean;
+  /**
+   * Whether the OCR service can be reached — `docling-ocr`'s Deployment.
+   *
+   * ================================================================
+   * TWO SERVICES, TWO ANSWERS, AND NEITHER IS `RequeueInput.ocrAvailable`
+   * ================================================================
+   *
+   * `docling-ocr` and `docling-layout` run as separate Deployments because
+   * their memory budgets differ by 3x (3.8-7.4 GB against a flat 2.3-2.6 GB),
+   * so they fail separately and must be asked about separately. One flag for
+   * both is what let an OCR pod's OOM — 14 of them in 35 days — also stop the
+   * 8.66% of filings that only wanted their columns aligned.
+   *
+   * NOT THE SAME QUESTION AS `RequeueInput.ocrAvailable` in
+   * `logic/requeue-policy.ts`, which is deliberately named for the deployment
+   * rather than the moment: that one asks whether a URL is configured at all
+   * and never consults the cooldown latch, because a sweep's decisions must not
+   * depend on whether a pod happened to be restarting when it ran. These two
+   * DO include the latch. A deployment can have the URL set and answer false
+   * here, and that divergence is the point of both fields existing.
+   */
+  readonly doclingOcrAvailable: boolean;
+  /** Whether the layout service can be reached — `docling-layout`'s Deployment. */
+  readonly doclingLayoutAvailable: boolean;
 }
 
 /** The chosen route and the sentence explaining it. */
@@ -322,10 +344,16 @@ export const scaleReachFor = (route: ParseRoute): number =>
 export function routeAfterFirstRead(
   input: ParseRouteInput,
 ): ParseRouteDecision {
-  const { pages, text, hasTextLayer, textLayerCorrupt, doclingAvailable } =
-    input;
+  const {
+    pages,
+    text,
+    hasTextLayer,
+    textLayerCorrupt,
+    doclingOcrAvailable,
+    doclingLayoutAvailable,
+  } = input;
 
-  if (!doclingAvailable) {
+  if (!doclingOcrAvailable && !doclingLayoutAvailable) {
     return decide(
       'pdf-parse',
       'no Docling service is available, so the cheap parser is the only reader',
@@ -333,11 +361,22 @@ export function routeAfterFirstRead(
   }
 
   if (!hasTextLayer) {
+    // THE CEILING IS CHECKED BEFORE THE OUTAGE, and the order is the policy. A
+    // 41-page scan would not reach the OCR service with it up, so reporting the
+    // outage would tell an operator that restarting the pod recovers this
+    // filing. The document's own permanent property is the honest reason.
     if (pages > DOCLING_OCR_MAX_PAGES) {
       return decide(
         'pdf-parse',
         `the document has no text layer but is ${pages} pages, over the ` +
           `${DOCLING_OCR_MAX_PAGES}-page ceiling for an OCR read`,
+      );
+    }
+    if (!doclingOcrAvailable) {
+      return decide(
+        'pdf-parse',
+        'the document has no text layer but the Docling OCR service is not ' +
+          'available, so the cheap parser is the only reader',
       );
     }
     return decide(
@@ -361,6 +400,16 @@ export function routeAfterFirstRead(
           `the ${DOCLING_OCR_MAX_PAGES}-page ceiling for an OCR read`,
       );
     }
+    // An OCR route too — `force_ocr=true` — so it answers to the OCR service's
+    // absence, not the layout service's. `docling-layout` could not help here
+    // even if it were up: it reads the same broken layer.
+    if (!doclingOcrAvailable) {
+      return decide(
+        'pdf-parse',
+        "the document's text layer is corrupt but the Docling OCR service is " +
+          'not available, so the cheap parser is the only reader',
+      );
+    }
     return decide(
       'docling-ocr',
       `the document's text layer is corrupt, so ${pages} page(s) go to ` +
@@ -380,6 +429,13 @@ export function routeAfterFirstRead(
         'pdf-parse',
         `the document carries a results statement but is ${pages} pages, over ` +
           `the ${DOCLING_LAYOUT_MAX_PAGES}-page ceiling for a Docling read`,
+      );
+    }
+    if (!doclingLayoutAvailable) {
+      return decide(
+        'pdf-parse',
+        'the document carries a results statement but the Docling layout ' +
+          'service is not available, so the cheap parser is the only reader',
       );
     }
     return decide(

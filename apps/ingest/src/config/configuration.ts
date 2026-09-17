@@ -27,6 +27,10 @@ import {
 // than restated. A literal here is what let the config say 3 while the
 // constant said otherwise.
 import { MAX_CLAIMS_EXTRACTED } from '@app/filings/logic/claim-verify';
+// Deep, for the third time and the same reason: `docling-client.ts` imports
+// nothing at all. The fallback rule lives there so this boot line and
+// `buildDoclingConverter` cannot disagree about which address a route is on.
+import { resolveDoclingUrl } from '@app/filings/pdf/docling-client';
 
 export interface IngestConfig {
   readonly mongoUri: string;
@@ -125,6 +129,27 @@ export interface IngestConfig {
    * `no-text-layer`, and nothing fails. See `docling.factory.ts`.
    */
   readonly doclingUrl: string;
+  /**
+   * Base URL of the layout-only service, or empty to use `doclingUrl`.
+   *
+   * ================================================================
+   * TWO ADDRESSES BECAUSE THE TWO ROUTES COST 3x DIFFERENT
+   * ================================================================
+   *
+   * `docling-layout` runs `do_ocr=false` and holds a flat 2.3-2.6 GB;
+   * `docling-ocr` runs it on and holds 3.8-7.4 GB. On the cluster they are
+   * separate Deployments so the expensive one can be sized, restarted and — in
+   * time — scaled to zero without touching the cheap one that serves 8x more
+   * filings.
+   *
+   * BOTH DEFAULT TO `doclingUrl`, which is what makes this additive rather than
+   * a migration. The live value sits in a hand-created Kubernetes Secret that
+   * CI never touches, so a release requiring new keys would take the parser
+   * down the moment it shipped.
+   */
+  readonly doclingLayoutUrl: string;
+  /** Base URL of the OCR service, or empty to use `doclingUrl`. */
+  readonly doclingOcrUrl: string;
   /** How long one conversion may take. Docling measures 2.5-4 s a PAGE. */
   readonly doclingTimeoutMs: number;
   /** How long a transport failure stops further requests being attempted. */
@@ -565,6 +590,11 @@ export const loadConfig = (
     // Empty by default: the hybrid parser is opt-in and its absence is a
     // supported deployment rather than a degraded one.
     doclingUrl: readString('DOCLING_URL', env, ''),
+    // Empty means "use DOCLING_URL", resolved in `docling.factory.ts` rather
+    // than here so one place owns the fallback and the boot line can report
+    // what was actually set.
+    doclingLayoutUrl: readString('DOCLING_LAYOUT_URL', env, ''),
+    doclingOcrUrl: readString('DOCLING_OCR_URL', env, ''),
     doclingTimeoutMs: readNumeric('DOCLING_TIMEOUT_MS', env),
     doclingCooldownMs: readNumeric('DOCLING_COOLDOWN_MS', env),
   };
@@ -596,6 +626,23 @@ export const claimApiKeyOf = (config: {
  * setting that was read — until the poller behaves in a way the operator did
  * not expect. Secrets are named, never printed.
  */
+/**
+ * The two Docling addresses as an operator needs them at boot.
+ *
+ * `off` when neither route resolves, one address when both share it (every
+ * deployment that has not split yet), and `layout:<a> ocr:<b>` once they differ
+ * — with `off` standing in for a route whose address is missing or unusable.
+ * `resolveDoclingUrl` owns the fallback so this line can never claim an address
+ * the factory rejected.
+ */
+const describeDocling = (config: IngestConfig): string => {
+  const layout = resolveDoclingUrl(config.doclingLayoutUrl, config.doclingUrl);
+  const ocr = resolveDoclingUrl(config.doclingOcrUrl, config.doclingUrl);
+  if (layout === '' && ocr === '') return 'off';
+  if (layout === ocr) return layout;
+  return `layout:${layout === '' ? 'off' : layout} ocr:${ocr === '' ? 'off' : ocr}`;
+};
+
 export const describeConfig = (config: IngestConfig): string =>
   [
     `mongo=${describeMongoTarget(config.mongoUri)}`,
@@ -627,7 +674,12 @@ export const describeConfig = (config: IngestConfig): string =>
     // Named even when off, because "scanned filings are unreadable" and "scanned
     // filings are unreadable because nobody started docling-serve" are the same
     // dashboard and different problems.
-    `docling=${config.doclingUrl.trim() === '' ? 'off' : config.doclingUrl.trim()}`,
+    //
+    // REPORTS THE RESOLVED ADDRESSES, not the raw keys, and per route once they
+    // differ: with two Deployments the question an operator has at boot is which
+    // of the two is reachable, and a route whose address is missing or mistyped
+    // must read `off` rather than be quietly folded into the other's answer.
+    `docling=${describeDocling(config)}`,
     // Both halves are required to send anything, so a half-set pair is reported
     // as unconfigured rather than as a channel that will never deliver.
     `telegram=${

@@ -5,7 +5,9 @@ import {
   DoclingHttpError,
   HttpDoclingConverter,
   MAX_DOCLING_MESSAGE_CHARS,
+  RoutedDoclingConverter,
   textFromDoclingReply,
+  type DoclingConverter,
   type DoclingHttp,
   type DoclingOptions,
   type DoclingRequest,
@@ -92,6 +94,24 @@ const clock = (
 
 const rejecting = (error: unknown) => async (): Promise<never> => {
   throw error;
+};
+
+interface StubConverter extends DoclingConverter {
+  /** Every request this service was ACTUALLY handed. Its length is the assertion. */
+  readonly calls: DoclingRequest[];
+}
+
+/** A converter that records rather than converts, so dispatch is decidable. */
+const stubConverter = (available = true): StubConverter => {
+  const stub: StubConverter = {
+    calls: [],
+    isAvailable: () => available,
+    convert: async (request) => {
+      stub.calls.push(request);
+      return { outcome: 'ok', text: MARKDOWN };
+    },
+  };
+  return stub;
 };
 
 describe('textFromDoclingReply', () => {
@@ -528,5 +548,81 @@ describe('HttpDoclingConverter — the asymmetry that keeps one bad PDF cheap', 
     expect(converter.isAvailable()).toBe(false);
     await converter.convert(requestFor());
     expect(http.posts).toHaveLength(1);
+  });
+});
+
+/**
+ * ================================================================
+ * TWO SERVICES, TWO LATCHES
+ * ================================================================
+ *
+ * `docling-ocr` holds 3.8-7.4 GB and `docling-layout` a flat 2.3-2.6 GB, so
+ * they run as separate Deployments and fail separately. One converter over one
+ * base URL could not express that: the OCR pod being OOM-killed — 14 times in
+ * 35 days on the live cluster — opened the single latch and stopped the 8.66%
+ * of filings that only wanted their columns aligned, for five minutes, each
+ * time.
+ *
+ * This class exists to keep those two failures apart. It holds no latch of its
+ * own; each child keeps the one it already had.
+ */
+describe('RoutedDoclingConverter — one bad service is not two', () => {
+  it('sends an OCR request to the OCR service and nowhere else', async () => {
+    const layout = stubConverter();
+    const ocr = stubConverter();
+    const converter = new RoutedDoclingConverter(layout, ocr);
+
+    await converter.convert(requestFor({ ocr: true }));
+
+    expect(ocr.calls).toHaveLength(1);
+    expect(layout.calls).toHaveLength(0);
+  });
+
+  it('sends a layout request to the layout service and nowhere else', async () => {
+    const layout = stubConverter();
+    const ocr = stubConverter();
+    const converter = new RoutedDoclingConverter(layout, ocr);
+
+    await converter.convert(requestFor({ ocr: false }));
+
+    expect(layout.calls).toHaveLength(1);
+    expect(ocr.calls).toHaveLength(0);
+  });
+
+  it('routes a forced-OCR request by its ocr flag, not its forceOcr flag', async () => {
+    // `force_ocr` is not a louder `do_ocr` — it is a separate field on an
+    // already-OCR route. Routing on it would send nothing anywhere the day a
+    // caller set one without the other.
+    const layout = stubConverter();
+    const ocr = stubConverter();
+    const converter = new RoutedDoclingConverter(layout, ocr);
+
+    await converter.convert(requestFor({ ocr: true, forceOcr: true }));
+
+    expect(ocr.calls).toHaveLength(1);
+    expect(layout.calls).toHaveLength(0);
+  });
+
+  it('answers availability per service rather than for both at once', () => {
+    // THE REGRESSION TEST FOR THE SHARED LATCH. Before the split this pair of
+    // assertions could not both hold.
+    const converter = new RoutedDoclingConverter(
+      stubConverter(true),
+      stubConverter(false),
+    );
+
+    expect(converter.isAvailable('layout')).toBe(true);
+    expect(converter.isAvailable('ocr')).toBe(false);
+  });
+
+  it('still converts on the layout service while the OCR service is latched', async () => {
+    const layout = stubConverter(true);
+    const ocr = stubConverter(false);
+    const converter = new RoutedDoclingConverter(layout, ocr);
+
+    const result = await converter.convert(requestFor({ ocr: false }));
+
+    expect(result.outcome).toBe('ok');
+    expect(layout.calls).toHaveLength(1);
   });
 });

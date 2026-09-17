@@ -127,7 +127,8 @@ matter first:
 | `TRUST_PROXY` | off | Hop count of trusted proxies. Off = today's behavior; see [deploy docs](docs/deploy-kubernetes.md) before exposing publicly. |
 | `AUTH_MODE` | follows keys | `firebase` when the two Firebase keys are set, else `local`. |
 | `CLAIM_PROVIDER` / `CLAIM_MODEL` | unset | The extraction model. The pipeline runs without it. |
-| `DOCLING_URL` | unset | The layout parser. Compose serves it at `http://127.0.0.1:5501`. Unset ⇒ the fast parser reads everything and each filing records that it did. |
+| `DOCLING_URL` | unset | The layout parser, both routes. Compose serves it at `http://127.0.0.1:5501`. Unset ⇒ the fast parser reads everything and each filing records that it did. |
+| `DOCLING_LAYOUT_URL` / `DOCLING_OCR_URL` | unset | Per-route addresses, for running the two configurations as separate services. Each falls back to `DOCLING_URL`. |
 | `ADMIN_ENABLED` | follows host | The operator panel. Built only on a local, non-production host unless forced — [why](docs/internals.md#the-admin-view-is-local-only). |
 | `OPERATOR_WATCHLIST` | empty | Symbols for the Telegram alert lane. Empty means firehose (~388 messages/day measured) — the boot log warns. |
 
