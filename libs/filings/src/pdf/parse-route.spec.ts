@@ -39,9 +39,16 @@ const routeInput = (over: Partial<ParseRouteInput> = {}): ParseRouteInput => ({
   text: PLAIN_TEXT,
   hasTextLayer: true,
   textLayerCorrupt: false,
-  doclingAvailable: true,
+  doclingOcrAvailable: true,
+  doclingLayoutAvailable: true,
   ...over,
 });
+
+/** Both services gone, which is the shipped default and a supported deployment. */
+const NO_DOCLING: Partial<ParseRouteInput> = {
+  doclingOcrAvailable: false,
+  doclingLayoutAvailable: false,
+};
 
 describe('routeAfterFirstRead — a text layer that is present and wrong', () => {
   it('re-reads the pixels of a corrupt layer, forcing OCR past it', () => {
@@ -95,7 +102,7 @@ describe('routeAfterFirstRead — a text layer that is present and wrong', () =>
 
   it('never forces OCR on any route that is not an OCR route', () => {
     const routes: readonly Partial<ParseRouteInput>[] = [
-      { doclingAvailable: false, textLayerCorrupt: true },
+      { ...NO_DOCLING, textLayerCorrupt: true },
       { text: RESULTS_TEXT },
       {},
     ];
@@ -107,9 +114,7 @@ describe('routeAfterFirstRead — a text layer that is present and wrong', () =>
 
 describe('routeAfterFirstRead — the degraded path', () => {
   it('falls back to pdf-parse when there is no Docling service', () => {
-    const decision = routeAfterFirstRead(
-      routeInput({ doclingAvailable: false }),
-    );
+    const decision = routeAfterFirstRead(routeInput(NO_DOCLING));
     expect(decision.route).toBe('pdf-parse');
     expect(decision.maxPages).toBeNull();
     expect(decision.reason).toContain('no Docling service');
@@ -127,10 +132,106 @@ describe('routeAfterFirstRead — the degraded path', () => {
     // nothing else can shadow. A machine with no Python must never route a
     // filing to a parser it cannot run.
     const decision = routeAfterFirstRead(
-      routeInput({ ...over, doclingAvailable: false }),
+      routeInput({ ...over, ...NO_DOCLING }),
     );
     expect(decision.route).toBe('pdf-parse');
     expect(decision.reason).toContain('no Docling service');
+  });
+});
+
+/**
+ * ================================================================
+ * ONE SERVICE DOWN IS NOT BOTH SERVICES DOWN
+ * ================================================================
+ *
+ * `docling-ocr` and `docling-layout` are separate Deployments with separate
+ * memory budgets, so they fail separately. Until they were split they shared
+ * one availability latch, which meant an OCR pod OOM-killed on a 7.4 GB raster
+ * scan — measured 14 times in 35 days — also stopped every results filing from
+ * getting its columns aligned, for five minutes, for nothing.
+ *
+ * The reason a filing fell back must therefore name WHICH service was missing.
+ * "Docling was down" and "the OCR service was down while layout kept working"
+ * are the same text on the filing and completely different facts about the
+ * deployment.
+ */
+describe('routeAfterFirstRead — one service down, the other up', () => {
+  it('refuses the scanned path when only the OCR service is gone', () => {
+    const decision = routeAfterFirstRead(
+      routeInput({
+        hasTextLayer: false,
+        pages: 6,
+        text: 'Page 1/6',
+        doclingOcrAvailable: false,
+      }),
+    );
+    expect(decision.route).toBe('pdf-parse');
+    expect(decision.maxPages).toBeNull();
+    expect(decision.reason).toContain('OCR service is not available');
+  });
+
+  it('refuses the corrupt-layer path when only the OCR service is gone', () => {
+    // The corrupt-layer branch is an OCR route too — `force_ocr=true` — so it
+    // answers to the OCR service's absence and not the layout service's.
+    const decision = routeAfterFirstRead(
+      routeInput({
+        textLayerCorrupt: true,
+        pages: 3,
+        doclingOcrAvailable: false,
+      }),
+    );
+    expect(decision.route).toBe('pdf-parse');
+    expect(decision.reason).toContain('OCR service is not available');
+  });
+
+  it('still aligns a results statement while the OCR service is gone', () => {
+    // THE WHOLE POINT OF THE SPLIT. 8.66% of filings carry a results table and
+    // 1.11% are raster scans; the cheap route must not be latched out by the
+    // expensive one's bad day.
+    const decision = routeAfterFirstRead(
+      routeInput({ text: RESULTS_TEXT, doclingOcrAvailable: false }),
+    );
+    expect(decision.route).toBe('docling-layout');
+    expect(decision.maxPages).toBe(DOCLING_LAYOUT_MAX_PAGES);
+  });
+
+  it('refuses the results path when only the layout service is gone', () => {
+    const decision = routeAfterFirstRead(
+      routeInput({ text: RESULTS_TEXT, doclingLayoutAvailable: false }),
+    );
+    expect(decision.route).toBe('pdf-parse');
+    expect(decision.maxPages).toBeNull();
+    expect(decision.reason).toContain('layout service is not available');
+  });
+
+  it('still reads a raster scan while the layout service is gone', () => {
+    const decision = routeAfterFirstRead(
+      routeInput({
+        hasTextLayer: false,
+        pages: 6,
+        text: 'Page 1/6',
+        doclingLayoutAvailable: false,
+      }),
+    );
+    expect(decision.route).toBe('docling-ocr');
+    expect(decision.maxPages).toBe(DOCLING_OCR_MAX_PAGES);
+  });
+
+  it('reports the page ceiling rather than the outage when both apply', () => {
+    // A 41-page scan would never reach the OCR service even with it up, so
+    // saying it was unavailable would tell an operator that restarting the pod
+    // recovers this filing. It does not. The permanent reason wins.
+    const decision = routeAfterFirstRead(
+      routeInput({
+        hasTextLayer: false,
+        pages: 41,
+        text: 'Page 1/41',
+        doclingOcrAvailable: false,
+      }),
+    );
+    expect(decision.route).toBe('pdf-parse');
+    expect(decision.reason).toContain('41 pages');
+    expect(decision.reason).toContain('40-page ceiling');
   });
 });
 
@@ -260,7 +361,7 @@ describe('routeAfterFirstRead — the ordinary path', () => {
   });
 
   it.each<[string, Partial<ParseRouteInput>]>([
-    ['no Docling service', { doclingAvailable: false }],
+    ['no Docling service', NO_DOCLING],
     ['a scan inside the OCR bound', { hasTextLayer: false, pages: 6 }],
     ['a scan over the OCR bound', { hasTextLayer: false, pages: 400 }],
     ['a results filing inside the layout bound', { text: RESULTS_TEXT }],
@@ -461,7 +562,8 @@ describe('routeAfterFirstRead — prose about results is not a results statement
       text: TRANSCRIPT,
       hasTextLayer: true,
       textLayerCorrupt: false,
-      doclingAvailable: true,
+      doclingOcrAvailable: true,
+      doclingLayoutAvailable: true,
     });
     expect(decision.route).toBe('pdf-parse');
   });
@@ -496,7 +598,8 @@ describe('routeAfterFirstRead — prose about results is not a results statement
       text: '',
       hasTextLayer: false,
       textLayerCorrupt: false,
-      doclingAvailable: true,
+      doclingOcrAvailable: true,
+      doclingLayoutAvailable: true,
     });
     expect(decision.route).toBe('docling-ocr');
   });

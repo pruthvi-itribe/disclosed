@@ -701,3 +701,98 @@ describe('claimApiKeyOf', () => {
     ).toBe(expected);
   });
 });
+
+/**
+ * ================================================================
+ * THE DOCLING ADDRESSES, WHICH NOTHING TESTED BEFORE THE SPLIT
+ * ================================================================
+ *
+ * `DOCLING_URL` had no coverage here at all: not its empty default, not the
+ * `docling=off` boot line. It acquired two siblings whose whole job is to
+ * default back to it, and an untested fallback is how a release that was meant
+ * to change nothing takes the parser down — the value lives in a Kubernetes
+ * Secret created by hand, which CI never sees and the runbook never mentioned.
+ */
+describe('loadConfig: the Docling addresses', () => {
+  it('ships all three unset, which is a supported deployment', () => {
+    const config = loadConfig(empty);
+    expect(config.doclingUrl).toBe('');
+    expect(config.doclingLayoutUrl).toBe('');
+    expect(config.doclingOcrUrl).toBe('');
+  });
+
+  it('reads each address independently', () => {
+    const config = loadConfig(
+      withEnv({
+        DOCLING_URL: 'http://docling:5001',
+        DOCLING_LAYOUT_URL: 'http://docling-layout:5001',
+        DOCLING_OCR_URL: 'http://docling-ocr:5001',
+      }),
+    );
+    expect(config.doclingUrl).toBe('http://docling:5001');
+    expect(config.doclingLayoutUrl).toBe('http://docling-layout:5001');
+    expect(config.doclingOcrUrl).toBe('http://docling-ocr:5001');
+  });
+
+  it('leaves the two new keys empty when only the old one is set', () => {
+    // THE BACK-COMPAT PROOF AT THE CONFIG LAYER. Empty here means "use
+    // DOCLING_URL"; the resolution itself belongs to `resolveDoclingUrl`.
+    const config = loadConfig(withEnv({ DOCLING_URL: 'http://docling:5001' }));
+    expect(config.doclingLayoutUrl).toBe('');
+    expect(config.doclingOcrUrl).toBe('');
+  });
+});
+
+describe('describeConfig: the docling line', () => {
+  it('says off when no address resolves', () => {
+    expect(describeConfig(loadConfig(empty))).toContain('docling=off');
+  });
+
+  it('says the one address when both routes share it', () => {
+    // The state of every deployment that has not split yet, and the line an
+    // operator has been reading since the hybrid shipped.
+    const line = describeConfig(
+      loadConfig(withEnv({ DOCLING_URL: 'http://docling:5001' })),
+    );
+    expect(line).toContain('docling=http://docling:5001');
+  });
+
+  it('names both routes once their addresses differ', () => {
+    const line = describeConfig(
+      loadConfig(
+        withEnv({
+          DOCLING_LAYOUT_URL: 'http://docling-layout:5001',
+          DOCLING_OCR_URL: 'http://docling-ocr:5001',
+        }),
+      ),
+    );
+    expect(line).toContain('layout:http://docling-layout:5001');
+    expect(line).toContain('ocr:http://docling-ocr:5001');
+  });
+
+  it('says off for the route whose address is missing', () => {
+    // The cheapest useful deployment: column alignment for the 8.66%, no 5 GB
+    // pod idling for the 1.11%. An operator must be able to see that is what
+    // they are running rather than infer it from a silence.
+    const line = describeConfig(
+      loadConfig(withEnv({ DOCLING_LAYOUT_URL: 'http://docling-layout:5001' })),
+    );
+    expect(line).toContain('ocr:off');
+  });
+
+  it('says off for a route whose address is unusable, not the typo', () => {
+    // A mistyped address reads as absent because that is what it is: the
+    // factory rejects it and no request is ever made. Printing the typo would
+    // say the route was configured.
+    const line = describeConfig(
+      loadConfig(
+        withEnv({
+          DOCLING_LAYOUT_URL: 'http://docling-layout:5001',
+          DOCLING_OCR_URL: 'please use docling',
+        }),
+      ),
+    );
+    expect(line).toContain('ocr:off');
+    expect(line).not.toContain('please use docling');
+  });
+});

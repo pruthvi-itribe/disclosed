@@ -3,8 +3,11 @@ import {
   DEFAULT_DOCLING_COOLDOWN_MS,
   DoclingHttpError,
   HttpDoclingConverter,
+  resolveDoclingUrl,
+  RoutedDoclingConverter,
   type DoclingConverter,
   type DoclingHttp,
+  type DoclingService,
 } from '@app/filings';
 
 /**
@@ -45,8 +48,16 @@ import {
  */
 
 export interface DoclingConfig {
-  /** Empty means no service is configured, which is the shipped default. */
+  /**
+   * The address BOTH routes use unless a more specific one is set.
+   *
+   * Empty means no service is configured, which is the shipped default.
+   */
   readonly doclingUrl: string;
+  /** Overrides `doclingUrl` for `docling-layout` only. Empty means "use it". */
+  readonly doclingLayoutUrl: string;
+  /** Overrides `doclingUrl` for `docling-ocr` only. Empty means "use it". */
+  readonly doclingOcrUrl: string;
   readonly doclingTimeoutMs: number;
   readonly doclingCooldownMs: number;
 }
@@ -113,35 +124,68 @@ export const axiosDoclingHttp = (
   );
 
 /**
- * The converter, or null when the operator configured none.
+ * A service the operator did not configure.
  *
- * NEVER THROWS on a malformed URL. An unusable `DOCLING_URL` returns null and
- * the pipeline runs on `pdf-parse`, which is the same state as not setting it —
- * because the alternative is a typo in an OPTIONAL dependency's address stopping
- * a process whose primary job has nothing to do with it.
+ * Answers `unavailable` rather than throwing, for the same reason every other
+ * failure in this module does: the caller is a worker loop that already holds a
+ * perfectly usable `pdf-parse` reading and must not lose it to an optional
+ * dependency's absence. It never opens a latch, because there is nothing to
+ * wait for — this is a permanent state until an operator edits a Secret.
+ */
+const absentService = (service: DoclingService): DoclingConverter => ({
+  isAvailable: () => false,
+  convert: async () => ({
+    outcome: 'unavailable',
+    message: `no Docling ${service} service is configured, so no request was made`,
+  }),
+});
+
+/**
+ * The converter, or null when the operator configured no service at all.
+ *
+ * NEVER THROWS on a malformed URL. An unusable address makes that route absent
+ * and the pipeline reads those filings with `pdf-parse`, which is the same state
+ * as not setting it — because the alternative is a typo in an OPTIONAL
+ * dependency's address stopping a process whose primary job has nothing to do
+ * with it. With both addresses unusable the answer is null, exactly as before.
+ *
+ * RETURNS ONE OF THREE SHAPES, and which one is the whole configuration story:
+ * a single `HttpDoclingConverter` when both routes share an address (every
+ * deployment that has not split yet), a `RoutedDoclingConverter` over two when
+ * they differ, and the same over one real service and one absent one when the
+ * operator runs only the cheap route.
  */
 export function buildDoclingConverter(
   config: DoclingConfig,
 ): DoclingConverter | null {
-  const url = config.doclingUrl.trim();
-  if (url.length === 0) return null;
+  const layoutUrl = resolveDoclingUrl(
+    config.doclingLayoutUrl,
+    config.doclingUrl,
+  );
+  const ocrUrl = resolveDoclingUrl(config.doclingOcrUrl, config.doclingUrl);
 
-  try {
-    // Parsed rather than trusted: axios accepts a garbage baseURL and fails
-    // later, per request, which would spend the timeout on every filing.
-    new URL(url);
-  } catch {
-    return null;
-  }
+  if (layoutUrl === '' && ocrUrl === '') return null;
 
-  return new HttpDoclingConverter(
-    axiosDoclingHttp(url, config.doclingTimeoutMs),
-    {
-      cooldownMs:
-        config.doclingCooldownMs > 0
-          ? config.doclingCooldownMs
-          : DEFAULT_DOCLING_COOLDOWN_MS,
-      now: () => Date.now(),
-    },
+  const options = {
+    cooldownMs:
+      config.doclingCooldownMs > 0
+        ? config.doclingCooldownMs
+        : DEFAULT_DOCLING_COOLDOWN_MS,
+    now: () => Date.now(),
+  };
+  const converterFor = (url: string): DoclingConverter =>
+    new HttpDoclingConverter(
+      axiosDoclingHttp(url, config.doclingTimeoutMs),
+      options,
+    );
+
+  // ONE ADDRESS MEANS ONE CONVERTER. Two over the same host would be two
+  // connection pools and two latches for one pod — worse than the single
+  // converter this replaced, and the state every existing deployment is in.
+  if (layoutUrl === ocrUrl) return converterFor(layoutUrl);
+
+  return new RoutedDoclingConverter(
+    layoutUrl === '' ? absentService('layout') : converterFor(layoutUrl),
+    ocrUrl === '' ? absentService('ocr') : converterFor(ocrUrl),
   );
 }

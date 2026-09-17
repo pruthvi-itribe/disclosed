@@ -247,6 +247,10 @@ export const RESULTS_EXTRACTOR = 'RESULTS_EXTRACTOR';
           // machine with no Python on it. See `docling.factory.ts`.
           buildDoclingConverter({
             doclingUrl: config.getOrThrow<string>('doclingUrl'),
+            // Both empty unless an operator split the services; each then falls
+            // back to `doclingUrl`, so this reads exactly as it did before.
+            doclingLayoutUrl: config.getOrThrow<string>('doclingLayoutUrl'),
+            doclingOcrUrl: config.getOrThrow<string>('doclingOcrUrl'),
             doclingTimeoutMs: config.getOrThrow<number>('doclingTimeoutMs'),
             doclingCooldownMs: config.getOrThrow<number>('doclingCooldownMs'),
           }),

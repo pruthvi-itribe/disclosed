@@ -3,6 +3,7 @@ import type {
   DoclingConverter,
   DoclingRequest,
   DoclingResult,
+  DoclingService,
 } from './docling-client';
 import { DOCLING_LAYOUT_MAX_PAGES, DOCLING_OCR_MAX_PAGES } from './parse-route';
 import { readWithRouting, type RoutedReadInput } from './routed-text';
@@ -59,11 +60,21 @@ interface StubConverter extends DoclingConverter {
  */
 const stubConverter = (
   result: DoclingResult,
-  available = true,
+  /**
+   * `true`/`false` for both services, or one answer per service.
+   *
+   * PER SERVICE BECAUSE ONE FLAG CANNOT PROVE THE SPLIT. `docling-ocr` and
+   * `docling-layout` are separate Deployments; a stub that answers alike for
+   * both makes the two questions this module now asks indistinguishable, and a
+   * mutation swapping one for the other survives every test in the file.
+   */
+  available: boolean | Partial<Record<DoclingService, boolean>> = true,
 ): StubConverter => {
+  const answers = (service: DoclingService): boolean =>
+    typeof available === 'boolean' ? available : (available[service] ?? true);
   const stub: StubConverter = {
     requests: [],
-    isAvailable: () => available,
+    isAvailable: (service) => answers(service),
     convert: async (request) => {
       stub.requests.push(request);
       return result;
@@ -413,4 +424,64 @@ describe('readWithRouting — every way the expensive parser can fail', () => {
       expect(read.routeReason.length).toBeGreaterThan(0);
     },
   );
+});
+
+/**
+ * ================================================================
+ * ONE SERVICE'S COOLDOWN IS NOT THE OTHER'S
+ * ================================================================
+ *
+ * These two tests exist because a mutation survived without them. With one
+ * availability question for both routes, swapping `isAvailable('ocr')` for
+ * `isAvailable('layout')` at the route decision changed nothing any test could
+ * see — which is the same blindness that, on the cluster, let an OCR pod's OOM
+ * stop results filings from being aligned 14 times in 35 days.
+ */
+describe('readWithRouting — the two services fail separately', () => {
+  it('keeps the cheap read for a scan when only the OCR service is latched', async () => {
+    const converter = stubConverter(
+      { outcome: 'ok', text: OCR_MARKDOWN },
+      { ocr: false, layout: true },
+    );
+
+    const read = await readWithRouting(
+      readInput({ text: SCANNED_TEXT, pages: 6, converter }),
+    );
+
+    expect(converter.requests).toHaveLength(0);
+    expect(read.route).toBe('pdf-parse');
+    expect(read.routeReason).toContain('OCR service is not available');
+  });
+
+  it('still converts a results filing while the OCR service is latched', async () => {
+    // THE POINT OF THE SPLIT, asserted end to end: the cheap route keeps
+    // working through the expensive one's outage.
+    const converter = stubConverter(
+      { outcome: 'ok', text: DOCLING_MARKDOWN },
+      { ocr: false, layout: true },
+    );
+
+    const read = await readWithRouting(
+      readInput({ text: RESULTS_TEXT, converter }),
+    );
+
+    expect(converter.requests).toHaveLength(1);
+    expect(converter.requests[0]?.ocr).toBe(false);
+    expect(read.route).toBe('docling-layout');
+  });
+
+  it('keeps the cheap read for a results filing when only layout is latched', async () => {
+    const converter = stubConverter(
+      { outcome: 'ok', text: DOCLING_MARKDOWN },
+      { ocr: true, layout: false },
+    );
+
+    const read = await readWithRouting(
+      readInput({ text: RESULTS_TEXT, converter }),
+    );
+
+    expect(converter.requests).toHaveLength(0);
+    expect(read.route).toBe('pdf-parse');
+    expect(read.routeReason).toContain('layout service is not available');
+  });
 });

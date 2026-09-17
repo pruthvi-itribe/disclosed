@@ -90,7 +90,12 @@ export async function readWithRouting(
     text,
     hasTextLayer: hasUsableTextLayer(text),
     textLayerCorrupt: hasCorruptTextLayer(text),
-    doclingAvailable: converter !== null && converter.isAvailable(),
+    // ASKED SEPARATELY, because the two Deployments fail separately. A single
+    // converter answers the same for both, so a one-service deployment routes
+    // exactly as it did before.
+    doclingOcrAvailable: converter !== null && converter.isAvailable('ocr'),
+    doclingLayoutAvailable:
+      converter !== null && converter.isAvailable('layout'),
   });
 
   if (decision.route === 'pdf-parse' || converter === null) {

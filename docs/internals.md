@@ -176,6 +176,13 @@ DOCLING_SERVE_MAX_SYNC_WAIT=1800 \
 
 Then set `DOCLING_URL` accordingly and restart the workers.
 
+To run the two configurations as separate processes — worth doing once OCR's
+3.8–7.4 GB starts evicting things the layout route's flat 2.3–2.6 GB would not —
+start a second `docling-serve` on another port and set `DOCLING_LAYOUT_URL` and
+`DOCLING_OCR_URL` instead. Each falls back to `DOCLING_URL`, so setting one of
+them splits only that route, and the boot line names both so you can see which
+half is actually answering.
+
 `DOCLING_SERVE_MAX_SYNC_WAIT` is not optional in practice. It defaults to **120
 seconds**, and past it the service answers **504 while still completing the
 conversion** — a live run lost a 15-page scan that finished in 131 seconds

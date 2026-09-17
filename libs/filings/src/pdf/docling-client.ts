@@ -105,10 +105,65 @@ export type DoclingResult =
    */
   | { readonly outcome: 'refused'; readonly message: string };
 
+/**
+ * Which of the two Docling Deployments a request belongs to.
+ *
+ * The names are the Deployments' own, so a reader tracing a filing's route can
+ * put `kubectl get pods` beside this file and see the same two words.
+ */
+export type DoclingService = 'layout' | 'ocr';
+
+/**
+ * The service a request is for, derived from the request itself.
+ *
+ * READS `ocr` AND NOT `forceOcr`. `force_ocr` is not a louder `do_ocr` — it is
+ * a separate field on a route that is already an OCR route — so routing on it
+ * would misdirect the day a caller set one without the other.
+ */
+export const serviceFor = (request: DoclingRequest): DoclingService =>
+  request.ocr ? 'ocr' : 'layout';
+
+/**
+ * One route's address: its own if set, else the shared one, else ''.
+ *
+ * ================================================================
+ * THE ONE OWNER OF THE FALLBACK, SO THE BOOT LINE CANNOT LIE
+ * ================================================================
+ *
+ * Two callers need this answer and they must agree. `buildDoclingConverter`
+ * uses it to decide what to build; `describeConfig` uses it to print what an
+ * operator is actually running. A boot line that reported a URL the factory had
+ * rejected would be worse than no boot line — it is read precisely when
+ * somebody is trying to find out why filings are not being escalated.
+ *
+ * PARSED RATHER THAN TRUSTED, and per route rather than for the pair. axios
+ * accepts a garbage baseURL and fails later, per request, which would spend the
+ * timeout on every filing. A typo in one of the two addresses costs that one
+ * service and leaves the other reading documents — and shows up as `off`
+ * against that route at boot.
+ */
+export const resolveDoclingUrl = (own: string, shared: string): string => {
+  const url = own.trim().length > 0 ? own.trim() : shared.trim();
+  if (url.length === 0) return '';
+  try {
+    new URL(url);
+  } catch {
+    return '';
+  }
+  return url;
+};
+
 export interface DoclingConverter {
   convert(request: DoclingRequest): Promise<DoclingResult>;
-  /** Whether the service is believed reachable, without making a request. */
-  isAvailable(): boolean;
+  /**
+   * Whether that service is believed reachable, without making a request.
+   *
+   * TAKES THE SERVICE because the two Deployments fail separately. An
+   * implementation backed by a single endpoint answers the same for both, which
+   * is exactly the single-service deployment and is why the argument is safe to
+   * ignore there.
+   */
+  isAvailable(service: DoclingService): boolean;
 }
 
 /**
@@ -347,5 +402,49 @@ export class HttpDoclingConverter implements DoclingConverter {
     }
 
     return textFromDoclingReply(payload);
+  }
+}
+
+/**
+ * Two services behind one port, dispatched by route.
+ *
+ * ================================================================
+ * IT HOLDS NO LATCH OF ITS OWN, AND THAT IS THE WHOLE DESIGN
+ * ================================================================
+ *
+ * `docling-ocr` holds 3.8-7.4 GB and `docling-layout` a flat 2.3-2.6 GB, so
+ * they are separate Deployments with separate memory budgets and they fail
+ * separately. Before the split one `HttpDoclingConverter` covered both logical
+ * routes, which meant one cooldown covered both: an OCR pod OOM-killed on a
+ * raster scan — 14 times in 35 days on the live cluster — also stopped every
+ * results filing from getting its columns aligned for the next five minutes,
+ * having never been asked to do anything expensive.
+ *
+ * So each child keeps the latch it already had and this class only chooses
+ * between them. Adding a latch here would re-create exactly the coupling the
+ * split removes.
+ *
+ * SINGLE-SERVICE DEPLOYMENTS DO NOT USE THIS CLASS. When both URLs resolve to
+ * the same address `buildDoclingConverter` returns one `HttpDoclingConverter`,
+ * so the common deployment keeps one connection pool and one latch and nothing
+ * about its behaviour changes.
+ */
+export class RoutedDoclingConverter implements DoclingConverter {
+  constructor(
+    private readonly layout: DoclingConverter,
+    private readonly ocr: DoclingConverter,
+  ) {}
+
+  private pick(service: DoclingService): DoclingConverter {
+    return service === 'ocr' ? this.ocr : this.layout;
+  }
+
+  isAvailable(service: DoclingService): boolean {
+    return this.pick(service).isAvailable(service);
+  }
+
+  async convert(request: DoclingRequest): Promise<DoclingResult> {
+    const service = serviceFor(request);
+    return this.pick(service).convert(request);
   }
 }

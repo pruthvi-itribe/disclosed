@@ -408,6 +408,19 @@ than the recommended droplet. Two honest options:
   exactly that on a 15-page scan that took 131 s.
 - **Leave it off.** ~99% of filings are unaffected.
 
+**A third option, once the bill matters: run only the cheap half.** The two
+configurations are separately addressable — `DOCLING_LAYOUT_URL` and
+`DOCLING_OCR_URL`, each falling back to `DOCLING_URL` when unset — and they do
+not cost alike. `do_ocr=false` holds a FLAT 2.3–2.6 GB and serves the 8.66% of
+filings that carry a results table; `do_ocr=true` holds 3.8–7.4 GB for the 1.11%
+that are raster scans. Measured in production the ratio was **549 filings to
+37**, so the expensive configuration reads one filing in 74.
+
+Setting only `DOCLING_LAYOUT_URL` therefore buys correct reading order and
+column alignment on an 8 GB droplet, and leaves raster scans at `no-text-layer`
+— which is what a deployment without Docling already does with them. The 16 GB
+recommendation above applies only to running OCR.
+
 `DOCLING_COOLDOWN_MS` (default 300000) stops further requests for five minutes
 after a failure to *reach* the service, so a Docling droplet that is down costs
 one timeout rather than one per eligible filing.
