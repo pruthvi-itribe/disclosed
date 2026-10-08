@@ -5,6 +5,7 @@ character-for-character against the source document.**
 
 [![CI](https://github.com/pruthvi-itribe/disclosed/actions/workflows/ci.yaml/badge.svg)](https://github.com/pruthvi-itribe/disclosed/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-a78bfa.svg)](LICENSE)
+[![Live](https://img.shields.io/badge/live-disclosed.live-3fb950.svg)](https://disclosed.live)
 
 A listed company files hundreds of documents a day across India's exchanges —
 board outcomes, quarterly results, orders won, auditors' warnings — most of it
